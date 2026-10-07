@@ -1,0 +1,19 @@
+# Aggiunge il container di sviluppo (workspace) all'infra definita in docker-compose.yml.
+# Usato solo dal Dev Container; non necessario per `docker compose up` dell'infra.
+services:
+  workspace:
+    image: node:20.11.0-bookworm
+    command: sleep infinity
+    working_dir: /workspace
+    volumes:
+      - ..:/workspace:cached
+    environment:
+      DATABASE_URL: postgresql://scorm:scorm_dev_password@db:5432/scorm
+      S3_ENDPOINT: http://localstack:4566
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: test
+      S3_SECRET_KEY: test
+      S3_BUCKET: scorm-dev
+    depends_on:
+      - db
+      - localstack

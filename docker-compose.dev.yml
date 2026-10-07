@@ -1,0 +1,62 @@
+# Stack di sviluppo completo: db + localstack (da docker-compose.yml) + api + web.
+# Avvio:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# L'immagine node monta il workspace ed esegue i dev server. Le dipendenze
+# devono essere già installate (npm install) e i package condivisi buildati.
+services:
+  api:
+    image: node:20.11.0-bookworm
+    working_dir: /workspace
+    command: bash -lc "npx prisma generate --schema apps/api/prisma/schema.prisma && npx prisma migrate deploy --schema apps/api/prisma/schema.prisma && node apps/api/dist/main.js"
+    volumes:
+      - .:/workspace
+    # Carica .env (provider, modelli, eventuali credenziali). Le variabili in
+    # "environment" sotto hanno precedenza e puntano ai nomi di rete interni.
+    env_file:
+      - .env
+    environment:
+      PORT: '3000'
+      DATABASE_URL: postgresql://scorm:scorm_dev_password@db:5432/scorm
+      AUTH_PROVIDER: dev
+      CORS_ORIGINS: http://localhost:3100
+      # LLM reale su Bedrock; embeddings restano mock per questo test.
+      PROVIDER_LLM: bedrock
+      PROVIDER_EMBEDDINGS: mock
+      PROVIDER_OBJECT_STORAGE: s3
+      PROVIDER_VECTOR_STORE: pgvector
+      # Generazione media reale (immagini Stability + audio Polly) in us-west-2.
+      PROVIDER_IMAGE: ${PROVIDER_IMAGE:-bedrock}
+      PROVIDER_SPEECH: ${PROVIDER_SPEECH:-polly}
+      MEDIA_REGION: ${MEDIA_REGION:-us-west-2}
+      BEDROCK_REGION: ${BEDROCK_REGION:-us-west-2}
+      BEDROCK_LLM_MODEL_ID: ${BEDROCK_LLM_MODEL_ID:-us.anthropic.claude-sonnet-4-5-20250929-v1:0}
+      # Credenziali AWS: fornite da env_file (.env). NON le ridichiariamo qui,
+      # altrimenti ${AWS_*:-} le azzererebbe se non presenti nella shell host.
+      # Object storage su S3 AWS REALE (necessario per Amazon Transcribe, che
+      # legge il video dal bucket). Niente S3_ENDPOINT => endpoint AWS standard;
+      # niente S3_ACCESS_KEY/SECRET => default credential chain (AWS_* dal .env).
+      S3_REGION: us-east-1
+      S3_BUCKET: sw-scorm-dev
+      PROVIDER_TRANSCRIPTION: transcribe
+      TRANSCRIBE_REGION: us-east-1
+    ports:
+      - '3000:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
+  web:
+    image: node:20.11.0-bookworm
+    working_dir: /workspace/apps/web
+    command: bash -lc "npm run dev"
+    volumes:
+      - .:/workspace
+    environment:
+      NEXT_PUBLIC_API_MODE: real
+      NEXT_PUBLIC_API_URL: http://localhost:3000
+    ports:
+      - '3100:3100'
+    depends_on:
+      - api

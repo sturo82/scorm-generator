@@ -1,0 +1,45 @@
+# Infrastruttura di sviluppo. Immagini pinnate per parità tra ambienti.
+# Avvio: docker compose up -d
+services:
+  db:
+    image: pgvector/pgvector:0.7.0-pg16
+    container_name: scorm_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: scorm
+      POSTGRES_PASSWORD: scorm_dev_password
+      POSTGRES_DB: scorm
+    ports:
+      - '5432:5432'
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./infra/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U scorm -d scorm']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Emulatore AWS (S3 oggi, SQS/altri in futuro) per sviluppo locale.
+  # Si usa LocalStack perché le immagini community di MinIO non sono più
+  # pubblicate su Docker Hub/Quay dal 23/10/2025.
+  localstack:
+    image: localstack/localstack:3.4
+    container_name: scorm_localstack
+    restart: unless-stopped
+    environment:
+      SERVICES: s3
+      DEBUG: '0'
+    ports:
+      - '4566:4566'
+    volumes:
+      - localstack_data:/var/lib/localstack
+    healthcheck:
+      test: ['CMD', 'curl', '-sf', 'http://localhost:4566/_localstack/health']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  db_data:
+  localstack_data:

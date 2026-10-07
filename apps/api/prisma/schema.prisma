@@ -1,0 +1,585 @@
+// Schema Prisma — SCORM Course Generator
+// Modello dati ibrido (decisione enterprise):
+//  - Entità strutturali normalizzate con foreign key e isolamento per tenant.
+//  - Payload ricchi delle interazioni/domande come JSONB validato a livello
+//    applicativo dagli schema Zod di @scorm/contracts, con `schemaVersion` per
+//    gestirne l'evoluzione senza migrazioni per ogni nuovo tipo di blocco.
+// L'isolamento multi-tenant (Requisito 1.2 / 12.5) è rafforzato da Row-Level
+// Security abilitata in una migrazione dedicata.
+
+generator client {
+  provider        = "prisma-client-js"
+  // Necessario per dichiarare l'estensione pgvector a livello di datasource.
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+enum PlanTier {
+  PREMIUM
+  ENTERPRISE
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum KnowledgeScope {
+  GLOBAL
+  COURSE
+}
+
+enum IngestStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum EditorialStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+}
+
+enum AssessmentScope {
+  INTERMEDIATE
+  FINAL
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ScormProfile {
+  SCORM_2004_4TH
+  SCORM_12
+}
+
+enum PackageStatus {
+  BUILDING
+  READY
+  FAILED
+}
+
+// Servizio/provider a pagamento misurato dal metering costi.
+enum MeterProvider {
+  BEDROCK_LLM
+  BEDROCK_IMAGE
+  POLLY
+  TRANSCRIBE
+}
+
+// Unità di consumo misurata. Determina come `quantity` va moltiplicata per il
+// prezzo di listino: token (per 1M), immagini (per unità), caratteri (per 1M).
+enum MeterUnit {
+  INPUT_TOKENS
+  OUTPUT_TOKENS
+  IMAGES
+  CHARACTERS
+  SECONDS
+}
+
+// --- Tenancy & accesso ------------------------------------------------------
+
+model Plan {
+  id                 String   @id @default(cuid())
+  tier               PlanTier
+  // Limiti e feature flag applicati (Requisito 1.4 / 1.5). JSONB per evolvere
+  // i limiti senza migrazioni; la forma è validata a livello applicativo.
+  limits             Json
+  featureFlags       Json     @default("{}")
+  tenants            Tenant[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model Tenant {
+  id          String         @id @default(cuid())
+  name        String
+  // Branding white-label della web app (nome, colore, logo/favicon keys) come
+  // JSONB validato dall'AppBranding schema di @scorm/contracts.
+  branding    Json           @default("{}")
+  planId      String
+  plan        Plan           @relation(fields: [planId], references: [id])
+  users       User[]
+  brands      Brand[]
+  courses     Course[]
+  folders     Folder[]
+  documents   KnowledgeDoc[]
+  jobs        GenerationJob[]
+  auditEvents AuditEvent[]
+  usage       UsageRecord[]
+  videoAssets VideoAsset[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([planId])
+}
+
+model User {
+  id             String   @id @default(cuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Subject esterno dell'IdP (OIDC "sub"); univoco per tenant.
+  externalId     String
+  email          String
+  displayName    String?
+  role           UserRole @default(VIEWER)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([tenantId, externalId])
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+// --- Branding (Requisito 7) -------------------------------------------------
+
+model Brand {
+  id         String              @id @default(cuid())
+  tenantId   String
+  tenant     Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name       String
+  // Asset, colori, tipografia, voice, legal: struttura in JSONB validata dal
+  // Brand schema di @scorm/contracts.
+  definition Json
+  builds     CourseBrandBuild[]
+  // Corsi che usano questo brand come primario (relazione inversa).
+  primaryForCourses Course[]     @relation("CoursePrimaryBrand")
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+// --- Corso e gerarchia contenuti (Requisito 4.2) ----------------------------
+
+// Cartella per organizzare i corsi, annidabile (self-relation parent/children).
+// Isolata per tenant. L'unicità del nome è per livello (stesso parent).
+model Folder {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  // Cartella padre (null = radice). Alla cancellazione del padre, le sottocartelle
+  // risalgono alla radice (SetNull): nessuna cancellazione a cascata dei contenuti.
+  parentId  String?
+  parent    Folder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Folder[] @relation("FolderTree")
+  // Ordinamento esplicito tra pari livello.
+  position  Int      @default(0)
+  courses   Course[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, parentId, name])
+  @@index([tenantId])
+  @@index([tenantId, parentId])
+}
+
+model Course {
+  id          String             @id @default(cuid())
+  tenantId    String
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Cartella di organizzazione (null = radice). SetNull: eliminando la cartella
+  // i corsi tornano alla radice, non vengono cancellati.
+  folderId    String?
+  folder      Folder?            @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  title       String
+  description String             @default("")
+  language    String
+  status      EditorialStatus    @default(DRAFT)
+  // Brief iniziale (Requisito 2) come JSONB validato dal Brief schema.
+  brief       Json?
+  // Outline approvato (Requisito 4.1) come JSONB.
+  outline     Json?
+  // Chiave S3 dell'immagine di copertina generata. URL firmato risolto a lettura.
+  coverImageKey String?
+  // Stile delle micro-interazioni del corso: "sober" (default) | "lively".
+  // Propagato ad anteprima web e player SCORM (data-motion). Validato a livello
+  // applicativo dall'enum interactionStyle del contratto Course.
+  interactionStyle String  @default("sober")
+  // Brand "primario" del corso: pilota colori/logo/accenti nell'anteprima web e
+  // come default nell'export SCORM. SetNull se il brand viene eliminato.
+  primaryBrandId String?
+  primaryBrand   Brand?    @relation("CoursePrimaryBrand", fields: [primaryBrandId], references: [id], onDelete: SetNull)
+  // Docente/relatore mostrato nell'header del corso (nome + ruolo + foto).
+  instructorName      String?
+  instructorRole      String?
+  instructorAvatarKey String?
+  modules     Module[]
+  assessments Assessment[]
+  documents   KnowledgeDoc[]
+  builds      CourseBrandBuild[]
+  jobs        GenerationJob[]
+  versions    ContentVersion[]
+  usage       UsageRecord[]
+  ragEmbeddingCache RagEmbeddingCache?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, folderId])
+}
+
+model Module {
+  id        String          @id @default(cuid())
+  courseId  String
+  course    Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title     String
+  summary   String?
+  // Obiettivi didattici del modulo (JSONB array di stringhe) per la pagina
+  // riepilogativa del modulo.
+  objectives Json           @default("[]")
+  // Chiave S3 della copertina del modulo generata. URL firmato risolto a lettura.
+  coverImageKey String?
+  // Ordinamento esplicito dei moduli nel corso.
+  position  Int
+  status    EditorialStatus @default(DRAFT)
+  lessons   Lesson[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([courseId])
+}
+
+model Lesson {
+  id        String          @id @default(cuid())
+  moduleId  String
+  module    Module          @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  title     String
+  position  Int
+  status    EditorialStatus @default(DRAFT)
+  objectives Json           @default("[]")
+  // Elenco ordinato di Block (interazioni) come JSONB; validato dagli schema
+  // dei contratti. schemaVersion gestisce l'evoluzione del formato.
+  blocks        Json        @default("[]")
+  schemaVersion String      @default("0.1.0")
+  // Chiave S3 della narrazione audio generata (TTS). URL firmato risolto a lettura.
+  narrationKey  String?
+  // Lezione "video-first": generata attorno a un video (segnaposto) con quiz
+  // ed elementi dinamici affiancati. Pilota prompt e layout del player.
+  videoFirst    Boolean     @default(false)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([moduleId])
+}
+
+model Assessment {
+  id            String          @id @default(cuid())
+  courseId      String
+  course        Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title         String
+  scope         AssessmentScope
+  // Modulo di riferimento per i test intermedi (Requisito 6.3).
+  moduleId      String?
+  masteryScore  Float           @default(0.8)
+  maxAttempts   Int?
+  shuffleQuestions Boolean      @default(false)
+  shuffleAnswers   Boolean      @default(false)
+  status        EditorialStatus @default(DRAFT)
+  questions     Question[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([courseId])
+}
+
+model Question {
+  id            String          @id @default(cuid())
+  assessmentId  String
+  assessment    Assessment      @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  type          String
+  position      Int
+  points        Float           @default(1)
+  // Prompt, scelte/risposte corrette, feedback: payload specifico del tipo in
+  // JSONB, validato dal Question schema (discriminated union) dei contratti.
+  payload       Json
+  schemaVersion String          @default("0.1.0")
+  status        EditorialStatus @default(DRAFT)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([assessmentId])
+}
+
+// --- Knowledge base (Requisito 3) -------------------------------------------
+
+model KnowledgeDoc {
+  id          String         @id @default(cuid())
+  tenantId    String
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scope       KnowledgeScope
+  // Presente quando scope = COURSE.
+  courseId    String?
+  course      Course?        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  filename    String
+  mimeType    String
+  sizeBytes   Int
+  // Chiave nello storage oggetti (file sorgente).
+  storageKey  String
+  status      IngestStatus   @default(PENDING)
+  // Messaggio di errore in caso di ingestion fallita.
+  error       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, scope])
+  @@index([courseId])
+}
+
+// --- Repository video per-tenant --------------------------------------------
+
+// Sorgente di un VideoAsset: file caricato o riferimento a piattaforma esterna.
+enum VideoSource {
+  UPLOAD
+  YOUTUBE
+  VIMEO
+  TWITCH
+}
+
+// Stato della trascrizione automatica (ASR) di un video caricato.
+enum VideoTranscriptStatus {
+  NONE
+  PROCESSING
+  READY
+  FAILED
+}
+
+// Libreria video riutilizzabile del tenant: video caricati (su storage) e
+// riferimenti a video esterni (YouTube/Vimeo/Twitch), opzionalmente organizzati
+// per canale. Un VideoAsset può essere selezionato per un block video_checkpoint
+// di una lezione, in alternativa all'upload diretto.
+model VideoAsset {
+  id          String      @id @default(cuid())
+  tenantId    String
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title       String
+  description String      @default("")
+  source      VideoSource @default(UPLOAD)
+  // Per i video caricati: chiave storage del file + MIME + dimensione.
+  storageKey  String?
+  mimeType    String?
+  sizeBytes   Int?
+  // Per i video esterni: URL originale e id sulla piattaforma.
+  externalUrl String?
+  externalId  String?
+  // Canale/raccolta di appartenenza (es. nome canale YouTube), per raggruppare.
+  channel     String?
+  // Chiave storage della thumbnail (opzionale) per l'anteprima in libreria.
+  thumbnailKey String?
+  // Durata in secondi, se nota.
+  durationSec Int?
+  // Trascrizione ASR dei video caricati (cue con timestamp) come JSONB.
+  transcript        Json                  @default("[]")
+  transcriptStatus  VideoTranscriptStatus @default(NONE)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, source])
+  @@index([tenantId, channel])
+}
+
+// --- Export brandizzato e pacchetti SCORM (Requisito 7.3 / 9.7) -------------
+
+model CourseBrandBuild {
+  id         String          @id @default(cuid())
+  courseId   String
+  course     Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  brandId    String
+  brand      Brand           @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  profile    ScormProfile    @default(SCORM_2004_4TH)
+  packages   ScormPackage[]
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@index([courseId])
+  @@index([brandId])
+}
+
+model ScormPackage {
+  id         String        @id @default(cuid())
+  buildId    String
+  build      CourseBrandBuild @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  // Versione incrementale per corso+brand.
+  version    Int
+  status     PackageStatus @default(BUILDING)
+  // Chiave nello storage oggetti del pacchetto .zip.
+  storageKey String?
+  sizeBytes  Int?
+  error      String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@unique([buildId, version])
+  @@index([buildId])
+}
+
+// --- Generazione AI: audit e versioning (Requisito 4.7 / 8.5 / 11) ----------
+
+model GenerationJob {
+  id            String    @id @default(cuid())
+  tenantId      String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  courseId      String?
+  course        Course?   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  // Lezione a cui il job si riferisce (per i job per-lezione). Permette alla UI
+  // di ricollegare un job attivo alla lezione dopo un reload. Null per job
+  // non legati a una lezione specifica (outline, assessment, batch).
+  lessonId      String?
+  type          String
+  status        JobStatus @default(QUEUED)
+  // Audit del provider: modello, parametri, prompt (riferimenti), usage/costo.
+  model         String?
+  inputTokens   Int?
+  outputTokens  Int?
+  correlationId String
+  params        Json?
+  error         String?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([tenantId])
+  @@index([courseId])
+  @@index([tenantId, status])
+  @@index([correlationId])
+}
+
+// --- Metering costi AI e pricing (cost-plus con markup) ---------------------
+
+// Listino prezzi dei provider, VERSIONATO: i prezzi cambiano e variano per
+// regione, quindi non vanno mai hardcoded. Ogni riga è il prezzo di una unità
+// per un (provider, model, unit, region) valido da `validFrom` fino a quando
+// non viene superata da una riga più recente (validFrom successivo). Il prezzo
+// è snapshot-ato su ogni UsageRecord, così lo storico resta veritiero anche se
+// il listino cambia dopo.
+model PricingRate {
+  id        String        @id @default(cuid())
+  provider  MeterProvider
+  // Model id del provider (es. inference profile Claude, Stable Image, "polly-neural").
+  model     String
+  unit      MeterUnit
+  region    String
+  // Prezzo di listino in USD per `perUnits` unità (es. 1_000_000 token, 1 immagine).
+  unitPriceUsd Decimal    @db.Decimal(16, 8)
+  perUnits  Int           @default(1)
+  // Validità temporale: la riga attiva è quella con validFrom più recente <= now.
+  validFrom DateTime      @default(now())
+  note      String?
+  createdAt DateTime      @default(now())
+
+  @@index([provider, model, unit, region, validFrom])
+}
+
+// Un record per OGNI chiamata a pagamento (una riga = un addebito atomico).
+// Aggrega per corso/tenant/job senza sovrascrivere: il costo di un corso è la
+// SOMMA dei suoi UsageRecord. `costUsd` è calcolato al momento con il prezzo di
+// listino allora vigente (snapshot in `unitPriceUsd`).
+model UsageRecord {
+  id        String        @id @default(cuid())
+  tenantId  String
+  tenant    Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Corso a cui attribuire il costo (null per consumi non legati a un corso).
+  courseId  String?
+  course    Course?       @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  // Job di generazione che ha originato il consumo (audit/correlazione).
+  jobId     String?
+  provider  MeterProvider
+  model     String
+  unit      MeterUnit
+  // Quantità consumata nell'unità indicata (token, immagini, caratteri).
+  quantity  Int
+  // Snapshot del listino al momento del consumo: prezzo per `perUnits` unità.
+  unitPriceUsd Decimal    @db.Decimal(16, 8)
+  perUnits  Int           @default(1)
+  // Costo calcolato = quantity / perUnits * unitPriceUsd. Persistito per query
+  // di aggregazione veloci e per immutabilità storica.
+  costUsd   Decimal       @db.Decimal(16, 8)
+  // Fase/operazione sorgente (es. "outline", "lesson_content", "image_prompt",
+  // "image", "cover", "narration") per il breakdown nel pannello costi.
+  source    String
+  createdAt DateTime      @default(now())
+
+  @@index([tenantId])
+  @@index([courseId])
+  @@index([jobId])
+  @@index([tenantId, createdAt])
+}
+
+model ContentVersion {
+  id         String   @id @default(cuid())
+  courseId   String
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  // Entità versionata: "course" | "module" | "lesson" | "assessment".
+  entityType String
+  entityId   String
+  version    Int
+  // Snapshot immutabile del contenuto in JSONB per diff e ripristino.
+  snapshot   Json
+  authorId   String?
+  createdAt  DateTime @default(now())
+
+  @@unique([entityType, entityId, version])
+  @@index([courseId])
+  @@index([entityType, entityId])
+}
+
+// --- Cache embeddings RAG neurali (ricerca semantica offline) ---------------
+
+// Cache degli embeddings neurali dei chunk RAG di un corso. Il calcolo (MiniLM
+// su ~1000 chunk) costa minuti: la cache evita di ricalcolarli a ogni richiesta
+// di anteprima/export. L'invalidazione è per CONTENUTO: `contentHash` è l'hash
+// del testo ordinato dei chunk + modello + dim; se cambia, si ricalcola. I
+// vettori sono quantizzati int8 (scala 127), stessi byte del pacchetto SCORM.
+model RagEmbeddingCache {
+  // Un corso ha una sola cache attiva (sovrascritta quando il contenuto cambia).
+  courseId    String   @id
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  tenantId    String
+  // Hash del contenuto (chunk ordinati + modello + dim): chiave di validità.
+  contentHash String
+  model       String
+  dim         Int
+  count       Int
+  // Embeddings int8 (count * dim byte), quantizzati come nel pacchetto SCORM.
+  embeddings  Bytes
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+// --- Audit trail (Requisito 11.3) -------------------------------------------
+
+model AuditEvent {
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId        String?
+  action        String
+  resourceType  String
+  resourceId    String?
+  correlationId String?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+}

@@ -1,0 +1,66 @@
+{
+  "name": "@scorm/adapters",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
+    },
+    "./aws": {
+      "types": "./dist/aws/index.d.ts",
+      "default": "./dist/aws/index.js"
+    },
+    "./pgvector": {
+      "types": "./dist/pgvector/index.d.ts",
+      "default": "./dist/pgvector/index.js"
+    },
+    "./extractors": {
+      "types": "./dist/extractors/index.d.ts",
+      "default": "./dist/extractors/index.js"
+    },
+    "./bedrock": {
+      "types": "./dist/bedrock/index.d.ts",
+      "default": "./dist/bedrock/index.js"
+    },
+    "./polly": {
+      "types": "./dist/polly/index.d.ts",
+      "default": "./dist/polly/index.js"
+    },
+    "./transcribe": {
+      "types": "./dist/transcribe/index.d.ts",
+      "default": "./dist/transcribe/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@scorm/contracts": "0.1.0",
+    "@scorm/domain": "0.1.0",
+    "@aws-sdk/client-s3": "3.600.0",
+    "@aws-sdk/s3-request-presigner": "3.600.0",
+    "@aws-sdk/client-bedrock-runtime": "3.600.0",
+    "@aws-sdk/client-sqs": "3.600.0",
+    "@aws-sdk/client-polly": "3.600.0",
+    "@aws-sdk/client-transcribe": "3.600.0",
+    "pg": "8.11.5",
+    "pdf-parse": "1.1.1",
+    "mammoth": "1.7.1",
+    "xlsx": "0.18.5",
+    "jszip": "3.10.1",
+    "node-html-parser": "6.1.13"
+  },
+  "devDependencies": {
+    "@types/pg": "8.11.5",
+    "@types/pdf-parse": "1.1.4"
+  }
+}

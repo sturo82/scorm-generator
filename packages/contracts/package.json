@@ -1,0 +1,26 @@
+{
+  "name": "@scorm/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./render-core": {
+      "types": "./dist/render-core/index.d.ts",
+      "default": "./dist/render-core/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "zod": "3.23.8",
+    "zod-to-json-schema": "3.23.0"
+  }
+}

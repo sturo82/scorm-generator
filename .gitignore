@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Test / coverage
+coverage/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Prisma generated client (regenerated)
+apps/api/node_modules/.prisma/
+
+# Local object storage (dev adapter)
+.local-storage/
+
+# Asset semantici copiati nel web public (derivati da packages/scorm, via copy-semantic)
+apps/web/public/semantic/
+
+# Bundle IIFE del renderer condiviso (generato da esbuild al build di @scorm/scorm)
+packages/scorm/src/runtime/assets/render-core.js
+
+# Pacchetti SCORM esportati (artefatti di build, non versionati)
+exports/
+
+# Zip di esempio Brain-Bites nella root (duplicato in examples/; artefatto)
+/Brain-Bites-Covid-19-and-Healthy-Workspaces.zip

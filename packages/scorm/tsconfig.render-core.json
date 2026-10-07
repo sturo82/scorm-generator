@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2017", "DOM", "DOM.Iterable"],
+    "types": [],
+    "composite": false,
+    "incremental": false
+  },
+  "include": ["src/runtime/render-core-entry.ts"]
+}

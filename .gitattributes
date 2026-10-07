@@ -1,0 +1,20 @@
+# Line ending coerenti tra ambienti (importante per i file inclusi nei pacchetti SCORM).
+* text=auto eol=lf
+
+# File binari degli asset: nessuna normalizzazione.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.zip binary
+
+# Modello embedding ONNX + runtime WASM vendorati per la ricerca semantica
+# offline (RAG). Binari: nessuna normalizzazione né diff.
+*.onnx binary
+*.wasm binary

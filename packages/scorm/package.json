@@ -1,0 +1,33 @@
+{
+  "name": "@scorm/scorm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./semantic-index": {
+      "types": "./dist/package/semantic-index.d.ts",
+      "default": "./dist/package/semantic-index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b && npm run typecheck-render-core && npm run bundle-render-core && npm run copy-assets",
+    "typecheck-render-core": "tsc -p tsconfig.render-core.json",
+    "bundle-render-core": "esbuild src/runtime/render-core-entry.ts --bundle --format=iife --platform=browser --target=es2017 --outfile=src/runtime/assets/render-core.js",
+    "copy-assets": "mkdir -p dist/runtime/assets && cp -r src/runtime/assets/. dist/runtime/assets/",
+    "clean": "rm -rf dist *.tsbuildinfo src/runtime/assets/render-core.js"
+  },
+  "dependencies": {
+    "@scorm/contracts": "0.1.0",
+    "@xenova/transformers": "2.17.2",
+    "jszip": "3.10.1"
+  },
+  "devDependencies": {
+    "jsdom": "24.0.0"
+  }
+}

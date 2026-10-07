@@ -1,0 +1,239 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Token del design system (HSL). Palette premium: superfici neutre fredde,
+ * primario indaco/blu profondo. Supporto dark/light tramite classe .dark.
+ */
+@layer base {
+  :root {
+    --background: 220 24% 98%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 234 64% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 16% 95%;
+    --secondary-foreground: 222 47% 20%;
+
+    --muted: 220 16% 95%;
+    --muted-foreground: 220 10% 44%;
+
+    --accent: 232 64% 96%;
+    --accent-foreground: 233 58% 34%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 40%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 32 95% 48%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 220 15% 90%;
+    --input: 220 14% 86%;
+    --ring: 234 64% 52%;
+
+    /* Colore base delle ombre (navy freddo): ombre premium, non grigio piatto. */
+    --shadow-color: 222 47% 30%;
+    /* Accenti del gradiente di sfondo dell'app. */
+    --app-gradient-a: 232 64% 96%;
+    --app-gradient-b: 220 24% 98%;
+    /* Gradiente dell'header (barra superiore): default = tinta primaria. */
+    --header-gradient-a: 234 64% 52%;
+    --header-gradient-b: 246 70% 42%;
+    /* Testo/icone sopra l'header colorato. */
+    --header-foreground: 0 0% 100%;
+    /* Alone/glow colorato per bagliori ed evidenziazioni premium. */
+    --brand-glow: 234 64% 52%;
+    /* Accent della sidebar (voce attiva). */
+    --sidebar-accent: 232 64% 95%;
+
+    --radius: 0.7rem;
+  }
+
+  .dark {
+    --background: 224 44% 6%;
+    --foreground: 210 20% 96%;
+
+    --card: 223 39% 10%;
+    --card-foreground: 210 20% 96%;
+
+    --popover: 223 39% 10%;
+    --popover-foreground: 210 20% 96%;
+
+    --primary: 232 76% 70%;
+    --primary-foreground: 224 44% 8%;
+
+    --secondary: 223 28% 16%;
+    --secondary-foreground: 210 20% 96%;
+
+    --muted: 223 28% 16%;
+    --muted-foreground: 215 18% 64%;
+
+    --accent: 232 38% 22%;
+    --accent-foreground: 232 76% 82%;
+
+    --destructive: 0 63% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 60% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 32 90% 55%;
+    --warning-foreground: 222 47% 11%;
+
+    --border: 223 24% 19%;
+    --input: 223 24% 22%;
+    --ring: 232 76% 70%;
+
+    --shadow-color: 224 60% 2%;
+    --app-gradient-a: 232 40% 12%;
+    --app-gradient-b: 224 44% 6%;
+    --header-gradient-a: 232 44% 13%;
+    --header-gradient-b: 246 50% 18%;
+    --header-foreground: 210 20% 96%;
+    --brand-glow: 232 76% 70%;
+    --sidebar-accent: 232 38% 20%;
+  }
+}
+
+@layer base {
+  :root {
+    --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+      Helvetica, Arial, sans-serif;
+  }
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv11', 'ss01';
+    letter-spacing: -0.009em;
+    /* Sfondo premium: due veli di gradiente radiale (angoli opposti) tinti dal
+       brand, più stabili e "profondi" di un singolo velo. Fissi allo scroll. */
+    background-image:
+      radial-gradient(
+        1100px 560px at 100% -8%,
+        hsl(var(--app-gradient-a) / 0.75),
+        transparent 58%
+      ),
+      radial-gradient(
+        900px 520px at -6% 102%,
+        hsl(var(--brand-glow) / 0.10),
+        transparent 60%
+      );
+    background-attachment: fixed;
+  }
+  h1, h2, h3 {
+    letter-spacing: -0.02em;
+  }
+  /* Scrollbar discreta per look premium */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/40; }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+@layer components {
+  /* Superficie premium riutilizzabile per pannelli e sezioni evidenziate. */
+  .surface-panel {
+    @apply rounded-xl border bg-card shadow-card;
+  }
+
+  /* Header applicativo brandizzato: gradiente derivato dal colore primario, con
+     testo/icone su --header-foreground e un bordo luminoso in basso. */
+  .brand-header {
+    background-image: linear-gradient(
+      100deg,
+      hsl(var(--header-gradient-a)),
+      hsl(var(--header-gradient-b))
+    );
+    color: hsl(var(--header-foreground));
+    box-shadow: 0 1px 0 0 hsl(var(--header-foreground) / 0.12) inset,
+      0 10px 30px -14px hsl(var(--shadow-color) / 0.6);
+  }
+  /* Rende leggibili i testi/pulsanti ghost dentro l'header brandizzato: il
+     testo eredita --header-foreground e l'hover è un velo chiaro, battendo le
+     utility ghost di Tailwind (hover:bg-accent) con un override contestuale. */
+  .brand-header a,
+  .brand-header button {
+    color: inherit;
+  }
+  .brand-header button:hover {
+    background-color: hsl(var(--header-foreground) / 0.15) !important;
+    color: hsl(var(--header-foreground)) !important;
+  }
+
+  /* Card premium con sottile alone brand sul bordo superiore e hover elevato. */
+  .surface-elevated {
+    @apply rounded-2xl border bg-card shadow-elevate;
+    position: relative;
+  }
+
+  /* Pannello/hero con velo di gradiente del brand: per sezioni di spicco. */
+  .brand-surface {
+    @apply rounded-2xl border;
+    background-image: linear-gradient(
+      160deg,
+      hsl(var(--accent) / 0.9),
+      hsl(var(--card))
+    );
+    box-shadow: 0 1px 0 0 hsl(var(--card) / 0.6) inset, var(--tw-shadow, 0 0 transparent);
+    @apply shadow-card;
+  }
+
+  /* Testo con riempimento a gradiente del brand (titoli di spicco). */
+  .brand-text-gradient {
+    background-image: linear-gradient(
+      90deg,
+      hsl(var(--primary)),
+      hsl(var(--header-gradient-b))
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Alone luminoso del brand (dietro elementi di rilievo, es. FAB/hero icon). */
+  .brand-glow {
+    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.2),
+      0 8px 30px -6px hsl(var(--brand-glow) / 0.45);
+  }
+
+  /* Chip/badge accent del brand. */
+  .brand-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold;
+    background-color: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+    border-color: hsl(var(--primary) / 0.18);
+  }
+
+  /* ── Sidebar premium ─────────────────────────────────────────────────── */
+
+  /* Contenitore sidebar: bordo destro brandizzato, fondo semi-trasparente. */
+  .sidebar-premium {
+    @apply border-r bg-card/70 backdrop-blur-sm;
+    border-color: hsl(var(--primary) / 0.12);
+  }
+
+  /* Area logo della sidebar: stesso gradiente dell'header → collega
+     visivamente sidebar e barra superiore come un unico blocco scuro brand. */
+  .sidebar-logo-area {
+    background-image: linear-gradient(
+      135deg,
+      hsl(var(--header-gradient-a)),
+      hsl(var(--header-gradient-b))
+    );
+    box-shadow: 0 1px 0 0 hsl(var(--header-foreground) / 0.08) inset;
+  }
+}

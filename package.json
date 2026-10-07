@@ -1,0 +1,47 @@
+{
+  "name": "scorm-course-generator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SaaS multi-tenant per generare corsi SCORM con AI (provider-agnostic)",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20.11.0 <23",
+    "npm": ">=10"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "typecheck": "tsc -b --verbose",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "infra:up": "docker compose up -d db localstack",
+    "infra:down": "docker compose down",
+    "infra:logs": "docker compose logs -f db localstack",
+    "dev:up": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d",
+    "dev:down": "docker compose -f docker-compose.yml -f docker-compose.dev.yml down",
+    "dev:logs": "docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f api web",
+    "db:deploy": "scripts/db.sh deploy",
+    "db:generate": "scripts/db.sh generate",
+    "db:reset": "scripts/db.sh reset",
+    "db:psql": "scripts/db.sh psql",
+    "db:studio": "scripts/db.sh studio",
+    "ci": "scripts/in-container.sh"
+  },
+  "devDependencies": {
+    "@types/node": "20.11.30",
+    "@typescript-eslint/eslint-plugin": "7.7.0",
+    "@typescript-eslint/parser": "7.7.0",
+    "eslint": "8.57.0",
+    "eslint-config-prettier": "9.1.0",
+    "prettier": "3.2.5",
+    "typescript": "5.4.5",
+    "vitest": "1.5.0"
+  }
+}
