@@ -80,6 +80,9 @@ export class HttpApiClient implements ApiClient {
   updateCourseSettings(courseId: string, settings: { interactionStyle?: 'sober' | 'lively'; navPosition?: 'side' | 'top'; primaryBrandId?: string; instructor?: { name?: string; role?: string; avatarKey?: string } }) {
     return this.request<CourseView>(`/courses/${courseId}/settings`, { method: 'PUT', body: JSON.stringify(settings) });
   }
+  setCourseShareable(courseId: string, shareable: boolean) {
+    return this.request<CourseView>(`/courses/${courseId}/shareable`, { method: 'PUT', body: JSON.stringify({ shareable }) });
+  }
   async uploadInstructorAvatar(courseId: string, file: File) {
     const session = getSession();
     const form = new FormData();

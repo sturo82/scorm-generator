@@ -19,6 +19,7 @@ import {
   useAttachStockCover,
   useUpdateCourseSettings,
   useUploadInstructorAvatar,
+  useSetCourseShareable,
   useActiveJobs,
   useBrands,
 } from '@/lib/api/hooks';
@@ -55,6 +56,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
   const genCover = useGenerateCover(courseId);
   const attachStockCover = useAttachStockCover(courseId);
   const updateSettings = useUpdateCourseSettings(courseId);
+  const setShareable = useSetCourseShareable(courseId);
   const activeJobs = useActiveJobs(courseId);
   const toast = useToast();
   const [active, setActive] = React.useState<StepId>('brief');
@@ -107,6 +109,18 @@ export function CourseWizard({ courseId }: { courseId: string }) {
       toast.show(pos === 'top' ? 'Menu in alto applicato' : 'Menu a lato applicato', 'success');
     } catch {
       toast.show('Aggiornamento non riuscito', 'error');
+    }
+  }
+
+  async function handleToggleShareable(next: boolean) {
+    try {
+      await setShareable.mutateAsync(next);
+      toast.show(
+        next ? 'Corso condiviso nel catalogo integrazioni' : 'Condivisione disattivata',
+        'success',
+      );
+    } catch {
+      toast.show('Impostazione non salvata', 'error');
     }
   }
 
@@ -338,6 +352,14 @@ export function CourseWizard({ courseId }: { courseId: string }) {
         <StepShell title="5. Anteprima & Export" description="Controlla il risultato, poi scarica il pacchetto SCORM.">
           <div className="mb-4 flex justify-end">
             <ExportDialog courseId={courseId} />
+          </div>
+          <div className="mb-6">
+            <ShareablePanel
+              shareable={course.data?.shareable ?? false}
+              approved={course.data?.status === 'APPROVED'}
+              saving={setShareable.isPending}
+              onToggle={handleToggleShareable}
+            />
           </div>
           <div className="mb-6">
             <CoursePricingPanel courseId={courseId} />
@@ -600,6 +622,65 @@ function NavPositionPicker({
           );
         })}
       </div>
+    </fieldset>
+  );
+}
+
+/**
+ * Pannello di condivisione verso il catalogo integrazioni (B2B). Il corso è
+ * reso disponibile alle piattaforme terze autorizzate (es. OnDemand) solo se
+ * l'opt-in è attivo E lo stato editoriale è APPROVED: lo spieghiamo in chiaro.
+ */
+function ShareablePanel({
+  shareable,
+  approved,
+  saving,
+  onToggle,
+}: {
+  shareable: boolean;
+  approved: boolean;
+  saving?: boolean;
+  onToggle: (next: boolean) => void;
+}) {
+  const live = shareable && approved;
+  return (
+    <fieldset className="rounded-xl border bg-card p-4" disabled={saving}>
+      <legend className="px-1 text-sm font-medium">Condivisione catalogo integrazioni</legend>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Rende il corso disponibile al download (pacchetto SCORM) per le piattaforme terze
+        autorizzate dal tuo workspace. Diventa effettivo solo quando il corso è anche
+        <span className="font-medium"> approvato</span>.
+      </p>
+      <div className="flex items-center justify-between gap-4">
+        <label className="flex items-center gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="size-4 accent-[var(--primary,#4f46e5)]"
+            checked={shareable}
+            onChange={(e) => onToggle(e.target.checked)}
+            aria-label="Condividi nel catalogo integrazioni"
+          />
+          <span>Condividi questo corso nel catalogo</span>
+        </label>
+        <span
+          className={cn(
+            'rounded-full px-2.5 py-1 text-xs font-medium',
+            live
+              ? 'bg-emerald-100 text-emerald-700'
+              : shareable
+                ? 'bg-amber-100 text-amber-700'
+                : 'bg-muted text-muted-foreground',
+          )}
+        >
+          {live ? 'Nel catalogo' : shareable ? 'In attesa di approvazione' : 'Privato'}
+        </span>
+      </div>
+      {shareable && !approved && (
+        <p className="mt-3 text-xs text-amber-700">
+          Il corso è marcato come condivisibile ma non è ancora approvato: non sarà visibile alle
+          integrazioni finché lo stato non diventa «Approvato».
+        </p>
+      )}
     </fieldset>
   );
 }

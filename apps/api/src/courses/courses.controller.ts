@@ -42,6 +42,7 @@ import {
 const BlockArraySchema = z.array(Block);
 const StringArraySchema = z.array(z.string());
 const VideoFirstSchema = z.object({ videoFirst: z.boolean() });
+const ShareableSchema = z.object({ shareable: z.boolean() });
 
 /**
  * API di gestione corso, brief e gerarchia contenuti (Requisito 2 / 4.2).
@@ -96,6 +97,20 @@ export class CoursesController {
   async remove(@CurrentContext() ctx: AuthContext, @Param('id') id: string) {
     await this.courses.delete(ctx.tenant.tenantId, id);
     return { deleted: true };
+  }
+
+  /**
+   * Opt-in di condivisione del corso verso il catalogo integrazioni (B2B).
+   * Il corso è esposto alle terze parti solo se shareable=true E status=APPROVED.
+   */
+  @Put(':id/shareable')
+  @Roles('EDITOR')
+  setShareable(
+    @CurrentContext() ctx: AuthContext,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ShareableSchema)) body: { shareable: boolean },
+  ) {
+    return this.courses.setShareable(ctx.tenant.tenantId, id, body.shareable);
   }
 
   /** Impostazioni di presentazione del corso (es. stile micro-interazioni). */

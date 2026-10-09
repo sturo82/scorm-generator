@@ -242,6 +242,13 @@ export class MockApiClient implements ApiClient {
     this.pushAudit('course.update_settings', 'course', courseId);
     return c;
   }
+  async setCourseShareable(courseId: string, shareable: boolean) {
+    await delay();
+    const c = await this.getCourse(courseId);
+    c.shareable = shareable;
+    this.pushAudit('course.set_shareable', 'course', courseId);
+    return c;
+  }
   async uploadInstructorAvatar(courseId: string, _file: File) {
     await delay(400);
     const c = await this.getCourse(courseId);

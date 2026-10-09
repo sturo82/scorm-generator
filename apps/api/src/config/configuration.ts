@@ -33,6 +33,19 @@ export interface AppConfig {
     /** OIDC: impone token_use ("access" | "id"), utile con Cognito. */
     oidcTokenUse?: 'access' | 'id';
   };
+  /**
+   * Integrazioni B2B (accesso macchina-a-macchina via OAuth2 client-credentials).
+   * I token di servizio sono JWT HS256 firmati da noi con `jwtSecret` (chiave
+   * dedicata, distinta dall'auth utente): rappresentano un IntegrationClient,
+   * non una persona. Separati dal flusso SSO (Cognito), che resta per gli utenti.
+   */
+  integration: {
+    jwtSecret: string;
+    issuer: string;
+    audience: string;
+    /** Durata (secondi) dell'access token di servizio. */
+    tokenTtlSec: number;
+  };
   /** Origini CORS consentite (CSV). */
   corsOrigins: string[];
   /** Object storage S3/MinIO. */
@@ -138,6 +151,12 @@ export function loadConfiguration(): AppConfig {
       oidcJwksUri: process.env['OIDC_JWKS_URI'],
       oidcTenantClaim: process.env['OIDC_TENANT_CLAIM'],
       oidcTokenUse: process.env['OIDC_TOKEN_USE'] as AppConfig['auth']['oidcTokenUse'],
+    },
+    integration: {
+      jwtSecret: env('INTEGRATION_JWT_SECRET', 'dev-insecure-integration-secret-change-me'),
+      issuer: env('INTEGRATION_JWT_ISSUER', 'scorm-generator'),
+      audience: env('INTEGRATION_JWT_AUDIENCE', 'scorm-integration'),
+      tokenTtlSec: Number(env('INTEGRATION_TOKEN_TTL_SEC', '3600')),
     },
     corsOrigins: env('CORS_ORIGINS', 'http://localhost:3100')
       .split(',')

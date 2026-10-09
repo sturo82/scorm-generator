@@ -55,6 +55,8 @@ export interface CourseView {
   instructor?: { name: string; role?: string; avatarUrl?: string };
   /** Cartella di organizzazione (null = radice). */
   folderId?: string | null;
+  /** Opt-in di condivisione verso il catalogo integrazioni (B2B). */
+  shareable?: boolean;
 }
 
 export interface ModuleView {
@@ -237,6 +239,8 @@ export interface ApiClient {
     },
   ): Promise<CourseView>;
   uploadInstructorAvatar(courseId: string, file: File): Promise<{ avatarKey: string; avatarUrl: string }>;
+  /** Opt-in di condivisione del corso verso il catalogo integrazioni (B2B). */
+  setCourseShareable(courseId: string, shareable: boolean): Promise<CourseView>;
   listModules(courseId: string): Promise<ModuleView[]>;
   listAssessments(courseId: string): Promise<AssessmentIndexView[]>;
   /** Elimina un assessment del corso. */

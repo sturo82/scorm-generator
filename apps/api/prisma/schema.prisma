@@ -66,6 +66,12 @@ enum ScormProfile {
   SCORM_12
 }
 
+// Stato di un client di integrazione B2B (accesso macchina-a-macchina).
+enum IntegrationClientStatus {
+  ACTIVE
+  REVOKED
+}
+
 enum PackageStatus {
   BUILDING
   READY
@@ -121,6 +127,7 @@ model Tenant {
   auditEvents AuditEvent[]
   usage       UsageRecord[]
   videoAssets VideoAsset[]
+  integrationClients IntegrationClient[]
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
@@ -142,6 +149,36 @@ model User {
   @@unique([tenantId, externalId])
   @@unique([tenantId, email])
   @@index([tenantId])
+}
+
+// Client di integrazione B2B (accesso macchina-a-macchina via OAuth2
+// client-credentials). Un tenant autorizza una piattaforma terza (es. OnDemand)
+// creando un client con `clientId` pubblico e un `clientSecret` di cui si
+// conserva SOLO l'hash. Gli `scopes` limitano cosa il client può fare
+// (es. "catalog:read", "package:download"). Il client NON è un utente: i token
+// emessi dal flusso client-credentials rappresentano il servizio, non una
+// persona, e non concedono accesso alla web app.
+model IntegrationClient {
+  id         String                  @id @default(cuid())
+  tenantId   String
+  tenant     Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Nome descrittivo scelto dal tenant (es. "OnDemand produzione").
+  name       String
+  // Identificatore pubblico del client (opaco, generato), usato come username
+  // nel flusso client-credentials. Univoco a livello globale.
+  clientId   String                  @unique
+  // Hash del clientSecret (mai in chiaro): scrypt con salt per record.
+  secretHash String
+  // Scopi concessi (es. ["catalog:read","package:download"]).
+  scopes     String[]
+  status     IntegrationClientStatus @default(ACTIVE)
+  // Ultimo utilizzo (aggiornato all'emissione di un token), per audit.
+  lastUsedAt DateTime?
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, status])
 }
 
 // --- Branding (Requisito 7) -------------------------------------------------
@@ -225,6 +262,10 @@ model Course {
   instructorName      String?
   instructorRole      String?
   instructorAvatarKey String?
+  // Opt-in di condivisione verso il catalogo integrazioni (B2B). Quando true
+  // E lo stato editoriale è APPROVED, il corso è visibile/scaricabile dalle
+  // piattaforme terze autorizzate dal tenant (es. OnDemand). Default: privato.
+  shareable   Boolean            @default(false)
   modules     Module[]
   assessments Assessment[]
   documents   KnowledgeDoc[]
@@ -238,6 +279,8 @@ model Course {
 
   @@index([tenantId])
   @@index([tenantId, folderId])
+  // Catalogo integrazioni: filtra rapidamente i corsi condivisibili per tenant.
+  @@index([tenantId, shareable])
 }
 
 model Module {

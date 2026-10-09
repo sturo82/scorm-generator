@@ -126,6 +126,14 @@ export function useUploadInstructorAvatar(courseId: string) {
   });
 }
 
+export function useSetCourseShareable(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (shareable: boolean) => api.setCourseShareable(courseId, shareable),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.course(courseId) }),
+  });
+}
+
 // --- Moduli / lezioni -------------------------------------------------------
 
 export const useModules = (courseId: string) =>

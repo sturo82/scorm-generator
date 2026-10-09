@@ -39,6 +39,8 @@ export interface CourseView {
   instructor?: { name: string; role?: string; avatarUrl?: string };
   /** Cartella di organizzazione (null = radice). */
   folderId: string | null;
+  /** Opt-in di condivisione verso il catalogo integrazioni (B2B). */
+  shareable: boolean;
 }
 
 /** Filtri per l'elenco corsi: cartella e ricerca testuale. */
@@ -267,6 +269,7 @@ export class CoursesService {
     instructorRole?: string | null;
     instructorAvatarKey?: string | null;
     folderId?: string | null;
+    shareable?: boolean | null;
   }): Promise<CourseView> {
     const briefResult = course.brief ? BriefDraft.safeParse(course.brief) : null;
     let coverImageUrl: string | undefined;
@@ -311,7 +314,22 @@ export class CoursesService {
       primaryBrandId: course.primaryBrandId ?? undefined,
       instructor,
       folderId: course.folderId ?? null,
+      shareable: course.shareable === true,
     };
+  }
+
+  /**
+   * Imposta l'opt-in di condivisione del corso verso il catalogo integrazioni.
+   * Il corso diventa effettivamente visibile alle terze parti solo se, oltre a
+   * shareable=true, lo stato editoriale è APPROVED (controllo nel CatalogService).
+   */
+  async setShareable(tenantId: string, courseId: string, shareable: boolean): Promise<CourseView> {
+    await this.requireCourse(tenantId, courseId);
+    const updated = await this.prisma.course.update({
+      where: { id: courseId },
+      data: { shareable },
+    });
+    return this.toView(updated);
   }
 }
 
