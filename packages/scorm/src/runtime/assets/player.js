@@ -161,13 +161,17 @@
       header.appendChild(hero);
     }
     var subtitle;
+    // Breadcrumb di contesto: mostrato SOLO per lezioni e test (dove dà
+    // orientamento "Modulo — Titolo"). Nelle panoramiche è ridondante col titolo
+    // grande, quindi omesso: niente etichetta/badge superflua in testa.
     if (step.kind === 'lesson') subtitle = step.moduleTitle + ' — ' + step.lesson.title;
     else if (step.kind === 'assessment') subtitle = step.moduleTitle + ' — ' + (step.assessment.title || 'Test');
-    else if (step.kind === 'module_overview') subtitle = 'Modulo ' + (step.moduleIndex + 1) + ' — ' + step.moduleTitle;
-    else subtitle = 'Panoramica del corso';
-    var subEl = textEl('p', subtitle);
-    subEl.className = 'course-subtitle';
-    header.appendChild(subEl);
+    else subtitle = '';
+    if (subtitle) {
+      var subEl = textEl('p', subtitle);
+      subEl.className = 'course-subtitle';
+      header.appendChild(subEl);
+    }
     contentCol.appendChild(header);
 
     // Selettore della modalità di fruizione (slide/scroll/ibrido) per le lezioni.

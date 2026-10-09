@@ -83,7 +83,8 @@ body {
   min-height: 100vh;
 }
 h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1.25; letter-spacing: -0.01em; }
-#root { max-width: none; margin: 0; padding: 2rem clamp(1.25rem, 4vw, 4rem) 5rem; }
+/* padding-bottom ampio: lascia spazio alla barra di navigazione fissa in basso. */
+#root { max-width: none; margin: 0; padding: 2rem clamp(1.25rem, 4vw, 4rem) 7rem; }
 
 /* Barra di avanzamento */
 .course-progress { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.75rem; font-size: 0.78rem; font-weight: 600; color: var(--pl-muted); }
@@ -114,7 +115,19 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 .scroll-sentinel { height: 1px; }
 
 /* Navigazione */
-.course-nav { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: 2rem; }
+/* Navigazione Avanti/Precedente SEMPRE visibile: barra fissa in basso (premium),
+   con sfondo sfumato e ombra. Il contenuto ha padding-bottom per non finirci
+   sotto (vedi #root). */
+.course-nav {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  margin: 0; padding: 0.75rem clamp(1rem, 4vw, 2rem);
+  background: color-mix(in srgb, var(--pl-surface) 90%, transparent);
+  border-top: 1px solid var(--pl-border);
+  box-shadow: 0 -6px 20px rgba(16,24,40,0.08);
+  backdrop-filter: saturate(140%) blur(8px);
+  -webkit-backdrop-filter: saturate(140%) blur(8px);
+}
 .course-nav button {
   background: var(--pl-primary); color: var(--pl-on-primary); border: 0;
   padding: 0.8rem 1.6rem; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 0.95rem;
