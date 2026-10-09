@@ -205,8 +205,35 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
 /* GEOMETRIA del hotspot: deve stare qui (foglio condiviso) perché l'anteprima
    web NON carica player.css. Senza queste regole i dot non sono posizionati e
    finiscono in fondo invece che alle coordinate (left/top) impostate. */
+/* Immagini illustrative dei block: dimensione contenuta e leggibile (evita che
+   immagini native enormi occupino tutta la pagina). Vale in anteprima, editor
+   ed export (foglio condiviso). */
+.block-media {
+  display: block;
+  width: auto;
+  max-width: min(100%, 32rem);
+  max-height: 24rem;
+  height: auto;
+  object-fit: contain;
+  margin: 0.85rem auto;
+  border-radius: 12px;
+}
+.block-media-figure { margin: 0.85rem 0; }
+.block-media-figure .block-media { margin: 0.85rem 0 0; }
+.carousel-view .block-media { max-width: 100%; }
+
+/* Immagine interattiva: lo stage non deve superare un'altezza fruibile; i dot
+   sono posizionati in % quindi restano coerenti con l'immagine ridimensionata. */
 .hotspot-stage { position: relative; display: inline-block; max-width: 100%; }
-.hotspot-stage img { display: block; max-width: 100%; border-radius: 12px; }
+.hotspot-stage img {
+  display: block;
+  max-width: 100%;
+  max-height: 26rem;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 12px;
+}
 .hotspot-dot {
   position: absolute;
   width: 1.7rem; height: 1.7rem;
