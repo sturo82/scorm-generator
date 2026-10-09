@@ -367,7 +367,9 @@ export class GenerationService {
       messages: [{ role: 'user', content: outlinePrompt(brief, formatContext(retrieved.chunks)) }],
       schema: outlineJsonSchema as Record<string, unknown>,
       temperature: 0.4,
-      maxTokens: 4000,
+      // Spazio ampio: Claude Sonnet 4.6 è più verboso e con 4000 troncava il
+      // JSON tool-use (stop=max_tokens) lasciando `modules` incompleto/assente.
+      maxTokens: 8000,
     });
     const outline = CourseOutline.parse(JSON.parse(result.text));
     await this.recordUsage({
@@ -743,7 +745,8 @@ export class GenerationService {
       ],
       schema: assessmentJsonSchema as Record<string, unknown>,
       temperature: 0.5,
-      maxTokens: 6000,
+      // Margine ampio per evitare troncamenti del JSON tool-use con Sonnet 4.6.
+      maxTokens: 8000,
     });
     const assessment = Assessment.parse(JSON.parse(result.text));
     await this.recordUsage({
