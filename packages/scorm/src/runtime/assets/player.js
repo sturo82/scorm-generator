@@ -106,6 +106,39 @@
       }
     }
     this.render();
+    // Nasconde il loader iniziale solo dopo che il primo contenuto è stato
+    // dipinto: due rAF garantiscono almeno un frame renderizzato, così la
+    // dissolvenza è percepibile anche quando il mount è istantaneo.
+    this.hideLoader();
+  };
+
+  /**
+   * Dissolve e rimuove l'overlay di caricamento iniziale (#course-loader).
+   * L'overlay vive FUORI da #root, quindi render() non lo cancella: è questo
+   * metodo a toglierlo quando il player è montato. Idempotente.
+   */
+  Player.prototype.hideLoader = function () {
+    var doc = (this.root && this.root.ownerDocument) || global.document;
+    if (!doc) return;
+    var loader = doc.getElementById('course-loader');
+    if (!loader) return;
+    var remove = function () {
+      loader.classList.add('is-hidden');
+      var done = function () { if (loader && loader.parentNode) loader.parentNode.removeChild(loader); };
+      // Rimozione dopo la transizione; fallback a timeout se transitionend
+      // non scatta (es. prefers-reduced-motion o display forzato).
+      var fired = false;
+      loader.addEventListener('transitionend', function handler(e) {
+        if (e && e.target !== loader) return;
+        fired = true; loader.removeEventListener('transitionend', handler); done();
+      });
+      global.setTimeout(function () { if (!fired) done(); }, 650);
+    };
+    if (global.requestAnimationFrame) {
+      global.requestAnimationFrame(function () { global.requestAnimationFrame(remove); });
+    } else {
+      global.setTimeout(remove, 32);
+    }
   };
 
   Player.prototype.isStepComplete = function (i) {
