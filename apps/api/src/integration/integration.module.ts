@@ -17,6 +17,6 @@ import { IntegrationClientsController } from './integration-clients.controller.j
   imports: [ExportModule],
   controllers: [OAuthController, CatalogController, IntegrationClientsController],
   providers: [ServiceTokenService, IntegrationClientsService, CatalogService, ServiceAuthGuard],
-  exports: [ServiceTokenService],
+  exports: [ServiceTokenService, ServiceAuthGuard],
 })
 export class IntegrationModule {}

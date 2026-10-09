@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfig } from '../config/configuration.js';
+import { SsoModule } from '../sso/sso.module.js';
 import { AUTH_PROVIDER } from './auth-provider.js';
 import { JwtAuthProvider } from './jwt-auth-provider.js';
 import { DevAuthProvider } from './dev-auth-provider.js';
@@ -16,6 +17,7 @@ import { RolesGuard } from './roles.guard.js';
  */
 @Global()
 @Module({
+  imports: [SsoModule],
   providers: [
     {
       provide: AUTH_PROVIDER,

@@ -70,4 +70,28 @@ export function loginWithOidc(args: {
   return session;
 }
 
+/**
+ * Costruisce e salva una sessione a partire dall'esito del redeem SSO
+ * (Scenario 2). Il token utente emesso dalla nostra API diventa il Bearer; i
+ * dati utente/tenant popolano la UI. L'autorizzazione resta server-side.
+ */
+export function loginWithSso(args: {
+  accessToken: string;
+  user: { id: string; email: string; displayName: string | null; role: string };
+  tenant: { id: string; name?: string };
+}): DevSession {
+  const session: DevSession = {
+    token: args.accessToken,
+    user: {
+      id: args.user.id,
+      email: args.user.email,
+      displayName: args.user.displayName || args.user.email,
+      role: args.user.role,
+    },
+    tenant: { id: args.tenant.id, name: args.tenant.name || 'Workspace' },
+  };
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  return session;
+}
+
 export { DEFAULT_SESSION };

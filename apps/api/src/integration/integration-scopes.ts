@@ -7,6 +7,8 @@ export const INTEGRATION_SCOPES = {
   CATALOG_READ: 'catalog:read',
   /** Ottenere il link di download di un pacchetto SCORM. */
   PACKAGE_DOWNLOAD: 'package:download',
+  /** Emettere ticket SSO per far entrare utenti nella web app (Scenario 2). */
+  SSO_ISSUE: 'sso:issue',
 } as const;
 
 export type IntegrationScope = (typeof INTEGRATION_SCOPES)[keyof typeof INTEGRATION_SCOPES];

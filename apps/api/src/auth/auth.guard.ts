@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { UserTokenService } from '../sso/user-token.service.js';
 import { AUTH_PROVIDER, type AuthProvider } from './auth-provider.js';
 import { AUTH_CONTEXT_KEY, type AuthContext } from './auth-context.js';
 import { IS_PUBLIC_KEY } from './public.decorator.js';
@@ -32,6 +33,7 @@ export class AuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     @Inject(AUTH_PROVIDER) private readonly auth: AuthProvider,
     private readonly prisma: PrismaService,
+    private readonly userTokens: UserTokenService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -47,11 +49,21 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Token di accesso mancante');
     }
 
-    let claims;
-    try {
-      claims = await this.auth.verify(token);
-    } catch {
-      throw new UnauthorizedException('Token di accesso non valido');
+    // Due canali di sessione utente, provati in ordine:
+    //  1) token utente SSO (JWT nostro, kind=user, chiave dedicata) — Scenario 2;
+    //  2) il provider configurato (dev/jwt/oidc).
+    // Il token SSO si riconosce da un verify che va a buon fine con la sua chiave;
+    // in caso contrario si ricade sul provider principale.
+    let claims: { subject: string; tenantId: string; email?: string };
+    const ssoClaims = this.tryVerifySsoToken(token);
+    if (ssoClaims) {
+      claims = ssoClaims;
+    } else {
+      try {
+        claims = await this.auth.verify(token);
+      } catch {
+        throw new UnauthorizedException('Token di accesso non valido');
+      }
     }
 
     let user = await this.prisma.user.findUnique({
@@ -109,6 +121,22 @@ export class AuthGuard implements CanActivate {
       where: { tenantId_externalId: { tenantId, externalId } },
       select: { id: true, role: true, tenantId: true },
     });
+  }
+
+  /**
+   * Prova a interpretare il bearer come token utente SSO (kind=user). Ritorna i
+   * claim normalizzati se valido, altrimenti undefined (non è un token SSO o è
+   * scaduto): in tal caso si ricade sul provider principale.
+   */
+  private tryVerifySsoToken(
+    token: string,
+  ): { subject: string; tenantId: string; email?: string } | undefined {
+    try {
+      const c = this.userTokens.verify(token);
+      return { subject: c.sub, tenantId: c.tenantId, email: c.email };
+    } catch {
+      return undefined;
+    }
   }
 
   private extractBearer(request: IncomingRequest): string | undefined {

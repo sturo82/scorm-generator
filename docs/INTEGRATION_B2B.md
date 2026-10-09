@@ -194,3 +194,139 @@ def download_scorm(course_id: str, dest_path: str) -> None:
 | GET | `/integration/clients` | utente ADMIN+ | — |
 | POST | `/integration/clients/:id/revoke` | utente ADMIN+ | — |
 | DELETE | `/integration/clients/:id` | utente ADMIN+ | — |
+
+---
+
+# SSO — Far entrare un utente nella web app (Scenario 2)
+
+Oltre al download dei pacchetti (M2M), una piattaforma terza può far accedere un
+proprio utente **direttamente nella web app di SCORM Generator** senza secondo
+login. Il meccanismo è un **ticket monouso basato sulla tua API key**: niente
+Cognito, niente OIDC lato tua piattaforma. Serve solo una chiamata HTTP + un
+redirect del browser.
+
+OnDemand resta la fonte di verità degli utenti: decide chi entra, con quale
+email/nome e con **quale ruolo** (entro un massimo lato server, mai OWNER).
+
+## Prerequisiti
+
+- Il tuo IntegrationClient deve avere lo scope **`sso:issue`** (va concesso
+  esplicitamente alla creazione: non è nei default).
+- Tutti gli utenti creati via SSO appartengono allo **stesso tenant** della API
+  key.
+
+## Flusso
+
+```
+Utente (browser) su OnDemand
+        │  clicca "Apri nel generatore corsi"
+        ▼
+OnDemand (backend)
+   1. POST /oauth/token            → service token (come per il catalogo)
+   2. POST /sso/ticket             → { ticket, redirectUrl }
+   3. redirect del browser a redirectUrl  (WEB_APP_URL/sso?ticket=...)
+        │
+        ▼
+Web app SCORM Generator
+   4. POST /sso/redeem { ticket }  → sessione utente, poi dashboard
+```
+
+### 2. Emettere il ticket (backend OnDemand)
+
+```
+POST /sso/ticket
+Authorization: Bearer <service token con scope sso:issue>
+Content-Type: application/json
+
+{
+  "email": "mario@ondemand.test",
+  "displayName": "Mario Rossi",
+  "role": "EDITOR",                 // VIEWER | EDITOR | ADMIN (max lato server)
+  "externalId": "ondemand-user-42"  // opzionale: id stabile dell'utente da te
+}
+```
+
+Risposta:
+
+```json
+{
+  "ticket": "7YzLqMsX...",
+  "redirectUrl": "https://app.tuodominio.com/sso?ticket=7YzLqMsX...",
+  "expiresInSec": 60
+}
+```
+
+Note:
+- Se ometti `externalId`, l'utente è identificato dall'email (`sso:<email>`).
+- Al secondo accesso dello stesso `externalId`, l'utente NON viene duplicato:
+  nome e ruolo vengono aggiornati a quanto dichiari (sei tu la fonte di verità).
+- Un `role` superiore al massimo consentito dal server → `400`.
+
+### 3. Reindirizzare il browser
+
+Reindirizza l'utente a `redirectUrl` (il ticket scade in ~60s: fallo subito dopo
+averlo ottenuto, non salvarlo).
+
+### 4. Redeem (lato web app — già implementato)
+
+La pagina `/sso` della web app scambia automaticamente il ticket:
+
+```
+POST /sso/redeem
+Content-Type: application/json
+
+{ "ticket": "7YzLqMsX..." }
+```
+
+Risposta (sessione utente):
+
+```json
+{
+  "access_token": "eyJhbGci...",
+  "token_type": "Bearer",
+  "expires_in": 28800,
+  "user": { "id": "...", "email": "mario@ondemand.test", "displayName": "Mario Rossi", "role": "EDITOR" },
+  "tenant": { "id": "tenant-ondemand" }
+}
+```
+
+Il ticket è **monouso**: un secondo redeem → `401`.
+
+### Esempio Django (emissione ticket + redirect)
+
+```python
+import requests
+from django.shortcuts import redirect
+
+def open_in_scorm_generator(request):
+    token = get_service_token()  # vedi sezione M2M
+    resp = requests.post(
+        f"{SCORM_API_BASE}/sso/ticket",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "email": request.user.email,
+            "displayName": request.user.get_full_name(),
+            "role": "EDITOR",
+            "externalId": str(request.user.pk),
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return redirect(resp.json()["redirectUrl"])
+```
+
+## Sicurezza
+
+- Il ticket vive pochi secondi, è monouso e salvato come hash (mai in chiaro).
+- Il ruolo è deciso da te ma limitato lato server a `SSO_MAX_ROLE` (default
+  `ADMIN`): non è mai possibile creare un OWNER via SSO.
+- Il tenant è sempre quello della API key: non puoi creare utenti in altri tenant.
+- Il token utente emesso dal redeem è un JWT con chiave dedicata e scadenza
+  configurabile (`SSO_USER_TOKEN_TTL_SEC`, default 8h).
+
+## Riferimento rapido endpoint SSO
+
+| Metodo | Endpoint | Auth | Scope |
+| --- | --- | --- | --- |
+| POST | `/sso/ticket` | service token | `sso:issue` |
+| POST | `/sso/redeem` | ticket monouso | — |

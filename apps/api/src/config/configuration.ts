@@ -46,6 +46,25 @@ export interface AppConfig {
     /** Durata (secondi) dell'access token di servizio. */
     tokenTtlSec: number;
   };
+  /**
+   * SSO via ticket (Scenario 2): una piattaforma terza, autenticata con la sua
+   * API key, emette un ticket monouso per un utente; il browser dell'utente lo
+   * scambia con una sessione nella nostra web app. Il token utente risultante è
+   * un JWT HS256 firmato con `userJwtSecret` (chiave dedicata).
+   */
+  sso: {
+    userJwtSecret: string;
+    issuer: string;
+    audience: string;
+    /** Durata (secondi) dell'access token utente emesso dal redeem. */
+    userTokenTtlSec: number;
+    /** Durata (secondi) del ticket monouso (breve). */
+    ticketTtlSec: number;
+    /** Ruolo massimo che una terza parte può assegnare via SSO (mai OWNER). */
+    maxRole: 'ADMIN' | 'EDITOR' | 'VIEWER';
+  };
+  /** URL base della web app (per i redirect SSO documentati). */
+  webAppUrl: string;
   /** Origini CORS consentite (CSV). */
   corsOrigins: string[];
   /** Object storage S3/MinIO. */
@@ -158,6 +177,15 @@ export function loadConfiguration(): AppConfig {
       audience: env('INTEGRATION_JWT_AUDIENCE', 'scorm-integration'),
       tokenTtlSec: Number(env('INTEGRATION_TOKEN_TTL_SEC', '3600')),
     },
+    sso: {
+      userJwtSecret: env('SSO_USER_JWT_SECRET', 'dev-insecure-sso-user-secret-change-me'),
+      issuer: env('SSO_JWT_ISSUER', 'scorm-generator'),
+      audience: env('SSO_JWT_AUDIENCE', 'scorm-webapp'),
+      userTokenTtlSec: Number(env('SSO_USER_TOKEN_TTL_SEC', '28800')),
+      ticketTtlSec: Number(env('SSO_TICKET_TTL_SEC', '60')),
+      maxRole: env('SSO_MAX_ROLE', 'ADMIN') as AppConfig['sso']['maxRole'],
+    },
+    webAppUrl: env('WEB_APP_URL', 'http://localhost:3100'),
     corsOrigins: env('CORS_ORIGINS', 'http://localhost:3100')
       .split(',')
       .map((o) => o.trim())

@@ -359,6 +359,17 @@ export interface ApiClient {
     moduleId: string,
     input: AttachStockCoverInput,
   ): Promise<{ attached: true; url: string }>;
+  /** Scambia un ticket SSO monouso con una sessione utente (Scenario 2). */
+  redeemSso(ticket: string): Promise<SsoRedeemResult>;
+}
+
+/** Esito del redeem di un ticket SSO: token di sessione + dati utente/tenant. */
+export interface SsoRedeemResult {
+  access_token: string;
+  token_type: 'Bearer';
+  expires_in: number;
+  user: { id: string; email: string; displayName: string | null; role: AppUserRole };
+  tenant: { id: string };
 }
 
 /** Preventivo del corso: quote + riepilogo costi incluso. */

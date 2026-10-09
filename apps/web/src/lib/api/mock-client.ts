@@ -34,6 +34,7 @@ import type {
   StockImageSearchResponse,
   AttachStockImageInput,
   AttachStockCoverInput,
+  SsoRedeemResult,
 } from './types';
 
 /** Ritardo simulato per rendere realistici gli stati di loading nella UI. */
@@ -798,6 +799,17 @@ export class MockApiClient implements ApiClient {
   ): Promise<{ attached: true; url: string }> {
     await delay();
     return { attached: true, url: 'https://picsum.photos/seed/modcover/1280/720' };
+  }
+
+  async redeemSso(_ticket: string): Promise<SsoRedeemResult> {
+    await delay();
+    return {
+      access_token: 'mock-sso-token',
+      token_type: 'Bearer',
+      expires_in: 28800,
+      user: { id: 'u-sso', email: 'sso@ondemand.test', displayName: 'Utente SSO', role: 'VIEWER' },
+      tenant: { id: 'tenant-dev' },
+    };
   }
 
   private findLesson(courseId: string, lessonId: string): LessonView {

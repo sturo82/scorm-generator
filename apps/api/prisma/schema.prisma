@@ -128,6 +128,7 @@ model Tenant {
   usage       UsageRecord[]
   videoAssets VideoAsset[]
   integrationClients IntegrationClient[]
+  ssoTickets  SsoTicket[]
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
@@ -143,6 +144,7 @@ model User {
   email          String
   displayName    String?
   role           UserRole @default(VIEWER)
+  ssoTickets     SsoTicket[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -179,6 +181,32 @@ model IntegrationClient {
 
   @@index([tenantId])
   @@index([tenantId, status])
+}
+
+// Ticket SSO monouso a vita breve: ponte sicuro per far entrare nella web app un
+// utente che proviene da una piattaforma terza (es. OnDemand). La terza parte,
+// autenticata con la sua API key (IntegrationClient + scope sso:issue), chiede
+// un ticket per un utente; il browser dell'utente lo scambia una sola volta con
+// una sessione reale. Si conserva solo l'hash del valore del ticket (mai in
+// chiaro). Scade in pochi secondi e si consuma al primo utilizzo.
+model SsoTicket {
+  id         String    @id @default(cuid())
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Hash (sha256) del valore del ticket consegnato alla terza parte.
+  tokenHash  String    @unique
+  // Utente (già provisioning-ato JIT) a cui il ticket darà accesso.
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Client di integrazione che ha emesso il ticket (per audit).
+  clientId   String
+  // Scadenza del ticket (breve, es. 60s) e momento di consumo (monouso).
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([expiresAt])
 }
 
 // --- Branding (Requisito 7) -------------------------------------------------

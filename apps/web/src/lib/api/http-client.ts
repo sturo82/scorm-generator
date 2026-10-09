@@ -33,6 +33,7 @@ import type {
   StockImageSearchResponse,
   AttachStockImageInput,
   AttachStockCoverInput,
+  SsoRedeemResult,
 } from './types';
 
 /**
@@ -346,5 +347,11 @@ export class HttpApiClient implements ApiClient {
       `/courses/${courseId}/stock-images/modules/${moduleId}/cover`,
       { method: 'POST', body: JSON.stringify(input) },
     );
+  }
+  redeemSso(ticket: string) {
+    return this.request<SsoRedeemResult>('/sso/redeem', {
+      method: 'POST',
+      body: JSON.stringify({ ticket }),
+    });
   }
 }
