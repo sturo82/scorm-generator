@@ -24,6 +24,28 @@ import {
   type StatefulState,
 } from '@scorm/contracts/render-core';
 
+/**
+ * Converte una stringa CSS inline ("left:50%;top:30%") nell'oggetto che React
+ * richiede per la prop `style`. Il core (condiviso col player DOM) emette lo
+ * style come stringa; in React va trasformato in { camelCase: valore }.
+ */
+function cssStringToObject(css: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const decl of css.split(';')) {
+    const i = decl.indexOf(':');
+    if (i < 0) continue;
+    const rawProp = decl.slice(0, i).trim();
+    const value = decl.slice(i + 1).trim();
+    if (!rawProp || !value) continue;
+    // kebab-case → camelCase (le custom property --x restano invariate).
+    const prop = rawProp.startsWith('--')
+      ? rawProp
+      : rawProp.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+    out[prop] = value;
+  }
+  return out;
+}
+
 /** Mappa gli attributi VNode in props React (class→className, attr→attr). */
 function toReactProps(attrs: VNode['attrs']): Record<string, unknown> {
   const props: Record<string, unknown> = {};
@@ -33,6 +55,8 @@ function toReactProps(attrs: VNode['attrs']): Record<string, unknown> {
     if (v === undefined || v === false) continue;
     if (key === 'class') props.className = String(v);
     else if (key === 'for') props.htmlFor = String(v);
+    // React vuole un oggetto per `style`; il core lo emette come stringa CSS.
+    else if (key === 'style') props.style = typeof v === 'string' ? cssStringToObject(v) : v;
     else props[key] = v === true ? '' : v;
   }
   return props;
