@@ -763,15 +763,9 @@
     }
     bar.appendChild(info);
 
-    // Logo del brand SEMPRE visibile nell'header (parità con l'anteprima web).
-    if (this.brand && this.brand.logoUrl) {
-      var logoWrap = el('span', 'topbar-logo');
-      var logo = document.createElement('img');
-      logo.setAttribute('src', this.brand.logoUrl);
-      logo.setAttribute('alt', this.brand.name ? 'Logo ' + this.brand.name : 'Logo');
-      logoWrap.appendChild(logo);
-      bar.appendChild(logoWrap);
-    }
+    // NB: nessun badge/logo del brand nell'header dell'export (richiesta UX):
+    // il brand pilota comunque colori/font del tema. Il logo resta disponibile
+    // in __BRAND__ per usi futuri, ma non viene mostrato nella topbar.
 
     return bar;
   };

@@ -22,7 +22,14 @@ export function renderScoPage(input: PageTemplateInput): string {
   <link rel="stylesheet" href="../assets/interactions.css"/>
 </head>
 <body>
-  <div id="root" role="application" aria-label="${title}"></div>
+  <div id="root" role="application" aria-label="${title}">
+    <!-- Loader iniziale: visibile subito mentre gli script del runtime caricano;
+         il player svuota #root al primo render e il loader scompare. -->
+    <div class="course-loader" role="status" aria-live="polite">
+      <span class="course-loader-spinner" aria-hidden="true"></span>
+      <span class="course-loader-text">Caricamento del corso…</span>
+    </div>
+  </div>
   <script src="../runtime/scorm-api.js"></script>
   <script src="../runtime/scoring.js"></script>
   <script src="../runtime/render-core.js"></script>
@@ -85,6 +92,22 @@ body {
 h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1.25; letter-spacing: -0.01em; }
 /* padding-bottom ampio: lascia spazio alla barra di navigazione fissa in basso. */
 #root { max-width: none; margin: 0; padding: 2rem clamp(1.25rem, 4vw, 4rem) 7rem; }
+
+/* Loader iniziale premium: spinner brandizzato centrato finché il player monta. */
+.course-loader {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;
+  background: var(--pl-bg);
+}
+.course-loader-spinner {
+  width: 46px; height: 46px; border-radius: 50%;
+  border: 4px solid color-mix(in srgb, var(--pl-primary) 22%, transparent);
+  border-top-color: var(--pl-primary);
+  animation: course-spin 0.8s linear infinite;
+}
+.course-loader-text { font-size: 0.9rem; font-weight: 600; color: var(--pl-muted); letter-spacing: 0.02em; }
+@keyframes course-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .course-loader-spinner { animation-duration: 2s; } }
 
 /* Barra di avanzamento */
 .course-progress { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.75rem; font-size: 0.78rem; font-weight: 600; color: var(--pl-muted); }
