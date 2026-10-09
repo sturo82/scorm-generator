@@ -2,8 +2,9 @@
 
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus, Sparkles, Wand2, Trash2, Pencil, Image as ImageIcon, Volume2, Video, Captions, Search, Check } from 'lucide-react';
+import { Plus, Sparkles, Wand2, Trash2, Pencil, Image as ImageIcon, Volume2, Video, Captions, Search, Check, ChevronRight, Eye } from 'lucide-react';
 import type { Block } from '@scorm/contracts';
+import { cn } from '@/lib/cn';
 import type { ModuleView, LessonView } from '@/lib/api/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -61,6 +62,8 @@ export function CourseBuilder({ courseId, mode = 'content' }: { courseId: string
   const toast = useToast();
   const [newModuleTitle, setNewModuleTitle] = React.useState('');
   const [outlineJobId, setOutlineJobId] = React.useState<string | null>(null);
+  // Accordion moduli (modalità struttura): uno aperto per volta.
+  const [openStructModuleId, setOpenStructModuleId] = React.useState<string | null>(null);
 
   // Polling del job di generazione struttura: alla fine ricarica i moduli.
   const outlineJob = useJobStatus(courseId, outlineJobId);
@@ -136,9 +139,17 @@ export function CourseBuilder({ courseId, mode = 'content' }: { courseId: string
         {hasStructure && (
           <div>
             <h3 className="mb-3 text-lg font-semibold">Struttura del corso</h3>
-            <div className="space-y-4">
-              {modules.data?.map((m) => (
-                <ModuleCard key={m.id} courseId={courseId} module={m} editableLessons />
+            <div className="space-y-3">
+              {modules.data?.map((m, i) => (
+                <ModuleCard
+                  key={m.id}
+                  courseId={courseId}
+                  module={m}
+                  moduleIndex={i}
+                  editableLessons
+                  open={openStructModuleId === m.id}
+                  onToggle={() => setOpenStructModuleId((cur) => (cur === m.id ? null : m.id))}
+                />
               ))}
             </div>
             <form onSubmit={handleAddModule} className="mt-4 flex gap-2">
@@ -178,6 +189,8 @@ function ContentBuilder({ courseId }: { courseId: string }) {
   const activeJobs = useActiveJobs(courseId);
   const qc = useQueryClient();
   const toast = useToast();
+  // Accordion moduli: uno aperto per volta (null = tutti chiusi).
+  const [openModuleId, setOpenModuleId] = React.useState<string | null>(null);
 
   // Job batch "genera tutti": vive sul server. Il jobId è idratato dai job
   // attivi del corso, così dopo un reload/navigazione lo stato viene ripreso.
@@ -312,9 +325,17 @@ function ContentBuilder({ courseId }: { courseId: string }) {
         />
       )}
 
-      <div className="space-y-4">
-        {modules.data.map((m) => (
-          <ModuleCard key={m.id} courseId={courseId} module={m} batchActive={batchActive} />
+      <div className="space-y-3">
+        {modules.data.map((m, i) => (
+          <ModuleCard
+            key={m.id}
+            courseId={courseId}
+            module={m}
+            moduleIndex={i}
+            batchActive={batchActive}
+            open={openModuleId === m.id}
+            onToggle={() => setOpenModuleId((cur) => (cur === m.id ? null : m.id))}
+          />
         ))}
       </div>
 
@@ -473,15 +494,23 @@ function AssessmentManager({ courseId, modules }: { courseId: string; modules: M
 function ModuleCard({
   courseId,
   module,
+  moduleIndex = 0,
   editableLessons = false,
   batchActive = false,
+  open = false,
+  onToggle,
 }: {
   courseId: string;
   module: ModuleView;
+  moduleIndex?: number;
   /** Modalità struttura: consenti aggiunta/eliminazione lezioni, niente contenuti. */
   editableLessons?: boolean;
   /** Modalità contenuti: true mentre il job batch "genera tutti" è in corso. */
   batchActive?: boolean;
+  /** Accordion: se il modulo è espanso. */
+  open?: boolean;
+  /** Accordion: toggle gestito dal parent (uno aperto per volta). */
+  onToggle?: () => void;
 }) {
   const addLesson = useAddLesson(courseId);
   const deleteModule = useDeleteModule(courseId);
@@ -489,6 +518,8 @@ function ModuleCard({
   const toast = useToast();
   const [newLesson, setNewLesson] = React.useState('');
   const [confirmOpen, setConfirmOpen] = React.useState(false);
+  // Accordion lezioni dentro il modulo: una aperta per volta.
+  const [openLessonId, setOpenLessonId] = React.useState<string | null>(null);
 
   async function handleAddLesson(e: React.FormEvent) {
     e.preventDefault();
@@ -508,50 +539,69 @@ function ModuleCard({
     }
   }
 
+  const lessonCount = module.lessons.length;
+  const withContent = module.lessons.filter((l) => l.blocks.length > 0).length;
+
   return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
-        <CardTitle className="text-base">{module.title}</CardTitle>
-        <div className="flex items-center gap-2">
-          <StatusControls
-            status={module.status}
-            onChange={(s) => setStatus.mutate({ entity: 'module', entityId: module.id, status: s })}
-          />
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label="Elimina modulo"
-            onClick={() => setConfirmOpen(true)}
-          >
-            <Trash2 className="size-4 text-destructive" />
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {module.lessons.map((l) => (
-          <LessonCard
-            key={l.id}
-            courseId={courseId}
-            moduleId={module.id}
-            lesson={l}
-            editableLessons={editableLessons}
-            batchActive={batchActive}
-          />
-        ))}
-        {editableLessons && (
-          <form onSubmit={handleAddLesson} className="flex gap-2">
-            <Input
-              value={newLesson}
-              onChange={(e) => setNewLesson(e.target.value)}
-              placeholder="Titolo della nuova lezione"
-              className="h-9"
+    <Card className="overflow-hidden">
+      {/* Riga header del modulo: cliccabile per espandere/comprimere. */}
+      <div className="flex items-center gap-2 px-4 py-3">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          <ChevronRight className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} />
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold">
+              {moduleIndex + 1}. {module.title}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {lessonCount} {lessonCount === 1 ? 'lezione' : 'lezioni'}
+              {!editableLessons && lessonCount > 0 ? ` · ${withContent}/${lessonCount} con contenuti` : ''}
+            </span>
+          </span>
+        </button>
+        <StatusControls
+          status={module.status}
+          onChange={(s) => setStatus.mutate({ entity: 'module', entityId: module.id, status: s })}
+        />
+        <Button size="icon" variant="ghost" aria-label="Elimina modulo" onClick={() => setConfirmOpen(true)}>
+          <Trash2 className="size-4 text-destructive" />
+        </Button>
+      </div>
+
+      {open && (
+        <CardContent className="space-y-2 border-t bg-muted/20 pt-3">
+          {module.lessons.map((l, li) => (
+            <LessonCard
+              key={l.id}
+              courseId={courseId}
+              moduleId={module.id}
+              lesson={l}
+              lessonIndex={li}
+              editableLessons={editableLessons}
+              batchActive={batchActive}
+              open={openLessonId === l.id}
+              onToggle={() => setOpenLessonId((cur) => (cur === l.id ? null : l.id))}
             />
-            <Button type="submit" size="sm" variant="ghost" disabled={!newLesson.trim()}>
-              <Plus className="size-4" /> Lezione
-            </Button>
-          </form>
-        )}
-      </CardContent>
+          ))}
+          {editableLessons && (
+            <form onSubmit={handleAddLesson} className="flex gap-2 pt-1">
+              <Input
+                value={newLesson}
+                onChange={(e) => setNewLesson(e.target.value)}
+                placeholder="Titolo della nuova lezione"
+                className="h-9"
+              />
+              <Button type="submit" size="sm" variant="ghost" disabled={!newLesson.trim()}>
+                <Plus className="size-4" /> Lezione
+              </Button>
+            </form>
+          )}
+        </CardContent>
+      )}
 
       <ConfirmDialog
         open={confirmOpen}
@@ -569,15 +619,23 @@ function LessonCard({
   courseId,
   moduleId,
   lesson,
+  lessonIndex = 0,
   editableLessons = false,
   batchActive = false,
+  open = false,
+  onToggle,
 }: {
   courseId: string;
   moduleId: string;
   lesson: LessonView;
+  lessonIndex?: number;
   editableLessons?: boolean;
   /** True mentre il job batch "genera tutti" è in corso sul corso. */
   batchActive?: boolean;
+  /** Accordion: se la lezione è espansa. */
+  open?: boolean;
+  /** Accordion: toggle gestito dal parent (una aperta per volta). */
+  onToggle?: () => void;
 }) {
   const qc = useQueryClient();
   const genContent = useGenerateLessonContent(courseId);
@@ -595,6 +653,8 @@ function LessonCard({
   const [tone, setTone] = React.useState('');
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Block | null>(null);
+  // Block con anteprima piena espansa (default: righe compatte).
+  const [previewBlockId, setPreviewBlockId] = React.useState<string | null>(null);
   const videoInputRef = React.useRef<HTMLInputElement>(null);
   const [videoTargetBlock, setVideoTargetBlock] = React.useState<string | null>(null);
   // Dialog di selezione video dalla libreria (per il block video_checkpoint).
@@ -779,43 +839,93 @@ function LessonCard({
     );
   }
 
+  const blockCount = lesson.blocks.length;
+
   return (
-    <div className="rounded-lg border bg-muted/30 p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium">{lesson.title}</span>
-        <div className="flex items-center gap-2">
-          <StatusControls
-            status={lesson.status}
-            onChange={(s) => setStatus.mutate({ entity: 'lesson', entityId: lesson.id, status: s })}
-          />
-          <Button size="icon" variant="ghost" aria-label="Elimina lezione" onClick={() => setConfirmOpen(true)}>
-            <Trash2 className="size-4 text-destructive" />
-          </Button>
-        </div>
+    <div className="overflow-hidden rounded-lg border bg-background">
+      {/* Riga header della lezione: cliccabile per espandere/comprimere. */}
+      <div className="flex items-center gap-2 px-3 py-2">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          <ChevronRight className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} />
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium">
+              Lezione {lessonIndex + 1} — {lesson.title}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {generating
+                ? 'generazione in corso…'
+                : blockCount > 0
+                  ? `${blockCount} ${blockCount === 1 ? 'elemento' : 'elementi'}`
+                  : 'nessun contenuto'}
+            </span>
+          </span>
+        </button>
+        {blockCount > 0 && (
+          <span className="hidden items-center gap-1 text-xs text-emerald-600 sm:flex" aria-hidden>
+            <span className="inline-block size-1.5 rounded-full bg-emerald-500" /> pronta
+          </span>
+        )}
+        <StatusControls
+          status={lesson.status}
+          onChange={(s) => setStatus.mutate({ entity: 'lesson', entityId: lesson.id, status: s })}
+        />
+        <Button size="icon" variant="ghost" aria-label="Elimina lezione" onClick={() => setConfirmOpen(true)}>
+          <Trash2 className="size-4 text-destructive" />
+        </Button>
       </div>
+
+      {!open ? null : (
+      <div className="border-t bg-muted/20 p-3">
 
       {generating ? (
         <AiWorking label={`Sto generando i contenuti di «${lesson.title}»…`} />
       ) : lesson.blocks.length > 0 ? (
-        <div className="space-y-2">
-          {lesson.blocks.map((b) => (
-            <div key={b.id} className="group relative">
-              <BlockPreview
-                block={b}
-                onUploadVideo={b.type === 'video_checkpoint' ? pickVideo : undefined}
-                onEditTranscript={b.type === 'video_checkpoint' ? () => setTranscriptOpen(true) : undefined}
-              />
-              <Button
-                size="icon"
-                variant="outline"
-                aria-label="Modifica block"
-                className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
-                onClick={() => setEditing(b)}
-              >
-                <Pencil className="size-4" />
-              </Button>
-            </div>
-          ))}
+        <div className="space-y-1.5">
+          {lesson.blocks.map((b) => {
+            const meta = BLOCK_META[b.type] ?? { label: b.type, icon: '▪' };
+            const showPreview = previewBlockId === b.id;
+            return (
+              <div key={b.id} className="rounded-lg border bg-background">
+                {/* Riga compatta del block */}
+                <div className="flex items-center gap-2 px-2.5 py-2">
+                  <span className="grid size-7 shrink-0 place-items-center rounded-md bg-muted text-sm" aria-hidden>
+                    {meta.icon}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{meta.label}</span>
+                    <span className="block truncate text-xs text-muted-foreground">{blockSummary(b)}</span>
+                  </span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    aria-label={showPreview ? 'Nascondi anteprima' : 'Mostra anteprima'}
+                    title={showPreview ? 'Nascondi anteprima' : 'Mostra anteprima'}
+                    onClick={() => setPreviewBlockId((cur) => (cur === b.id ? null : b.id))}
+                  >
+                    <Eye className={cn('size-4', showPreview && 'text-primary')} />
+                  </Button>
+                  <Button size="icon" variant="ghost" aria-label="Modifica block" title="Modifica" onClick={() => setEditing(b)}>
+                    <Pencil className="size-4" />
+                  </Button>
+                </div>
+                {/* Anteprima piena su richiesta */}
+                {showPreview && (
+                  <div className="border-t p-2">
+                    <BlockPreview
+                      block={b}
+                      onUploadVideo={b.type === 'video_checkpoint' ? pickVideo : undefined}
+                      onEditTranscript={b.type === 'video_checkpoint' ? () => setTranscriptOpen(true) : undefined}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       ) : (
         <p className="mb-3 text-sm text-muted-foreground">Nessun contenuto ancora.</p>
@@ -906,6 +1016,8 @@ function LessonCard({
             Il tuo browser non supporta l&apos;audio.
           </audio>
         </div>
+      )}
+      </div>
       )}
 
       <ConfirmDialog
@@ -1025,6 +1137,53 @@ function collectImageBlocks(blocks: Block[]): Array<{ id: string; label: string;
     }
   }
   return out;
+}
+
+/** Etichetta e icona (emoji) leggibili per ciascun tipo di block. */
+const BLOCK_META: Record<string, { label: string; icon: string }> = {
+  rich_text: { label: 'Testo', icon: '¶' },
+  image_hotspot: { label: 'Immagine interattiva', icon: '◉' },
+  accordion_tabs: { label: 'Accordion / Tab', icon: '▤' },
+  flashcard: { label: 'Flashcard', icon: '⬌' },
+  timeline: { label: 'Timeline', icon: '⏱' },
+  carousel_steps: { label: 'Passi', icon: '≫' },
+  click_reveal: { label: 'Click & reveal', icon: '✶' },
+  branching_scenario: { label: 'Scenario', icon: '⌥' },
+  video_checkpoint: { label: 'Video', icon: '▷' },
+  dragdrop: { label: 'Trascina', icon: '⇄' },
+};
+
+/** Breve estratto descrittivo del contenuto di un block (per la riga compatta). */
+function blockSummary(block: Block): string {
+  const p = (block.payload ?? {}) as Record<string, unknown>;
+  const count = (v: unknown): number => (Array.isArray(v) ? v.length : 0);
+  switch (block.type) {
+    case 'rich_text': {
+      const html = ((p.content as { html?: string })?.html ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      return html ? (html.length > 70 ? html.slice(0, 70) + '…' : html) : 'Testo vuoto';
+    }
+    case 'image_hotspot': {
+      const n = count(p.hotspots);
+      const hasImg = Boolean((p.image as { storageKey?: string })?.storageKey);
+      return `${n} ${n === 1 ? 'punto' : 'punti'}${hasImg ? ' · sfondo impostato' : ' · immagine mancante'}`;
+    }
+    case 'flashcard':
+      return `${count(p.cards)} carte`;
+    case 'timeline':
+      return `${count(p.events)} tappe`;
+    case 'carousel_steps':
+      return `${count(p.steps)} passi`;
+    case 'accordion_tabs':
+      return `${count(p.panels)} pannelli`;
+    case 'click_reveal':
+      return `${count(p.items)} elementi`;
+    case 'branching_scenario':
+      return `${count(p.nodes)} nodi`;
+    case 'video_checkpoint':
+      return (p.video as { storageKey?: string })?.storageKey ? 'Video impostato' : 'Video da caricare';
+    default:
+      return '';
+  }
 }
 
 /** Dialog di selezione di un video dalla libreria del tenant. */
