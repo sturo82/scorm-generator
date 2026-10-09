@@ -113,9 +113,9 @@ export function BlockEditorDialog({
 
   return (
     <Dialog open={open} onClose={onClose} title={title} size="xl">
-      <div className="grid max-h-[72vh] gap-5 overflow-hidden lg:grid-cols-[1fr_380px]">
-        {/* Colonna editor (scrollabile) */}
-        <div className="min-w-0 overflow-auto pr-1">
+      <div className="grid min-h-0 gap-5 lg:grid-cols-[1fr_380px]">
+        {/* Colonna editor (scrollabile indipendentemente) */}
+        <div className="min-w-0 max-h-[72vh] overflow-y-auto pr-1">
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contenuto</p>
 
           {block.type === 'image_hotspot' ? (
@@ -149,10 +149,10 @@ export function BlockEditorDialog({
           )}
         </div>
 
-        {/* Colonna anteprima (sticky) */}
-        <div className="flex min-w-0 flex-col gap-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Anteprima</p>
-          <div className="max-h-[62vh] overflow-auto rounded-lg border bg-muted/20 p-2">
+        {/* Colonna anteprima (scroll indipendente) */}
+        <div className="flex min-w-0 max-h-[72vh] flex-col gap-2 overflow-hidden">
+          <p className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Anteprima</p>
+          <div className="min-h-0 flex-1 overflow-auto rounded-lg border bg-muted/20 p-2">
             {preview ? <BlockRenderer block={preview} /> : <p className="text-xs text-muted-foreground">—</p>}
           </div>
         </div>
