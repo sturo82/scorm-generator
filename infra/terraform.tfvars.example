@@ -5,8 +5,8 @@ project = "scorm"
 region  = "eu-west-1"
 
 route53_zone_name = "knowkube.com"
-web_domain        = "scorm.knowkube.com"
-api_domain        = "api.scorm.knowkube.com"
+web_domain        = "architect.knowkube.com"
+api_domain        = "api.architect.knowkube.com"
 
 # Bedrock: LLM in Irlanda (inference profile EU), immagini in us-east-1.
 media_region         = "us-east-1"

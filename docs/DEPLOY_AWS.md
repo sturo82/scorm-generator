@@ -13,7 +13,7 @@ tu con le tue credenziali: niente è applicato automaticamente.
 ```
             Route53 (knowkube.com)
           /                        \
- scorm.knowkube.com          api.scorm.knowkube.com
+ architect.knowkube.com      api.architect.knowkube.com
       │                              │
  App Runner Web               App Runner API ──VPC connector──┐
  (egress pubblico)            (egress via VPC)                │
@@ -110,8 +110,8 @@ variables → Actions → Variables) con gli output Terraform:
 | `APPRUNNER_API_ARN` | `apprunner_api_service_arn` |
 | `APPRUNNER_WEB_ARN` | `apprunner_web_service_arn` |
 | `MIGRATE_PROJECT` | `migrate_codebuild_project` |
-| `WEB_DOMAIN` | `scorm.knowkube.com` |
-| `API_DOMAIN` | `api.scorm.knowkube.com` |
+| `WEB_DOMAIN` | `architect.knowkube.com` |
+| `API_DOMAIN` | `api.architect.knowkube.com` |
 | `COGNITO_ISSUER` | `cognito_issuer` |
 | `COGNITO_CLIENT_ID` | `cognito_web_client_id` |
 

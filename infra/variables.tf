@@ -18,12 +18,12 @@ variable "route53_zone_name" {
 }
 
 variable "web_domain" {
-  description = "FQDN della web app (es. scorm.knowkube.com)."
+  description = "FQDN della web app (es. architect.knowkube.com)."
   type        = string
 }
 
 variable "api_domain" {
-  description = "FQDN dell'API (es. api.scorm.knowkube.com)."
+  description = "FQDN dell'API (es. api.architect.knowkube.com)."
   type        = string
 }
 

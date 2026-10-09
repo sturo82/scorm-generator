@@ -12,8 +12,8 @@ name: deploy
 #   vars.APPRUNNER_API_ARN        output apprunner_api_service_arn
 #   vars.APPRUNNER_WEB_ARN        output apprunner_web_service_arn
 #   vars.MIGRATE_PROJECT          output migrate_codebuild_project
-#   vars.WEB_DOMAIN               scorm.knowkube.com
-#   vars.API_DOMAIN               api.scorm.knowkube.com
+#   vars.WEB_DOMAIN               architect.knowkube.com
+#   vars.API_DOMAIN               api.architect.knowkube.com
 #   vars.COGNITO_ISSUER           output cognito_issuer
 #   vars.COGNITO_CLIENT_ID        output cognito_web_client_id
 

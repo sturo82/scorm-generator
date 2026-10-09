@@ -7,7 +7,7 @@ data "aws_route53_zone" "main" {
   private_zone = false
 }
 
-# --- Web (scorm.knowkube.com) ----------------------------------------------
+# --- Web (architect.knowkube.com) ------------------------------------------
 resource "aws_apprunner_custom_domain_association" "web" {
   domain_name = var.web_domain
   service_arn = aws_apprunner_service.web.arn
@@ -37,7 +37,7 @@ resource "aws_route53_record" "web" {
   records = [aws_apprunner_custom_domain_association.web.dns_target]
 }
 
-# --- API (api.scorm.knowkube.com) ------------------------------------------
+# --- API (api.architect.knowkube.com) --------------------------------------
 resource "aws_apprunner_custom_domain_association" "api" {
   domain_name          = var.api_domain
   service_arn          = aws_apprunner_service.api.arn
