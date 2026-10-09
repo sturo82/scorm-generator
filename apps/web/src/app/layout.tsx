@@ -10,6 +10,12 @@ export const metadata: Metadata = {
     'Genera corsi e-learning SCORM professionali con AI, knowledge base e branding multiplo.',
 };
 
+// App autenticata e interamente client-side (dati via API a runtime): niente da
+// pre-renderizzare staticamente. Forziamo il rendering dinamico così il build di
+// produzione non prova la SSG delle pagine, che usewrappano provider client
+// (Theme/Query/Toast) e fallirebbe in fase di prerender.
+export const dynamic = 'force-dynamic';
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="it" suppressHydrationWarning>

@@ -472,3 +472,12 @@ docker run --rm -v "$PWD":/app -w /app/apps/web \
   non allineato al modello: correggi e rigenera gli embeddings.
 - **`scorm-generator_default` network non trovata** → è creata al primo
   `docker compose up`; avvia prima l'infra. Verifica il nome con `docker network ls`.
+
+---
+
+## 8. Deploy in produzione su AWS
+
+Il deploy di produzione (App Runner + RDS + S3 + Cognito, via Terraform e GitHub
+Actions) è documentato in una guida dedicata: [`DEPLOY_AWS.md`](./DEPLOY_AWS.md).
+L'infrastruttura come codice è in [`infra/`](../infra/). L'integrazione con
+piattaforme terze (catalogo + SSO) è in [`INTEGRATION_B2B.md`](./INTEGRATION_B2B.md).

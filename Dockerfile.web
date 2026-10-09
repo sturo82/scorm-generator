@@ -12,9 +12,11 @@ FROM base AS deps
 ENV NODE_ENV=development
 COPY package.json package-lock.json* ./
 COPY packages/contracts/package.json packages/contracts/
+# @scorm/web importa anche @scorm/scorm (ricerca semantica): servono le sue dep.
+COPY packages/scorm/package.json packages/scorm/
 COPY apps/web/package.json apps/web/
-# Installa solo ciò che serve a contracts + web (il resto del monorepo non serve
-# al frontend). npm ci sull'intero lockfile garantisce versioni pinnate.
+# Installa ciò che serve a contracts + scorm + web. npm ci sull'intero lockfile
+# garantisce versioni pinnate.
 RUN npm ci
 
 # ---- Build ----
@@ -38,6 +40,17 @@ ENV NEXT_PUBLIC_API_MODE=$NEXT_PUBLIC_API_MODE \
     NEXT_PUBLIC_OIDC_SCOPE=$NEXT_PUBLIC_OIDC_SCOPE \
     NEXT_PUBLIC_OIDC_AUDIENCE=$NEXT_PUBLIC_OIDC_AUDIENCE
 COPY . .
+# @scorm/web importa @scorm/contracts (anche il subpath ./render-core) e
+# @scorm/scorm (subpath ./semantic-index): vanno compilati PRIMA, in ordine di
+# dipendenza (scorm dipende da contracts), altrimenti i dist non esistono e
+# webpack non li risolve.
+RUN npm run build --workspace @scorm/contracts \
+  && npm run build --workspace @scorm/scorm
+# Il build di Next DEVE girare con NODE_ENV=production: altrimenti Next usa i
+# bundle React di sviluppo (react-dom-server.browser.development) e il prerender
+# standalone delle pagine d'errore (/404, /500) fallisce con "useContext null".
+# Le dev-deps restano comunque installate (npm ci è già avvenuto sopra).
+ENV NODE_ENV=production
 # Il prebuild di apps/web copia gli asset semantici (MiniLM) in public/semantic.
 RUN npm run build --workspace @scorm/web
 

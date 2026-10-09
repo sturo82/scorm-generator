@@ -1,0 +1,15 @@
+# Copia questo file in backend.tf e sostituisci i valori con gli output di
+# infra/bootstrap (state_bucket e lock_table). Poi: terraform init -reconfigure.
+#
+# Lasciato come .example per non forzare il backend remoto in locale/CI prima
+# che il bootstrap sia stato applicato.
+
+terraform {
+  backend "s3" {
+    bucket         = "scorm-tfstate-<ACCOUNT_ID>"
+    key            = "scorm/prod/terraform.tfstate"
+    region         = "eu-west-1"
+    dynamodb_table = "scorm-tflock"
+    encrypt        = true
+  }
+}

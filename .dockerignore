@@ -14,5 +14,6 @@ coverage
 !.env.example
 .local-storage
 *.tsbuildinfo
+**/*.tsbuildinfo
 .devcontainer
 README.md

@@ -15,14 +15,32 @@ COPY packages/domain/package.json packages/domain/
 COPY packages/adapters/package.json packages/adapters/
 COPY packages/scorm/package.json packages/scorm/
 COPY apps/api/package.json apps/api/
+# Anche il package.json del web: così `npm ci` installa l'INTERO workspace e il
+# build dell'API (tsc -b con project references) risolve ogni dipendenza come in
+# locale/CI. Il frontend non viene compilato in quest'immagine, ma le sue dep
+# presenti evitano divergenze dal build verificato.
+COPY apps/web/package.json apps/web/
 RUN npm ci
 
 # ---- Build ----
 FROM deps AS build
+# OpenSSL serve a Prisma anche in fase di generate (rileva la versione libssl).
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
 COPY . .
-# Genera il client Prisma prima della compilazione TypeScript.
-RUN npx --workspace @scorm/api prisma generate --schema apps/api/prisma/schema.prisma
-RUN npm run build
+# Genera il client Prisma prima della compilazione TypeScript. Si usa il binario
+# di workspace dalla ROOT (niente --workspace, che sposterebbe la CWD e romperebbe
+# il path relativo dello schema).
+RUN npx prisma generate --schema apps/api/prisma/schema.prisma
+# Build in ORDINE DI DIPENDENZA (non quello di package.json): @scorm/scorm
+# dipende dai tipi di @scorm/contracts (subpath ./render-core), quindi contracts
+# va compilato prima. `npm run build --workspaces` NON garantisce quest'ordine,
+# da cui la sequenza esplicita. Il frontend non serve a quest'immagine.
+RUN npm run build --workspace @scorm/contracts \
+  && npm run build --workspace @scorm/domain \
+  && npm run build --workspace @scorm/adapters \
+  && npm run build --workspace @scorm/scorm \
+  && npm run build --workspace @scorm/api
 
 # ---- Runtime (solo dipendenze di produzione) ----
 FROM base AS runtime
@@ -61,4 +79,4 @@ CMD ["node", "apps/api/dist/main.js"]
 FROM build AS migrate
 ENV NODE_ENV=production
 # Richiede DATABASE_URL a runtime (iniettata da Secrets Manager nel task ECS).
-CMD ["npx", "--workspace", "@scorm/api", "prisma", "migrate", "deploy", "--schema", "apps/api/prisma/schema.prisma"]
+CMD ["npx", "prisma", "migrate", "deploy", "--schema", "apps/api/prisma/schema.prisma"]

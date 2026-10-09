@@ -1,0 +1,25 @@
+# Copia in terraform.tfvars e adatta. I valori qui sono per il deploy di
+# produzione su knowkube.com.
+
+project = "scorm"
+region  = "eu-west-1"
+
+route53_zone_name = "knowkube.com"
+web_domain        = "scorm.knowkube.com"
+api_domain        = "api.scorm.knowkube.com"
+
+# Bedrock: LLM in Irlanda (inference profile EU), immagini in us-east-1.
+media_region         = "us-east-1"
+bedrock_llm_model_id = "eu.anthropic.claude-3-5-sonnet-20240620-v1:0"
+image_model_id       = "stability.stable-image-core-v1:1"
+
+# Budget
+db_instance_class = "db.t4g.micro"
+apprunner_cpu     = "1024"
+apprunner_memory  = "2048"
+
+stock_image_provider = "unsplash"
+
+# Impostati dalla CI a ogni deploy (tag immagine). In locale lascia "latest".
+api_image_tag = "latest"
+web_image_tag = "latest"
