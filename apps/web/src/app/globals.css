@@ -237,3 +237,10 @@
     box-shadow: 0 1px 0 0 hsl(var(--header-foreground) / 0.08) inset;
   }
 }
+
+/* Placeholder per il campo rich-text (contenteditable vuoto) dell'editor block. */
+.rich-field:empty::before {
+  content: attr(data-placeholder);
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+}
