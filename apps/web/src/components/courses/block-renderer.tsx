@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import type { Block } from '@scorm/contracts';
+import { INTERACTIONS_CSS } from '@scorm/contracts';
 import {
   renderBlock as coreRenderBlock,
   isHandledByCore,
@@ -23,7 +24,16 @@ const CORE_CTX: RenderContext = {
 };
 
 export function BlockRenderer({ block }: { block: Block }) {
-  return <div className="rounded-lg border bg-background p-4">{renderByType(block)}</div>;
+  // Scope del brand + micro-interazioni condivise (stesse dell'anteprima/corso):
+  // senza queste i block interattivi (hotspot, drag&drop, sorting, scenario)
+  // sarebbero privi di stile e dei token --ix-* nell'editor. data-motion abilita
+  // i token in INTERACTIONS_CSS.
+  return (
+    <div className="brand-scope rounded-lg border bg-background p-4" data-motion="sober">
+      <style dangerouslySetInnerHTML={{ __html: INTERACTIONS_CSS }} />
+      {renderByType(block)}
+    </div>
+  );
 }
 
 function renderByType(block: Block): React.ReactElement {
