@@ -95,6 +95,12 @@ export class HttpApiClient implements ApiClient {
   async deleteAssessment(courseId: string, assessmentId: string) {
     await this.request<{ deleted: boolean }>(`/courses/${courseId}/assessments/${assessmentId}`, { method: 'DELETE' });
   }
+  repairAssessments(courseId: string) {
+    return this.request<{ linked: number; removedDuplicates: number }>(
+      `/courses/${courseId}/assessments/repair`,
+      { method: 'POST' },
+    );
+  }
   generateAssessment(courseId: string, input: { scope: 'intermediate' | 'final'; moduleId?: string; focus?: string }) {
     return this.request<JobRef>(`/courses/${courseId}/generate/assessment`, { method: 'POST', body: JSON.stringify(input) });
   }

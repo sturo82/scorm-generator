@@ -365,6 +365,67 @@ export class ModulesService {
     await this.prisma.assessment.delete({ where: { id: assessmentId } });
   }
 
+  /**
+   * Ripara i test intermedi "orfani" (moduleId mancante), che non entrano nel
+   * percorso del player e quindi non bloccano l'avanzamento. Strategia:
+   *  1. Collega ogni intermedio orfano al modulo dedotto dal titolo
+   *     ("Modulo N — …") → modulo in posizione N; in mancanza, al primo modulo
+   *     non ancora coperto da un intermedio.
+   *  2. Rimuove i duplicati: se un modulo ha più intermedi, tiene il più
+   *     vecchio ed elimina gli altri.
+   * Idempotente: se non ci sono orfani/duplicati non cambia nulla.
+   */
+  async repairOrphanAssessments(
+    tenantId: string,
+    courseId: string,
+  ): Promise<{ linked: number; removedDuplicates: number }> {
+    await this.requireCourse(tenantId, courseId);
+    const modules = await this.prisma.module.findMany({
+      where: { courseId },
+      orderBy: { position: 'asc' },
+      select: { id: true, position: true },
+    });
+    if (modules.length === 0) return { linked: 0, removedDuplicates: 0 };
+
+    const intermediates = await this.prisma.assessment.findMany({
+      where: { courseId, scope: 'INTERMEDIATE' },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, title: true, moduleId: true },
+    });
+
+    // Moduli già coperti da un intermedio collegato.
+    const covered = new Set(intermediates.filter((a) => a.moduleId).map((a) => a.moduleId!));
+    let linked = 0;
+    let removedDuplicates = 0;
+
+    for (const a of intermediates) {
+      if (a.moduleId) continue; // già collegato
+      // Deduci il numero di modulo dal titolo "Modulo N — …".
+      const m = /modulo\s+(\d+)/i.exec(a.title ?? '');
+      let targetId: string | undefined;
+      if (m) {
+        const idx = Number(m[1]) - 1;
+        if (idx >= 0 && idx < modules.length) targetId = modules[idx]!.id;
+      }
+      // Fallback: primo modulo non ancora coperto.
+      if (!targetId || covered.has(targetId)) {
+        const free = modules.find((mod) => !covered.has(mod.id));
+        targetId = free?.id;
+      }
+      if (!targetId || covered.has(targetId)) {
+        // Nessun modulo libero: è un duplicato → elimina.
+        await this.prisma.assessment.delete({ where: { id: a.id } });
+        removedDuplicates += 1;
+        continue;
+      }
+      await this.prisma.assessment.update({ where: { id: a.id }, data: { moduleId: targetId } });
+      covered.add(targetId);
+      linked += 1;
+    }
+
+    return { linked, removedDuplicates };
+  }
+
   /** Aggiunge una domanda tipizzata a un assessment, validandola per schema. */
   async addQuestion(
     tenantId: string,

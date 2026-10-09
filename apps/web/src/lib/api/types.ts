@@ -241,6 +241,8 @@ export interface ApiClient {
   listAssessments(courseId: string): Promise<AssessmentIndexView[]>;
   /** Elimina un assessment del corso. */
   deleteAssessment(courseId: string, assessmentId: string): Promise<void>;
+  /** Ripara i test intermedi orfani: li collega al modulo e rimuove i duplicati. */
+  repairAssessments(courseId: string): Promise<{ linked: number; removedDuplicates: number }>;
   /** Genera (asincrono) un assessment: scope e, per gli intermedi, moduleId. */
   generateAssessment(courseId: string, input: { scope: 'intermediate' | 'final'; moduleId?: string; focus?: string }): Promise<JobRef>;
   addModule(courseId: string, input: { title: string; summary?: string }): Promise<ModuleView>;

@@ -147,6 +147,15 @@ export function useDeleteAssessment(courseId: string) {
   });
 }
 
+/** Ripara i test intermedi orfani (collega al modulo, rimuove i duplicati). */
+export function useRepairAssessments(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.repairAssessments(courseId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['courses', courseId, 'assessments'] }),
+  });
+}
+
 /** Avvia la generazione (asincrona) di un assessment (scope + eventuale modulo). */
 export function useGenerateAssessment(courseId: string) {
   return useMutation({

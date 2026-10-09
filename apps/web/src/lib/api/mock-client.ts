@@ -260,6 +260,10 @@ export class MockApiClient implements ApiClient {
   async deleteAssessment(_courseId: string, _assessmentId: string): Promise<void> {
     await delay();
   }
+  async repairAssessments(_courseId: string): Promise<{ linked: number; removedDuplicates: number }> {
+    await delay();
+    return { linked: 0, removedDuplicates: 0 };
+  }
   async generateAssessment(
     _courseId: string,
     _input: { scope: 'intermediate' | 'final'; moduleId?: string; focus?: string },

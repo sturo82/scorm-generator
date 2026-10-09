@@ -258,6 +258,13 @@ export class CoursesController {
     return this.modules.addAssessment(ctx.tenant.tenantId, id, dto);
   }
 
+  /** Ripara i test intermedi orfani (li collega al modulo, rimuove i duplicati). */
+  @Post(':id/assessments/repair')
+  @Roles('EDITOR')
+  repairAssessments(@CurrentContext() ctx: AuthContext, @Param('id') id: string) {
+    return this.modules.repairOrphanAssessments(ctx.tenant.tenantId, id);
+  }
+
   @Delete(':id/assessments/:assessmentId')
   @Roles('EDITOR')
   async deleteAssessment(

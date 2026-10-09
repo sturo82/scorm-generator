@@ -43,6 +43,7 @@ import {
   useAssessments,
   useDeleteAssessment,
   useGenerateAssessment,
+  useRepairAssessments,
   qk,
 } from '@/lib/api/hooks';
 import { AiWorking, AiWorkingInline } from '@/components/courses/ai-working';
@@ -354,6 +355,7 @@ function AssessmentManager({ courseId, modules }: { courseId: string; modules: M
   const assessments = useAssessments(courseId);
   const del = useDeleteAssessment(courseId);
   const gen = useGenerateAssessment(courseId);
+  const repair = useRepairAssessments(courseId);
   const toast = useToast();
   const qc = useQueryClient();
   const [jobId, setJobId] = React.useState<string | null>(null);
@@ -375,6 +377,19 @@ function AssessmentManager({ courseId, modules }: { courseId: string; modules: M
 
   const generating = Boolean(jobId);
   const list = assessments.data ?? [];
+  const orphanCount = list.filter((a) => a.scope === 'intermediate' && !a.moduleId).length;
+
+  async function handleRepair() {
+    try {
+      const r = await repair.mutateAsync();
+      toast.show(
+        `Test riparati: ${r.linked} collegati${r.removedDuplicates ? `, ${r.removedDuplicates} duplicati rimossi` : ''}`,
+        'success',
+      );
+    } catch {
+      toast.show('Riparazione non riuscita', 'error');
+    }
+  }
   const moduleTitleById = React.useMemo(() => {
     const map: Record<string, string> = {};
     modules.forEach((m) => (map[m.id] = m.title));
@@ -408,8 +423,14 @@ function AssessmentManager({ courseId, modules }: { courseId: string; modules: M
 
   return (
     <Card>
-      <CardHeader className="space-y-0">
+      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
         <CardTitle className="text-base">Test del corso</CardTitle>
+        {orphanCount > 0 && (
+          <Button size="sm" variant="outline" onClick={handleRepair} disabled={repair.isPending}>
+            <Check className="size-4" />
+            {repair.isPending ? 'Riparazione…' : `Correggi test orfani (${orphanCount})`}
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
