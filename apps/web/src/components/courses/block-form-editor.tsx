@@ -15,6 +15,10 @@ export const FORM_EDITABLE_TYPES = [
   'timeline',
   'carousel_steps',
   'click_reveal',
+  'dragdrop_match',
+  'dragdrop_order',
+  'sorting_categories',
+  'branching_scenario',
 ] as const;
 
 export function isFormEditable(type: string): boolean {
@@ -73,9 +77,31 @@ export function BlockFormEditor({
       return <CarouselForm payload={payload} update={update} />;
     case 'click_reveal':
       return <ClickRevealForm payload={payload} update={update} />;
+    case 'dragdrop_match':
+      return <MatchForm payload={payload} update={update} />;
+    case 'dragdrop_order':
+      return <OrderForm payload={payload} update={update} />;
+    case 'sorting_categories':
+      return <SortingForm payload={payload} update={update} />;
+    case 'branching_scenario':
+      return <ScenarioForm payload={payload} update={update} />;
     default:
       return null;
   }
+}
+
+/** Campo "consegna" (prompt) comune ai block valutabili. */
+function PromptField({ payload, update }: { payload: Payload; update: (p: Payload) => void }) {
+  return (
+    <div className="space-y-1">
+      <Label>Consegna</Label>
+      <Input
+        value={(payload.prompt as string) ?? ''}
+        placeholder="Istruzione per lo studente (es. «Abbina ogni voce…»)"
+        onChange={(e) => update({ ...payload, prompt: e.target.value })}
+      />
+    </div>
+  );
 }
 
 /* --- Riquadro riusabile di un elemento di lista (header + frecce + elimina) -- */
@@ -301,6 +327,211 @@ function ClickRevealForm({ payload, update }: { payload: Payload; update: (p: Pa
         </ItemCard>
       ))}
       <AddButton label="Aggiungi elemento" onClick={() => set([...items, { id: uid(), trigger: '', content: rt() }])} />
+    </div>
+  );
+}
+
+/* --------------------------- dragdrop_match ------------------------------- */
+interface Pair { id: string; left: string; right: string }
+function MatchForm({ payload, update }: { payload: Payload; update: (p: Payload) => void }) {
+  const pairs = (payload.pairs as Pair[]) ?? [];
+  const set = (next: Pair[]) => update({ ...payload, pairs: next });
+  return (
+    <div className="space-y-3">
+      <PromptField payload={payload} update={update} />
+      <Label className="pt-1">Coppie da abbinare</Label>
+      {pairs.map((p, i) => (
+        <ItemCard
+          key={p.id}
+          title={`Coppia ${i + 1}`}
+          index={i}
+          total={pairs.length}
+          onUp={() => set(move(pairs, i, i - 1))}
+          onDown={() => set(move(pairs, i, i + 1))}
+          onRemove={() => set(pairs.filter((_, j) => j !== i))}
+        >
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Input value={p.left} placeholder="Voce (sinistra)" onChange={(e) => set(pairs.map((x, j) => (j === i ? { ...x, left: e.target.value } : x)))} />
+            <Input value={p.right} placeholder="Corrispondenza (destra)" onChange={(e) => set(pairs.map((x, j) => (j === i ? { ...x, right: e.target.value } : x)))} />
+          </div>
+        </ItemCard>
+      ))}
+      <AddButton label="Aggiungi coppia" onClick={() => set([...pairs, { id: uid(), left: '', right: '' }])} />
+      <p className="text-xs text-muted-foreground">Servono almeno 2 coppie.</p>
+    </div>
+  );
+}
+
+/* --------------------------- dragdrop_order ------------------------------- */
+interface OrderItem { id: string; label: string; correctPosition: number }
+function OrderForm({ payload, update }: { payload: Payload; update: (p: Payload) => void }) {
+  const items = (payload.items as OrderItem[]) ?? [];
+  // L'ordine corretto è l'ordine in cui compaiono: correctPosition = indice+1.
+  const set = (next: OrderItem[]) =>
+    update({ ...payload, items: next.map((it, i) => ({ ...it, correctPosition: i + 1 })) });
+  return (
+    <div className="space-y-3">
+      <PromptField payload={payload} update={update} />
+      <Label className="pt-1">Elementi (nell&apos;ordine CORRETTO)</Label>
+      <p className="text-xs text-muted-foreground">
+        Disponi gli elementi nella sequenza giusta con le frecce: il player li mescola allo studente.
+      </p>
+      {items.map((it, i) => (
+        <ItemCard
+          key={it.id}
+          title={`Posizione ${i + 1}`}
+          index={i}
+          total={items.length}
+          onUp={() => set(move(items, i, i - 1))}
+          onDown={() => set(move(items, i, i + 1))}
+          onRemove={() => set(items.filter((_, j) => j !== i))}
+        >
+          <Input value={it.label} placeholder="Testo dell'elemento" onChange={(e) => set(items.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
+        </ItemCard>
+      ))}
+      <AddButton label="Aggiungi elemento" onClick={() => set([...items, { id: uid(), label: '', correctPosition: items.length + 1 }])} />
+      <p className="text-xs text-muted-foreground">Servono almeno 2 elementi.</p>
+    </div>
+  );
+}
+
+/* -------------------------- sorting_categories ---------------------------- */
+interface SCat { id: string; label: string }
+interface SItem { id: string; label: string; categoryId: string }
+function SortingForm({ payload, update }: { payload: Payload; update: (p: Payload) => void }) {
+  const categories = (payload.categories as SCat[]) ?? [];
+  const items = (payload.items as SItem[]) ?? [];
+  const setCats = (next: SCat[]) => update({ ...payload, categories: next });
+  const setItems = (next: SItem[]) => update({ ...payload, items: next });
+  return (
+    <div className="space-y-4">
+      <PromptField payload={payload} update={update} />
+
+      <div className="space-y-2">
+        <Label>Categorie</Label>
+        {categories.map((c, i) => (
+          <div key={c.id} className="flex items-center gap-2">
+            <Input value={c.label} placeholder={`Categoria ${i + 1}`} onChange={(e) => setCats(categories.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
+            <Button size="icon" variant="ghost" aria-label="Elimina categoria" onClick={() => setCats(categories.filter((_, j) => j !== i))}>
+              <Trash2 className="size-4 text-destructive" />
+            </Button>
+          </div>
+        ))}
+        <AddButton label="Aggiungi categoria" onClick={() => setCats([...categories, { id: uid(), label: '' }])} />
+        <p className="text-xs text-muted-foreground">Servono almeno 2 categorie.</p>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Elementi da classificare</Label>
+        {items.map((it, i) => (
+          <ItemCard
+            key={it.id}
+            title={`Elemento ${i + 1}`}
+            index={i}
+            total={items.length}
+            onUp={() => setItems(move(items, i, i - 1))}
+            onDown={() => setItems(move(items, i, i + 1))}
+            onRemove={() => setItems(items.filter((_, j) => j !== i))}
+          >
+            <div className="grid gap-2 sm:grid-cols-[1fr_180px]">
+              <Input value={it.label} placeholder="Testo dell'elemento" onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
+              <select
+                value={it.categoryId}
+                onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, categoryId: e.target.value } : x)))}
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">— categoria —</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.label || 'senza nome'}</option>
+                ))}
+              </select>
+            </div>
+          </ItemCard>
+        ))}
+        <AddButton label="Aggiungi elemento" onClick={() => setItems([...items, { id: uid(), label: '', categoryId: categories[0]?.id ?? '' }])} />
+        <p className="text-xs text-muted-foreground">Servono almeno 2 elementi, ciascuno assegnato a una categoria.</p>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------- branching_scenario ---------------------------- */
+interface Choice { id: string; label: string; nextNodeId?: string; feedback?: string }
+interface Node { id: string; content: { html: string }; choices: Choice[] }
+function ScenarioForm({ payload, update }: { payload: Payload; update: (p: Payload) => void }) {
+  const nodes = (payload.nodes as Node[]) ?? [];
+  const startNodeId = (payload.startNodeId as string) ?? nodes[0]?.id ?? '';
+  const setNodes = (next: Node[]) => update({ ...payload, nodes: next });
+
+  const nodeLabel = (n: Node, i: number): string => {
+    const txt = (n.content?.html ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    return `Nodo ${i + 1}${txt ? ` — ${txt.slice(0, 24)}` : ''}`;
+  };
+
+  return (
+    <div className="space-y-3">
+      <label className="flex items-center gap-2 text-sm">
+        <span className="text-muted-foreground">Nodo iniziale:</span>
+        <select
+          value={startNodeId}
+          onChange={(e) => update({ ...payload, startNodeId: e.target.value })}
+          className="h-9 flex-1 rounded-md border bg-background px-2 text-sm"
+        >
+          {nodes.map((n, i) => (
+            <option key={n.id} value={n.id}>{nodeLabel(n, i)}</option>
+          ))}
+        </select>
+      </label>
+
+      {nodes.map((n, i) => (
+        <ItemCard
+          key={n.id}
+          title={`Nodo ${i + 1}${n.id === startNodeId ? ' · iniziale' : ''}`}
+          index={i}
+          total={nodes.length}
+          onUp={() => setNodes(move(nodes, i, i - 1))}
+          onDown={() => setNodes(move(nodes, i, i + 1))}
+          onRemove={() => setNodes(nodes.filter((_, j) => j !== i))}
+        >
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Contenuto / domanda</Label>
+            <RichTextField value={n.content?.html ?? ''} ariaLabel={`Contenuto nodo ${i + 1}`} onChange={(html) => setNodes(nodes.map((x, j) => (j === i ? { ...x, content: rt(html) } : x)))} />
+            <Label className="text-xs text-muted-foreground">Scelte</Label>
+            {(n.choices ?? []).map((ch, ci) => (
+              <div key={ch.id} className="rounded-md border p-2">
+                <div className="mb-1 flex items-center gap-2">
+                  <Input value={ch.label} placeholder={`Scelta ${ci + 1}`} onChange={(e) => setNodes(nodes.map((x, j) => (j === i ? { ...x, choices: x.choices.map((y, k) => (k === ci ? { ...y, label: e.target.value } : y)) } : x)))} />
+                  <Button size="icon" variant="ghost" aria-label="Elimina scelta" onClick={() => setNodes(nodes.map((x, j) => (j === i ? { ...x, choices: x.choices.filter((_, k) => k !== ci) } : x)))}>
+                    <Trash2 className="size-4 text-destructive" />
+                  </Button>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  Porta a:
+                  <select
+                    value={ch.nextNodeId ?? ''}
+                    onChange={(e) => setNodes(nodes.map((x, j) => (j === i ? { ...x, choices: x.choices.map((y, k) => (k === ci ? { ...y, nextNodeId: e.target.value || undefined } : y)) } : x)))}
+                    className="h-8 flex-1 rounded-md border bg-background px-2 text-sm"
+                  >
+                    <option value="">Fine (esito terminale)</option>
+                    {nodes.map((nn, ni) => (
+                      <option key={nn.id} value={nn.id}>{nodeLabel(nn, ni)}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setNodes(nodes.map((x, j) => (j === i ? { ...x, choices: [...(x.choices ?? []), { id: uid(), label: '' }] } : x)))}
+            >
+              <Plus className="size-4" /> Scelta
+            </Button>
+          </div>
+        </ItemCard>
+      ))}
+      <AddButton label="Aggiungi nodo" onClick={() => setNodes([...nodes, { id: uid(), content: rt(), choices: [] }])} />
     </div>
   );
 }
