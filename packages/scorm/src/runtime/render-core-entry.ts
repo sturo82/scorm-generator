@@ -250,9 +250,25 @@ function applyHotspot(root: HTMLElement): void {
         '[data-hotspot-content="' + dot.getAttribute('data-hotspot-dot') + '"]',
       );
       info.innerHTML = src ? src.innerHTML : '';
+      positionHotspotInfo(info, dot);
       info.removeAttribute('hidden');
     });
   });
+}
+
+/**
+ * Posiziona il popover info accanto al pallino attivo: stesse coordinate (%)
+ * del dot, con la "coda" sopra/sotto a seconda che il dot sia nella metà
+ * inferiore o superiore dell'immagine (così il fumetto non esce dal bordo).
+ */
+function positionHotspotInfo(info: HTMLElement, dot: HTMLElement): void {
+  const left = dot.style.left || '50%';
+  const top = dot.style.top || '50%';
+  const yPct = parseFloat(top);
+  const below = yPct < 50; // dot in alto → popover sotto; dot in basso → sopra
+  info.style.left = left;
+  info.style.top = top;
+  info.setAttribute('data-pos', below ? 'below' : 'above');
 }
 
 /** carousel: mostra uno slide per volta con prev/next e stato "Passo n di m". */

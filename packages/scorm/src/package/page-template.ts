@@ -164,15 +164,8 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
   cursor: pointer; font-weight: 600; margin-top: 0.5rem;
 }
 .accordion-body, .reveal-body { padding: 0.5rem 1rem 1rem; }
-.hotspot-stage { position: relative; display: inline-block; max-width: 100%; }
-.hotspot-stage img { display: block; max-width: 100%; border-radius: 12px; }
-.hotspot-dot {
-  position: absolute; width: 1.7rem; height: 1.7rem; transform: translate(-50%, -50%);
-  border-radius: 50%; font-size: 0.8rem; font-weight: 700; cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.hotspot-info { margin-top: 0.9rem; padding: 0.9rem 1.1rem; }
-.hotspot-title { font-weight: 700; margin: 0 0 0.4rem; }
+/* NB: geometria e popover dell'image_hotspot sono in INTERACTIONS_CSS (foglio
+   condiviso con l'anteprima web), caricato dopo questo: non duplicare qui. */
 
 /* Video (block video_checkpoint): player 16:9 pulito, segnaposto se non caricato */
 .block.video .video-frame {

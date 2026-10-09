@@ -350,13 +350,24 @@ function TabsView({ node, initialTabId }: { node: VNode; initialTabId: string })
 /** hotspot: dot esclusivi + box info che mostra il contenuto del dot attivo. */
 function HotspotView({ node }: { node: VNode }): React.ReactElement {
   const [activeDot, setActiveDot] = React.useState<string | null>(null);
-  // Raccoglie i contenuti [data-hotspot-content="i"] per iniettarli nel box info.
+  // Raccoglie i contenuti [data-hotspot-content="i"] e la posizione (style) dei
+  // dot, per iniettare contenuto e coordinate nel popover info.
   const contentById: Record<string, string> = {};
+  const dotStyleById: Record<string, string> = {};
   mapTree(node, (n) => {
     const cid = n.attrs?.['data-hotspot-content'];
     if (cid !== undefined && typeof n.html === 'string') contentById[String(cid)] = n.html;
+    const did = n.attrs?.['data-hotspot-dot'];
+    if (did !== undefined && typeof n.attrs?.style === 'string') dotStyleById[String(did)] = n.attrs.style;
     return n;
   });
+  // Estrae left/top (%) dallo style del dot attivo per posizionare il popover.
+  const activeStyle = activeDot != null ? dotStyleById[activeDot] ?? '' : '';
+  const leftMatch = /left:\s*([^;]+)/.exec(activeStyle);
+  const topMatch = /top:\s*([^;]+)/.exec(activeStyle);
+  const infoLeft = leftMatch ? leftMatch[1].trim() : '50%';
+  const infoTop = topMatch ? topMatch[1].trim() : '50%';
+  const below = parseFloat(infoTop) < 50;
   const projected = mapTree(node, (n) => {
     const dotId = n.attrs?.['data-hotspot-dot'];
     if (dotId !== undefined) {
@@ -364,8 +375,18 @@ function HotspotView({ node }: { node: VNode }): React.ReactElement {
     }
     if (n.attrs?.['data-hotspot-info'] !== undefined) {
       if (activeDot == null) return withAttrs(n, { hidden: 'hidden' });
-      // Inietta il contenuto del dot attivo come html del box.
-      return { ...n, html: contentById[activeDot] || '', children: undefined, attrs: { ...(n.attrs || {}), hidden: undefined } };
+      // Inietta contenuto + posizione (popover accanto al dot attivo).
+      return {
+        ...n,
+        html: contentById[activeDot] || '',
+        children: undefined,
+        attrs: {
+          ...(n.attrs || {}),
+          hidden: undefined,
+          style: `left:${infoLeft};top:${infoTop}`,
+          'data-pos': below ? 'below' : 'above',
+        },
+      };
     }
     return n;
   });

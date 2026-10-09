@@ -145,7 +145,7 @@ export function ImageHotspotEditor({
             onClick={handleStageClick}
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- anteprima editor, URL dinamico */}
-            <img src={image.storageKey} alt={image.alt ?? ''} className="block max-h-[320px] w-auto" />
+            <img src={image.storageKey} alt={image.alt ?? ''} className="block max-h-[48vh] w-full object-contain" />
             {hotspots.map((h, i) => (
               <button
                 key={h.id}

@@ -75,9 +75,12 @@ export function renderImageHotspot(payload: Record<string, unknown>, ctx: Render
     );
   });
 
-  const stage = h('div', { class: 'hotspot-stage' }, stageChildren);
+  // Il box info è un POPOVER dentro lo stage: posizionato accanto al pallino
+  // attivo dagli adapter (left/top), non più un box sotto l'immagine.
   const info = h('div', { class: 'hotspot-info', role: 'dialog', hidden: 'hidden', 'data-hotspot-info': '' }, []);
-  const blockChildren: VChild[] = [stage, info];
+  stageChildren.push(info);
+  const stage = h('div', { class: 'hotspot-stage' }, stageChildren);
+  const blockChildren: VChild[] = [stage];
   if (image?.attribution) blockChildren.push(creditCaption(image.attribution));
   blockChildren.push(...contentSources);
   return withBehavior(h('div', { class: 'block hotspot' }, blockChildren), {

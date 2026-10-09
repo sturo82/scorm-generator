@@ -225,16 +225,38 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
   transform: translate(-50%, -50%) scale(1.18);
   box-shadow: 0 0 0 5px var(--ix-ring), var(--ix-shadow-md);
 }
+/* Popover info: posizionato DENTRO lo stage, ancorato al pallino attivo
+   (left/top impostati dall'adapter in %). data-pos="below" apre sotto il dot,
+   "above" sopra. Larghezza limitata e centrato orizzontalmente sul dot. */
 .hotspot-info {
-  margin-top: 0.9rem;
-  padding: 0.9rem 1.1rem;
+  position: absolute;
+  z-index: 5;
+  width: max-content;
+  max-width: min(20rem, 80%);
+  padding: 0.7rem 0.9rem;
   background: var(--ix-surface);
   color: var(--ix-on-surface);
   border: 1px solid var(--ix-border);
   border-radius: var(--ix-radius);
-  box-shadow: var(--ix-shadow-md);
+  box-shadow: var(--ix-shadow-lg);
   animation: mo-reveal var(--mo-dur) var(--mo-ease);
 }
+.hotspot-info[data-pos="below"] { transform: translate(-50%, 1rem); }
+.hotspot-info[data-pos="above"] { transform: translate(-50%, calc(-100% - 1rem)); }
+/* Freccetta del fumetto verso il dot. */
+.hotspot-info::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 10px; height: 10px;
+  background: var(--ix-surface);
+  border: 1px solid var(--ix-border);
+  transform: translateX(-50%) rotate(45deg);
+}
+.hotspot-info[data-pos="below"]::after { top: -6px; border-right: 0; border-bottom: 0; }
+.hotspot-info[data-pos="above"]::after { bottom: -6px; border-left: 0; border-top: 0; }
+.hotspot-info .hotspot-title { font-weight: 700; margin: 0 0 0.3rem; }
+.hotspot-info > :last-child { margin-bottom: 0; }
 /* Alone pulsante continuo per attirare l'attenzione: solo in 'lively'. */
 [data-motion="lively"] .hotspot-dot::before {
   content: "";

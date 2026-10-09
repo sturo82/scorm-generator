@@ -2,6 +2,7 @@
 
 import type { Block } from '@scorm/contracts';
 import { Badge } from '@/components/ui/badge';
+import { BlockRenderer } from '@/components/courses/block-renderer';
 
 interface MediaLike {
   kind?: 'image' | 'video' | 'audio';
@@ -303,6 +304,10 @@ function renderBody(
         </div>
       );
     }
+    case 'image_hotspot':
+      // Anteprima reale e interattiva (immagine + pallini posizionati + box
+      // info al clic), via il renderer condiviso: identica al corso/export.
+      return <BlockRenderer block={block} />;
     default:
       return <p className="text-sm text-muted-foreground">Anteprima non disponibile per questo tipo.</p>;
   }
