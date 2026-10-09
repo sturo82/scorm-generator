@@ -39,6 +39,9 @@ import {
   useSetStatusAll,
   useSetLessonVideoFirst,
   useJobStatus,
+  useAssessments,
+  useDeleteAssessment,
+  useGenerateAssessment,
   qk,
 } from '@/lib/api/hooks';
 import { AiWorking, AiWorkingInline } from '@/components/courses/ai-working';
@@ -314,7 +317,156 @@ function ContentBuilder({ courseId }: { courseId: string }) {
           <ModuleCard key={m.id} courseId={courseId} module={m} batchActive={batchActive} />
         ))}
       </div>
+
+      <AssessmentManager courseId={courseId} modules={modules.data} />
     </div>
+  );
+}
+
+/**
+ * Gestione dei test del corso: elenca gli assessment (collegandoli al modulo),
+ * permette di eliminarli e di (ri)generare un test intermedio per modulo o il
+ * test finale. Utile per correggere corsi con test orfani (moduleId mancante)
+ * o per aggiungerne di nuovi senza rigenerare tutti i contenuti.
+ */
+function AssessmentManager({ courseId, modules }: { courseId: string; modules: ModuleView[] }) {
+  const assessments = useAssessments(courseId);
+  const del = useDeleteAssessment(courseId);
+  const gen = useGenerateAssessment(courseId);
+  const toast = useToast();
+  const qc = useQueryClient();
+  const [jobId, setJobId] = React.useState<string | null>(null);
+  const job = useJobStatus(courseId, jobId);
+
+  React.useEffect(() => {
+    const status = job.data?.status;
+    if (!jobId || !status) return;
+    if (status === 'COMPLETED' || status === 'FAILED') {
+      setJobId(null);
+      qc.invalidateQueries({ queryKey: ['courses', courseId, 'assessments'] });
+      toast.show(
+        status === 'COMPLETED' ? 'Test generato' : (job.data?.error ?? 'Generazione test non riuscita'),
+        status === 'COMPLETED' ? 'success' : 'error',
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job.data?.status]);
+
+  const generating = Boolean(jobId);
+  const list = assessments.data ?? [];
+  const moduleTitleById = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    modules.forEach((m) => (map[m.id] = m.title));
+    return map;
+  }, [modules]);
+
+  // Moduli senza un test intermedio collegato (per il bottone "genera").
+  const modulesWithIntermediate = new Set(
+    list.filter((a) => a.scope === 'intermediate' && a.moduleId).map((a) => a.moduleId),
+  );
+  const hasFinal = list.some((a) => a.scope === 'final');
+
+  async function handleGenerate(scope: 'intermediate' | 'final', moduleId?: string) {
+    try {
+      const { jobId: id } = await gen.mutateAsync({ scope, moduleId });
+      setJobId(id);
+      toast.show('Generazione test avviata…', 'success');
+    } catch {
+      toast.show('Avvio generazione test non riuscito', 'error');
+    }
+  }
+
+  async function handleDelete(assessmentId: string) {
+    try {
+      await del.mutateAsync(assessmentId);
+      toast.show('Test eliminato', 'success');
+    } catch {
+      toast.show('Eliminazione non riuscita', 'error');
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="space-y-0">
+        <CardTitle className="text-base">Test del corso</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          I test intermedi bloccano l&apos;avanzamento finché non sono superati; il test finale
+          determina l&apos;esito del corso. Un test intermedio deve essere collegato al suo modulo.
+        </p>
+
+        {list.length > 0 ? (
+          <ul className="space-y-2">
+            {list.map((a) => {
+              const orphan = a.scope === 'intermediate' && !a.moduleId;
+              return (
+                <li key={a.id} className="flex items-center justify-between gap-3 rounded-lg border bg-background p-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{a.title || (a.scope === 'final' ? 'Test finale' : 'Test intermedio')}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {a.scope === 'final'
+                        ? 'Finale'
+                        : a.moduleId
+                          ? `Intermedio · ${moduleTitleById[a.moduleId] ?? 'modulo'}`
+                          : 'Intermedio · ⚠️ non collegato a un modulo (non blocca)'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {orphan && (
+                      <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                        da sistemare
+                      </span>
+                    )}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label="Elimina test"
+                      onClick={() => handleDelete(a.id)}
+                      disabled={del.isPending}
+                    >
+                      <Trash2 className="size-4 text-destructive" />
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">Nessun test. Generane uno qui sotto.</p>
+        )}
+
+        <div className="space-y-2 border-t pt-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Genera un test
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {modules.map((m) => (
+              <Button
+                key={m.id}
+                size="sm"
+                variant="outline"
+                disabled={generating || modulesWithIntermediate.has(m.id)}
+                onClick={() => handleGenerate('intermediate', m.id)}
+                title={modulesWithIntermediate.has(m.id) ? 'Questo modulo ha già un test intermedio' : `Genera il test intermedio di "${m.title}"`}
+              >
+                <Wand2 className="size-4" />
+                {`Intermedio: ${m.title.length > 24 ? m.title.slice(0, 24) + '…' : m.title}`}
+              </Button>
+            ))}
+            <Button
+              size="sm"
+              disabled={generating || hasFinal}
+              onClick={() => handleGenerate('final')}
+              title={hasFinal ? 'Esiste già un test finale' : 'Genera il test finale del corso'}
+            >
+              <Wand2 className="size-4" />
+              {generating ? 'Generazione…' : 'Test finale'}
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

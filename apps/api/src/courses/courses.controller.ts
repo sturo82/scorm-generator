@@ -258,6 +258,17 @@ export class CoursesController {
     return this.modules.addAssessment(ctx.tenant.tenantId, id, dto);
   }
 
+  @Delete(':id/assessments/:assessmentId')
+  @Roles('EDITOR')
+  async deleteAssessment(
+    @CurrentContext() ctx: AuthContext,
+    @Param('id') id: string,
+    @Param('assessmentId') assessmentId: string,
+  ) {
+    await this.modules.deleteAssessment(ctx.tenant.tenantId, id, assessmentId);
+    return { deleted: true };
+  }
+
   @Post(':id/assessments/:assessmentId/questions')
   @Roles('EDITOR')
   addQuestion(

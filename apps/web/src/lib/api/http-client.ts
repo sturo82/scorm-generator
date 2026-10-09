@@ -92,6 +92,12 @@ export class HttpApiClient implements ApiClient {
   }
   listModules(courseId: string) { return this.request<ModuleView[]>(`/courses/${courseId}/modules`); }
   listAssessments(courseId: string) { return this.request<AssessmentIndexView[]>(`/courses/${courseId}/assessments`); }
+  async deleteAssessment(courseId: string, assessmentId: string) {
+    await this.request<{ deleted: boolean }>(`/courses/${courseId}/assessments/${assessmentId}`, { method: 'DELETE' });
+  }
+  generateAssessment(courseId: string, input: { scope: 'intermediate' | 'final'; moduleId?: string; focus?: string }) {
+    return this.request<JobRef>(`/courses/${courseId}/generate/assessment`, { method: 'POST', body: JSON.stringify(input) });
+  }
   addModule(courseId: string, input: { title: string; summary?: string }) {
     return this.request<ModuleView>(`/courses/${courseId}/modules`, { method: 'POST', body: JSON.stringify(input) });
   }

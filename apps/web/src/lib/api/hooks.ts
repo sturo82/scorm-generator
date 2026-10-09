@@ -138,6 +138,23 @@ export const useAssessments = (courseId: string) =>
     enabled: !!courseId,
   });
 
+/** Elimina un assessment del corso. */
+export function useDeleteAssessment(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (assessmentId: string) => api.deleteAssessment(courseId, assessmentId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['courses', courseId, 'assessments'] }),
+  });
+}
+
+/** Avvia la generazione (asincrona) di un assessment (scope + eventuale modulo). */
+export function useGenerateAssessment(courseId: string) {
+  return useMutation({
+    mutationFn: (input: { scope: 'intermediate' | 'final'; moduleId?: string; focus?: string }) =>
+      api.generateAssessment(courseId, input),
+  });
+}
+
 export function useAddModule(courseId: string) {
   const qc = useQueryClient();
   return useMutation({

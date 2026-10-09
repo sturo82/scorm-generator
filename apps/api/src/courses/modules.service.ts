@@ -359,6 +359,12 @@ export class ModulesService {
     });
   }
 
+  /** Elimina un assessment del corso (e le sue domande via cascade). */
+  async deleteAssessment(tenantId: string, courseId: string, assessmentId: string) {
+    await this.requireAssessment(tenantId, courseId, assessmentId);
+    await this.prisma.assessment.delete({ where: { id: assessmentId } });
+  }
+
   /** Aggiunge una domanda tipizzata a un assessment, validandola per schema. */
   async addQuestion(
     tenantId: string,

@@ -257,6 +257,16 @@ export class MockApiClient implements ApiClient {
     await delay();
     return [];
   }
+  async deleteAssessment(_courseId: string, _assessmentId: string): Promise<void> {
+    await delay();
+  }
+  async generateAssessment(
+    _courseId: string,
+    _input: { scope: 'intermediate' | 'final'; moduleId?: string; focus?: string },
+  ): Promise<{ jobId: string }> {
+    await delay();
+    return { jobId: id('job') };
+  }
   async addModule(courseId: string, input: { title: string; summary?: string }) {
     await delay();
     const list = (this.modules[courseId] ??= []);

@@ -239,6 +239,10 @@ export interface ApiClient {
   uploadInstructorAvatar(courseId: string, file: File): Promise<{ avatarKey: string; avatarUrl: string }>;
   listModules(courseId: string): Promise<ModuleView[]>;
   listAssessments(courseId: string): Promise<AssessmentIndexView[]>;
+  /** Elimina un assessment del corso. */
+  deleteAssessment(courseId: string, assessmentId: string): Promise<void>;
+  /** Genera (asincrono) un assessment: scope e, per gli intermedi, moduleId. */
+  generateAssessment(courseId: string, input: { scope: 'intermediate' | 'final'; moduleId?: string; focus?: string }): Promise<JobRef>;
   addModule(courseId: string, input: { title: string; summary?: string }): Promise<ModuleView>;
   addLesson(courseId: string, moduleId: string, input: { title: string }): Promise<LessonView>;
   deleteModule(courseId: string, moduleId: string): Promise<void>;
