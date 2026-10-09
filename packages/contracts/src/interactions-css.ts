@@ -202,7 +202,18 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
    IMAGE HOTSPOT — punti pulsanti con "ping" (solo lively) e pop all'attivazione.
    Markup: .hotspot-dot[aria-pressed], box info .hotspot-info
    ========================================================================== */
+/* GEOMETRIA del hotspot: deve stare qui (foglio condiviso) perché l'anteprima
+   web NON carica player.css. Senza queste regole i dot non sono posizionati e
+   finiscono in fondo invece che alle coordinate (left/top) impostate. */
+.hotspot-stage { position: relative; display: inline-block; max-width: 100%; }
+.hotspot-stage img { display: block; max-width: 100%; border-radius: 12px; }
 .hotspot-dot {
+  position: absolute;
+  width: 1.7rem; height: 1.7rem;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.8rem; font-weight: 700; cursor: pointer;
   background: var(--ix-accent);
   color: var(--ix-on-primary);
   border: 2px solid var(--ix-surface);
@@ -215,6 +226,8 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
   box-shadow: 0 0 0 5px var(--ix-ring), var(--ix-shadow-md);
 }
 .hotspot-info {
+  margin-top: 0.9rem;
+  padding: 0.9rem 1.1rem;
   background: var(--ix-surface);
   color: var(--ix-on-surface);
   border: 1px solid var(--ix-border);
