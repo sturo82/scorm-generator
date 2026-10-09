@@ -168,6 +168,12 @@ export class HttpApiClient implements ApiClient {
   async setStatus(courseId: string, entity: string, entityId: string, status: EditorialStatus) {
     await this.request(`/courses/${courseId}/${entity}/${entityId}/status`, { method: 'PUT', body: JSON.stringify({ status }) });
   }
+  setStatusAll(courseId: string, status: EditorialStatus) {
+    return this.request<{ modules: number; lessons: number; assessments: number }>(
+      `/courses/${courseId}/status/all`,
+      { method: 'PUT', body: JSON.stringify({ status }) },
+    );
+  }
   async setLessonVideoFirst(courseId: string, moduleId: string, lessonId: string, videoFirst: boolean) {
     await this.request(
       `/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}/video-first`,

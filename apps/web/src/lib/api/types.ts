@@ -265,6 +265,8 @@ export interface ApiClient {
   // Editor HITL
   editLessonBlocks(courseId: string, lessonId: string, blocks: Block[], expectedUpdatedAt: string): Promise<LessonView>;
   setStatus(courseId: string, entity: 'course' | 'module' | 'lesson' | 'assessment', entityId: string, status: EditorialStatus): Promise<void>;
+  /** Applica uno stato (default APPROVED) a tutto il corso: moduli, lezioni, assessment. */
+  setStatusAll(courseId: string, status: EditorialStatus): Promise<{ modules: number; lessons: number; assessments: number }>;
   setLessonVideoFirst(courseId: string, moduleId: string, lessonId: string, videoFirst: boolean): Promise<void>;
   /** Chunk della knowledge del corso per il widget RAG (anteprima). */
   getRagChunks(courseId: string): Promise<RagChunk[]>;

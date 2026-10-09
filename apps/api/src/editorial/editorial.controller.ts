@@ -60,6 +60,19 @@ export class EditorialController {
     return this.editorial.setStatus(ctx.tenant.tenantId, courseId, entity, entityId, dto.status);
   }
 
+  /**
+   * Applica uno stato (default APPROVED) in blocco a tutte le entità del corso
+   * (moduli, lezioni, assessment e corso). Comodo per i corsi grandi.
+   */
+  @Put('status/all')
+  setStatusAll(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Body() dto: SetStatusDto,
+  ) {
+    return this.editorial.setStatusAll(ctx.tenant.tenantId, courseId, dto.status);
+  }
+
   @Get('versions/:entity/:entityId')
   listVersions(
     @CurrentContext() ctx: AuthContext,

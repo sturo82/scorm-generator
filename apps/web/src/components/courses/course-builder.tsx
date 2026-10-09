@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus, Sparkles, Wand2, Trash2, Pencil, Image as ImageIcon, Volume2, Video, Captions, Search } from 'lucide-react';
+import { Plus, Sparkles, Wand2, Trash2, Pencil, Image as ImageIcon, Volume2, Video, Captions, Search, Check } from 'lucide-react';
 import type { Block } from '@scorm/contracts';
 import type { ModuleView, LessonView } from '@/lib/api/types';
 import { Button } from '@/components/ui/button';
@@ -36,6 +36,7 @@ import {
   useActiveJobs,
   useEditLessonBlocks,
   useSetStatus,
+  useSetStatusAll,
   useSetLessonVideoFirst,
   useJobStatus,
   qk,
@@ -170,6 +171,7 @@ export function CourseBuilder({ courseId, mode = 'content' }: { courseId: string
 function ContentBuilder({ courseId }: { courseId: string }) {
   const modules = useModules(courseId);
   const genAll = useGenerateAllContent(courseId);
+  const approveAll = useSetStatusAll(courseId);
   const activeJobs = useActiveJobs(courseId);
   const qc = useQueryClient();
   const toast = useToast();
@@ -214,6 +216,15 @@ function ContentBuilder({ courseId }: { courseId: string }) {
   const total = allLessons.length;
   const withContent = allLessons.filter(({ lesson }) => lesson.blocks.length > 0).length;
   const pendingCount = total - withContent;
+  // Tutto approvato se ogni modulo e ogni lezione sono APPROVED (per abilitare
+  // il bottone "Approva tutto" solo quando c'è davvero qualcosa da approvare).
+  const allApproved = React.useMemo(() => {
+    const mods = modules.data ?? [];
+    if (mods.length === 0) return false;
+    return mods.every(
+      (m) => m.status === 'APPROVED' && m.lessons.every((l) => l.status === 'APPROVED'),
+    );
+  }, [modules.data]);
 
   // Mentre il batch gira, ricarica periodicamente i moduli per mostrare le
   // lezioni che completano una ad una (avanzamento incrementale).
@@ -231,6 +242,19 @@ function ContentBuilder({ courseId }: { courseId: string }) {
       toast.show('Generazione avviata: continua anche se chiudi la pagina', 'success');
     } catch {
       toast.show('Avvio generazione non riuscito', 'error');
+    }
+  }
+
+  async function handleApproveAll() {
+    try {
+      const r = await approveAll.mutateAsync('APPROVED');
+      toast.show(
+        `Approvati: ${r.modules} moduli, ${r.lessons} lezioni` +
+          (r.assessments ? `, ${r.assessments} test` : ''),
+        'success',
+      );
+    } catch {
+      toast.show('Approvazione non riuscita', 'error');
     }
   }
 
@@ -260,10 +284,21 @@ function ContentBuilder({ courseId }: { courseId: string }) {
               </p>
             </div>
           </div>
-          <Button onClick={handleGenerateAll} disabled={batchActive || pendingCount === 0}>
-            <Wand2 className="size-4" />
-            {batchActive ? 'Generazione in corso…' : `Genera tutti i contenuti (${pendingCount})`}
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button
+              variant="outline"
+              onClick={handleApproveAll}
+              disabled={approveAll.isPending || batchActive || allApproved}
+              title={allApproved ? 'Tutti i moduli e le lezioni sono già approvati' : 'Approva in blocco moduli, lezioni e test'}
+            >
+              <Check className="size-4" />
+              {approveAll.isPending ? 'Approvazione…' : allApproved ? 'Tutto approvato' : 'Approva tutto'}
+            </Button>
+            <Button onClick={handleGenerateAll} disabled={batchActive || pendingCount === 0}>
+              <Wand2 className="size-4" />
+              {batchActive ? 'Generazione in corso…' : `Genera tutti i contenuti (${pendingCount})`}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

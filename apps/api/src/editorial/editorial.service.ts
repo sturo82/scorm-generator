@@ -94,6 +94,32 @@ export class EditorialService {
     }
   }
 
+  /**
+   * Porta a uno stato (default APPROVED) in blocco TUTTE le entità editoriali
+   * del corso: moduli, lezioni, assessment e il corso stesso. Pensato per i
+   * corsi grandi dove approvare uno a uno è scomodo. In un'unica transazione.
+   * Ritorna i conteggi aggiornati.
+   */
+  async setStatusAll(
+    tenantId: string,
+    courseId: string,
+    status: EditorialStatus = 'APPROVED',
+  ): Promise<{ modules: number; lessons: number; assessments: number }> {
+    await this.requireCourse(tenantId, courseId);
+    const [modules, lessons, assessments] = await this.prisma.$transaction([
+      this.prisma.module.updateMany({ where: { courseId }, data: { status } }),
+      this.prisma.lesson.updateMany({ where: { module: { courseId } }, data: { status } }),
+      this.prisma.assessment.updateMany({ where: { courseId }, data: { status } }),
+    ]);
+    // Il corso stesso allineato allo stesso stato.
+    await this.prisma.course.update({ where: { id: courseId }, data: { status } });
+    return {
+      modules: modules.count,
+      lessons: lessons.count,
+      assessments: assessments.count,
+    };
+  }
+
   // --- 7.2: versioning ------------------------------------------------------
 
   /** Elenca le versioni salvate di un'entità (più recenti prima). */

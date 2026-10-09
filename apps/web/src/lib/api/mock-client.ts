@@ -421,6 +421,23 @@ export class MockApiClient implements ApiClient {
     }
     this.pushAudit(`${entity}.status.${status}`, entity, entityId);
   }
+  async setStatusAll(courseId: string, status: EditorialStatus) {
+    await delay(250);
+    let modules = 0;
+    let lessons = 0;
+    for (const m of this.modules[courseId] ?? []) {
+      m.status = status;
+      modules += 1;
+      for (const l of m.lessons) {
+        l.status = status;
+        lessons += 1;
+      }
+    }
+    const c = this.courses.find((x) => x.id === courseId);
+    if (c) c.status = status;
+    this.pushAudit(`course.status.all.${status}`, 'course', courseId);
+    return { modules, lessons, assessments: 0 };
+  }
   async setLessonVideoFirst(courseId: string, _moduleId: string, lessonId: string, videoFirst: boolean) {
     await delay(150);
     for (const m of this.modules[courseId] ?? []) {

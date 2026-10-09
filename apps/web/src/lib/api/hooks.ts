@@ -312,6 +312,18 @@ export function useSetStatus(courseId: string) {
   });
 }
 
+/** Applica uno stato (default APPROVED) a tutto il corso in un colpo solo. */
+export function useSetStatusAll(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (status: EditorialStatus = 'APPROVED') => api.setStatusAll(courseId, status),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.modules(courseId) });
+      qc.invalidateQueries({ queryKey: qk.course(courseId) });
+    },
+  });
+}
+
 /** Marca/smarca una lezione come video-first (step struttura). */
 export function useSetLessonVideoFirst(courseId: string) {
   const qc = useQueryClient();
