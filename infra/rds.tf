@@ -1,21 +1,22 @@
-# RDS Postgres 16 con estensione pgvector. Non pubblico: raggiungibile solo
-# dalla VPC (quindi dai servizi App Runner via VPC connector). L'app usa un
-# utente DEDICATO non-superuser (creato dal runbook) così la Row-Level Security
-# è davvero attiva; l'utente master serve solo per amministrazione/migrazioni.
+# RDS Postgres 16 con estensione pgvector. Reso raggiungibile pubblicamente
+# (publicly_accessible) perché l'API gira su App Runner con egress pubblico e
+# non ha un IP statico per entrare in VPC. La sicurezza è a più livelli:
+#  - security group ristretto (var.db_allowed_cidrs),
+#  - SSL forzato (rds.force_ssl),
+#  - password forte generata (Secrets Manager),
+#  - utente applicativo non-superuser (creato dal runbook).
 
 resource "aws_db_subnet_group" "main" {
   name       = "${var.project}-db"
-  subnet_ids = aws_subnet.private[*].id
+  subnet_ids = aws_subnet.public[*].id
   tags       = { Name = "${var.project}-db" }
 }
 
-# Parameter group: abilita pgvector tra le librerie precaricabili condivise.
 resource "aws_db_parameter_group" "pg" {
   name   = "${var.project}-pg16"
   family = "postgres16"
 
-  # pgvector non richiede shared_preload_libraries, ma lasciamo il gruppo per
-  # eventuali tuning futuri. L'estensione si crea con CREATE EXTENSION (migrazione).
+  # Impone connessioni cifrate: essenziale dato che il DB è su endpoint pubblico.
   parameter {
     name  = "rds.force_ssl"
     value = "1"
@@ -45,7 +46,7 @@ resource "aws_db_instance" "main" {
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
   parameter_group_name   = aws_db_parameter_group.pg.name
-  publicly_accessible    = false
+  publicly_accessible    = true
   multi_az               = false
 
   backup_retention_period   = 7
@@ -56,7 +57,6 @@ resource "aws_db_instance" "main" {
   apply_immediately = true
 }
 
-# Endpoint utile al runbook (creazione utente app + CREATE EXTENSION vector).
 output "db_endpoint" {
   value = aws_db_instance.main.address
 }

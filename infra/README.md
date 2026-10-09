@@ -12,16 +12,17 @@ Deploy di produzione su AWS App Runner (eu-west-1). Guida passo-passo:
 | `backend.tf.example` | Modello del backend S3 remoto (copia in `backend.tf`) |
 | `variables.tf` | Variabili (dominio, regione, modelli Bedrock, sizing) |
 | `terraform.tfvars.example` | Valori d'esempio per knowkube.com |
-| `network.tf` | VPC, subnet, NAT Gateway, S3 gateway endpoint, VPC connector |
-| `rds.tf` | RDS Postgres 16 + parameter group |
+| `network.tf` | VPC minimale, subnet pubbliche, IGW, SG di RDS (no NAT) |
+| `rds.tf` | RDS Postgres 16 pubblico-blindato + parameter group (SSL) |
+| `web.tf` | Bucket S3 frontend + CloudFront + ACM (us-east-1) + policy OAC |
 | `s3.tf` | Bucket assets (pacchetti/media) |
 | `secrets.tf` | Secrets Manager: DATABASE_URL, chiavi JWT, stock |
 | `cognito.tf` | User pool + app client (login utenti) |
-| `ecr.tf` | Repository immagini api/web |
+| `ecr.tf` | Repository immagine API |
 | `iam.tf` | Access role (ECR) + instance role API (Bedrock/S3/Polly/…) |
-| `apprunner.tf` | Servizi App Runner API + Web, autoscaling |
-| `dns.tf` | Dominio custom + validazione + record Route53 |
-| `migrate-codebuild.tf` | CodeBuild in-VPC per `prisma migrate deploy` |
+| `apprunner.tf` | Servizio App Runner API (egress pubblico), autoscaling |
+| `dns.tf` | Web -> CloudFront (alias), API -> App Runner custom domain |
+| `migrate-codebuild.tf` | CodeBuild per `prisma migrate deploy` |
 | `github-oidc.tf` | Trust OIDC + ruolo deploy per GitHub Actions |
 | `db-bootstrap.sql` | Estensione pgvector + ruolo app non-superuser (una tantum) |
 

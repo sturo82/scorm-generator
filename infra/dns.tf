@@ -1,43 +1,36 @@
-# Dominio custom per i servizi App Runner, con validazione via Route53 nella zona
-# esistente (es. knowkube.com). App Runner emette e rinnova il certificato TLS da
-# solo; qui creiamo i record di validazione e il record che punta al servizio.
+# DNS nella zona Route53 esistente (es. knowkube.com):
+#  - web  -> CloudFront (alias) per il frontend statico;
+#  - api  -> App Runner custom domain.
 
 data "aws_route53_zone" "main" {
   name         = var.route53_zone_name
   private_zone = false
 }
 
-# --- Web (architect.knowkube.com) ------------------------------------------
-resource "aws_apprunner_custom_domain_association" "web" {
-  domain_name = var.web_domain
-  service_arn = aws_apprunner_service.web.arn
-  # Non gestiamo il www; un solo host.
-  enable_www_subdomain = false
-}
-
-# Record di validazione del certificato (App Runner ne pubblica alcuni).
-resource "aws_route53_record" "web_validation" {
-  for_each = {
-    for r in aws_apprunner_custom_domain_association.web.certificate_validation_records :
-    r.name => r
-  }
-  zone_id = data.aws_route53_zone.main.zone_id
-  name    = each.value.name
-  type    = each.value.type
-  ttl     = 300
-  records = [each.value.value]
-}
-
-# Record che punta il dominio al target App Runner (CNAME).
+# --- Web (architect.knowkube.com) -> CloudFront ----------------------------
 resource "aws_route53_record" "web" {
   zone_id = data.aws_route53_zone.main.zone_id
   name    = var.web_domain
-  type    = "CNAME"
-  ttl     = 300
-  records = [aws_apprunner_custom_domain_association.web.dns_target]
+  type    = "A"
+  alias {
+    name                   = aws_cloudfront_distribution.web.domain_name
+    zone_id                = aws_cloudfront_distribution.web.hosted_zone_id
+    evaluate_target_health = false
+  }
 }
 
-# --- API (api.architect.knowkube.com) --------------------------------------
+resource "aws_route53_record" "web_aaaa" {
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = var.web_domain
+  type    = "AAAA"
+  alias {
+    name                   = aws_cloudfront_distribution.web.domain_name
+    zone_id                = aws_cloudfront_distribution.web.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+# --- API (api.architect.knowkube.com) -> App Runner ------------------------
 resource "aws_apprunner_custom_domain_association" "api" {
   domain_name          = var.api_domain
   service_arn          = aws_apprunner_service.api.arn

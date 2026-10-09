@@ -1,9 +1,10 @@
 # Deploy su AWS (App Runner + Terraform)
 
 Guida al deploy di produzione su AWS, regione **Irlanda (eu-west-1)**, con la
-generazione immagini (Bedrock Stability) in **us-east-1**. Compute su **AWS App
-Runner** (API + Web), database **RDS Postgres + pgvector**, storage **S3**, login
-utenti **Cognito**, deploy continuo via **GitHub Actions**.
+generazione immagini (Bedrock Stability) in **us-east-1**. Il frontend è
+**statico** (S3 + CloudFront), l'API gira su **AWS App Runner**, il database è
+**RDS Postgres + pgvector**, lo storage **S3**, il login utenti **Cognito**,
+deploy continuo via **GitHub Actions**.
 
 Tutta l'infrastruttura è in `infra/` (Terraform). Il `terraform apply` lo esegui
 tu con le tue credenziali: niente è applicato automaticamente.
@@ -11,24 +12,30 @@ tu con le tue credenziali: niente è applicato automaticamente.
 ## Architettura
 
 ```
-            Route53 (knowkube.com)
-          /                        \
- architect.knowkube.com      api.architect.knowkube.com
-      │                              │
- App Runner Web               App Runner API ──VPC connector──┐
- (egress pubblico)            (egress via VPC)                │
-                                   │                          ▼
-                                   │                     RDS Postgres (privato)
-                                   │                     + pgvector
-                                   ├── NAT GW ──► Internet / Bedrock us-east-1 (immagini) / Unsplash
-                                   └── S3 gateway endpoint ──► S3 (pacchetti/media)
-             Bedrock eu-west-1 (LLM/embeddings), Polly, Transcribe, Secrets, ECR  (via NAT)
+                 Route53 (knowkube.com)
+               /                        \
+   architect.knowkube.com         api.architect.knowkube.com
+          │                              │
+     CloudFront                     App Runner API
+          │                         (egress pubblico)
+     S3 (frontend statico)               │
+                                          ├──► Bedrock eu-west-1 (LLM/embeddings)
+                                          ├──► Bedrock us-east-1 (immagini)
+                                          ├──► Polly / Transcribe / Unsplash
+                                          ├──► S3 (pacchetti/media)
+                                          └──► RDS Postgres + pgvector
+                                               (endpoint pubblico, SG+SSL)
 ```
 
-Perché App Runner e non ECS/ALB: niente load balancer da pagare (~$20/mese) e
-molta meno infra. L'unico costo di rete fisso è un NAT Gateway (~$32/mese), che
-serve perché App Runner, quando è collegato a una VPC, instrada **tutto** l'egress
-nella VPC: il NAT dà all'API l'accesso a Internet e a us-east-1.
+Scelte di costo:
+- **Frontend statico** su S3+CloudFront: niente server per il web, scala a costo
+  ~zero, performance da CDN.
+- **Un solo App Runner** (l'API). Niente ALB (App Runner gestisce HTTPS).
+- **Niente NAT Gateway, niente VPC connector**: l'API ha egress pubblico e
+  raggiunge Bedrock (entrambe le regioni), Unsplash e i servizi AWS direttamente.
+- **RDS pubblico ma blindato**: security group ristretto + SSL forzato + password
+  forte + utente app non-superuser. È il compromesso che evita il NAT (vedi
+  sezione Sicurezza).
 
 ## Prerequisiti
 
@@ -80,9 +87,9 @@ terraform output
 
 ## 3. Bootstrap del database (una tantum)
 
-RDS è privato: esegui dalla tua rete solo se hai connettività alla VPC
-(es. bastion/VPN). In alternativa, lancia questi comandi da una sessione dentro
-la VPC. Servono l'URL admin e la password del ruolo app.
+RDS ha un endpoint pubblico (blindato da SG + SSL): puoi eseguire questi comandi
+dalla tua macchina, a patto che il tuo IP rientri in `db_allowed_cidrs`. Servono
+l'URL admin e la password del ruolo app.
 
 ```bash
 # recupera i segreti
@@ -94,7 +101,7 @@ psql "$ADMIN_URL" -v app_password="'$APP_PWD'" -f infra/db-bootstrap.sql
 ```
 
 Le **migrazioni dello schema** NON si lanciano a mano: le applica la CI tramite
-CodeBuild dentro la VPC (passo 4).
+CodeBuild (passo 4).
 
 ## 4. Configura e lancia la CI
 
@@ -106,10 +113,10 @@ variables → Actions → Variables) con gli output Terraform:
 | `AWS_REGION` | `eu-west-1` |
 | `AWS_DEPLOY_ROLE_ARN` | `github_deploy_role_arn` |
 | `ECR_API` | `ecr_api_url` |
-| `ECR_WEB` | `ecr_web_url` |
 | `APPRUNNER_API_ARN` | `apprunner_api_service_arn` |
-| `APPRUNNER_WEB_ARN` | `apprunner_web_service_arn` |
 | `MIGRATE_PROJECT` | `migrate_codebuild_project` |
+| `WEB_BUCKET` | `web_bucket` |
+| `CLOUDFRONT_ID` | `cloudfront_distribution_id` |
 | `WEB_DOMAIN` | `architect.knowkube.com` |
 | `API_DOMAIN` | `api.architect.knowkube.com` |
 | `COGNITO_ISSUER` | `cognito_issuer` |
@@ -120,9 +127,10 @@ e riapplica se non l'hai fatto.
 
 Poi fai un push su `main` (o lancia il workflow a mano). La pipeline:
 1. test (build + vitest + lint in container);
-2. build & push immagini API (+ stage `migrate`) e Web su ECR;
-3. migrazioni DB via CodeBuild nella VPC;
-4. `StartDeployment` dei due servizi App Runner.
+2. build & push immagine API (+ stage `migrate`) su ECR;
+3. migrazioni DB via CodeBuild;
+4. `StartDeployment` del servizio App Runner API;
+5. build statico del web → `s3 sync` sul bucket + invalidazione CloudFront.
 
 ## 5. Primo tenant e primo utente OWNER
 
@@ -152,13 +160,30 @@ scope `sso:issue`, per il single sign-on degli utenti.
 | Voce | ~ /mese |
 | --- | --- |
 | App Runner API (1 vCPU/2GB, min 1) | ~$25–40 |
-| App Runner Web (1 vCPU/2GB, min 1) | ~$25–40 |
 | RDS db.t4g.micro + 20GB gp3 | ~$15–18 |
-| NAT Gateway + traffico | ~$32+ |
-| S3 / Secrets / Route53 / ECR | pochi $ |
+| CloudFront + S3 (frontend statico) | ~$1–3 |
+| S3 assets / Secrets / Route53 / ECR | pochi $ |
 
-Per ridurre: abbassa `apprunner_memory`/`cpu`, valuta `min_size` dinamico, o
-sostituisci il NAT con interface endpoint se rinunci a us-east-1/stock pubblici.
+Niente NAT Gateway, niente secondo App Runner, niente ALB: la voce dominante
+resta RDS + l'App Runner dell'API.
+
+Per ridurre ulteriormente: abbassa `apprunner_memory`/`cpu` o valuta un
+`min_size` più aggressivo sull'autoscaling.
+
+## Sicurezza — database su endpoint pubblico
+
+Per evitare NAT Gateway e VPC connector, RDS ha un **endpoint pubblico**. Non è
+"aperto a tutti": la protezione è a più livelli:
+- **Security group** `db_allowed_cidrs` (porta 5432). App Runner con egress
+  pubblico non ha IP statici pinnabili, quindi il default è `0.0.0.0/0`: in quel
+  caso la difesa è data dai punti sotto. Se disponi di un egress a IP fisso,
+  restringi le CIDR.
+- **SSL forzato** (`rds.force_ssl=1`): nessuna connessione in chiaro.
+- **Password forte** generata e conservata in Secrets Manager (mai nel codice).
+- **Utente applicativo non-superuser** (`scorm_app`): privilegi minimi.
+
+Chi preferisce RDS totalmente privato può reintrodurre VPC connector + interface
+endpoint (accettando il costo e i limiti su us-east-1/Unsplash) o un NAT Gateway.
 
 ## Sicurezza — isolamento multi-tenant e RLS
 

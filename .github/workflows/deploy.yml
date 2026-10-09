@@ -1,21 +1,22 @@
 name: deploy
 
-# Deploy di produzione su AWS App Runner. Richiede che l'infra Terraform (infra/)
-# sia già applicata. Autenticazione ad AWS via OIDC (nessuna chiave statica):
-# il ruolo è l'output `github_deploy_role_arn` del Terraform.
+# Deploy di produzione su AWS. Richiede che l'infra Terraform (infra/) sia già
+# applicata. Autenticazione ad AWS via OIDC (nessuna chiave statica).
 #
-# Variabili/segreti del repo da impostare (Settings → Secrets and variables):
-#   vars.AWS_REGION               es. eu-west-1
-#   vars.AWS_DEPLOY_ROLE_ARN      output github_deploy_role_arn
-#   vars.ECR_API                  output ecr_api_url
-#   vars.ECR_WEB                  output ecr_web_url
-#   vars.APPRUNNER_API_ARN        output apprunner_api_service_arn
-#   vars.APPRUNNER_WEB_ARN        output apprunner_web_service_arn
-#   vars.MIGRATE_PROJECT          output migrate_codebuild_project
-#   vars.WEB_DOMAIN               architect.knowkube.com
-#   vars.API_DOMAIN               api.architect.knowkube.com
-#   vars.COGNITO_ISSUER           output cognito_issuer
-#   vars.COGNITO_CLIENT_ID        output cognito_web_client_id
+# Topologia: API su App Runner (immagine ECR), frontend STATICO su S3+CloudFront.
+#
+# Repository variables (Settings → Secrets and variables → Actions → Variables):
+#   vars.AWS_REGION              es. eu-west-1
+#   vars.AWS_DEPLOY_ROLE_ARN     output github_deploy_role_arn
+#   vars.ECR_API                 output ecr_api_url
+#   vars.APPRUNNER_API_ARN       output apprunner_api_service_arn
+#   vars.MIGRATE_PROJECT         output migrate_codebuild_project
+#   vars.WEB_BUCKET              output web_bucket
+#   vars.CLOUDFRONT_ID           output cloudfront_distribution_id
+#   vars.WEB_DOMAIN              architect.knowkube.com
+#   vars.API_DOMAIN              api.architect.knowkube.com
+#   vars.COGNITO_ISSUER          output cognito_issuer
+#   vars.COGNITO_CLIENT_ID       output cognito_web_client_id
 
 on:
   push:
@@ -42,7 +43,7 @@ jobs:
       - run: node_modules/.bin/vitest run
       - run: npm run lint
 
-  build-and-deploy:
+  deploy:
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -54,11 +55,11 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
+      # --- API: build immagine (+ stage migrate), push su ECR -----------------
       - name: Login to ECR
-        id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & push API image (+ migrate stage)
+      - name: Build & push API image
         env:
           ECR_API: ${{ vars.ECR_API }}
           TAG: ${{ github.sha }}
@@ -69,35 +70,13 @@ jobs:
           docker push "$ECR_API:latest"
           docker push "$ECR_API:migrate"
 
-      - name: Build & push Web image
-        env:
-          ECR_WEB: ${{ vars.ECR_WEB }}
-          TAG: ${{ github.sha }}
-          API_DOMAIN: ${{ vars.API_DOMAIN }}
-          WEB_DOMAIN: ${{ vars.WEB_DOMAIN }}
-          COGNITO_ISSUER: ${{ vars.COGNITO_ISSUER }}
-          COGNITO_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
-        run: |
-          docker build -f Dockerfile.web \
-            --build-arg NEXT_PUBLIC_API_MODE=real \
-            --build-arg NEXT_PUBLIC_API_URL="https://$API_DOMAIN" \
-            --build-arg NEXT_PUBLIC_AUTH_MODE=oidc \
-            --build-arg NEXT_PUBLIC_OIDC_ISSUER="$COGNITO_ISSUER" \
-            --build-arg NEXT_PUBLIC_OIDC_CLIENT_ID="$COGNITO_CLIENT_ID" \
-            --build-arg NEXT_PUBLIC_OIDC_REDIRECT_URI="https://$WEB_DOMAIN/auth/callback" \
-            --build-arg NEXT_PUBLIC_OIDC_SCOPE="openid email profile" \
-            --build-arg NEXT_PUBLIC_OIDC_AUDIENCE="$COGNITO_CLIENT_ID" \
-            -t "$ECR_WEB:$TAG" -t "$ECR_WEB:latest" .
-          docker push "$ECR_WEB:$TAG"
-          docker push "$ECR_WEB:latest"
-
-      - name: Run DB migrations (CodeBuild in VPC)
+      # --- Migrazioni DB (CodeBuild) ------------------------------------------
+      - name: Run DB migrations
         env:
           PROJECT: ${{ vars.MIGRATE_PROJECT }}
         run: |
           BUILD_ID=$(aws codebuild start-build --project-name "$PROJECT" --query 'build.id' --output text)
-          echo "Avviata build migrazioni: $BUILD_ID"
-          # Attende il completamento.
+          echo "Build migrazioni: $BUILD_ID"
           while true; do
             STATUS=$(aws codebuild batch-get-builds --ids "$BUILD_ID" --query 'builds[0].buildStatus' --output text)
             echo "stato migrazioni: $STATUS"
@@ -108,11 +87,44 @@ jobs:
             esac
           done
 
-      - name: Deploy App Runner (API + Web)
+      - name: Deploy API (App Runner)
         env:
           API_ARN: ${{ vars.APPRUNNER_API_ARN }}
-          WEB_ARN: ${{ vars.APPRUNNER_WEB_ARN }}
+        run: aws apprunner start-deployment --service-arn "$API_ARN"
+
+      # --- Web: build statico, sync su S3, invalidazione CloudFront -----------
+      - name: Setup Node for web build
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.11.0'
+
+      - name: Build web (static export)
+        env:
+          NODE_ENV: production
+          NEXT_PUBLIC_API_MODE: real
+          NEXT_PUBLIC_API_URL: https://${{ vars.API_DOMAIN }}
+          NEXT_PUBLIC_AUTH_MODE: oidc
+          NEXT_PUBLIC_OIDC_ISSUER: ${{ vars.COGNITO_ISSUER }}
+          NEXT_PUBLIC_OIDC_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
+          NEXT_PUBLIC_OIDC_REDIRECT_URI: https://${{ vars.WEB_DOMAIN }}/auth/callback
+          NEXT_PUBLIC_OIDC_SCOPE: openid email profile
+          NEXT_PUBLIC_OIDC_AUDIENCE: ${{ vars.COGNITO_CLIENT_ID }}
         run: |
-          aws apprunner start-deployment --service-arn "$API_ARN"
-          aws apprunner start-deployment --service-arn "$WEB_ARN"
-          echo "Deployment avviati. Monitorare su console App Runner."
+          npm ci
+          npm run build --workspace @scorm/contracts
+          npm run build --workspace @scorm/scorm
+          npm run build --workspace @scorm/web
+
+      - name: Sync to S3 + invalidate CloudFront
+        env:
+          WEB_BUCKET: ${{ vars.WEB_BUCKET }}
+          CLOUDFRONT_ID: ${{ vars.CLOUDFRONT_ID }}
+        run: |
+          # Asset con hash: cache lunga. HTML: no-cache (sempre fresco).
+          aws s3 sync apps/web/out "s3://$WEB_BUCKET" --delete \
+            --cache-control "public,max-age=31536000,immutable" \
+            --exclude "*.html"
+          aws s3 sync apps/web/out "s3://$WEB_BUCKET" --delete \
+            --cache-control "no-cache" \
+            --exclude "*" --include "*.html"
+          aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_ID" --paths "/*"

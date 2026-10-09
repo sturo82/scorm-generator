@@ -56,21 +56,33 @@ data "aws_iam_policy_document" "github_deploy" {
       "ecr:BatchGetImage",
       "ecr:GetDownloadUrlForLayer",
     ]
-    resources = [aws_ecr_repository.api.arn, aws_ecr_repository.web.arn]
+    resources = [aws_ecr_repository.api.arn]
   }
 
-  # Avvio deployment dei servizi App Runner.
+  # Avvio deployment del servizio App Runner (API).
   statement {
     sid       = "AppRunnerDeploy"
     actions   = ["apprunner:StartDeployment", "apprunner:DescribeService", "apprunner:ListServices"]
     resources = ["*"]
   }
 
-  # Avvio del progetto CodeBuild che applica le migrazioni dentro la VPC.
+  # Avvio del progetto CodeBuild che applica le migrazioni.
   statement {
     sid       = "RunMigrate"
     actions   = ["codebuild:StartBuild", "codebuild:BatchGetBuilds"]
     resources = [aws_codebuild_project.migrate.arn]
+  }
+
+  # Deploy del frontend statico: sync su S3 + invalidazione CloudFront.
+  statement {
+    sid       = "WebSync"
+    actions   = ["s3:PutObject", "s3:DeleteObject", "s3:ListBucket", "s3:GetObject"]
+    resources = [aws_s3_bucket.web.arn, "${aws_s3_bucket.web.arn}/*"]
+  }
+  statement {
+    sid       = "CloudFrontInvalidate"
+    actions   = ["cloudfront:CreateInvalidation", "cloudfront:GetInvalidation"]
+    resources = [aws_cloudfront_distribution.web.arn]
   }
 }
 
@@ -86,7 +98,4 @@ output "github_deploy_role_arn" {
 
 output "apprunner_api_service_arn" {
   value = aws_apprunner_service.api.arn
-}
-output "apprunner_web_service_arn" {
-  value = aws_apprunner_service.web.arn
 }

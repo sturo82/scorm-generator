@@ -1,5 +1,4 @@
-# Repository ECR per le immagini API e Web. Lifecycle policy per non accumulare
-# immagini vecchie all'infinito.
+# Repository ECR per l'immagine dell'API (il web è statico, non containerizzato).
 
 resource "aws_ecr_repository" "api" {
   name                 = "${var.project}-api"
@@ -9,16 +8,9 @@ resource "aws_ecr_repository" "api" {
   }
 }
 
-resource "aws_ecr_repository" "web" {
-  name                 = "${var.project}-web"
-  image_tag_mutability = "MUTABLE"
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-}
-
-locals {
-  ecr_lifecycle = jsonencode({
+resource "aws_ecr_lifecycle_policy" "api" {
+  repository = aws_ecr_repository.api.name
+  policy = jsonencode({
     rules = [{
       rulePriority = 1
       description  = "Mantieni solo le ultime 10 immagini"
@@ -32,20 +24,6 @@ locals {
   })
 }
 
-resource "aws_ecr_lifecycle_policy" "api" {
-  repository = aws_ecr_repository.api.name
-  policy     = local.ecr_lifecycle
-}
-
-resource "aws_ecr_lifecycle_policy" "web" {
-  repository = aws_ecr_repository.web.name
-  policy     = local.ecr_lifecycle
-}
-
 output "ecr_api_url" {
   value = aws_ecr_repository.api.repository_url
-}
-
-output "ecr_web_url" {
-  value = aws_ecr_repository.web.repository_url
 }

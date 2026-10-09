@@ -23,3 +23,16 @@ provider "aws" {
     }
   }
 }
+
+# Provider us-east-1: richiesto da CloudFront per il certificato ACM (deve
+# sempre stare in us-east-1, a prescindere dalla regione dell'app).
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+  default_tags {
+    tags = {
+      Project   = var.project
+      ManagedBy = "terraform"
+    }
+  }
+}

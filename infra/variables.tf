@@ -79,6 +79,19 @@ variable "db_master_username" {
   default     = "scorm_admin"
 }
 
+variable "db_allowed_cidrs" {
+  description = <<-EOT
+    CIDR autorizzate a connettersi a RDS (porta 5432). App Runner con egress
+    pubblico NON ha IP statici pinnabili, perciò per permettere all'API di
+    connettersi il default è aperto (0.0.0.0/0): la protezione è data da SSL
+    forzato + password forte in Secrets Manager + utente app non-superuser.
+    Se in futuro si usa un egress a IP fisso (es. VPC connector + NAT con EIP,
+    oppure un bastion), restringere qui alle sole CIDR note.
+  EOT
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
 # --- App Runner -------------------------------------------------------------
 
 variable "apprunner_cpu" {

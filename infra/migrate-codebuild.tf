@@ -46,21 +46,6 @@ data "aws_iam_policy_document" "migrate" {
     actions   = ["secretsmanager:GetSecretValue"]
     resources = [aws_secretsmanager_secret.database_url_admin.arn]
   }
-  # ENI nella VPC per raggiungere RDS.
-  statement {
-    sid = "Vpc"
-    actions = [
-      "ec2:CreateNetworkInterface",
-      "ec2:DescribeNetworkInterfaces",
-      "ec2:DeleteNetworkInterface",
-      "ec2:DescribeSubnets",
-      "ec2:DescribeSecurityGroups",
-      "ec2:DescribeVpcs",
-      "ec2:DescribeDhcpOptions",
-      "ec2:CreateNetworkInterfacePermission",
-    ]
-    resources = ["*"]
-  }
 }
 
 resource "aws_iam_role_policy" "migrate" {
@@ -97,12 +82,8 @@ resource "aws_codebuild_project" "migrate" {
     }
   }
 
-  # Esecuzione nella VPC per raggiungere RDS privato.
-  vpc_config {
-    vpc_id             = aws_vpc.main.id
-    subnets            = aws_subnet.private[*].id
-    security_group_ids = [aws_security_group.apprunner_connector.id]
-  }
+  # RDS è su endpoint pubblico (blindato): CodeBuild lo raggiunge senza VPC.
+  # Semplifica il setup e i permessi (niente ENI nella VPC).
 
   source {
     type = "NO_SOURCE"
