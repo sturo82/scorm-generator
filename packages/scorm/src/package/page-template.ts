@@ -290,6 +290,18 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 .dnd-chip.is-wrong { border-color: #dc2626; background: color-mix(in srgb, #dc2626 12%, transparent); color: #b91c1c; }
 
 /* ====== Indice del corso (sommario navigabile) ====== */
+/* Layout del corpo: 'top' = colonna singola (indice espandibile sopra); 'side'
+   = griglia a 2 colonne con indice sidebar a sinistra. Su schermi stretti (LMS
+   in iframe), la sidebar si impila sopra il contenuto. */
+.course-body[data-nav="side"] { display: grid; grid-template-columns: 260px 1fr; gap: 1.5rem; align-items: start; }
+.course-body[data-nav="side"] .course-content { min-width: 0; }
+.course-body[data-nav="side"] .course-index-side { position: sticky; top: 5rem; margin-bottom: 0; }
+.course-index-side { padding-bottom: 0.5rem; }
+.course-index-title { margin: 0; padding: 0.9rem 1.1rem 0.4rem; font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--pl-accent); }
+@media (max-width: 860px) {
+  .course-body[data-nav="side"] { grid-template-columns: 1fr; }
+  .course-body[data-nav="side"] .course-index-side { position: static; }
+}
 .course-index { margin-bottom: 1.5rem; border: 1px solid var(--pl-border); border-top: 3px solid var(--pl-accent); border-radius: var(--pl-radius); background: var(--pl-surface); overflow: hidden; }
 .course-index summary { cursor: pointer; padding: 0.9rem 1.1rem; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--pl-accent); list-style: none; display: flex; align-items: center; justify-content: space-between; }
 .course-index summary::after { content: "▾"; transition: transform 0.2s; }

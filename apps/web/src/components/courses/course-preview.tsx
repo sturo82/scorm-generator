@@ -90,6 +90,7 @@ export function CoursePreview({ courseId }: { courseId: string }) {
   const course = useCourse(courseId);
   const brand = useBrand(course.data?.primaryBrandId ?? '');
   const motion = course.data?.interactionStyle === 'lively' ? 'lively' : 'sober';
+  const navPosition: 'side' | 'top' = course.data?.navPosition === 'top' ? 'top' : 'side';
   const [view, setView] = React.useState<ViewMode>('slide');
 
   const theme = React.useMemo(
@@ -239,11 +240,13 @@ export function CoursePreview({ courseId }: { courseId: string }) {
         </p>
       )}
 
-      {/* Layout a due colonne: indice del corso + lezione corrente */}
-      <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+      {/* Layout: 'side' = due colonne (indice a sinistra); 'top' = indice
+          espandibile sopra il contenuto. Coerente con il player SCORM. */}
+      <div className={cn('grid gap-6', navPosition === 'side' && 'lg:grid-cols-[260px_1fr]')}>
         <CourseIndex
           steps={steps}
           currentStep={current}
+          position={navPosition}
           onSelect={(i) => setStepIdx(i)}
         />
 
@@ -319,10 +322,12 @@ export function CoursePreview({ courseId }: { courseId: string }) {
 function CourseIndex({
   steps,
   currentStep,
+  position = 'side',
   onSelect,
 }: {
   steps: PreviewStep[];
   currentStep: number;
+  position?: 'side' | 'top';
   onSelect: (stepIndex: number) => void;
 }) {
   const itemClass = (active: boolean, strong: boolean): string =>
@@ -335,16 +340,8 @@ function CourseIndex({
     active ? { background: BRAND_ACCENT_GRADIENT, color: 'var(--brand-on-primary, #fff)' } : undefined;
 
   let moduleCount = 0;
-  return (
-    <nav
-      className="h-max rounded-xl border bg-card p-3 lg:sticky lg:top-4"
-      aria-label="Indice del corso"
-      style={{ borderTop: `3px solid ${BRAND_ACCENT}` }}
-    >
-      <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: BRAND_ACCENT }}>
-        Programma del corso
-      </p>
-      <ol className="space-y-1">
+  const list = (
+    <ol className="space-y-1">
         {steps.map((s, i) => {
           const active = i === currentStep;
           if (s.kind === 'course_overview') {
@@ -401,6 +398,34 @@ function CourseIndex({
           );
         })}
       </ol>
+  );
+
+  // 'top': barra espandibile a tutta larghezza sopra il contenuto.
+  if (position === 'top') {
+    return (
+      <details
+        className="rounded-xl border bg-card p-2"
+        style={{ borderTop: `3px solid ${BRAND_ACCENT}` }}
+      >
+        <summary className="cursor-pointer px-2 py-1.5 text-xs font-semibold uppercase tracking-wide" style={{ color: BRAND_ACCENT }}>
+          Programma del corso
+        </summary>
+        <div className="mt-1">{list}</div>
+      </details>
+    );
+  }
+
+  // 'side' (default): sidebar sticky a sinistra.
+  return (
+    <nav
+      className="h-max rounded-xl border bg-card p-3 lg:sticky lg:top-4"
+      aria-label="Indice del corso"
+      style={{ borderTop: `3px solid ${BRAND_ACCENT}` }}
+    >
+      <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: BRAND_ACCENT }}>
+        Programma del corso
+      </p>
+      {list}
     </nav>
   );
 }

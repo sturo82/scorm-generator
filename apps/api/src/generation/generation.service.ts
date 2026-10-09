@@ -48,6 +48,8 @@ export interface GenJobPayload {
   toneInstruction?: string;
   scope?: 'intermediate' | 'final';
   focus?: string;
+  /** Modulo di riferimento per i test intermedi (serve al gating). */
+  moduleId?: string;
 }
 
 type GenJobPayloadWithId = GenJobPayload & { jobId: string };
@@ -118,9 +120,10 @@ export class GenerationService {
     courseId: string,
     scope: 'intermediate' | 'final',
     focus: string,
+    moduleId?: string,
   ): Promise<{ jobId: string }> {
     await this.requireCourse(ctx.tenant.tenantId, courseId);
-    return this.enqueue(ctx, courseId, 'course.generate_assessment', { courseId, scope, focus });
+    return this.enqueue(ctx, courseId, 'course.generate_assessment', { courseId, scope, focus, moduleId });
   }
 
   /**
@@ -259,7 +262,7 @@ export class GenerationService {
         break;
       case 'course.generate_assessment':
         await this.executeJob(payload.jobId, () =>
-          this.runAssessment(ctx, payload.courseId, payload.scope!, payload.focus ?? '', payload.jobId),
+          this.runAssessment(ctx, payload.courseId, payload.scope!, payload.focus ?? '', payload.jobId, payload.moduleId),
         );
         break;
       default:
@@ -669,7 +672,12 @@ export class GenerationService {
       select: { id: true, title: true },
     });
 
-    const tasks: Array<{ scope: 'intermediate' | 'final'; focus: string; moduleTitle: string }> = [];
+    const tasks: Array<{
+      scope: 'intermediate' | 'final';
+      focus: string;
+      moduleTitle: string;
+      moduleId?: string;
+    }> = [];
 
     for (let i = 0; i < parsed.data.modules.length; i++) {
       const mo = parsed.data.modules[i]!;
@@ -680,6 +688,9 @@ export class GenerationService {
             scope: 'intermediate',
             focus: `Modulo "${mo.title}": ${mo.lessons.map((l) => l.title).join(', ')}`,
             moduleTitle: mo.title,
+            // Collega il test intermedio al suo modulo: senza moduleId lo step
+            // non entra nella sequenza del player e il gating non si attiva.
+            moduleId: modules[i]!.id,
           });
         }
       }
@@ -697,7 +708,7 @@ export class GenerationService {
     this.logger.log(`Assessment automatici: ${tasks.length} da generare`);
     for (const task of tasks) {
       try {
-        await this.runAssessment(ctx, courseId, task.scope, task.focus, jobId);
+        await this.runAssessment(ctx, courseId, task.scope, task.focus, jobId, task.moduleId);
         this.logger.log(`  ✓ Assessment ${task.scope} "${task.moduleTitle || 'finale'}" generato`);
       } catch (err) {
         this.logger.warn(
@@ -715,6 +726,7 @@ export class GenerationService {
     scope: 'intermediate' | 'final',
     focus: string,
     jobId?: string,
+    moduleId?: string,
   ): Promise<AssessmentType> {
     const course = await this.requireCourse(ctx.tenant.tenantId, courseId);
     const brief = course.brief ? Brief.safeParse(course.brief) : null;
@@ -761,18 +773,26 @@ export class GenerationService {
     // Persiste l'assessment generato come entità Assessment + Question, così da
     // renderlo disponibile a editor ed export (Requisito 6). Lo scope del
     // contratto (lowercase) è mappato all'enum del DB (uppercase).
-    await this.persistAssessment(courseId, assessment);
+    // Per i test intermedi collega il moduleId del modulo di riferimento (noto
+    // dal contesto di generazione), così lo step entra nella sequenza e fa da
+    // gate. L'LLM non popola moduleId: lo impone il backend.
+    await this.persistAssessment(courseId, assessment, scope === 'intermediate' ? moduleId : undefined);
     return assessment;
   }
 
   /** Salva l'assessment generato e le sue domande come entità del dominio. */
-  private async persistAssessment(courseId: string, assessment: AssessmentType): Promise<void> {
+  private async persistAssessment(
+    courseId: string,
+    assessment: AssessmentType,
+    moduleId?: string,
+  ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       const created = await tx.assessment.create({
         data: {
           courseId,
           title: assessment.title,
           scope: assessment.scope === 'final' ? 'FINAL' : 'INTERMEDIATE',
+          moduleId: moduleId ?? null,
           masteryScore: assessment.masteryScore,
           maxAttempts: assessment.maxAttempts,
           shuffleQuestions: assessment.shuffleQuestions,

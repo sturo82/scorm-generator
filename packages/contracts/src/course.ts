@@ -51,6 +51,11 @@ export const Course = z.object({
    * web e player SCORM tramite l'attributo data-motion sul contenitore.
    */
   interactionStyle: z.enum(['sober', 'lively']).default('sober'),
+  /**
+   * Posizione del menu/indice di navigazione: 'side' (sidebar, default) o 'top'
+   * (barra in alto espandibile). Applicata identica ad anteprima e player SCORM.
+   */
+  navPosition: z.enum(['side', 'top']).default('side'),
   /** Brand primario del corso: pilota colori/logo/accenti (anteprima + export). */
   primaryBrandId: z.string().optional(),
   /**

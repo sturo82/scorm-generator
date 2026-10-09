@@ -32,6 +32,8 @@
     this.index = 0;
     // Stato di completamento per step (per id).
     this.completed = {};
+    // Esito dei test per id (per l'aggregazione del completamento/score finale).
+    this._assessmentResults = {};
   }
 
   /**
@@ -131,13 +133,27 @@
 
     this.root.appendChild(this.buildProgress());
 
+    // Posizione del menu: 'top' (barra espandibile in alto) o 'side' (sidebar).
+    var navPos = this.course.navPosition === 'top' ? 'top' : 'side';
+
+    // Contenitore del corpo: in modalità 'side' è una griglia a 2 colonne
+    // (indice a sinistra + contenuto a destra); in 'top' è una colonna singola
+    // con l'indice espandibile sopra il contenuto.
+    var body = el('div', 'course-body');
+    body.setAttribute('data-nav', navPos);
+
     // Indice del corso (sommario navigabile): moduli → lezioni/test.
-    this.root.appendChild(this.buildCourseIndex());
+    body.appendChild(this.buildCourseIndex(navPos));
+
+    // Colonna del contenuto (in 'side' è la seconda colonna della griglia).
+    var contentCol = el('div', 'course-content');
 
     var header = document.createElement('header');
     header.className = 'course-header';
-    // Hero grande della copertina solo sul primo step.
-    if (this.index === 0 && this.course.coverImageKey) {
+    // Hero grande della copertina solo sul primo step, MA non quando lo step è
+    // la panoramica del corso: renderCourseOverview mostra già la copertina
+    // (overview-hero), altrimenti comparirebbe due volte.
+    if (this.index === 0 && this.course.coverImageKey && step.kind !== 'course_overview') {
       var hero = document.createElement('img');
       hero.className = 'course-hero';
       hero.setAttribute('src', this.course.coverImageKey);
@@ -152,12 +168,12 @@
     var subEl = textEl('p', subtitle);
     subEl.className = 'course-subtitle';
     header.appendChild(subEl);
-    this.root.appendChild(header);
+    contentCol.appendChild(header);
 
     // Selettore della modalità di fruizione (slide/scroll/ibrido) per le lezioni.
     // Non si applica alle lezioni video-first (layout dedicato a 2 colonne).
     if (step.kind === 'lesson' && !(step.lesson && step.lesson.videoFirst)) {
-      this.root.appendChild(this.buildViewModeToggle());
+      contentCol.appendChild(this.buildViewModeToggle());
     }
 
     var main = document.createElement('main');
@@ -173,8 +189,11 @@
     } else {
       this.renderAssessmentStep(step, main);
     }
-    this.root.appendChild(main);
-    this.root.appendChild(this.buildNav());
+    contentCol.appendChild(main);
+    contentCol.appendChild(this.buildNav());
+
+    body.appendChild(contentCol);
+    this.root.appendChild(body);
 
     // In modalità 'scroll', il completamento avanza osservando quale concetto
     // entra in vista (reveal + sblocco progressivo).
@@ -599,6 +618,15 @@
   Player.prototype.renderAssessmentStep = function (step, main) {
     var self = this;
     var assessment = step.assessment;
+    // Assessment senza domande: non è un gate valido. Lo auto-completiamo (con
+    // avviso) per non bloccare l'avanzamento in un vicolo cieco.
+    if (!assessment.questions || assessment.questions.length === 0) {
+      var warn = el('p', 'assessment-intro');
+      warn.textContent = 'Questo test non ha ancora domande: nessuna valutazione richiesta.';
+      main.appendChild(warn);
+      this.markComplete(step);
+      return;
+    }
     var mastery = typeof assessment.masteryScore === 'number' ? assessment.masteryScore : 0.8;
     var intro = el('p', 'assessment-intro');
     intro.textContent = step.gate
@@ -620,6 +648,10 @@
           self.scorm.setOutcome(result.completed, result.passed);
           self.scorm.commit();
         }
+        // Memorizza l'esito del test per l'aggregazione finale (completamento
+        // e score riportati all'LMS a fine corso).
+        if (!self._assessmentResults) self._assessmentResults = {};
+        self._assessmentResults[step.id] = { scaled: result.scaled, passed: result.passed };
         // Un assessment è "completato" ai fini del gating solo se superato.
         if (result.passed) {
           self.completed[step.id] = true;
@@ -746,17 +778,31 @@
    * completo), coerente col gating di go(). Gli step futuri sono visibili ma
    * bloccati; il corrente è evidenziato.
    */
-  Player.prototype.buildCourseIndex = function () {
+  Player.prototype.buildCourseIndex = function (navPos) {
     var self = this;
+    navPos = navPos === 'top' ? 'top' : 'side';
     // Frontiera: indice del primo step non completo (fin lì si può navigare).
     var frontier = 0;
     while (frontier < this.steps.length && this.isStepComplete(frontier)) frontier++;
 
-    var details = el('details', 'course-index');
-    details.open = false;
-    var summary = document.createElement('summary');
-    summary.textContent = 'Programma del corso';
-    details.appendChild(summary);
+    // In 'top' l'indice è un <details> espandibile; in 'side' è una sidebar
+    // sempre visibile (<nav>), come l'anteprima web.
+    var container;
+    var closeAfterClick = false;
+    if (navPos === 'top') {
+      container = el('details', 'course-index');
+      container.open = false;
+      var summary = document.createElement('summary');
+      summary.textContent = 'Programma del corso';
+      container.appendChild(summary);
+      closeAfterClick = true;
+    } else {
+      container = el('nav', 'course-index course-index-side');
+      container.setAttribute('aria-label', 'Programma del corso');
+      var heading = textEl('p', 'Programma del corso');
+      heading.className = 'course-index-title';
+      container.appendChild(heading);
+    }
 
     var ol = document.createElement('ol');
     var lastModule = null;
@@ -789,15 +835,18 @@
         btn.appendChild(text);
         if (!reachable) btn.disabled = true;
         btn.addEventListener('click', function () {
-          if (i <= frontier) { details.open = false; self.go(i); }
+          if (i <= frontier) {
+            if (closeAfterClick) container.open = false;
+            self.go(i);
+          }
         });
         var li = document.createElement('li');
         li.appendChild(btn);
         ol.appendChild(li);
       })(i, step);
     }
-    details.appendChild(ol);
-    return details;
+    container.appendChild(ol);
+    return container;
   };
 
   Player.prototype.buildNav = function () {
@@ -883,17 +932,71 @@
     this.render();
   };
 
+  /**
+   * Aggrega l'esito dei test del corso per riportarlo all'LMS. Il successo del
+   * corso dipende dal superamento di TUTTI i test (intermedi + finale); lo score
+   * riportato è quello del test FINALE se presente, altrimenti la media di tutti
+   * i test. Ritorna { hasAssessments, allPassed, scaled|null }.
+   */
+  Player.prototype.aggregateOutcome = function () {
+    var steps = this.steps || [];
+    var assessmentSteps = [];
+    for (var i = 0; i < steps.length; i++) {
+      if (steps[i].kind === 'assessment' && steps[i].assessment &&
+          steps[i].assessment.questions && steps[i].assessment.questions.length > 0) {
+        assessmentSteps.push(steps[i]);
+      }
+    }
+    if (assessmentSteps.length === 0) {
+      return { hasAssessments: false, allPassed: true, scaled: null };
+    }
+    var allPassed = true;
+    var finalScore = null;
+    var sum = 0;
+    var n = 0;
+    for (var j = 0; j < assessmentSteps.length; j++) {
+      var s = assessmentSteps[j];
+      var r = this._assessmentResults && this._assessmentResults[s.id];
+      var scaled = r ? r.scaled : 0;
+      var passed = r ? r.passed : false;
+      if (!passed) allPassed = false;
+      sum += scaled;
+      n += 1;
+      if (s.gate === false) finalScore = scaled; // il test finale
+    }
+    var scaled = finalScore != null ? finalScore : (n > 0 ? sum / n : null);
+    return { hasAssessments: true, allPassed: allPassed, scaled: scaled };
+  };
+
   Player.prototype.complete = function () {
-    if (this.scorm && this.scorm.setOutcome) {
-      this.scorm.setOutcome(true, null);
-      this.scorm.commit();
-      this.scorm.terminate();
+    var outcome = this.aggregateOutcome();
+    if (this.scorm) {
+      // Score complessivo (test finale o media dei test), se ci sono test.
+      if (outcome.scaled != null && this.scorm.setScore) {
+        this.scorm.setScore(outcome.scaled, null, 0, 1);
+      }
+      if (this.scorm.setOutcome) {
+        // Completato solo se tutti i test sono superati; pass/fail riportato
+        // all'LMS. Senza test, il corso è completato (passed non applicabile).
+        if (outcome.hasAssessments) {
+          this.scorm.setOutcome(outcome.allPassed, outcome.allPassed);
+        } else {
+          this.scorm.setOutcome(true, null);
+        }
+        this.scorm.commit();
+        this.scorm.terminate();
+      }
     }
     if (this.root) {
       this.root.innerHTML = '';
       var done = el('div', 'course-done');
-      done.appendChild(textEl('h1', 'Corso completato'));
-      done.appendChild(textEl('p', 'Hai completato tutti i passi del corso.'));
+      if (outcome.hasAssessments && !outcome.allPassed) {
+        done.appendChild(textEl('h1', 'Corso terminato'));
+        done.appendChild(textEl('p', 'Hai raggiunto la fine, ma non tutti i test risultano superati.'));
+      } else {
+        done.appendChild(textEl('h1', 'Corso completato'));
+        done.appendChild(textEl('p', 'Hai completato tutti i passi del corso.'));
+      }
       this.root.appendChild(done);
     }
   };

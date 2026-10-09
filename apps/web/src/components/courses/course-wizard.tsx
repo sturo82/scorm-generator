@@ -100,6 +100,16 @@ export function CourseWizard({ courseId }: { courseId: string }) {
     }
   }
 
+  async function handleSetNavPosition(pos: 'side' | 'top') {
+    if ((course.data?.navPosition ?? 'side') === pos) return;
+    try {
+      await updateSettings.mutateAsync({ navPosition: pos });
+      toast.show(pos === 'top' ? 'Menu in alto applicato' : 'Menu a lato applicato', 'success');
+    } catch {
+      toast.show('Aggiornamento non riuscito', 'error');
+    }
+  }
+
   async function handleSetInteractionStyle(style: 'sober' | 'lively') {
     if (course.data?.interactionStyle === style) return;
     try {
@@ -315,6 +325,12 @@ export function CourseWizard({ courseId }: { courseId: string }) {
             onChange={handleSetInteractionStyle}
             saving={updateSettings.isPending}
           />
+
+          <NavPositionPicker
+            value={course.data?.navPosition ?? 'side'}
+            onChange={handleSetNavPosition}
+            saving={updateSettings.isPending}
+          />
         </StepShell>
       )}
 
@@ -509,6 +525,57 @@ function InteractionStylePicker({
       <p className="mb-3 text-xs text-muted-foreground">
         Governa le animazioni di flashcard, quiz, accordion e hotspot. Entrambi gli stili rispettano
         la preferenza «riduci animazioni» del sistema.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {options.map((opt) => {
+          const selected = value === opt.id;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => onChange(opt.id)}
+              aria-pressed={selected}
+              className={cn(
+                'rounded-lg border p-3 text-left transition',
+                selected ? 'border-primary bg-accent/50 ring-1 ring-primary' : 'hover:bg-accent/30',
+              )}
+            >
+              <span className="flex items-center gap-2 text-sm font-medium">
+                {selected && <Check className="size-3.5 text-primary" />}
+                {opt.title}
+              </span>
+              <span className="mt-1 block text-xs text-muted-foreground">{opt.desc}</span>
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * Scelta della posizione del menu/indice di navigazione: a lato (sidebar) o in
+ * alto (barra espandibile). Applicata identica ad anteprima e player SCORM.
+ */
+function NavPositionPicker({
+  value,
+  onChange,
+  saving,
+}: {
+  value: 'side' | 'top';
+  onChange: (pos: 'side' | 'top') => void;
+  saving?: boolean;
+}) {
+  const options: Array<{ id: 'side' | 'top'; title: string; desc: string }> = [
+    { id: 'side', title: 'A lato', desc: 'Indice sempre visibile in una colonna a sinistra (su schermi stretti si impila sopra).' },
+    { id: 'top', title: 'In alto', desc: 'Barra «Programma del corso» espandibile sopra il contenuto.' },
+  ];
+  return (
+    <fieldset className="rounded-xl border bg-card p-4" disabled={saving}>
+      <legend className="px-1 text-sm font-medium">Posizione del menu</legend>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Dove mostrare l&apos;indice di navigazione del corso. Identico in anteprima e nel pacchetto
+        SCORM esportato.
       </p>
       <div className="grid gap-2 sm:grid-cols-2">
         {options.map((opt) => {

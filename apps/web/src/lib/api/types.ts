@@ -47,6 +47,8 @@ export interface CourseView {
   coverAttribution?: { provider: string; authorName: string; authorUrl?: string; sourceUrl?: string };
   /** Stile delle micro-interazioni del corso: 'sober' (default) | 'lively'. */
   interactionStyle?: 'sober' | 'lively';
+  /** Posizione del menu di navigazione: 'side' (default) | 'top'. */
+  navPosition?: 'side' | 'top';
   /** Brand primario del corso (colori/logo/accenti in anteprima + export). */
   primaryBrandId?: string;
   /** Docente/relatore del corso (header sempre visibile). */
@@ -229,6 +231,7 @@ export interface ApiClient {
     courseId: string,
     settings: {
       interactionStyle?: 'sober' | 'lively';
+      navPosition?: 'side' | 'top';
       primaryBrandId?: string;
       instructor?: { name?: string; role?: string; avatarKey?: string };
     },

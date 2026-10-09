@@ -29,6 +29,11 @@ class GenerateAssessmentDto {
   @IsOptional()
   @IsString()
   focus?: string;
+
+  /** Modulo di riferimento per i test intermedi (abilita il gating). */
+  @IsOptional()
+  @IsString()
+  moduleId?: string;
 }
 
 class GenerateContentDto {
@@ -86,7 +91,7 @@ export class GenerationController {
     @Param('courseId') courseId: string,
     @Body() dto: GenerateAssessmentDto,
   ) {
-    return this.generation.enqueueAssessment(ctx, courseId, dto.scope, dto.focus ?? '');
+    return this.generation.enqueueAssessment(ctx, courseId, dto.scope, dto.focus ?? '', dto.moduleId);
   }
 
   /** Genera le immagini mancanti nei block della lezione (placeholder -> reali). */

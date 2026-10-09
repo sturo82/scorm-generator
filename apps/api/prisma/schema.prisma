@@ -214,6 +214,9 @@ model Course {
   // Propagato ad anteprima web e player SCORM (data-motion). Validato a livello
   // applicativo dall'enum interactionStyle del contratto Course.
   interactionStyle String  @default("sober")
+  // Posizione del menu/indice di navigazione: "side" (sidebar, default) oppure
+  // "top" (barra in alto espandibile). Applicata identica ad anteprima e player.
+  navPosition String  @default("side")
   // Brand "primario" del corso: pilota colori/logo/accenti nell'anteprima web e
   // come default nell'export SCORM. SetNull se il brand viene eliminato.
   primaryBrandId String?

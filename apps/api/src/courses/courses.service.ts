@@ -31,6 +31,8 @@ export interface CourseView {
   coverAttribution?: { provider: string; authorName: string; authorUrl?: string; sourceUrl?: string };
   /** Stile delle micro-interazioni del corso. */
   interactionStyle: InteractionStyle;
+  /** Posizione del menu di navigazione: 'side' (default) | 'top'. */
+  navPosition: 'side' | 'top';
   /** Brand primario del corso (colori/logo/accenti). */
   primaryBrandId?: string;
   /** Docente/relatore del corso (nome, ruolo, URL foto firmato). */
@@ -120,6 +122,7 @@ export class CoursesService {
     courseId: string,
     settings: {
       interactionStyle?: InteractionStyle;
+      navPosition?: 'side' | 'top';
       primaryBrandId?: string | null;
       instructor?: { name?: string | null; role?: string | null; avatarKey?: string | null } | null;
     },
@@ -127,12 +130,14 @@ export class CoursesService {
     await this.requireCourse(tenantId, courseId);
     const data: {
       interactionStyle?: string;
+      navPosition?: string;
       primaryBrandId?: string | null;
       instructorName?: string | null;
       instructorRole?: string | null;
       instructorAvatarKey?: string | null;
     } = {};
     if (settings.interactionStyle) data.interactionStyle = settings.interactionStyle;
+    if (settings.navPosition) data.navPosition = settings.navPosition;
     if (settings.primaryBrandId !== undefined) {
       // Verifica che il brand appartenga al tenant (o azzera con null).
       if (settings.primaryBrandId) {
@@ -256,6 +261,7 @@ export class CoursesService {
     coverImageKey?: string | null;
     coverAttribution?: unknown;
     interactionStyle?: string | null;
+    navPosition?: string | null;
     primaryBrandId?: string | null;
     instructorName?: string | null;
     instructorRole?: string | null;
@@ -301,6 +307,7 @@ export class CoursesService {
       coverImageUrl,
       coverAttribution: parseCoverAttribution(course.coverAttribution),
       interactionStyle: course.interactionStyle === 'lively' ? 'lively' : 'sober',
+      navPosition: course.navPosition === 'top' ? 'top' : 'side',
       primaryBrandId: course.primaryBrandId ?? undefined,
       instructor,
       folderId: course.folderId ?? null,

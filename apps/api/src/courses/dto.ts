@@ -37,6 +37,10 @@ export class UpdateCourseSettingsDto {
   interactionStyle?: 'sober' | 'lively';
 
   @IsOptional()
+  @IsIn(['side', 'top'])
+  navPosition?: 'side' | 'top';
+
+  @IsOptional()
   @IsString()
   primaryBrandId?: string;
 

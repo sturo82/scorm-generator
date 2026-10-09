@@ -112,7 +112,7 @@ export function useSaveBrief(courseId: string) {
 export function useUpdateCourseSettings(courseId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (settings: { interactionStyle?: 'sober' | 'lively'; primaryBrandId?: string; instructor?: { name?: string; role?: string; avatarKey?: string } }) =>
+    mutationFn: (settings: { interactionStyle?: 'sober' | 'lively'; navPosition?: 'side' | 'top'; primaryBrandId?: string; instructor?: { name?: string; role?: string; avatarKey?: string } }) =>
       api.updateCourseSettings(courseId, settings),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.course(courseId) }),
   });

@@ -191,6 +191,7 @@ export class ExportService {
       language: row.language,
       coverImageKey: row.coverImageKey ?? undefined,
       interactionStyle: row.interactionStyle === 'lively' ? 'lively' : 'sober',
+      navPosition: row.navPosition === 'top' ? 'top' : 'side',
       primaryBrandId: row.primaryBrandId ?? undefined,
       instructor: row.instructorName
         ? {

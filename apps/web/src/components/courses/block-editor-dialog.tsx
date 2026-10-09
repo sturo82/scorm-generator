@@ -6,6 +6,7 @@ import type { Block as BlockType } from '@scorm/contracts';
 import { Dialog } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { BlockRenderer } from '@/components/courses/block-renderer';
+import { ImageHotspotEditor } from '@/components/courses/image-hotspot-editor';
 
 /**
  * Editor di un singolo Block. Per coprire tutti gli 11 tipi in modo affidabile,
@@ -66,7 +67,54 @@ export function BlockEditorDialog({
     if (valid) onSave(valid);
   }
 
+  // Applica un payload strutturato (dagli editor visuali) al block, validandolo.
+  function applyPayload(payload: Record<string, unknown>) {
+    if (!block) return;
+    const candidate = { ...block, payload } as unknown;
+    const result = Block.safeParse(candidate);
+    if (result.success) {
+      setPreview(result.data);
+      setText(JSON.stringify(result.data, null, 2));
+      setError(null);
+    } else {
+      // Mostra il primo errore ma aggiorna comunque il testo JSON (così l'utente
+      // può correggere): es. image mancante o nessun hotspot.
+      const first = result.error.issues[0];
+      setError(first ? `${first.path.join('.')} — ${first.message}` : 'struttura non valida');
+      setText(JSON.stringify(candidate, null, 2));
+    }
+  }
+
   if (!open || !block) return null;
+
+  // Editor VISUALE dedicato per image_hotspot (immagine + pallini), con
+  // anteprima live. Gli altri tipi usano l'editor JSON generico sotto.
+  if (block.type === 'image_hotspot') {
+    return (
+      <Dialog open={open} onClose={onClose} title="Modifica block — immagine interattiva">
+        <div className="grid max-h-[70vh] gap-4 overflow-auto md:grid-cols-2">
+          <div className="overflow-auto">
+            <ImageHotspotEditor block={block} onChange={applyPayload} />
+            {error && <p className="mt-2 text-xs text-destructive" data-testid="block-editor-error">{error}</p>}
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-medium text-muted-foreground">Anteprima</label>
+            <div className="h-80 overflow-auto rounded-md border bg-muted/30 p-2">
+              {preview ? <BlockRenderer block={preview} /> : <p className="text-xs text-muted-foreground">—</p>}
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose} disabled={saving}>
+            Annulla
+          </Button>
+          <Button onClick={handleSave} disabled={saving || !!error}>
+            {saving ? 'Salvataggio…' : 'Salva'}
+          </Button>
+        </div>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onClose={onClose} title={`Modifica block — ${block.type}`}>
