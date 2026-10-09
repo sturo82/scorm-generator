@@ -269,6 +269,47 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
 [data-motion="lively"] .hotspot-dot[aria-pressed="true"]::before { animation: none; }
 
 /* ============================================================================
+   DRAG & DROP / SORTING / ORDER / SCENARIO — layout e stato dei block
+   interattivi "stateful". DEVE stare qui (foglio condiviso) perché l'anteprima
+   web non carica player.css: senza, questi block sono senza stile e sembrano
+   non funzionanti.
+   ========================================================================== */
+.dnd-prompt { font-weight: 600; margin: 0 0 0.75rem; }
+.dnd-pool { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+.dnd-chip { border: 1px solid var(--ix-border); background: var(--ix-surface); color: var(--ix-on-surface); border-radius: 999px; padding: 0.4rem 0.85rem; font-size: 0.9rem; font-weight: 600; cursor: grab; transition: transform var(--mo-dur) var(--mo-ease), box-shadow var(--mo-dur) var(--mo-ease), border-color var(--mo-dur) var(--mo-ease); }
+.dnd-chip:hover { transform: translateY(var(--mo-lift)); box-shadow: var(--ix-shadow-sm); }
+.dnd-chip.is-picked { border-color: var(--ix-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ix-accent) 40%, transparent); }
+.dnd-chip.is-used { opacity: 0.4; cursor: default; }
+.dnd-slots { display: flex; flex-direction: column; gap: 0.6rem; }
+.dnd-row { display: flex; align-items: center; gap: 0.75rem; }
+.dnd-left { flex: 1; font-size: 0.95rem; }
+.dnd-slot { min-width: 12rem; border: 2px dashed var(--ix-border); border-radius: 10px; padding: 0.55rem 0.85rem; text-align: left; background: transparent; color: var(--ix-on-surface); cursor: pointer; font-size: 0.9rem; transition: border-color var(--mo-dur) var(--mo-ease), background var(--mo-dur) var(--mo-ease); }
+.dnd-slot:hover { border-color: var(--ix-accent); }
+.dnd-slot.is-filled { border-style: solid; background: color-mix(in srgb, var(--ix-accent) 8%, transparent); color: var(--ix-on-surface); font-weight: 600; }
+
+.order-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.order-row { display: flex; align-items: center; gap: 0.75rem; border: 1px solid var(--ix-border); background: var(--ix-surface); border-radius: 10px; padding: 0.55rem 0.75rem; box-shadow: var(--ix-shadow-sm); }
+.order-handle { color: var(--ix-on-surface); opacity: 0.6; cursor: grab; }
+.order-num { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--ix-accent); color: var(--ix-on-primary); font-size: 0.75rem; font-weight: 700; }
+.order-label { flex: 1; }
+.order-actions { display: flex; gap: 0.25rem; }
+.order-btn { border: 1px solid var(--ix-border); background: var(--ix-surface); color: var(--ix-on-surface); border-radius: 6px; padding: 0.1rem 0.5rem; cursor: pointer; }
+.order-btn:disabled { opacity: 0.3; cursor: default; }
+
+.sorting-pool { padding: 0.75rem; border: 1px dashed var(--ix-border); border-radius: 12px; margin-bottom: 1rem; min-height: 3rem; }
+.sorting-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.9rem; }
+.sorting-bucket { border: 2px dashed var(--ix-border); border-radius: 12px; padding: 0.75rem; transition: border-color var(--mo-dur) var(--mo-ease); }
+.sorting-bucket:hover { border-color: var(--ix-accent); }
+.sorting-bucket-title { font-weight: 700; margin: 0 0 0.5rem; }
+.sorting-zone { display: flex; flex-wrap: wrap; gap: 0.5rem; min-height: 2.25rem; }
+.dnd-chip.is-placed { cursor: pointer; }
+.dnd-chip.is-correct { border-color: #16a34a; background: color-mix(in srgb, #16a34a 14%, transparent); color: #15803d; }
+.dnd-chip.is-wrong { border-color: #dc2626; background: color-mix(in srgb, #dc2626 12%, transparent); color: #b91c1c; }
+
+.scenario-choice { display: block; width: 100%; text-align: left; margin-top: 0.5rem; padding: 0.7rem 0.9rem; border: 1px solid var(--ix-border); border-radius: 10px; background: var(--ix-surface); color: var(--ix-on-surface); cursor: pointer; transition: border-color var(--mo-dur) var(--mo-ease), background var(--mo-dur) var(--mo-ease); }
+.scenario-choice:hover { border-color: var(--ix-accent); background: color-mix(in srgb, var(--ix-accent) 6%, transparent); }
+
+/* ============================================================================
    QUIZ / ASSESSMENT — feedback immediato animato.
    Markup: .assessment-feedback.is-pass | .is-fail, .question-input .opt
    ========================================================================== */

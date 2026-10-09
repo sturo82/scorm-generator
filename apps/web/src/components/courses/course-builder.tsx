@@ -1171,7 +1171,9 @@ const BLOCK_META: Record<string, { label: string; icon: string }> = {
   click_reveal: { label: 'Click & reveal', icon: '✶' },
   branching_scenario: { label: 'Scenario', icon: '⌥' },
   video_checkpoint: { label: 'Video', icon: '▷' },
-  dragdrop: { label: 'Trascina', icon: '⇄' },
+  dragdrop_match: { label: 'Abbinamento', icon: '⇄' },
+  dragdrop_order: { label: 'Ordinamento', icon: '↕' },
+  sorting_categories: { label: 'Classificazione', icon: '⊞' },
 };
 
 /** Breve estratto descrittivo del contenuto di un block (per la riga compatta). */
@@ -1200,6 +1202,12 @@ function blockSummary(block: Block): string {
       return `${count(p.items)} elementi`;
     case 'branching_scenario':
       return `${count(p.nodes)} nodi`;
+    case 'dragdrop_match':
+      return `${count(p.pairs)} abbinamenti`;
+    case 'dragdrop_order':
+      return `${count(p.items)} elementi da ordinare`;
+    case 'sorting_categories':
+      return `${count(p.items)} elementi · ${count(p.categories)} categorie`;
     case 'video_checkpoint':
       return (p.video as { storageKey?: string })?.storageKey ? 'Video impostato' : 'Video da caricare';
     default:

@@ -305,8 +305,14 @@ function renderBody(
       );
     }
     case 'image_hotspot':
-      // Anteprima reale e interattiva (immagine + pallini posizionati + box
-      // info al clic), via il renderer condiviso: identica al corso/export.
+    case 'timeline':
+    case 'click_reveal':
+    case 'dragdrop_match':
+    case 'dragdrop_order':
+    case 'sorting_categories':
+    case 'branching_scenario':
+      // Anteprima reale e interattiva via il renderer condiviso (identica a
+      // corso/export): immagine+pallini, drag&drop, ordinamento, scenario, ecc.
       return <BlockRenderer block={block} />;
     default:
       return <p className="text-sm text-muted-foreground">Anteprima non disponibile per questo tipo.</p>;
