@@ -39,5 +39,13 @@ packages/scorm/src/runtime/assets/render-core.js
 # Pacchetti SCORM esportati (artefatti di build, non versionati)
 exports/
 
+# Terraform: state (può contenere segreti), lock, cache provider, tfvars reali
+infra/terraform/.terraform/
+infra/terraform/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+infra/terraform/terraform.tfvars
+crash.log
+
 # Zip di esempio Brain-Bites nella root (duplicato in examples/; artefatto)
 /Brain-Bites-Covid-19-and-Healthy-Workspaces.zip

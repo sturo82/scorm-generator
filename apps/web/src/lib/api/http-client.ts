@@ -1,7 +1,9 @@
 import type { Block, Brief, BriefDraft } from '@scorm/contracts';
 import { getSession } from '../auth';
 import type {
+  AdminUserView,
   ApiClient,
+  AppUserRole,
   AssessmentIndexView,
   AuditEventView,
   BrandView,
@@ -234,6 +236,10 @@ export class HttpApiClient implements ApiClient {
   async deleteFolder(id: string) { await this.request(`/folders/${id}`, { method: 'DELETE' }); }
   async moveCourse(courseId: string, folderId: string | null) {
     await this.request(`/courses/${courseId}/folder`, { method: 'PUT', body: JSON.stringify({ folderId }) });
+  }
+  listUsers() { return this.request<AdminUserView[]>('/admin/users'); }
+  createUser(input: { email: string; displayName?: string; role: AppUserRole }) {
+    return this.request<AdminUserView>('/admin/users', { method: 'POST', body: JSON.stringify(input) });
   }
   getBranding() { return this.request<AppBrandingView>('/tenant/branding'); }
   updateBranding(patch: UpdateAppBranding) {

@@ -1,7 +1,9 @@
 import type { Block, Brief, BriefDraft } from '@scorm/contracts';
 import { computeQuote } from '@scorm/contracts';
 import type {
+  AdminUserView,
   ApiClient,
+  AppUserRole,
   AuditEventView,
   BrandView,
   CourseCostSummary,
@@ -580,6 +582,29 @@ export class MockApiClient implements ApiClient {
     logoUrl: null,
     faviconUrl: null,
   };
+  /** Utenti in-memory per il pannello admin (demo). */
+  private users: AdminUserView[] = [
+    { id: 'u-owner', email: 'owner@demo.test', displayName: 'Dev Owner', role: 'OWNER', createdAt: new Date().toISOString() },
+  ];
+  async listUsers(): Promise<AdminUserView[]> {
+    await delay(120);
+    return [...this.users];
+  }
+  async createUser(input: { email: string; displayName?: string; role: AppUserRole }): Promise<AdminUserView> {
+    await delay();
+    if (this.users.some((u) => u.email.toLowerCase() === input.email.toLowerCase())) {
+      throw new Error('Esiste già un utente con questa email');
+    }
+    const u: AdminUserView = {
+      id: id('user'),
+      email: input.email,
+      displayName: input.displayName ?? null,
+      role: input.role,
+      createdAt: new Date().toISOString(),
+    };
+    this.users.push(u);
+    return u;
+  }
   async getBranding(): Promise<AppBrandingView> {
     await delay(120);
     return { ...this.branding };

@@ -1,0 +1,23 @@
+# Copia in terraform.tfvars e adatta. NON committare terraform.tfvars reale.
+
+region            = "eu-west-1"   # Irlanda (UE, GDPR) per compute/dati/Claude/Polly/Transcribe
+media_region      = "us-west-2"   # SOLO immagini (Bedrock Stable Image non disponibile in UE)
+transcribe_region = "eu-west-1"
+bedrock_region    = "eu-west-1"
+
+# Inference profile EU di Claude (prefisso "eu."). Verifica con:
+#   aws bedrock list-inference-profiles --region eu-west-1
+bedrock_llm_model_id = "eu.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+# Dominio e TLS (opzionali per il primo deploy; senza, l'ALB resta su HTTP).
+# domain_name         = "example.com"
+# acm_certificate_arn = "arn:aws:acm:eu-west-1:<account>:certificate/xxxx"
+# cors_origins        = "https://app.example.com"
+
+# Dimensionamento (default: API 0.5vCPU/2GB, Web 0.25vCPU/1GB, RDS t4g.micro).
+# api_memory = 2048
+# db_multi_az = false   # true per HA (raddoppia il costo RDS)
+
+# Tag immagini (di norma il git SHA; impostati dalla pipeline di deploy).
+# api_image_tag = "abc1234"
+# web_image_tag = "abc1234"

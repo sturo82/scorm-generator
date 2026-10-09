@@ -51,3 +51,14 @@ COPY --from=build /app/node_modules/@prisma/client node_modules/@prisma/client
 USER appuser
 EXPOSE 3000
 CMD ["node", "apps/api/dist/main.js"]
+
+# ---- Migrate (task one-off per le migrazioni Prisma) ----
+# Immagine separata con TUTTE le dipendenze (incluso il Prisma CLI, dev-dep) e
+# lo schema+migrazioni, da eseguire come ECS task one-off PRIMA del deploy
+# dell'API: applica le migrazioni in modo idempotente e non interattivo.
+# Build: docker build --target migrate -t <repo>/scorm-migrate .
+# Run:   prisma migrate deploy (vedi CMD).
+FROM build AS migrate
+ENV NODE_ENV=production
+# Richiede DATABASE_URL a runtime (iniettata da Secrets Manager nel task ECS).
+CMD ["npx", "--workspace", "@scorm/api", "prisma", "migrate", "deploy", "--schema", "apps/api/prisma/schema.prisma"]

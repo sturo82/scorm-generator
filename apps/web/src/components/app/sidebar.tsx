@@ -3,15 +3,22 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/cn';
-import { NAV_ITEMS } from './nav-items';
+import { NAV_ITEMS, ROLE_RANK } from './nav-items';
 import { AppBrand } from './app-brand';
+import { getSession } from '@/lib/auth';
+import type { AppUserRole } from '@/lib/api/types';
 
 /** Contenuto della navigazione, condiviso tra sidebar desktop e drawer mobile. */
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  // Gating cosmetico: nasconde le voci che richiedono un ruolo superiore a
+  // quello dell'utente corrente. L'enforcement reale è server-side.
+  const roleStr = getSession()?.user.role;
+  const myRank = ROLE_RANK[(roleStr as AppUserRole) ?? 'VIEWER'] ?? 0;
+  const items = NAV_ITEMS.filter((it) => !it.requiresRole || myRank >= ROLE_RANK[it.requiresRole]);
   return (
     <nav className="flex flex-col gap-0.5 px-3 py-4" aria-label="Navigazione principale">
-      {NAV_ITEMS.map((item, i) => {
+      {items.map((item, i) => {
         const active = pathname === item.href || pathname.startsWith(item.href + '/');
         return (
           <div key={item.href}>

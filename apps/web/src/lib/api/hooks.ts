@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Block, Brief, PricingQuoteInput } from '@scorm/contracts';
 import { getApiClient } from './client';
-import type { BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue } from './types';
+import type { BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole } from './types';
 
 const api = getApiClient();
 
@@ -24,6 +24,7 @@ export const qk = {
   branding: ['branding'] as const,
   videos: ['videos'] as const,
   videoChannels: ['videos', 'channels'] as const,
+  users: ['users'] as const,
 };
 
 // --- Corsi ------------------------------------------------------------------
@@ -434,6 +435,20 @@ export function useCourseQuote(courseId: string, input: PricingQuoteInput) {
 // --- Branding white-label ---------------------------------------------------
 
 /** Branding white-label della web app (nome, colore, logo, favicon). */
+// --- Utenti (admin) ---------------------------------------------------------
+
+export const useUsers = () =>
+  useQuery({ queryKey: qk.users, queryFn: () => api.listUsers() });
+
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { email: string; displayName?: string; role: AppUserRole }) =>
+      api.createUser(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.users }),
+  });
+}
+
 export const useBranding = () =>
   useQuery({ queryKey: qk.branding, queryFn: () => api.getBranding(), staleTime: 5 * 60_000 });
 

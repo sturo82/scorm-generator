@@ -199,6 +199,18 @@ export interface AssessmentIndexView {
   moduleId?: string;
 }
 
+/** Ruoli utente (gerarchia OWNER ⊇ ADMIN ⊇ EDITOR ⊇ VIEWER). */
+export type AppUserRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER';
+
+/** Vista di un utente del tenant per il pannello admin. */
+export interface AdminUserView {
+  id: string;
+  email: string;
+  displayName: string | null;
+  role: AppUserRole;
+  createdAt: string;
+}
+
 export interface ApiClient {
   // Corsi
   listCourses(filter?: { folderId?: string | 'root'; q?: string }): Promise<CourseView[]>;
@@ -287,6 +299,10 @@ export interface ApiClient {
   getBranding(): Promise<AppBrandingView>;
   updateBranding(patch: UpdateAppBranding): Promise<AppBrandingView>;
   uploadBrandingAsset(kind: 'logo' | 'favicon', file: File): Promise<AppBrandingView>;
+
+  // Gestione utenti del tenant (admin): elenco e invito
+  listUsers(): Promise<AdminUserView[]>;
+  createUser(input: { email: string; displayName?: string; role: AppUserRole }): Promise<AdminUserView>;
 
   // Libreria video per-tenant
   listVideos(filter?: { source?: string; channel?: string }): Promise<VideoAssetView[]>;

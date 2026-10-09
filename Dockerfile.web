@@ -1,0 +1,58 @@
+# Dockerfile multi-stage per il frontend Next.js (apps/web) in produzione.
+# Usa l'output "standalone" di Next: immagine piccola, server Node minimale.
+# Le variabili NEXT_PUBLIC_* sono inlined al BUILD time: vanno passate come
+# build-args (vedi ARG sotto), non a runtime.
+
+# ---- Base ----
+FROM node:20.11.0-bookworm-slim AS base
+WORKDIR /app
+
+# ---- Dependencies (incluse dev, per il build) ----
+FROM base AS deps
+ENV NODE_ENV=development
+COPY package.json package-lock.json* ./
+COPY packages/contracts/package.json packages/contracts/
+COPY apps/web/package.json apps/web/
+# Installa solo ciò che serve a contracts + web (il resto del monorepo non serve
+# al frontend). npm ci sull'intero lockfile garantisce versioni pinnate.
+RUN npm ci
+
+# ---- Build ----
+FROM deps AS build
+# Variabili pubbliche del frontend (congelate nel bundle). Passale con
+# --build-arg al docker build / nella pipeline. Valori di default innocui.
+ARG NEXT_PUBLIC_API_MODE=real
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_AUTH_MODE
+ARG NEXT_PUBLIC_OIDC_ISSUER
+ARG NEXT_PUBLIC_OIDC_CLIENT_ID
+ARG NEXT_PUBLIC_OIDC_REDIRECT_URI
+ARG NEXT_PUBLIC_OIDC_SCOPE
+ARG NEXT_PUBLIC_OIDC_AUDIENCE
+ENV NEXT_PUBLIC_API_MODE=$NEXT_PUBLIC_API_MODE \
+    NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
+    NEXT_PUBLIC_AUTH_MODE=$NEXT_PUBLIC_AUTH_MODE \
+    NEXT_PUBLIC_OIDC_ISSUER=$NEXT_PUBLIC_OIDC_ISSUER \
+    NEXT_PUBLIC_OIDC_CLIENT_ID=$NEXT_PUBLIC_OIDC_CLIENT_ID \
+    NEXT_PUBLIC_OIDC_REDIRECT_URI=$NEXT_PUBLIC_OIDC_REDIRECT_URI \
+    NEXT_PUBLIC_OIDC_SCOPE=$NEXT_PUBLIC_OIDC_SCOPE \
+    NEXT_PUBLIC_OIDC_AUDIENCE=$NEXT_PUBLIC_OIDC_AUDIENCE
+COPY . .
+# Il prebuild di apps/web copia gli asset semantici (MiniLM) in public/semantic.
+RUN npm run build --workspace @scorm/web
+
+# ---- Runtime (standalone) ----
+FROM base AS runtime
+ENV NODE_ENV=production
+ENV PORT=3100
+ENV HOSTNAME=0.0.0.0
+RUN groupadd --system --gid 1001 nodejs \
+  && useradd --system --uid 1001 --gid nodejs nextjs
+# Output standalone: server Node + node_modules tracciati. I percorsi riflettono
+# la struttura del monorepo (apps/web/server.js dentro standalone).
+COPY --from=build --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
+COPY --from=build --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
+USER nextjs
+EXPOSE 3100
+CMD ["node", "apps/web/server.js"]

@@ -9,3 +9,5 @@ export const SPEECH_PROVIDER = 'SPEECH_PROVIDER';
 export const TRANSCRIPTION_PROVIDER = 'TRANSCRIPTION_PROVIDER';
 export const JOB_QUEUE = 'JOB_QUEUE';
 export const DOCUMENT_EXTRACTORS = 'DOCUMENT_EXTRACTORS';
+/** Client Amazon Cognito per la gestione utenti admin (null se non configurato). */
+export const COGNITO_CLIENT = 'COGNITO_CLIENT';

@@ -77,6 +77,14 @@ export interface AppConfig {
     /** Lingua di default (es. "it-IT"); se assente, auto-detect. */
     defaultLanguage?: string;
   };
+  /**
+   * Amazon Cognito per la gestione utenti admin (inviti). Se userPoolId è
+   * assente (dev/test), la funzione inviti è disabilitata.
+   */
+  cognito: {
+    userPoolId?: string;
+    region: string;
+  };
   /** Limiti di upload della knowledge base. */
   upload: {
     maxFileBytes: number;
@@ -157,6 +165,10 @@ export function loadConfiguration(): AppConfig {
     transcribe: {
       region: env('TRANSCRIBE_REGION', env('AWS_REGION', 'us-east-1')),
       defaultLanguage: process.env['TRANSCRIBE_LANGUAGE'],
+    },
+    cognito: {
+      userPoolId: process.env['COGNITO_USER_POOL_ID'],
+      region: env('COGNITO_REGION', env('AWS_REGION', 'eu-west-1')),
     },
     upload: {
       maxFileBytes: Number(env('UPLOAD_MAX_FILE_BYTES', String(50 * 1024 * 1024))),
