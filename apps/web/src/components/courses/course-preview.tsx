@@ -385,12 +385,13 @@ function CourseIndex({
               </li>
             );
           }
-          // assessment
+          // assessment: badge "?" (test da svolgere), non una spunta — in
+          // anteprima non c'è progressione, la ✓ sembrava "già superato".
           return (
             <li key={`assess-${s.assessment.id}`} className="pl-2">
               <button type="button" onClick={() => onSelect(i)} aria-current={active ? 'true' : undefined} className={itemClass(active, false)} style={activeStyle(active)}>
                 <span className={cn('grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold', active ? 'bg-white/25' : 'bg-amber-500/20 text-amber-700')} aria-hidden>
-                  ✓
+                  ?
                 </span>
                 <span className="truncate">{s.assessment.title || (s.assessment.scope === 'final' ? 'Valutazione finale' : 'Test')}</span>
               </button>
