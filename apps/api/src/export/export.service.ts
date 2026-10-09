@@ -218,18 +218,23 @@ export class ExportService {
           videoFirst: l.videoFirst === true,
         })),
       })),
-      assessments: row.assessments.map((a) => ({
-        id: a.id,
-        title: a.title,
-        scope: a.scope === 'FINAL' ? 'final' : 'intermediate',
-        moduleId: a.moduleId ?? undefined,
-        masteryScore: a.masteryScore,
-        maxAttempts: a.maxAttempts ?? undefined,
-        shuffleQuestions: a.shuffleQuestions,
-        shuffleAnswers: a.shuffleAnswers,
-        editorial: { status: statusToDomain(a.status), citations: [] },
-        questions: a.questions.map((q) => q.payload),
-      })),
+      // Scarta gli assessment senza domande: lo schema richiede min 1 domanda e
+      // un test vuoto (es. generazione incompleta) non è esportabile. Meglio
+      // ometterlo che far fallire l'intero export con un 500.
+      assessments: row.assessments
+        .filter((a) => Array.isArray(a.questions) && a.questions.length > 0)
+        .map((a) => ({
+          id: a.id,
+          title: a.title,
+          scope: a.scope === 'FINAL' ? 'final' : 'intermediate',
+          moduleId: a.moduleId ?? undefined,
+          masteryScore: a.masteryScore,
+          maxAttempts: a.maxAttempts ?? undefined,
+          shuffleQuestions: a.shuffleQuestions,
+          shuffleAnswers: a.shuffleAnswers,
+          editorial: { status: statusToDomain(a.status), citations: [] },
+          questions: a.questions.map((q) => q.payload),
+        })),
     });
   }
 
