@@ -255,7 +255,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
           onNext={goNext}
           nextLabel="Vai all’anteprima"
         >
-          <div className="mx-auto w-full max-w-2xl overflow-hidden rounded-xl border bg-card">
+          <div className="w-full max-w-2xl overflow-hidden rounded-xl border bg-card">
             {course.data?.coverImageUrl ? (
               // eslint-disable-next-line @next/next/no-img-element -- URL firmato dinamico
               <img
