@@ -7,20 +7,10 @@
 
 import type { MediaRef } from '../../primitives.js';
 import { h, hHtml, type VNode, type VChild, type RenderContext } from '../vnode.js';
+import { mediaImage } from './media.js';
 
 interface RichLike {
   html?: string;
-}
-
-/**
- * Immagine di un MediaRef risolto. Ritorna null se non è un'immagine
- * materializzata (placeholder o media non-immagine): il chiamante la salta.
- */
-function mediaImg(m: MediaRef, ctx: RenderContext, cls: string): VNode | null {
-  if (m.kind && m.kind !== 'image') return null;
-  const src = ctx.resolveMedia(m);
-  if (!src) return null;
-  return h('img', { class: cls, src, alt: m.alt || '', loading: 'lazy' });
 }
 
 export function renderRichText(payload: Record<string, unknown>, ctx: RenderContext): VNode {
@@ -28,7 +18,7 @@ export function renderRichText(payload: Record<string, unknown>, ctx: RenderCont
   const media = (payload.media as MediaRef[]) || [];
   const children: VChild[] = [hHtml('div', { class: 'block-rich' }, content.html || '')];
   for (const m of media) {
-    const img = mediaImg(m, ctx, 'block-media');
+    const img = mediaImage(m, ctx, 'block-media');
     if (img) children.push(img);
   }
   return h('div', { class: 'block' }, children);

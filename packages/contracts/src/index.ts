@@ -19,3 +19,4 @@ export * from './pricing.js';
 export * from './folder.js';
 export * from './app-branding.js';
 export * from './video-asset.js';
+export * from './stock-image.js';

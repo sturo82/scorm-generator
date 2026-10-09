@@ -5,9 +5,11 @@ media_region      = "us-west-2"   # SOLO immagini (Bedrock Stable Image non disp
 transcribe_region = "eu-west-1"
 bedrock_region    = "eu-west-1"
 
-# Inference profile EU di Claude (prefisso "eu."). Verifica con:
-#   aws bedrock list-inference-profiles --region eu-west-1
-bedrock_llm_model_id = "eu.anthropic.claude-sonnet-4-5-20250929-v1:0"
+# Inference profile EU di Claude (prefisso "eu."). Verifica l'ID attivo in regione
+# con: aws bedrock list-inference-profiles --region eu-west-1
+# NB: Sonnet 4.5 è in deprecazione Bedrock (EOL 2027-04-08): usa Sonnet 4.6
+# (upgrade drop-in). Sonnet 5.x non supporta il forced tool_choice dell'app.
+bedrock_llm_model_id = "eu.anthropic.claude-sonnet-4-6"
 
 # Dominio e TLS (opzionali per il primo deploy; senza, l'ALB resta su HTTP).
 # domain_name         = "example.com"

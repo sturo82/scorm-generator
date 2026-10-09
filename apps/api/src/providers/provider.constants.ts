@@ -11,3 +11,5 @@ export const JOB_QUEUE = 'JOB_QUEUE';
 export const DOCUMENT_EXTRACTORS = 'DOCUMENT_EXTRACTORS';
 /** Client Amazon Cognito per la gestione utenti admin (null se non configurato). */
 export const COGNITO_CLIENT = 'COGNITO_CLIENT';
+/** Provider immagini stock (Pexels/Unsplash); null se non configurato. */
+export const STOCK_IMAGE_PROVIDER = 'STOCK_IMAGE_PROVIDER';

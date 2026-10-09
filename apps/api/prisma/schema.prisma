@@ -207,6 +207,9 @@ model Course {
   outline     Json?
   // Chiave S3 dell'immagine di copertina generata. URL firmato risolto a lettura.
   coverImageKey String?
+  // Attribuzione (JSON) quando la copertina proviene da una libreria stock
+  // (Unsplash/Pexels): credito obbligatorio autore + fonte. Null se generata/AI.
+  coverAttribution Json?
   // Stile delle micro-interazioni del corso: "sober" (default) | "lively".
   // Propagato ad anteprima web e player SCORM (data-motion). Validato a livello
   // applicativo dall'enum interactionStyle del contratto Course.
@@ -245,6 +248,8 @@ model Module {
   objectives Json           @default("[]")
   // Chiave S3 della copertina del modulo generata. URL firmato risolto a lettura.
   coverImageKey String?
+  // Attribuzione (JSON) se la copertina del modulo proviene da libreria stock.
+  coverAttribution Json?
   // Ordinamento esplicito dei moduli nel corso.
   position  Int
   status    EditorialStatus @default(DRAFT)

@@ -59,6 +59,8 @@ export const PLAYER_CSS = `/* player.css — cornice del player; i colori/font v
   --pl-on-surface: var(--brand-on-surface, #1a2130);
   --pl-primary: var(--brand-primary, #4f46e5);
   --pl-on-primary: var(--brand-on-primary, #ffffff);
+  /* Accento del brand (secondary); fallback al primario se non definito. */
+  --pl-accent: var(--brand-secondary, var(--pl-primary));
   --pl-bg: color-mix(in srgb, var(--pl-on-surface) 4%, var(--pl-surface));
   --pl-border: color-mix(in srgb, var(--pl-on-surface) 14%, transparent);
   --pl-muted: color-mix(in srgb, var(--pl-on-surface) 60%, transparent);
@@ -86,7 +88,7 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 /* Barra di avanzamento */
 .course-progress { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.75rem; font-size: 0.78rem; font-weight: 600; color: var(--pl-muted); }
 .course-progress-bar { flex: 1; height: 8px; background: color-mix(in srgb, var(--pl-on-surface) 10%, transparent); border-radius: 999px; overflow: hidden; }
-.course-progress-fill { height: 100%; background: linear-gradient(90deg, var(--pl-primary), color-mix(in srgb, var(--pl-primary) 70%, #ffffff)); border-radius: 999px; transition: width 0.45s cubic-bezier(0.4,0,0.2,1); }
+.course-progress-fill { height: 100%; background: linear-gradient(90deg, var(--pl-primary), var(--pl-accent)); border-radius: 999px; transition: width 0.45s cubic-bezier(0.4,0,0.2,1); }
 
 /* Header + hero */
 .course-header { margin-bottom: 1.75rem; }
@@ -149,6 +151,12 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
   border-radius: 12px;
 }
 .carousel-view .block-media { max-width: 36rem; }
+.block-media-figure { margin: 0.85rem 0; }
+.block-media-figure .block-media { margin: 0; }
+.block-media-credit {
+  margin: 0.3rem 0 0; font-size: 0.75rem; color: var(--pl-on-surface-variant, #666);
+}
+.block-media-credit a { color: inherit; text-decoration: underline; }
 .accordion-head, .reveal-trigger {
   display: flex; width: 100%; text-align: left; padding: 0.85rem 1rem;
   border: 1px solid var(--pl-border); border-radius: 12px;
@@ -202,6 +210,10 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 .topbar-info { min-width: 0; flex: 1; }
 .topbar-title { margin: 0; font-weight: 800; font-size: 1.05rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topbar-instructor { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.15rem; font-size: 0.82rem; color: var(--pl-muted); }
+/* Avatar docente: anello brandizzato (primario→accento) con foto CONTENUTA
+   (object-contain) su sfondo neutro, così i ritratti PNG restano interi/visibili. */
+.topbar-avatar-ring { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; padding: 2px; background: linear-gradient(135deg, var(--pl-primary), var(--pl-accent)); flex-shrink: 0; }
+.topbar-avatar-ring .topbar-avatar { width: 100%; height: 100%; object-fit: contain; background: radial-gradient(circle at 50% 32%, #f4f4f5, #d4d4d8); }
 .topbar-avatar { width: 1.25rem; height: 1.25rem; border-radius: 50%; object-fit: cover; }
 .topbar-avatar-mono { display: inline-grid; place-items: center; background: var(--pl-primary); color: var(--pl-on-primary); font-size: 0.65rem; font-weight: 700; }
 .topbar-logo { display: inline-flex; align-items: center; padding: 0.4rem 0.7rem; border-radius: 8px; background: var(--pl-primary); flex-shrink: 0; }
@@ -217,7 +229,7 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 /* Stepper dei concetti */
 .concept-stepper { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1.25rem; }
 .concept-dot { width: 2rem; height: 2rem; border-radius: 50%; border: 1px solid var(--pl-border); background: var(--pl-surface); color: var(--pl-muted); font-weight: 700; font-size: 0.8rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: transform 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s; }
-.concept-dot.is-reached { color: var(--pl-on-surface); border-color: color-mix(in srgb, var(--pl-primary) 50%, var(--pl-border)); }
+.concept-dot.is-reached { color: var(--pl-on-surface); border-color: color-mix(in srgb, var(--pl-accent) 55%, var(--pl-border)); }
 .concept-dot.is-current { background: var(--pl-primary); color: var(--pl-on-primary); border-color: var(--pl-primary); box-shadow: var(--pl-shadow-sm); transform: scale(1.08); }
 .concept-dot.is-locked { opacity: 0.45; cursor: not-allowed; }
 
@@ -278,8 +290,8 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 .dnd-chip.is-wrong { border-color: #dc2626; background: color-mix(in srgb, #dc2626 12%, transparent); color: #b91c1c; }
 
 /* ====== Indice del corso (sommario navigabile) ====== */
-.course-index { margin-bottom: 1.5rem; border: 1px solid var(--pl-border); border-radius: var(--pl-radius); background: var(--pl-surface); overflow: hidden; }
-.course-index summary { cursor: pointer; padding: 0.9rem 1.1rem; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--pl-muted); list-style: none; display: flex; align-items: center; justify-content: space-between; }
+.course-index { margin-bottom: 1.5rem; border: 1px solid var(--pl-border); border-top: 3px solid var(--pl-accent); border-radius: var(--pl-radius); background: var(--pl-surface); overflow: hidden; }
+.course-index summary { cursor: pointer; padding: 0.9rem 1.1rem; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--pl-accent); list-style: none; display: flex; align-items: center; justify-content: space-between; }
 .course-index summary::after { content: "▾"; transition: transform 0.2s; }
 .course-index[open] summary::after { transform: rotate(180deg); }
 .course-index ol { list-style: none; margin: 0; padding: 0 0.6rem 0.8rem; }
@@ -375,7 +387,7 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 .block.video .video-panel { min-width: 0; border: 1px solid var(--pl-border); border-radius: var(--pl-radius); background: var(--pl-surface); overflow: hidden; display: flex; flex-direction: column; max-height: 420px; }
 .block.video .video-tabs { display: flex; flex-wrap: wrap; gap: 0.25rem; padding: 0.4rem 0.4rem 0; border-bottom: 1px solid var(--pl-border); background: color-mix(in srgb, var(--pl-muted) 8%, var(--pl-surface)); }
 .block.video .video-tab { border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 0.4rem 0.7rem; font-size: 0.78rem; font-weight: 700; color: var(--pl-muted); cursor: pointer; border-radius: 6px 6px 0 0; }
-.block.video .video-tab.is-active { color: var(--pl-text); border-bottom-color: var(--pl-primary); background: var(--pl-surface); }
+.block.video .video-tab.is-active { color: var(--pl-text); border-bottom-color: var(--pl-accent); background: var(--pl-surface); }
 .block.video .video-panel-body { padding: 0.6rem; overflow-y: auto; }
 .block.video .video-transcript { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .block.video .transcript-cue { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 0.3rem 0.5rem; border-radius: 6px; font-size: 0.88rem; line-height: 1.5; color: var(--pl-muted); cursor: pointer; }

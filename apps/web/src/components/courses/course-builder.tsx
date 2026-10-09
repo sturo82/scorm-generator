@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus, Sparkles, Wand2, Trash2, Pencil, Image as ImageIcon, Volume2, Video, Captions } from 'lucide-react';
+import { Plus, Sparkles, Wand2, Trash2, Pencil, Image as ImageIcon, Volume2, Video, Captions, Search } from 'lucide-react';
 import type { Block } from '@scorm/contracts';
 import type { ModuleView, LessonView } from '@/lib/api/types';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import { TranscriptEditorDialog } from '@/components/courses/transcript-editor-d
 import { EditorialStatusBadge } from '@/components/status-badge';
 import { BlockPreview } from '@/components/courses/block-preview';
 import { BlockEditorDialog } from '@/components/courses/block-editor-dialog';
+import { StockPhotoPicker } from '@/components/courses/stock-photo-picker';
 import { useToast } from '@/components/ui/toast';
 import {
   useModules,
@@ -30,6 +31,7 @@ import {
   useUploadLessonVideo,
   useAttachVideoFromLibrary,
   useSetVideoTranscript,
+  useAttachStockImage,
   useVideos,
   useActiveJobs,
   useEditLessonBlocks,
@@ -396,6 +398,7 @@ function LessonCard({
   const genNarration = useGenerateLessonNarration(courseId);
   const uploadVideo = useUploadLessonVideo(courseId);
   const attachVideo = useAttachVideoFromLibrary(courseId);
+  const attachStock = useAttachStockImage(courseId);
   const setTranscript = useSetVideoTranscript(courseId);
   const deleteLesson = useDeleteLesson(courseId);
   const editBlocks = useEditLessonBlocks(courseId);
@@ -409,6 +412,8 @@ function LessonCard({
   const [videoTargetBlock, setVideoTargetBlock] = React.useState<string | null>(null);
   // Dialog di selezione video dalla libreria (per il block video_checkpoint).
   const [libraryTargetBlock, setLibraryTargetBlock] = React.useState<string | null>(null);
+  // Dialog di ricerca immagini stock (royalty-free).
+  const [stockOpen, setStockOpen] = React.useState(false);
   // Dialog editor della trascrizione video.
   const [transcriptOpen, setTranscriptOpen] = React.useState(false);
   // jobId locale per la generazione del singolo contenuto.
@@ -434,6 +439,10 @@ function LessonCard({
     () => lesson.blocks.find((b) => b.type === 'video_checkpoint'),
     [lesson.blocks],
   );
+
+  // Block con almeno un'immagine (diretta o nelle sotto-parti), per associare
+  // un'immagine stock. Rispecchia la logica di findImageRef lato server.
+  const imageBlocks = React.useMemo(() => collectImageBlocks(lesson.blocks), [lesson.blocks]);
   // URL del video caricato e trascrizione corrente del block video (per l'editor).
   const videoInfo = React.useMemo(() => {
     const p = (videoBlock?.payload ?? {}) as {
@@ -643,6 +652,17 @@ function LessonCard({
               <ImageIcon className="size-4" />
               {genImages.isPending ? <AiWorkingInline label="Immagini…" /> : 'Genera immagini'}
             </Button>
+            {imageBlocks.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setStockOpen(true)}
+                disabled={attachStock.isPending}
+              >
+                <Search className="size-4" />
+                {attachStock.isPending ? <AiWorkingInline label="Collego…" /> : 'Immagini stock'}
+              </Button>
+            )}
             <Button size="sm" variant="outline" onClick={handleGenerateNarration} disabled={genNarration.isPending}>
               <Volume2 className="size-4" />
               {genNarration.isPending ? <AiWorkingInline label="Narrazione…" /> : 'Genera narrazione'}
@@ -734,6 +754,37 @@ function LessonCard({
         }}
       />
 
+      <StockPhotoPicker
+        open={stockOpen}
+        courseId={courseId}
+        targets={imageBlocks}
+        saving={attachStock.isPending}
+        onClose={() => setStockOpen(false)}
+        onSelect={async (photo, blockId) => {
+          if (!blockId) return;
+          try {
+            await attachStock.mutateAsync({
+              lessonId: lesson.id,
+              input: {
+                blockId,
+                photoId: photo.id,
+                provider: photo.provider,
+                alt: photo.alt || undefined,
+              },
+            });
+            toast.show('Immagine stock collegata', 'success');
+            setStockOpen(false);
+          } catch (err) {
+            toast.show(
+              err instanceof Error && /501|non configurata/i.test(err.message)
+                ? 'Libreria immagini stock non configurata sul server'
+                : 'Collegamento immagine non riuscito',
+              'error',
+            );
+          }
+        }}
+      />
+
       {videoBlock && (
         <TranscriptEditorDialog
           open={transcriptOpen}
@@ -754,6 +805,39 @@ function LessonCard({
       )}
     </div>
   );
+}
+
+/**
+ * Raccoglie i block che contengono almeno un MediaRef immagine (visita
+ * ricorsiva, come findImageRef lato server). Ritorna { id, label, count } per
+ * poter scegliere a quale block associare un'immagine stock.
+ */
+function collectImageBlocks(blocks: Block[]): Array<{ id: string; label: string; count: number }> {
+  const typeLabels: Record<string, string> = {
+    rich_text: 'Testo',
+    image_hotspot: 'Immagine interattiva',
+    timeline: 'Timeline',
+    carousel_steps: 'Passi',
+  };
+  const out: Array<{ id: string; label: string; count: number }> = [];
+  for (const block of blocks) {
+    let count = 0;
+    const visit = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(visit);
+        return;
+      }
+      if (node === null || typeof node !== 'object') return;
+      const obj = node as Record<string, unknown>;
+      if (obj.kind === 'image') count += 1;
+      for (const v of Object.values(obj)) visit(v);
+    };
+    visit(block);
+    if (count > 0) {
+      out.push({ id: block.id, label: typeLabels[block.type] ?? block.type, count });
+    }
+  }
+  return out;
 }
 
 /** Dialog di selezione di un video dalla libreria del tenant. */

@@ -31,6 +31,9 @@ import type {
   CreateExternalVideo,
   UpdateVideoAsset,
   TranscriptCue,
+  StockImageSearchResponse,
+  AttachStockImageInput,
+  AttachStockCoverInput,
 } from './types';
 
 /** Ritardo simulato per rendere realistici gli stati di loading nella UI. */
@@ -716,6 +719,46 @@ export class MockApiClient implements ApiClient {
     payload.transcript = sorted;
     payload.transcriptStatus = sorted.length > 0 ? 'ready' : 'none';
     (block as { payload: unknown }).payload = payload;
+  }
+
+  async searchStockImages(_courseId: string, q: string): Promise<StockImageSearchResponse> {
+    await delay();
+    if (!q.trim()) return { provider: 'pexels', results: [] };
+    const results = Array.from({ length: 6 }).map((_, i) => ({
+      id: `mock-${i}`,
+      provider: 'pexels' as const,
+      thumbUrl: `https://picsum.photos/seed/${encodeURIComponent(q)}-${i}/320/240`,
+      alt: `${q} (immagine di esempio ${i + 1})`,
+      authorName: `Autore ${i + 1}`,
+      authorUrl: 'https://www.pexels.com',
+      sourceUrl: 'https://www.pexels.com',
+      width: 1920,
+      height: 1280,
+    }));
+    return { provider: 'pexels', results };
+  }
+  async attachStockImage(
+    _courseId: string,
+    _lessonId: string,
+    _input: AttachStockImageInput,
+  ): Promise<{ attached: true; url: string }> {
+    await delay();
+    return { attached: true, url: 'https://picsum.photos/seed/attached/1280/720' };
+  }
+  async attachStockCover(
+    _courseId: string,
+    _input: AttachStockCoverInput,
+  ): Promise<{ attached: true; url: string }> {
+    await delay();
+    return { attached: true, url: 'https://picsum.photos/seed/cover/1280/720' };
+  }
+  async attachStockModuleCover(
+    _courseId: string,
+    _moduleId: string,
+    _input: AttachStockCoverInput,
+  ): Promise<{ attached: true; url: string }> {
+    await delay();
+    return { attached: true, url: 'https://picsum.photos/seed/modcover/1280/720' };
   }
 
   private findLesson(courseId: string, lessonId: string): LessonView {

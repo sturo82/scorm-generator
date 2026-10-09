@@ -37,6 +37,10 @@
     "./transcribe": {
       "types": "./dist/transcribe/index.d.ts",
       "default": "./dist/transcribe/index.js"
+    },
+    "./stock": {
+      "types": "./dist/stock/index.d.ts",
+      "default": "./dist/stock/index.js"
     }
   },
   "scripts": {

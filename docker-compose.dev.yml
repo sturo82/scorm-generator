@@ -29,7 +29,7 @@ services:
       PROVIDER_SPEECH: ${PROVIDER_SPEECH:-polly}
       MEDIA_REGION: ${MEDIA_REGION:-us-west-2}
       BEDROCK_REGION: ${BEDROCK_REGION:-us-west-2}
-      BEDROCK_LLM_MODEL_ID: ${BEDROCK_LLM_MODEL_ID:-us.anthropic.claude-sonnet-4-5-20250929-v1:0}
+      BEDROCK_LLM_MODEL_ID: ${BEDROCK_LLM_MODEL_ID:-us.anthropic.claude-sonnet-4-6}
       # Credenziali AWS: fornite da env_file (.env). NON le ridichiariamo qui,
       # altrimenti ${AWS_*:-} le azzererebbe se non presenti nella shell host.
       # Object storage su S3 AWS REALE (necessario per Amazon Transcribe, che

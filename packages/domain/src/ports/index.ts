@@ -1,6 +1,7 @@
 export * from './llm-provider.js';
 export * from './embeddings-provider.js';
 export * from './image-provider.js';
+export * from './stock-image-provider.js';
 export * from './speech-provider.js';
 export * from './transcription-provider.js';
 export * from './vector-store.js';

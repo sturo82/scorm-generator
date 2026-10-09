@@ -8,6 +8,39 @@ interface MediaLike {
   storageKey?: string;
   alt?: string;
   placeholderPrompt?: string;
+  attribution?: {
+    provider: string;
+    authorName: string;
+    authorUrl?: string;
+    sourceUrl?: string;
+  };
+}
+
+/** Credito autore per le immagini stock (attribuzione obbligatoria). */
+function MediaCredit({ attribution }: { attribution?: MediaLike['attribution'] }) {
+  if (!attribution) return null;
+  const providerLabel =
+    attribution.provider.charAt(0).toUpperCase() + attribution.provider.slice(1);
+  return (
+    <span className="text-[11px] text-muted-foreground">
+      Foto di{' '}
+      {attribution.authorUrl ? (
+        <a href={attribution.authorUrl} target="_blank" rel="noreferrer noopener" className="underline">
+          {attribution.authorName}
+        </a>
+      ) : (
+        attribution.authorName
+      )}
+      {' su '}
+      {attribution.sourceUrl ? (
+        <a href={attribution.sourceUrl} target="_blank" rel="noreferrer noopener" className="underline">
+          {providerLabel}
+        </a>
+      ) : (
+        providerLabel
+      )}
+    </span>
+  );
 }
 
 /**
@@ -25,7 +58,12 @@ function MediaImages({ media }: { media?: MediaLike[] }) {
           <figure key={m.storageKey ?? i} className="m-0">
             {/* eslint-disable-next-line @next/next/no-img-element -- URL dinamico da storage, anteprima editoriale */}
             <img src={m.storageKey} alt={m.alt ?? ''} className="block w-full max-w-md rounded border" />
-            {m.alt ? <figcaption className="mt-1 text-xs text-muted-foreground">{m.alt}</figcaption> : null}
+            {m.alt || m.attribution ? (
+              <figcaption className="mt-1 flex flex-col gap-0.5 text-xs text-muted-foreground">
+                {m.alt ? <span>{m.alt}</span> : null}
+                <MediaCredit attribution={m.attribution} />
+              </figcaption>
+            ) : null}
           </figure>
         ) : (
           <div

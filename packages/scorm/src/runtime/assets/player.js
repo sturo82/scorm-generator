@@ -20,6 +20,9 @@
     this.scorm = (options && options.scorm) || global.SCORM;
     this.renderers = (options && options.renderers) || global.Renderers;
     this.root = (options && options.root) || null;
+    // Brand del corso (logo/nome) esposto dal builder come window.__BRAND__.
+    // Usato per mostrare il logo nell'header sempre visibile (parità anteprima).
+    this.brand = (options && options.brand) || global.__BRAND__ || null;
     // Sequenza step dalla struttura CONDIVISA (window.RenderCore): stessa logica
     // dell'anteprima. Fallback alla copia locale se il bundle non è caricato.
     this.steps =
@@ -704,11 +707,15 @@
     if (instructor && instructor.name) {
       var who = el('div', 'topbar-instructor');
       if (instructor.avatarKey) {
+        // Avatar su anello brandizzato: la foto è CONTENUTA (object-contain)
+        // dentro il cerchio, senza tagli e con sfondo neutro per i PNG chiari.
+        var ring = el('span', 'topbar-avatar-ring');
         var av = document.createElement('img');
         av.className = 'topbar-avatar';
         av.setAttribute('src', instructor.avatarKey);
         av.setAttribute('alt', '');
-        who.appendChild(av);
+        ring.appendChild(av);
+        who.appendChild(ring);
       } else {
         var mono = textEl('span', (instructor.name.charAt(0) || '?').toUpperCase());
         mono.className = 'topbar-avatar topbar-avatar-mono';
@@ -719,6 +726,16 @@
       info.appendChild(who);
     }
     bar.appendChild(info);
+
+    // Logo del brand SEMPRE visibile nell'header (parità con l'anteprima web).
+    if (this.brand && this.brand.logoUrl) {
+      var logoWrap = el('span', 'topbar-logo');
+      var logo = document.createElement('img');
+      logo.setAttribute('src', this.brand.logoUrl);
+      logo.setAttribute('alt', this.brand.name ? 'Logo ' + this.brand.name : 'Logo');
+      logoWrap.appendChild(logo);
+      bar.appendChild(logoWrap);
+    }
 
     return bar;
   };

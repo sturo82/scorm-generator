@@ -27,6 +27,8 @@ export interface CourseView {
   brief: BriefDraftType | null;
   /** URL firmato della copertina generata, se presente. */
   coverImageUrl?: string;
+  /** Attribuzione della copertina se da libreria stock (credito autore). */
+  coverAttribution?: { provider: string; authorName: string; authorUrl?: string; sourceUrl?: string };
   /** Stile delle micro-interazioni del corso. */
   interactionStyle: InteractionStyle;
   /** Brand primario del corso (colori/logo/accenti). */
@@ -252,6 +254,7 @@ export class CoursesService {
     status: string;
     brief: unknown;
     coverImageKey?: string | null;
+    coverAttribution?: unknown;
     interactionStyle?: string | null;
     primaryBrandId?: string | null;
     instructorName?: string | null;
@@ -296,12 +299,28 @@ export class CoursesService {
       status: course.status,
       brief: briefResult && briefResult.success ? briefResult.data : null,
       coverImageUrl,
+      coverAttribution: parseCoverAttribution(course.coverAttribution),
       interactionStyle: course.interactionStyle === 'lively' ? 'lively' : 'sober',
       primaryBrandId: course.primaryBrandId ?? undefined,
       instructor,
       folderId: course.folderId ?? null,
     };
   }
+}
+
+/** Legge l'attribuzione copertina (JSON) nel formato esposto dalla view. */
+function parseCoverAttribution(
+  raw: unknown,
+): { provider: string; authorName: string; authorUrl?: string; sourceUrl?: string } | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.provider !== 'string' || typeof o.authorName !== 'string') return undefined;
+  return {
+    provider: o.provider,
+    authorName: o.authorName,
+    ...(typeof o.authorUrl === 'string' ? { authorUrl: o.authorUrl } : {}),
+    ...(typeof o.sourceUrl === 'string' ? { sourceUrl: o.sourceUrl } : {}),
+  };
 }
 
 /** Estensione file per i MIME immagine supportati (null se non supportato). */

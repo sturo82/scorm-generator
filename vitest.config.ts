@@ -16,6 +16,7 @@ export default defineConfig({
       { find: '@scorm/adapters/pgvector', replacement: r('./packages/adapters/src/pgvector/index.ts') },
       { find: '@scorm/adapters/extractors', replacement: r('./packages/adapters/src/extractors/index.ts') },
       { find: '@scorm/adapters/bedrock', replacement: r('./packages/adapters/src/bedrock/index.ts') },
+      { find: '@scorm/adapters/stock', replacement: r('./packages/adapters/src/stock/index.ts') },
       { find: '@scorm/adapters', replacement: r('./packages/adapters/src/index.ts') },
     ],
   },

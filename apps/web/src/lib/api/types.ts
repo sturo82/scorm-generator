@@ -17,6 +17,10 @@ import type {
   CreateExternalVideo,
   UpdateVideoAsset,
   TranscriptCue,
+  StockImageResult,
+  StockImageSearchResponse,
+  AttachStockImageInput,
+  AttachStockCoverInput,
 } from '@scorm/contracts';
 
 /**
@@ -39,6 +43,8 @@ export interface CourseView {
   brief: BriefDraft | null;
   /** URL firmato della copertina generata, se presente. */
   coverImageUrl?: string;
+  /** Attribuzione della copertina se da libreria stock (credito autore). */
+  coverAttribution?: { provider: string; authorName: string; authorUrl?: string; sourceUrl?: string };
   /** Stile delle micro-interazioni del corso: 'sober' (default) | 'lively'. */
   interactionStyle?: 'sober' | 'lively';
   /** Brand primario del corso (colori/logo/accenti in anteprima + export). */
@@ -320,6 +326,24 @@ export interface ApiClient {
     blockId: string,
     transcript: TranscriptCue[],
   ): Promise<void>;
+
+  // Immagini stock royalty-free (Pexels/Unsplash astratti)
+  /** Cerca immagini stock per query testuale (provider configurato lato server). */
+  searchStockImages(courseId: string, q: string): Promise<StockImageSearchResponse>;
+  /** Scarica e collega un'immagine stock a un block immagine di una lezione. */
+  attachStockImage(
+    courseId: string,
+    lessonId: string,
+    input: AttachStockImageInput,
+  ): Promise<{ attached: true; url: string }>;
+  /** Imposta un'immagine stock come copertina del corso. */
+  attachStockCover(courseId: string, input: AttachStockCoverInput): Promise<{ attached: true; url: string }>;
+  /** Imposta un'immagine stock come copertina di un modulo. */
+  attachStockModuleCover(
+    courseId: string,
+    moduleId: string,
+    input: AttachStockCoverInput,
+  ): Promise<{ attached: true; url: string }>;
 }
 
 /** Preventivo del corso: quote + riepilogo costi incluso. */
@@ -344,4 +368,8 @@ export type {
   CreateExternalVideo,
   UpdateVideoAsset,
   TranscriptCue,
+  StockImageResult,
+  StockImageSearchResponse,
+  AttachStockImageInput,
+  AttachStockCoverInput,
 };

@@ -9,7 +9,7 @@
  * ri-renderizzare.
  */
 
-import type { MediaRef } from '../../primitives.js';
+import type { MediaRef, MediaAttribution } from '../../primitives.js';
 import { h, hHtml, withBehavior, type VNode, type VChild, type RenderContext } from '../vnode.js';
 
 interface RichLike {
@@ -21,6 +21,24 @@ interface HotspotItem {
   y: number;
   label: string;
   content?: RichLike;
+}
+
+/** Credito stock sotto lo stage (l'immagine è lo sfondo interattivo). */
+function creditCaption(attr: MediaAttribution): VNode {
+  const label = attr.provider.charAt(0).toUpperCase() + attr.provider.slice(1);
+  const parts: VChild[] = ['Foto di '];
+  parts.push(
+    attr.authorUrl
+      ? h('a', { href: attr.authorUrl, target: '_blank', rel: 'noopener noreferrer' }, [attr.authorName])
+      : attr.authorName,
+  );
+  parts.push(' su ');
+  parts.push(
+    attr.sourceUrl
+      ? h('a', { href: attr.sourceUrl, target: '_blank', rel: 'noopener noreferrer' }, [label])
+      : label,
+  );
+  return h('p', { class: 'block-media-credit' }, parts);
 }
 
 export function renderImageHotspot(payload: Record<string, unknown>, ctx: RenderContext): VNode {
@@ -59,7 +77,10 @@ export function renderImageHotspot(payload: Record<string, unknown>, ctx: Render
 
   const stage = h('div', { class: 'hotspot-stage' }, stageChildren);
   const info = h('div', { class: 'hotspot-info', role: 'dialog', hidden: 'hidden', 'data-hotspot-info': '' }, []);
-  return withBehavior(h('div', { class: 'block hotspot' }, [stage, info, ...contentSources]), {
+  const blockChildren: VChild[] = [stage, info];
+  if (image?.attribution) blockChildren.push(creditCaption(image.attribution));
+  blockChildren.push(...contentSources);
+  return withBehavior(h('div', { class: 'block hotspot' }, blockChildren), {
     kind: 'hotspot',
   });
 }

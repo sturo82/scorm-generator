@@ -33,6 +33,39 @@ type PreviewStep =
   | LessonStep
   | { kind: 'assessment'; moduleTitle: string; assessment: AssessmentIndexView };
 
+/** Gradiente brandizzato primario→accento (accento = secondary, fallback primario). */
+const BRAND_ACCENT = 'var(--brand-secondary, var(--brand-primary, #4f46e5))';
+const BRAND_ACCENT_GRADIENT =
+  'linear-gradient(135deg, var(--brand-primary, #4f46e5), var(--brand-secondary, var(--brand-primary, #4f46e5)))';
+/* Sfondo interno dell'avatar docente: tenue neutro (non il bianco del brand),
+   così i ritratti PNG con trasparenza/soggetto chiaro restano sempre visibili. */
+const AVATAR_INNER_BG =
+  'radial-gradient(circle at 50% 32%, #f4f4f5 0%, #e4e4e7 72%, #d4d4d8 100%)';
+
+/** Barra di avanzamento del corso, brandizzata (gradiente primario→accento). */
+function CourseProgress({ current, total }: { current: number; total: number }) {
+  const pct = total > 1 ? Math.round((current / (total - 1)) * 100) : 0;
+  return (
+    <div className="mb-5 flex items-center gap-3">
+      <div
+        className="h-2 flex-1 overflow-hidden rounded-full"
+        style={{ background: 'color-mix(in srgb, var(--brand-on-surface, #111) 10%, transparent)' }}
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label="Avanzamento del corso"
+      >
+        <div
+          className="h-full rounded-full transition-[width] duration-500 ease-out"
+          style={{ width: `${pct}%`, background: BRAND_ACCENT_GRADIENT }}
+        />
+      </div>
+      <span className="shrink-0 text-xs font-semibold tabular-nums text-muted-foreground">{pct}%</span>
+    </div>
+  );
+}
+
 /** Adatta una BrandView del client al Brand dei contratti per compileTheme. */
 function toBrand(b: BrandView): Brand {
   return {
@@ -146,18 +179,30 @@ export function CoursePreview({ courseId }: { courseId: string }) {
           </h2>
           {course.data?.instructor ? (
             <div className="mt-0.5 flex items-center gap-2">
-              {course.data.instructor.avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element -- avatar docente
-                <img src={course.data.instructor.avatarUrl} alt="" className="size-5 rounded-full object-cover" />
-              ) : (
-                <span
-                  className="grid size-5 place-items-center rounded-full text-[10px] font-bold text-primary-foreground"
-                  style={{ background: 'var(--brand-primary, #4f46e5)' }}
-                  aria-hidden
-                >
-                  {course.data.instructor.name.charAt(0).toUpperCase()}
-                </span>
-              )}
+              {/* Avatar docente su sfondo brandizzato: la foto è CONTENUTA
+                  (object-contain) dentro il cerchio pieno, senza tagli. */}
+              <span
+                className="grid size-7 shrink-0 place-items-center overflow-hidden rounded-full p-[2px] shadow-sm"
+                style={{ background: BRAND_ACCENT_GRADIENT }}
+                aria-hidden
+              >
+                {course.data.instructor.avatarUrl ? (
+                  <span
+                    className="grid size-full place-items-center overflow-hidden rounded-full"
+                    style={{ background: AVATAR_INNER_BG }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- avatar docente */}
+                    <img src={course.data.instructor.avatarUrl} alt="" className="size-full rounded-full object-contain" />
+                  </span>
+                ) : (
+                  <span
+                    className="grid size-full place-items-center rounded-full text-[10px] font-bold"
+                    style={{ background: 'var(--brand-primary, #4f46e5)', color: 'var(--brand-on-primary, #fff)' }}
+                  >
+                    {course.data.instructor.name.charAt(0).toUpperCase()}
+                  </span>
+                )}
+              </span>
               <span className="truncate text-sm text-muted-foreground">
                 <span className="font-medium text-foreground">{course.data.instructor.name}</span>
                 {course.data.instructor.role ? ` · ${course.data.instructor.role}` : ''}
@@ -167,8 +212,25 @@ export function CoursePreview({ courseId }: { courseId: string }) {
             <p className="mt-0.5 text-xs text-muted-foreground">Docente non impostato</p>
           )}
         </div>
+        {/* Logo del brand SEMPRE visibile, se il corso ha un brand con logo. */}
+        {brand.data?.assets.logoPrimaryUrl && (
+          <span
+            className="flex h-10 shrink-0 items-center rounded-lg px-2.5 shadow-sm"
+            style={{ background: 'var(--brand-primary, #111)' }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- logo del brand (URL esterno o storage) */}
+            <img
+              src={brand.data.assets.logoPrimaryUrl}
+              alt={`Logo ${brand.data.name}`}
+              className="h-6 w-auto max-w-[120px] object-contain"
+            />
+          </span>
+        )}
         <ViewToggle value={view} onChange={setView} />
       </header>
+
+      {/* Barra di avanzamento brandizzata (primario → accento). */}
+      <CourseProgress current={current} total={steps.length} />
 
       {totalBlocks === 0 && (
         <p className="mb-4 rounded-md border border-dashed p-4 text-sm text-muted-foreground">
@@ -221,8 +283,8 @@ export function CoursePreview({ courseId }: { courseId: string }) {
                   type="button"
                   disabled={current >= steps.length - 1}
                   onClick={() => setStepIdx((i) => Math.min(steps.length - 1, i + 1))}
-                  className="rounded-lg px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm disabled:opacity-40"
-                  style={{ background: 'var(--brand-primary, #4f46e5)' }}
+                  className="rounded-lg px-4 py-2 text-sm font-semibold shadow-sm disabled:opacity-40"
+                  style={{ background: BRAND_ACCENT_GRADIENT, color: 'var(--brand-on-primary, #fff)' }}
                 >
                   Successivo ›
                 </button>
@@ -269,13 +331,17 @@ function CourseIndex({
       strong ? 'text-sm font-semibold' : 'text-sm',
       active ? 'text-primary-foreground' : strong ? 'text-foreground hover:bg-accent/40' : 'text-muted-foreground hover:bg-accent/40',
     );
-  const activeStyle = (active: boolean) =>
-    active ? { background: 'var(--brand-primary, #4f46e5)' } : undefined;
+  const activeStyle = (active: boolean): React.CSSProperties | undefined =>
+    active ? { background: BRAND_ACCENT_GRADIENT, color: 'var(--brand-on-primary, #fff)' } : undefined;
 
   let moduleCount = 0;
   return (
-    <nav className="h-max rounded-xl border bg-card p-3 lg:sticky lg:top-4" aria-label="Indice del corso">
-      <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+    <nav
+      className="h-max rounded-xl border bg-card p-3 lg:sticky lg:top-4"
+      aria-label="Indice del corso"
+      style={{ borderTop: `3px solid ${BRAND_ACCENT}` }}
+    >
+      <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: BRAND_ACCENT }}>
         Programma del corso
       </p>
       <ol className="space-y-1">
@@ -305,7 +371,16 @@ function CourseIndex({
             return (
               <li key={`lesson-${s.lesson.id}`} className="pl-2">
                 <button type="button" onClick={() => onSelect(i)} aria-current={active ? 'true' : undefined} className={itemClass(active, false)} style={activeStyle(active)}>
-                  <span className={cn('grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold', active ? 'bg-white/25' : 'bg-muted')}>
+                  <span
+                    className={cn('grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold', active && 'bg-white/25')}
+                    style={
+                      active
+                        ? undefined
+                        : s.lesson.blocks.length > 0
+                          ? { background: `color-mix(in srgb, ${BRAND_ACCENT} 18%, transparent)`, color: BRAND_ACCENT }
+                          : { background: 'hsl(var(--muted))' }
+                    }
+                  >
                     {s.lesson.blocks.length > 0 ? '•' : '·'}
                   </span>
                   <span className="truncate">{s.lesson.title}</span>
@@ -372,8 +447,17 @@ function CourseOverviewPreview({
   return (
     <article className="overflow-hidden rounded-2xl border bg-card shadow-sm">
       {course?.coverImageUrl && (
-        // eslint-disable-next-line @next/next/no-img-element -- copertina firmata
-        <img src={course.coverImageUrl} alt="" className="h-56 w-full object-cover" />
+        <div className="relative">
+          {/* eslint-disable-next-line @next/next/no-img-element -- copertina firmata */}
+          <img src={course.coverImageUrl} alt="" className="h-56 w-full object-cover" />
+          {course.coverAttribution && (
+            <span className="absolute bottom-1.5 right-1.5 rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white/90">
+              Foto di {course.coverAttribution.authorName} su{' '}
+              {course.coverAttribution.provider.charAt(0).toUpperCase() +
+                course.coverAttribution.provider.slice(1)}
+            </span>
+          )}
+        </div>
       )}
       <div className="space-y-5 p-6">
         <div>
@@ -393,18 +477,30 @@ function CourseOverviewPreview({
 
         {course?.instructor && (
           <div className="flex w-max max-w-full items-center gap-3 rounded-xl border bg-background p-3">
+            {/* Foto docente su sfondo brandizzato: la foto è CONTENUTA
+                (object-contain) nel cerchio pieno, senza tagli. */}
+            <span
+              className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-full p-[3px] shadow-sm"
+              style={{ background: BRAND_ACCENT_GRADIENT }}
+              aria-hidden
+            >
             {course.instructor.avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- avatar docente
-              <img src={course.instructor.avatarUrl} alt="" className="size-11 rounded-full object-cover" />
+              <span
+                className="grid size-full place-items-center overflow-hidden rounded-full"
+                style={{ background: AVATAR_INNER_BG }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- avatar docente */}
+                <img src={course.instructor.avatarUrl} alt="" className="size-full rounded-full object-contain" />
+              </span>
             ) : (
               <span
-                className="grid size-11 place-items-center rounded-full text-base font-bold text-primary-foreground"
-                style={{ background: 'var(--brand-primary, #4f46e5)' }}
-                aria-hidden
+                className="grid size-full place-items-center rounded-full text-base font-bold"
+                style={{ background: 'var(--brand-primary, #4f46e5)', color: 'var(--brand-on-primary, #fff)' }}
               >
                 {course.instructor.name.charAt(0).toUpperCase()}
               </span>
             )}
+            </span>
             <div className="flex flex-col">
               <strong className="text-sm">{course.instructor.name}</strong>
               {course.instructor.role && (

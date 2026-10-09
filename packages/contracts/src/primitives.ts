@@ -33,8 +33,26 @@ export const RichText = z.object({
 export type RichText = z.infer<typeof RichText>;
 
 /** Sorgente di un media video: file caricato (storage) o embed esterno. */
-export const MediaSource = z.enum(['upload', 'youtube', 'vimeo', 'twitch']);
+export const MediaSource = z.enum(['upload', 'youtube', 'vimeo', 'twitch', 'stock']);
 export type MediaSource = z.infer<typeof MediaSource>;
+
+/**
+ * Attribuzione di un'immagine da libreria stock (Unsplash/Pexels). Le licenze
+ * royalty-free di questi provider richiedono di accreditare l'autore e la fonte:
+ * questi dati vengono mostrati come credito accanto all'immagine (anteprima ed
+ * export SCORM). Presente solo per i media con source 'stock'.
+ */
+export const MediaAttribution = z.object({
+  /** Provider della libreria (es. 'unsplash', 'pexels'). */
+  provider: z.string(),
+  /** Nome dell'autore/fotografo da accreditare. */
+  authorName: z.string(),
+  /** URL del profilo autore (per il link di credito), se disponibile. */
+  authorUrl: z.string().optional(),
+  /** URL della pagina originale della foto sul provider. */
+  sourceUrl: z.string().optional(),
+});
+export type MediaAttribution = z.infer<typeof MediaAttribution>;
 
 /** Riferimento a un media. In v1 i media sono placeholder (Requisito 4.2). */
 export const MediaRef = z.object({
@@ -56,6 +74,12 @@ export const MediaRef = z.object({
   externalUrl: z.string().optional(),
   /** Id del video sulla piattaforma esterna (es. videoId YouTube). */
   externalId: z.string().optional(),
+  /**
+   * Attribuzione per le immagini da libreria stock (source 'stock'). I byte
+   * dell'immagine sono comunque scaricati su storage (storageKey) per l'export
+   * offline; questo campo porta il credito obbligatorio all'autore/fonte.
+   */
+  attribution: MediaAttribution.optional(),
 });
 export type MediaRef = z.infer<typeof MediaRef>;
 

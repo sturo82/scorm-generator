@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Block, Brief, PricingQuoteInput } from '@scorm/contracts';
 import { getApiClient } from './client';
-import type { BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole } from './types';
+import type { BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole, AttachStockImageInput, AttachStockCoverInput } from './types';
 
 const api = getApiClient();
 
@@ -25,6 +25,7 @@ export const qk = {
   videos: ['videos'] as const,
   videoChannels: ['videos', 'channels'] as const,
   users: ['users'] as const,
+  stockImages: (courseId: string, q: string) => ['courses', courseId, 'stock-images', q] as const,
 };
 
 // --- Corsi ------------------------------------------------------------------
@@ -545,6 +546,46 @@ export function useSetVideoTranscript(courseId: string) {
   return useMutation({
     mutationFn: (vars: { lessonId: string; blockId: string; transcript: TranscriptCue[] }) =>
       api.setVideoTranscript(courseId, vars.lessonId, vars.blockId, vars.transcript),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.modules(courseId) }),
+  });
+}
+
+// --- Immagini stock royalty-free -------------------------------------------
+
+/** Cerca immagini stock on-demand: abilitato solo quando `q` non è vuota. */
+export const useSearchStockImages = (courseId: string, q: string) =>
+  useQuery({
+    queryKey: qk.stockImages(courseId, q),
+    queryFn: () => api.searchStockImages(courseId, q),
+    enabled: !!courseId && q.trim().length > 0,
+    staleTime: 5 * 60 * 1000,
+  });
+
+/** Scarica e collega un'immagine stock a un block immagine della lezione. */
+export function useAttachStockImage(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { lessonId: string; input: AttachStockImageInput }) =>
+      api.attachStockImage(courseId, vars.lessonId, vars.input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.modules(courseId) }),
+  });
+}
+
+/** Imposta un'immagine stock come copertina del corso. */
+export function useAttachStockCover(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AttachStockCoverInput) => api.attachStockCover(courseId, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.course(courseId) }),
+  });
+}
+
+/** Imposta un'immagine stock come copertina di un modulo. */
+export function useAttachStockModuleCover(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { moduleId: string; input: AttachStockCoverInput }) =>
+      api.attachStockModuleCover(courseId, vars.moduleId, vars.input),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.modules(courseId) }),
   });
 }

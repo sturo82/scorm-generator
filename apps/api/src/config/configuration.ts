@@ -85,6 +85,15 @@ export interface AppConfig {
     userPoolId?: string;
     region: string;
   };
+  /**
+   * Libreria immagini stock (royalty-free). `provider` seleziona l'adapter; se
+   * la relativa API key è assente, la ricerca stock è disabilitata (501).
+   */
+  stock: {
+    provider: 'pexels' | 'unsplash' | 'none';
+    pexelsApiKey?: string;
+    unsplashAccessKey?: string;
+  };
   /** Limiti di upload della knowledge base. */
   upload: {
     maxFileBytes: number;
@@ -169,6 +178,11 @@ export function loadConfiguration(): AppConfig {
     cognito: {
       userPoolId: process.env['COGNITO_USER_POOL_ID'],
       region: env('COGNITO_REGION', env('AWS_REGION', 'eu-west-1')),
+    },
+    stock: {
+      provider: env('STOCK_IMAGE_PROVIDER', 'none') as AppConfig['stock']['provider'],
+      pexelsApiKey: process.env['PEXELS_API_KEY'],
+      unsplashAccessKey: process.env['UNSPLASH_ACCESS_KEY'],
     },
     upload: {
       maxFileBytes: Number(env('UPLOAD_MAX_FILE_BYTES', String(50 * 1024 * 1024))),

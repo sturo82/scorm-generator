@@ -7,6 +7,7 @@
 
 import type { MediaRef } from '../../primitives.js';
 import { h, hHtml, withBehavior, type VNode, type VChild, type RenderContext } from '../vnode.js';
+import { mediaImage } from './media.js';
 
 interface RichLike {
   html?: string;
@@ -18,19 +19,11 @@ interface StepItem {
   media?: MediaRef;
 }
 
-function mediaImg(m: MediaRef | undefined, ctx: RenderContext): VNode | null {
-  if (!m) return null;
-  if (m.kind && m.kind !== 'image') return null;
-  const src = ctx.resolveMedia(m);
-  if (!src) return null;
-  return h('img', { class: 'block-media', src, alt: m.alt || '', loading: 'lazy' });
-}
-
 export function renderCarouselSteps(payload: Record<string, unknown>, ctx: RenderContext): VNode {
   const steps = (payload.steps as StepItem[]) || [];
   const slides: VChild[] = steps.map((s, i) => {
     const inner: VChild[] = [h('h4', undefined, [s.title])];
-    const img = mediaImg(s.media, ctx);
+    const img = mediaImage(s.media, ctx);
     if (img) inner.push(img);
     inner.push(hHtml('div', { class: 'block-rich' }, s.content?.html || ''));
     return h(

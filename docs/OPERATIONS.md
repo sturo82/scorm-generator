@@ -200,6 +200,36 @@ Endpoint (ruolo EDITOR):
 > **Regioni:** Stable Image Core/Ultra e Nova Canvas non sono disponibili in
 > tutte le regioni. `us-west-2` ospita insieme Claude, Stable Image e Polly.
 
+### 3b-ter. API — Immagini stock royalty-free (Pexels / Unsplash)
+
+Terza fonte immagini oltre a generazione AI e upload: ricerca di foto
+royalty-free da una libreria stock. Il provider è astratto (si sceglie Pexels
+**oppure** Unsplash via env); l'immagine scelta viene **scaricata e salvata su
+S3** (`storageKey`) così finisce nel pacchetto SCORM offline, con
+l'**attribuzione obbligatoria** (credito autore + fonte) salvata nel MediaRef e
+mostrata sia in anteprima sia nell'export. Default: `none` (endpoint 501).
+
+```dotenv
+STOCK_IMAGE_PROVIDER=pexels   # none | pexels | unsplash
+PEXELS_API_KEY=...            # se provider=pexels (chiave gratuita da pexels.com/api)
+UNSPLASH_ACCESS_KEY=...       # se provider=unsplash (unsplash.com/developers)
+```
+
+Endpoint (ruolo EDITOR, prefisso `/courses/:courseId/stock-images`):
+- `GET /search?q=` — cerca immagini stock per query testuale. Risponde
+  `{provider, results[]}` (solo metadati + thumbnail, nessun byte scaricato);
+  `501` se il provider non è configurato.
+- `POST /lessons/:lessonId/attach` `{blockId, photoId, provider, mediaIndex?, alt?}`
+  — scarica l'immagine a piena risoluzione, la salva su S3 e scrive
+  `storageKey` + `attribution` nel MediaRef immagine del block indicato.
+
+> **Attribuzione:** Unsplash richiede il credito all'autore e il tracking del
+> download (gestito automaticamente dall'adapter); Pexels raccomanda il credito.
+> Il credito è reso come didascalia accanto all'immagine in anteprima ed export.
+>
+> **GDPR:** verso il provider viene inviata solo la query testuale; l'immagine
+> selezionata è scaricata e archiviata su S3 (UE).
+
 ### 3c. API — Autenticazione OIDC (Amazon Cognito)
 
 ```dotenv

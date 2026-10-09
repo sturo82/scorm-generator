@@ -36,9 +36,13 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
   /* Primario e testo su primario. */
   --ix-primary: var(--brand-primary, var(--primary-rgb, #4f46e5));
   --ix-on-primary: var(--brand-on-primary, #ffffff);
+  /* Accento del brand (secondary). Fallback: tema web, poi il primario — così
+     se il brand non ha un secondary nulla cambia rispetto a prima. Colora link,
+     stati attivi (accordion/tab), badge, hotspot e il ring di focus. */
+  --ix-accent: var(--brand-secondary, var(--secondary-rgb, var(--ix-primary)));
   /* Bordi e ombre coerenti con il tema. */
   --ix-border: var(--brand-border, rgba(127, 127, 127, 0.22));
-  --ix-ring: color-mix(in srgb, var(--ix-primary) 42%, transparent);
+  --ix-ring: color-mix(in srgb, var(--ix-accent) 42%, transparent);
   --ix-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
   --ix-shadow-md: 0 4px 12px rgba(16, 24, 40, 0.1), 0 2px 4px rgba(16, 24, 40, 0.06);
   --ix-shadow-lg: 0 12px 28px rgba(16, 24, 40, 0.14), 0 4px 10px rgba(16, 24, 40, 0.08);
@@ -68,7 +72,17 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
   --card-foreground-rgb: hsl(var(--card-foreground, 222 47% 11%));
   --muted-rgb: hsl(var(--muted, 220 16% 95%));
   --primary-rgb: hsl(var(--primary, 243 75% 59%));
+  --secondary-rgb: hsl(var(--secondary, 243 75% 59%));
 }
+
+/* Link brandizzati con l'accento (secondary). Vale in entrambi i contesti
+   (player SCORM e anteprima web) perché INTERACTIONS_CSS è il foglio condiviso.
+   Scoping su [data-motion] per non invadere la chrome dell'editor. */
+[data-motion] a {
+  color: var(--ix-accent);
+  text-underline-offset: 2px;
+}
+[data-motion] a:hover { text-decoration: underline; }
 
 /* ============================================================================
    FLASHCARD — flip 3D a due facce. Il flip avviene SOLO al click (aria-pressed),
@@ -121,7 +135,7 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
 .flashcard-face.is-back {
   transform: rotateY(180deg);
   background: var(--ix-surface-2);
-  border-color: color-mix(in srgb, var(--ix-primary) 35%, var(--ix-border));
+  border-color: color-mix(in srgb, var(--ix-accent) 35%, var(--ix-border));
 }
 .flashcard-face-label {
   display: inline-flex;
@@ -133,8 +147,8 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--ix-primary);
-  background: color-mix(in srgb, var(--ix-primary) 12%, transparent);
+  color: var(--ix-accent);
+  background: color-mix(in srgb, var(--ix-accent) 12%, transparent);
   border-radius: 999px;
 }
 .flashcard:focus-visible { outline: none; }
@@ -163,8 +177,8 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
   opacity: 0.6;
 }
 .accordion-head[aria-expanded="true"]::after { transform: rotate(-135deg); }
-.accordion-head[aria-expanded="true"] { color: var(--ix-primary); }
-.accordion-head:hover { background: color-mix(in srgb, var(--ix-primary) 8%, transparent); }
+.accordion-head[aria-expanded="true"] { color: var(--ix-accent); }
+.accordion-head:hover { background: color-mix(in srgb, var(--ix-accent) 8%, transparent); }
 .accordion-body {
   overflow: hidden;
   color: var(--ix-on-surface);
@@ -180,7 +194,7 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
    CLICK REVEAL — stessa meccanica dell'accordion.
    ========================================================================== */
 .reveal-trigger { color: var(--ix-on-surface); transition: background var(--mo-dur) var(--mo-ease); }
-.reveal-trigger:hover { background: color-mix(in srgb, var(--ix-primary) 8%, transparent); }
+.reveal-trigger:hover { background: color-mix(in srgb, var(--ix-accent) 8%, transparent); }
 .reveal-body { color: var(--ix-on-surface); animation: mo-reveal var(--mo-dur) var(--mo-ease); }
 .reveal-body[hidden] { display: none; }
 
@@ -189,7 +203,7 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
    Markup: .hotspot-dot[aria-pressed], box info .hotspot-info
    ========================================================================== */
 .hotspot-dot {
-  background: var(--ix-primary);
+  background: var(--ix-accent);
   color: var(--ix-on-primary);
   border: 2px solid var(--ix-surface);
   box-shadow: var(--ix-shadow-md);
@@ -214,7 +228,7 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
   position: absolute;
   inset: -2px;
   border-radius: 50%;
-  border: 2px solid var(--ix-primary);
+  border: 2px solid var(--ix-accent);
   animation: mo-ping 1.8s var(--mo-ease) infinite;
 }
 [data-motion="lively"] .hotspot-dot[aria-pressed="true"]::before { animation: none; }

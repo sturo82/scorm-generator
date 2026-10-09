@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Check, ChevronRight, FileText, ListTree, Wand2, Image as ImageIcon, Eye } from 'lucide-react';
+import { Check, ChevronRight, FileText, ListTree, Wand2, Image as ImageIcon, Eye, Search } from 'lucide-react';
 import type { Brief } from '@scorm/contracts';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
@@ -16,11 +16,13 @@ import {
   useModules,
   useSaveBrief,
   useGenerateCover,
+  useAttachStockCover,
   useUpdateCourseSettings,
   useUploadInstructorAvatar,
   useActiveJobs,
   useBrands,
 } from '@/lib/api/hooks';
+import { StockPhotoPicker } from '@/components/courses/stock-photo-picker';
 import { cn } from '@/lib/cn';
 
 type StepId = 'brief' | 'structure' | 'content' | 'cover' | 'review';
@@ -51,10 +53,12 @@ export function CourseWizard({ courseId }: { courseId: string }) {
   const modules = useModules(courseId);
   const saveBrief = useSaveBrief(courseId);
   const genCover = useGenerateCover(courseId);
+  const attachStockCover = useAttachStockCover(courseId);
   const updateSettings = useUpdateCourseSettings(courseId);
   const activeJobs = useActiveJobs(courseId);
   const toast = useToast();
   const [active, setActive] = React.useState<StepId>('brief');
+  const [coverStockOpen, setCoverStockOpen] = React.useState(false);
 
   // Generazione in corso (banner persistente + blocco azioni in conflitto).
   const jobsActive = activeJobs.data ?? [];
@@ -254,13 +258,44 @@ export function CourseWizard({ courseId }: { courseId: string }) {
                 <p className="text-sm text-muted-foreground">Nessuna copertina generata</p>
               </div>
             )}
-            <div className="flex justify-end p-2">
+            <div className="flex justify-end gap-2 p-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCoverStockOpen(true)}
+                disabled={attachStockCover.isPending}
+              >
+                <Search className="size-4" />
+                {attachStockCover.isPending ? 'Imposto…' : 'Scegli da Unsplash'}
+              </Button>
               <Button variant="outline" size="sm" onClick={handleGenerateCover} disabled={genCover.isPending}>
                 <ImageIcon className="size-4" />
                 {genCover.isPending ? 'Generazione…' : course.data?.coverImageUrl ? 'Rigenera copertina' : 'Genera copertina'}
               </Button>
             </div>
           </div>
+
+          <StockPhotoPicker
+            open={coverStockOpen}
+            courseId={courseId}
+            title="Scegli la copertina da Unsplash"
+            saving={attachStockCover.isPending}
+            onClose={() => setCoverStockOpen(false)}
+            onSelect={async (photo) => {
+              try {
+                await attachStockCover.mutateAsync({ photoId: photo.id, provider: photo.provider });
+                toast.show('Copertina impostata da Unsplash', 'success');
+                setCoverStockOpen(false);
+              } catch (err) {
+                toast.show(
+                  err instanceof Error && /501|non configurata/i.test(err.message)
+                    ? 'Libreria immagini stock non configurata sul server'
+                    : 'Impostazione copertina non riuscita',
+                  'error',
+                );
+              }
+            }}
+          />
 
           <BrandPicker
             value={course.data?.primaryBrandId}

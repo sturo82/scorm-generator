@@ -30,6 +30,9 @@ import type {
   CreateExternalVideo,
   UpdateVideoAsset,
   TranscriptCue,
+  StockImageSearchResponse,
+  AttachStockImageInput,
+  AttachStockCoverInput,
 } from './types';
 
 /**
@@ -296,6 +299,31 @@ export class HttpApiClient implements ApiClient {
     await this.request<{ saved: boolean; count: number }>(
       `/courses/${courseId}/generate/lessons/${lessonId}/blocks/${blockId}/transcript`,
       { method: 'PUT', body: JSON.stringify({ transcript }) },
+    );
+  }
+
+  // Immagini stock royalty-free
+  searchStockImages(courseId: string, q: string) {
+    return this.request<StockImageSearchResponse>(
+      `/courses/${courseId}/stock-images/search?q=${encodeURIComponent(q)}`,
+    );
+  }
+  attachStockImage(courseId: string, lessonId: string, input: AttachStockImageInput) {
+    return this.request<{ attached: true; url: string }>(
+      `/courses/${courseId}/stock-images/lessons/${lessonId}/attach`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
+  attachStockCover(courseId: string, input: AttachStockCoverInput) {
+    return this.request<{ attached: true; url: string }>(
+      `/courses/${courseId}/stock-images/cover`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
+  attachStockModuleCover(courseId: string, moduleId: string, input: AttachStockCoverInput) {
+    return this.request<{ attached: true; url: string }>(
+      `/courses/${courseId}/stock-images/modules/${moduleId}/cover`,
+      { method: 'POST', body: JSON.stringify(input) },
     );
   }
 }

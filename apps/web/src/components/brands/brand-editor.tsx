@@ -15,6 +15,7 @@ const EMPTY: BrandDraft = {
   colors: {
     primary: '#4F46E5',
     onPrimary: '#FFFFFF',
+    secondary: '#EC4899',
     surface: '#FFFFFF',
     onSurface: '#111827',
     success: '#16A34A',
@@ -28,6 +29,7 @@ const EMPTY: BrandDraft = {
 const COLOR_FIELDS: Array<{ key: keyof BrandDraft['colors']; label: string }> = [
   { key: 'primary', label: 'Primario' },
   { key: 'onPrimary', label: 'Testo su primario' },
+  { key: 'secondary', label: 'Accento (secondario)' },
   { key: 'surface', label: 'Superficie' },
   { key: 'onSurface', label: 'Testo su superficie' },
   { key: 'success', label: 'Successo' },
@@ -58,6 +60,7 @@ export function BrandEditor({ initial, onSubmit, saving }: BrandEditorProps) {
   const previewVars = {
     '--p': draft.colors.primary,
     '--op': draft.colors.onPrimary,
+    '--acc': draft.colors.secondary ?? draft.colors.primary,
     '--s': draft.colors.surface,
     '--os': draft.colors.onSurface,
     '--ok': draft.colors.success,
@@ -169,8 +172,23 @@ export function BrandEditor({ initial, onSubmit, saving }: BrandEditorProps) {
               Titolo della lezione
             </h3>
             <p className="text-sm opacity-80" style={{ fontFamily: draft.typography.fontFamilyBody }}>
-              Esempio di contenuto del corso con i colori e i font del brand applicati in tempo reale.
+              Esempio di contenuto del corso con i colori e i font del brand applicati in tempo reale.{' '}
+              <a href="#" onClick={(e) => e.preventDefault()} style={{ color: 'var(--acc)', fontWeight: 600 }}>
+                un link d&apos;esempio
+              </a>
+              .
             </p>
+            <div className="flex items-center gap-2">
+              <span
+                className="rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide"
+                style={{ color: 'var(--acc)', background: 'color-mix(in srgb, var(--acc) 14%, transparent)' }}
+              >
+                Accento
+              </span>
+              <span className="h-1.5 flex-1 overflow-hidden rounded-full" style={{ background: 'color-mix(in srgb, var(--os) 12%, transparent)' }}>
+                <span className="block h-full w-2/3 rounded-full" style={{ background: 'linear-gradient(90deg, var(--p), var(--acc))' }} />
+              </span>
+            </div>
             <div className="flex gap-2 pt-1">
               <span
                 className="rounded-md px-3 py-1.5 text-sm font-medium"
