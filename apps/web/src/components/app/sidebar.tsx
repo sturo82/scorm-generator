@@ -73,8 +73,8 @@ export function DesktopSidebar() {
     <aside className="hidden w-64 shrink-0 lg:flex lg:flex-col sidebar-premium">
       {/* Logo area: stesso sfondo dell'header (gradiente brand scuro) →
           lega visivamente sidebar e barra superiore come un unico blocco. */}
-      <div className="sidebar-logo-area flex h-16 items-center px-5">
-        <AppBrand className="text-[hsl(var(--header-foreground))]" />
+      <div className="sidebar-logo-area flex h-[63px] items-center px-8">
+        <AppBrand size={48} className="text-[hsl(var(--header-foreground))]" />
       </div>
       {/* Separatore brandizzato sotto il logo. */}
       <div

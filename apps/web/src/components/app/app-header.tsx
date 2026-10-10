@@ -37,7 +37,7 @@ export function AppHeader() {
 
   return (
     <>
-      <header className="brand-header sticky top-0 z-30 flex h-16 items-center gap-3 px-4 md:px-6">
+      <header className="brand-header sticky top-0 z-30 flex h-[63px] items-center gap-3 px-8">
         <Button
           variant="ghost"
           size="icon"
@@ -90,8 +90,8 @@ export function AppHeader() {
             aria-hidden
           />
           <div className="absolute left-0 top-0 h-full w-72 bg-card shadow-xl">
-            <div className="sidebar-logo-area flex h-16 items-center justify-between px-5">
-              <AppBrand size={28} className="text-[hsl(var(--header-foreground))]" />
+            <div className="sidebar-logo-area flex h-[63px] items-center justify-between px-8">
+              <AppBrand size={48} className="text-[hsl(var(--header-foreground))]" />
               <Button variant="ghost" size="icon" aria-label="Chiudi menu" className="text-[hsl(var(--header-foreground))]" onClick={() => setDrawerOpen(false)}>
                 <X className="size-5" />
               </Button>

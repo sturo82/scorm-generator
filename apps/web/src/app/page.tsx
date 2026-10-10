@@ -10,18 +10,18 @@ import { Card, CardContent } from '@/components/ui/card';
 export default function HomePage() {
   return (
     <main className="min-h-dvh">
-      {/* Header d'ecosistema: barra sticky scura con blur e bordo sottile
-          (posizionamento coerente con manager.knowkube.com): wordmark a sinistra,
-          CTA accentata (verde K Scorm) a destra. */}
+      {/* Header d'ecosistema: misure allineate a manager.knowkube.com — barra
+          full-width sticky, padding X 32px, logo alto 30px a sinistra, CTA sm a
+          destra. Accenti = verde K Scorm. */}
       <header className="eco-header sticky top-0 z-30">
-        <div className="container flex h-16 items-center justify-between">
+        <div className="flex h-[63px] items-center justify-between px-8">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/brand/kscorm-wordmark-white-trim.png"
             alt="K Scorm"
-            className="h-6 w-auto object-contain"
+            className="h-[30px] w-auto object-contain"
           />
-          <Button asChild size="sm">
+          <Button asChild size="xs">
             <Link href="/dashboard">
               <ArrowRight className="size-4" /> Entra
             </Link>
