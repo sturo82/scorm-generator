@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { login } from '@/lib/auth';
@@ -16,6 +17,39 @@ export default function LoginPage() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const oidc = isOidcEnabled();
+
+  // "Torna indietro" dinamico: la destinazione dipende da dove si proviene.
+  // Priorità: parametro ?return_to= (passato dalla piattaforma di origine) →
+  // referrer esterno → home di K Scorm. Solo URL assolute http(s) sono accettate
+  // per evitare open-redirect verso schemi arbitrari.
+  const [backHref, setBackHref] = React.useState('/');
+  const [backLabel, setBackLabel] = React.useState('Torna alla home');
+  React.useEffect(() => {
+    const safe = (raw: string | null): string | null => {
+      if (!raw) return null;
+      try {
+        const u = new URL(raw, window.location.origin);
+        return u.protocol === 'http:' || u.protocol === 'https:' ? u.toString() : null;
+      } catch {
+        return null;
+      }
+    };
+    const params = new URLSearchParams(window.location.search);
+    const fromParam = safe(params.get('return_to'));
+    const fromRef =
+      document.referrer && !document.referrer.startsWith(window.location.origin)
+        ? safe(document.referrer)
+        : null;
+    const target = fromParam ?? fromRef;
+    if (target) {
+      setBackHref(target);
+      try {
+        setBackLabel(`Torna a ${new URL(target).hostname}`);
+      } catch {
+        /* mantiene l'etichetta di default */
+      }
+    }
+  }, []);
 
   async function handleLogin() {
     setLoading(true);
@@ -66,6 +100,13 @@ export default function LoginPage() {
                 : 'L’autenticazione reale (OIDC/SSO) si collega senza modifiche al dominio.'}
             </p>
           )}
+          <a
+            href={backHref}
+            className="mt-1 inline-flex items-center justify-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="size-3.5" />
+            {backLabel}
+          </a>
         </CardContent>
       </Card>
     </main>

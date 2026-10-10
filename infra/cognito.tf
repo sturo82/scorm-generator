@@ -71,8 +71,9 @@ resource "aws_cognito_user_pool_client" "web" {
 
 # Dominio hosted UI di Cognito (per il login).
 resource "aws_cognito_user_pool_domain" "main" {
-  domain       = "${var.project}-${data.aws_caller_identity.current.account_id}"
-  user_pool_id = aws_cognito_user_pool.main.id
+  domain                = "${var.project}-${data.aws_caller_identity.current.account_id}"
+  user_pool_id          = aws_cognito_user_pool.main.id
+  managed_login_version = 2
 }
 
 # ── Dominio custom della login (ecosistema): auth.knowkube.com ──────────────
@@ -113,10 +114,11 @@ resource "aws_acm_certificate_validation" "auth" {
 }
 
 resource "aws_cognito_user_pool_domain" "custom" {
-  count           = var.auth_domain != "" ? 1 : 0
-  domain          = var.auth_domain
-  user_pool_id    = aws_cognito_user_pool.main.id
-  certificate_arn = aws_acm_certificate_validation.auth[0].certificate_arn
+  count                 = var.auth_domain != "" ? 1 : 0
+  domain                = var.auth_domain
+  user_pool_id          = aws_cognito_user_pool.main.id
+  certificate_arn       = aws_acm_certificate_validation.auth[0].certificate_arn
+  managed_login_version = 2
 }
 
 # Record A/alias verso la distribuzione CloudFront di Cognito per il custom domain.
@@ -133,14 +135,40 @@ resource "aws_route53_record" "auth" {
   }
 }
 
-# Branding della Hosted UI (classic): CSS + logo K Scorm (ecosistema Knowkube).
-# CSS <= 3 KB e logo PNG <= 100 KB (vincoli AWS). Il logo è centrato sopra i
-# campi; il CSS applica l'identità verde di piattaforma e gli accenti neutri.
-resource "aws_cognito_user_pool_ui_customization" "main" {
-  user_pool_id = aws_cognito_user_pool_domain.main.user_pool_id
+# Branding Managed Login (v2) per l'app-client admin K Scorm. Lo stile è legato
+# al CLIENT: ogni prodotto dell'ecosistema (K Scorm, K Manager, …) avrà il suo
+# client con i propri accenti, mantenendo lo stesso layout premium Knowkube.
+# Partiamo dai valori premium di default di Cognito e sovrascriviamo i colori
+# chiave (verde di piattaforma) + logo via settings/asset.
+resource "aws_cognito_managed_login_branding" "web" {
+  user_pool_id = aws_cognito_user_pool.main.id
+  client_id    = aws_cognito_user_pool_client.web.id
 
-  css        = file("${path.module}/cognito-ui.css")
-  image_file = filebase64("${path.module}/cognito-logo.png")
+  # Settings = default premium di Cognito con: famiglia colore portata al verde di
+  # piattaforma K Scorm (SOLO il form), sfondo d'ecosistema Knowkube (velo ambra
+  # condiviso), logo e sfondo via asset. Esattamente uno tra settings e
+  # use_cognito_provided_values è ammesso.
+  # NB: plan mostra un diff perpetuo benigno sui borderRadius (8 <-> 8.0): l'API
+  # memorizza i float con ".0" mentre jsonencode di Terraform li normalizza a int.
+  # Non modifica nulla di reale (il branding applicato è corretto).
+  settings = file("${path.module}/managed-login-settings.json")
+
+  # Logo del form (K Scorm, versione a colori) per la modalità chiara.
+  asset {
+    category   = "FORM_LOGO"
+    color_mode = "LIGHT"
+    extension  = "PNG"
+    bytes      = filebase64("${path.module}/cognito-logo.png")
+  }
+
+  # Sfondo pagina: stesso velo premium della home (gradiente radiale verde di
+  # piattaforma su base neutra), così la login è coerente con l'app e non piatta.
+  asset {
+    category   = "PAGE_BACKGROUND"
+    color_mode = "LIGHT"
+    extension  = "PNG"
+    bytes      = filebase64("${path.module}/cognito-bg.png")
+  }
 }
 
 locals {
