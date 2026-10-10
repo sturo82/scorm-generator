@@ -11,6 +11,15 @@ resource "aws_cognito_user_pool" "main" {
   username_attributes      = ["email"]
   auto_verified_attributes = ["email"]
 
+  # Invio email via SES con mittente del dominio Knowkube (recapito affidabile,
+  # mittente brandizzato, logo immagine nelle email). Se ses_identity_arn è vuoto
+  # si resta su COGNITO_DEFAULT (fallback dev).
+  email_configuration {
+    email_sending_account = var.ses_identity_arn != "" ? "DEVELOPER" : "COGNITO_DEFAULT"
+    source_arn            = var.ses_identity_arn != "" ? var.ses_identity_arn : null
+    from_email_address    = var.ses_identity_arn != "" ? "${var.product_display_name} · Knowkube <${var.email_from_address}>" : null
+  }
+
   schema {
     name                     = "tenant_id"
     attribute_data_type      = "String"
@@ -46,7 +55,7 @@ resource "aws_cognito_user_pool" "main" {
         <div style="margin:0;padding:0;background:#0c1311;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
           <div style="max-width:520px;margin:0 auto;padding:32px 20px;">
             <div style="padding:18px 24px;background:#0f1a16;border:1px solid rgba(255,255,255,.08);border-radius:14px 14px 0 0;">
-              <span style="font-size:22px;font-weight:800;letter-spacing:-.5px;color:#ffffff;">K<span style="color:${var.product_accent_hex};">.</span> ${var.product_display_name}</span>
+              <img src="${var.email_logo_url}" alt="${var.product_display_name}" height="26" style="height:26px;width:auto;display:block;" />
             </div>
             <div style="padding:28px 24px;background:#121a17;border:1px solid rgba(255,255,255,.08);border-top:none;border-radius:0 0 14px 14px;color:#e8f0ec;">
               <h1 style="margin:0 0 10px;font-size:19px;color:#ffffff;">Ti diamo il benvenuto</h1>

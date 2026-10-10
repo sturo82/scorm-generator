@@ -40,6 +40,28 @@ variable "product_accent_hex" {
   default     = "#22b573"
 }
 
+variable "email_logo_url" {
+  description = "URL pubblico del logo (wordmark bianco) mostrato nelle email."
+  type        = string
+  default     = "https://architect.knowkube.com/brand/kscorm-wordmark-white-trim.png"
+}
+
+variable "ses_identity_arn" {
+  description = <<-EOT
+    ARN dell'identità SES verificata usata come mittente delle email Cognito
+    (es. arn:aws:ses:eu-west-1:<acct>:identity/knowkube.com). Vuoto = Cognito usa
+    l'invio di default (COGNITO_DEFAULT), senza mittente custom.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "email_from_address" {
+  description = "Indirizzo mittente delle email (deve appartenere all'identità SES)."
+  type        = string
+  default     = "no-reply@knowkube.com"
+}
+
 variable "auth_domain" {
   description = <<-EOT
     FQDN del dominio custom per la login Cognito (es. auth.knowkube.com).
