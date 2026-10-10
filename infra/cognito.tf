@@ -35,6 +35,41 @@ resource "aws_cognito_user_pool" "main" {
 
   admin_create_user_config {
     allow_admin_create_user_only = true # utenti creati via invito (AdminCreateUser)
+
+    # Email d'invito brandizzata (ecosistema Knowkube + prodotto specifico).
+    # Placeholder obbligatori Cognito: {username} e {####} (password temporanea).
+    # NB: con EmailSendingAccount=COGNITO_DEFAULT niente immagini remote/mittente
+    # custom; il logo è reso come wordmark testuale "K." + nome prodotto.
+    invite_message_template {
+      email_subject = "Il tuo accesso a ${var.product_display_name} · Knowkube"
+      email_message = <<-HTML
+        <div style="margin:0;padding:0;background:#0c1311;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+          <div style="max-width:520px;margin:0 auto;padding:32px 20px;">
+            <div style="padding:18px 24px;background:#0f1a16;border:1px solid rgba(255,255,255,.08);border-radius:14px 14px 0 0;">
+              <span style="font-size:22px;font-weight:800;letter-spacing:-.5px;color:#ffffff;">K<span style="color:${var.product_accent_hex};">.</span> ${var.product_display_name}</span>
+            </div>
+            <div style="padding:28px 24px;background:#121a17;border:1px solid rgba(255,255,255,.08);border-top:none;border-radius:0 0 14px 14px;color:#e8f0ec;">
+              <h1 style="margin:0 0 10px;font-size:19px;color:#ffffff;">Ti diamo il benvenuto</h1>
+              <p style="margin:0 0 18px;font-size:14px;line-height:1.6;color:#b9c6bf;">
+                Sei stato invitato ad accedere a <strong style="color:#fff;">${var.product_display_name}</strong>, parte dell'ecosistema Knowkube. Usa queste credenziali per il primo accesso: ti verrà chiesto di impostare una nuova password.
+              </p>
+              <div style="margin:0 0 20px;padding:16px 18px;background:#0f1a16;border:1px solid rgba(255,255,255,.1);border-radius:10px;">
+                <div style="font-size:12px;color:#8da399;text-transform:uppercase;letter-spacing:1px;">Email</div>
+                <div style="font-size:15px;color:#fff;margin:2px 0 12px;">{username}</div>
+                <div style="font-size:12px;color:#8da399;text-transform:uppercase;letter-spacing:1px;">Password temporanea</div>
+                <div style="font-size:15px;color:#fff;margin:2px 0 0;font-family:ui-monospace,Menlo,Consolas,monospace;">{####}</div>
+              </div>
+              <a href="https://${var.web_domain}/login" style="display:inline-block;background:${var.product_accent_hex};color:#06130c;font-weight:700;font-size:14px;text-decoration:none;padding:11px 22px;border-radius:9px;">Accedi a ${var.product_display_name}</a>
+              <p style="margin:20px 0 0;font-size:12px;line-height:1.6;color:#8da399;">
+                Se non ti aspettavi questo invito, ignora questa email.
+              </p>
+            </div>
+            <p style="text-align:center;margin:16px 0 0;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#5f726a;">Knowkube · ecosistema</p>
+          </div>
+        </div>
+      HTML
+      sms_message   = "Knowkube · ${var.product_display_name}: utente {username}, password temporanea {####}"
+    }
   }
 
   account_recovery_setting {

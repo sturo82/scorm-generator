@@ -27,6 +27,19 @@ variable "api_domain" {
   type        = string
 }
 
+# --- Branding email (ecosistema Knowkube) ----------------------------------
+variable "product_display_name" {
+  description = "Nome del prodotto mostrato nelle email (es. 'K Scorm')."
+  type        = string
+  default     = "K Scorm"
+}
+
+variable "product_accent_hex" {
+  description = "Colore accento del prodotto per le email (es. verde K Scorm)."
+  type        = string
+  default     = "#22b573"
+}
+
 variable "auth_domain" {
   description = <<-EOT
     FQDN del dominio custom per la login Cognito (es. auth.knowkube.com).
