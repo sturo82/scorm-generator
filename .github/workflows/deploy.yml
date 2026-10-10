@@ -109,6 +109,7 @@ jobs:
           NEXT_PUBLIC_OIDC_REDIRECT_URI: https://${{ vars.WEB_DOMAIN }}/auth/callback
           NEXT_PUBLIC_OIDC_SCOPE: openid email profile
           NEXT_PUBLIC_OIDC_AUDIENCE: ${{ vars.COGNITO_CLIENT_ID }}
+          NEXT_PUBLIC_OIDC_AUTH_DOMAIN: ${{ vars.AUTH_DOMAIN }}
         run: |
           # NODE_ENV=production farebbe saltare le devDependencies (tsc, next):
           # forziamo l'install completo per avere i tool di build.

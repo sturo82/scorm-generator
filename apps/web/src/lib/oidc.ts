@@ -13,6 +13,10 @@
  *  - NEXT_PUBLIC_OIDC_REDIRECT_URI        es. http://localhost:3100/auth/callback
  *  - NEXT_PUBLIC_OIDC_SCOPE               default "openid profile email"
  *  - NEXT_PUBLIC_OIDC_AUDIENCE            opzionale (Auth0: parametro audience)
+ *  - NEXT_PUBLIC_OIDC_AUTH_DOMAIN         opzionale: dominio custom della login
+ *        (es. auth.knowkube.com). Se presente, la pagina di login e lo scambio
+ *        token avvengono su questo dominio brandizzato invece che sull'URL AWS;
+ *        l'issuer (validazione `iss` del token) resta quello regionale di Cognito.
  */
 
 export interface OidcConfig {
@@ -21,6 +25,8 @@ export interface OidcConfig {
   redirectUri: string;
   scope: string;
   audience?: string;
+  /** Host del dominio custom della login (senza schema), se configurato. */
+  authDomain?: string;
 }
 
 const PKCE_KEY = 'scorm.oidc.pkce';
@@ -46,7 +52,20 @@ export function getOidcConfig(): OidcConfig {
     redirectUri,
     scope: process.env.NEXT_PUBLIC_OIDC_SCOPE ?? 'openid profile email',
     audience: process.env.NEXT_PUBLIC_OIDC_AUDIENCE,
+    authDomain: process.env.NEXT_PUBLIC_OIDC_AUTH_DOMAIN || undefined,
   };
+}
+
+/**
+ * Se è configurato un dominio custom della login, riscrive l'host di un endpoint
+ * OIDC (authorize/token) scoperto dal discovery verso quel dominio. Cognito serve
+ * entrambi gli endpoint anche sul custom domain, mantenendo lo stesso path.
+ */
+function applyAuthDomain(endpoint: string, authDomain?: string): string {
+  if (!authDomain) return endpoint;
+  const u = new URL(endpoint);
+  u.host = authDomain;
+  return u.toString();
 }
 
 interface Discovery {
@@ -89,7 +108,11 @@ async function sha256Challenge(verifier: string): Promise<string> {
  */
 export async function beginLogin(): Promise<void> {
   const config = getOidcConfig();
-  const { authorization_endpoint } = await discover(config.issuer);
+  const discovered = await discover(config.issuer);
+  const authorization_endpoint = applyAuthDomain(
+    discovered.authorization_endpoint,
+    config.authDomain,
+  );
 
   const verifier = randomString(32);
   const challenge = await sha256Challenge(verifier);
@@ -137,7 +160,8 @@ export async function completeLogin(search: string): Promise<OidcTokens> {
   const verifier = sessionStorage.getItem(PKCE_KEY);
   if (!verifier) throw new Error('Code verifier PKCE assente');
 
-  const { token_endpoint } = await discover(config.issuer);
+  const discovered = await discover(config.issuer);
+  const token_endpoint = applyAuthDomain(discovered.token_endpoint, config.authDomain);
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code,

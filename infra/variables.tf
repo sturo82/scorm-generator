@@ -27,6 +27,17 @@ variable "api_domain" {
   type        = string
 }
 
+variable "auth_domain" {
+  description = <<-EOT
+    FQDN del dominio custom per la login Cognito (es. auth.knowkube.com).
+    Dominio d'ecosistema per l'accesso degli admin: la Hosted/Managed Login viene
+    servita qui invece che sull'URL *.amazoncognito.com. Deve stare sotto la
+    hosted zone di route53_zone_name. Lasciare vuoto per non creare il custom domain.
+  EOT
+  type        = string
+  default     = ""
+}
+
 # --- Bedrock / media --------------------------------------------------------
 
 variable "media_region" {

@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Upload, Image as ImageIcon, Loader2, Sparkles } from 'lucide-react';
+import { Upload, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,7 +27,7 @@ export default function BrandingSettingsPage() {
   const uploadFavicon = useUploadBrandingAsset();
 
   const [appName, setAppName] = React.useState('');
-  const [primaryColor, setPrimaryColor] = React.useState('#4F46E5');
+  const [primaryColor, setPrimaryColor] = React.useState('#22B573');
   const [accentColor, setAccentColor] = React.useState('');
   const [headerColor, setHeaderColor] = React.useState('');
   const logoInput = React.useRef<HTMLInputElement>(null);
@@ -103,7 +103,7 @@ export default function BrandingSettingsPage() {
                   id="appName"
                   value={appName}
                   maxLength={40}
-                  placeholder="SCORM Generator"
+                  placeholder="K Scorm"
                   onChange={(e) => setAppName(e.target.value)}
                   disabled={isLoading}
                 />
@@ -118,7 +118,7 @@ export default function BrandingSettingsPage() {
                 onChange={setPrimaryColor}
               />
               {!colorValid && (
-                <p className="text-xs text-destructive">Colore esadecimale non valido (es. #4F46E5).</p>
+                <p className="text-xs text-destructive">Colore esadecimale non valido (es. #22B573).</p>
               )}
               <ColorInput
                 id="accentColor"
@@ -210,20 +210,16 @@ export default function BrandingSettingsPage() {
                     ? `linear-gradient(100deg, ${headerColor}, ${primaryColor})`
                     : colorValid
                       ? primaryColor
-                      : '#4F46E5',
+                      : '#22B573',
                 }}
               >
-                {data?.logoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={data.logoUrl} alt="" className="size-8 rounded-lg object-contain" />
-                ) : (
-                  <span
-                    className="grid size-8 place-items-center rounded-lg bg-white/20 text-white"
-                  >
-                    <Sparkles className="size-4" />
-                  </span>
-                )}
-                <span className="truncate">{appName || 'SCORM Generator'}</span>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={data?.logoUrl ?? '/brand/kscorm-icon-white.png'}
+                  alt=""
+                  className="size-8 rounded-lg object-contain"
+                />
+                <span className="truncate">{appName || 'K Scorm'}</span>
               </div>
               {/* Swatch dei colori */}
               <div className="flex gap-2">

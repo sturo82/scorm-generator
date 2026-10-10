@@ -7,6 +7,8 @@ region  = "eu-west-1"
 route53_zone_name = "knowkube.com"
 web_domain        = "architect.knowkube.com"
 api_domain        = "api.architect.knowkube.com"
+# Dominio custom della login Cognito (ecosistema admin). Vuoto = non creato.
+auth_domain       = "auth.knowkube.com"
 
 # Bedrock: LLM in Irlanda (inference profile EU), immagini in us-west-2 (Oregon).
 # Valori verificati come disponibili/ACTIVE su questo account.

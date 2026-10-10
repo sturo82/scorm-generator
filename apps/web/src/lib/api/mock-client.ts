@@ -616,8 +616,8 @@ export class MockApiClient implements ApiClient {
 
   /** Branding white-label in-memory (default + patch dell'utente). */
   private branding: AppBrandingView = {
-    appName: 'SCORM Generator',
-    primaryColor: '#4f46e5',
+    appName: 'K Scorm',
+    primaryColor: '#22b573',
     accentColor: null,
     headerColor: null,
     logoKey: null,

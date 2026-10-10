@@ -6,8 +6,8 @@ import { useBranding } from '@/lib/api/hooks';
 /**
  * Applica il branding white-label del tenant alla web app lato client:
  *  - titolo del documento (nome app),
- *  - favicon (link rel=icon) se personalizzata — sostituendo quella di default
- *    generata da Next da app/icon.svg,
+ *  - favicon (link rel=icon) se personalizzata — sovrascrivendo l'href della
+ *    favicon di default K Scorm dichiarata nei metadata del layout,
  *  - palette del tema DERIVATA dal colore primario del brand: oltre a
  *    --primary/--ring, deriviamo accent, gradienti di sfondo/header, bordi e
  *    ombre colorate così l'intera UI assume un look premium coerente col brand.
@@ -23,15 +23,15 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
     if (data?.appName) document.title = data.appName;
   }, [data?.appName]);
 
-  // Favicon personalizzata. Next App Router gestisce app/icon.svg come una
-  // "hoistable resource" di React DOM: eliminare il suo <link rel="icon"> dal DOM
-  // causa un crash in React (unmountHoistable → removeChild su nodo già rimosso).
+  // Favicon personalizzata. Next App Router inietta i <link rel="icon"> dai
+  // metadata come "hoistable resource" di React DOM: eliminarli dal DOM causa un
+  // crash in React (unmountHoistable → removeChild su nodo già rimosso).
   // Soluzione: NON rimuoviamo il link di Next, ma ne sovrascriviamo l'href in
   // modo che il browser carichi la nostra favicon. Se il branding non ha favicon
   // custom, lo lasciamo puntare al default.
   React.useEffect(() => {
     const head = document.head;
-    const href = data?.faviconUrl || '/icon.svg';
+    const href = data?.faviconUrl || '/favicon-32.png';
 
     // 1) Aggiorna tutti i <link rel="icon"> GIÀ nel DOM (sia di Next sia nostri).
     //    Così Next non perde il nodo e React DOM non crasha.

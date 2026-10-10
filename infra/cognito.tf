@@ -75,6 +75,64 @@ resource "aws_cognito_user_pool_domain" "main" {
   user_pool_id = aws_cognito_user_pool.main.id
 }
 
+# ── Dominio custom della login (ecosistema): auth.knowkube.com ──────────────
+# Serve la login su un dominio Knowkube pulito invece che sull'URL AWS. Richiede
+# un certificato ACM in us-east-1 (vincolo Cognito, come CloudFront) e un record
+# A/alias verso la distribuzione CloudFront gestita da Cognito. Il parent domain
+# (knowkube.com) deve già risolvere: ha un record A (requisito AWS), soddisfatto.
+resource "aws_acm_certificate" "auth" {
+  count             = var.auth_domain != "" ? 1 : 0
+  provider          = aws.us_east_1
+  domain_name       = var.auth_domain
+  validation_method = "DNS"
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_route53_record" "auth_cert_validation" {
+  for_each = var.auth_domain != "" ? {
+    for dvo in aws_acm_certificate.auth[0].domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      type   = dvo.resource_record_type
+      record = dvo.resource_record_value
+    }
+  } : {}
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = each.value.name
+  type    = each.value.type
+  ttl     = 300
+  records = [each.value.record]
+}
+
+resource "aws_acm_certificate_validation" "auth" {
+  count                   = var.auth_domain != "" ? 1 : 0
+  provider                = aws.us_east_1
+  certificate_arn         = aws_acm_certificate.auth[0].arn
+  validation_record_fqdns = [for r in aws_route53_record.auth_cert_validation : r.fqdn]
+}
+
+resource "aws_cognito_user_pool_domain" "custom" {
+  count           = var.auth_domain != "" ? 1 : 0
+  domain          = var.auth_domain
+  user_pool_id    = aws_cognito_user_pool.main.id
+  certificate_arn = aws_acm_certificate_validation.auth[0].certificate_arn
+}
+
+# Record A/alias verso la distribuzione CloudFront di Cognito per il custom domain.
+resource "aws_route53_record" "auth" {
+  count   = var.auth_domain != "" ? 1 : 0
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = var.auth_domain
+  type    = "A"
+  alias {
+    name = aws_cognito_user_pool_domain.custom[0].cloudfront_distribution
+    # Zone ID fisso delle distribuzioni CloudFront (costante globale AWS).
+    zone_id                = "Z2FDTNDATAQYW2"
+    evaluate_target_health = false
+  }
+}
+
 # Branding della Hosted UI (classic): CSS + logo K Scorm (ecosistema Knowkube).
 # CSS <= 3 KB e logo PNG <= 100 KB (vincoli AWS). Il logo è centrato sopra i
 # campi; il CSS applica l'identità verde di piattaforma e gli accenti neutri.
@@ -101,4 +159,8 @@ output "cognito_issuer" {
 }
 output "cognito_hosted_ui_domain" {
   value = "${aws_cognito_user_pool_domain.main.domain}.auth.${var.region}.amazoncognito.com"
+}
+output "cognito_auth_domain" {
+  description = "Dominio custom della login (vuoto se non configurato)."
+  value       = var.auth_domain != "" ? var.auth_domain : null
 }
