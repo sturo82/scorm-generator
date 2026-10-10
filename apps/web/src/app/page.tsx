@@ -10,15 +10,19 @@ import { Card, CardContent } from '@/components/ui/card';
 export default function HomePage() {
   return (
     <main className="min-h-dvh">
-      <header className="container flex items-center justify-between py-6">
-        <div className="flex items-center gap-2.5 font-semibold">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/kscorm-icon.png" alt="K Scorm" className="size-9 rounded-lg object-contain" />
-          K Scorm
+      {/* Header d'ecosistema: barra sticky scura semi-trasparente con blur e
+          bordo sottile (coerente con manager.knowkube.com). Accenti = verde K Scorm. */}
+      <header className="sticky top-0 z-30 border-b border-border bg-card/72 backdrop-blur-md backdrop-saturate-150">
+        <div className="container flex items-center justify-between py-4">
+          <div className="flex items-center gap-2.5 font-semibold">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/kscorm-icon.png" alt="K Scorm" className="size-9 rounded-lg object-contain" />
+            K Scorm
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/dashboard">Entra</Link>
+          </Button>
         </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/dashboard">Entra</Link>
-        </Button>
       </header>
 
       <section className="container flex flex-col items-center gap-6 py-20 text-center md:py-28">

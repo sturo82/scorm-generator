@@ -9,9 +9,9 @@ import { HexColor } from './primitives.js';
 
 export const AppBranding = z.object({
   /** Nome dell'applicazione mostrato in header, sidebar, titolo pagina. */
-  appName: z.string().trim().min(1).max(40).default('SCORM Generator'),
+  appName: z.string().trim().min(1).max(40).default('K Scorm'),
   /** Colore primario del tema della web app (bottoni, link, ring). */
-  primaryColor: HexColor.default('#4f46e5'),
+  primaryColor: HexColor.default('#22b573'),
   /** Colore accent/highlight (CTA secondarie, badge, stati attivi). Opzionale:
    *  se assente il provider lo deriva dal primario. */
   accentColor: HexColor.nullable().default(null),

@@ -23,7 +23,7 @@ export function Checkbox({ checked, onChange, label, disabled, className }: Chec
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(
-          'grid size-5 place-items-center rounded border transition-colors',
+          'grid size-5 place-items-center rounded border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           checked ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background',
         )}
       >

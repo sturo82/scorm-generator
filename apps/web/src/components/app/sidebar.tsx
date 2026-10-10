@@ -87,8 +87,8 @@ export function DesktopSidebar() {
       {/* Piede sidebar con bordino brandizzato */}
       <div aria-hidden className="h-px bg-gradient-to-r from-primary/20 via-primary/10 to-transparent" />
       <div className="px-5 py-3">
-        <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/50">
-          Piattaforma e-learning
+        <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">
+          Knowkube · ecosistema
         </p>
       </div>
     </aside>

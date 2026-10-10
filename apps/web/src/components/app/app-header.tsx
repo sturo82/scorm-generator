@@ -16,6 +16,16 @@ export function AppHeader() {
   const [session, setSession] = React.useState<DevSession | null>(null);
   React.useEffect(() => setSession(getSession()), []);
 
+  // Chiusura del drawer con Esc (accessibilità da tastiera).
+  React.useEffect(() => {
+    if (!drawerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDrawerOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [drawerOpen]);
+
   const initials = session?.user.displayName
     ? session.user.displayName.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase()
     : 'U';
@@ -31,7 +41,7 @@ export function AppHeader() {
         <Button
           variant="ghost"
           size="icon"
-          className="text-header-foreground lg:hidden"
+          className="lg:hidden"
           aria-label="Apri menu"
           onClick={() => setDrawerOpen(true)}
         >
@@ -44,21 +54,20 @@ export function AppHeader() {
 
         <div className="ml-auto flex items-center gap-2">
           <ThemeToggle />
-          <div className="flex items-center gap-3 rounded-full border border-white/20 bg-white/10 py-1 pl-3 pr-1 backdrop-blur-sm">
+          <div className="flex items-center gap-3 rounded-full border border-border bg-foreground/5 py-1 pl-3 pr-1">
             <div className="hidden text-right sm:block">
-              <div className="text-sm font-medium leading-tight text-header-foreground">
+              <div className="text-sm font-medium leading-tight text-foreground">
                 {session?.user.displayName ?? 'Utente'}
               </div>
-              <div className="text-xs leading-tight text-header-foreground/70">{session?.tenant.name}</div>
+              <div className="text-xs leading-tight text-muted-foreground">{session?.tenant.name}</div>
             </div>
-            <div className="grid size-8 place-items-center rounded-full bg-white/90 text-xs font-semibold text-primary shadow-sm">
+            <div className="grid size-8 place-items-center rounded-full bg-primary text-xs font-semibold text-primary-foreground shadow-sm">
               {initials}
             </div>
             <Button
               variant="ghost"
               size="icon"
               aria-label="Esci"
-              className="text-header-foreground"
               onClick={handleLogout}
             >
               <LogOut className="size-4" />
@@ -69,7 +78,12 @@ export function AppHeader() {
 
       {/* Drawer mobile */}
       {drawerOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div
+          className="fixed inset-0 z-50 lg:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Menu di navigazione"
+        >
           <div
             className="absolute inset-0 bg-black/50 animate-fade-in"
             onClick={() => setDrawerOpen(false)}

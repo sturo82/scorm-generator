@@ -123,38 +123,116 @@ interface Hsl {
 function deriveBrandTokens(c: Hsl, acc: Hsl | null, hdr: Hsl | null): Record<string, string> {
   const trip = (h: number, s: number, l: number) =>
     `${Math.round(((h % 360) + 360) % 360)} ${clamp(s, 0, 100)}% ${clamp(l, 0, 100)}%`;
-  // Foreground che contrasta col primario.
-  const fg = c.l > 68 ? trip(c.h, 30, 12) : '0 0% 100%';
+
+  // WCAG AA: le superfici che portano testo (bottoni "primary", header) devono
+  // dare contrasto >=4.5:1 col loro foreground. I colori del tenant sono
+  // arbitrari, quindi scuriamo la tinta finché il testo bianco è leggibile e,
+  // se nemmeno così basta (tinta troppo chiara/satura), usiamo testo scuro.
+  const primarySurface = ensureReadableSurface(c);
+  const hd0 = hdr ?? c;
+  const headerSurface = ensureReadableSurface(hd0);
+
   // Accent: dal campo dedicato oppure derivato dal primario (tinta chiara).
   const a = acc ?? { h: c.h, s: Math.min(c.s, 70), l: 55 };
-  // Header: dal campo dedicato oppure dal primario.
-  const hd = hdr ?? c;
-  // Foreground dell'header: bianco su header scuri, scuro su header chiari.
-  const hfg = hd.l > 68 ? trip(hd.h, 30, 12) : '0 0% 100%';
+  // Foreground dell'accent soft: tinta scura dell'accent, con contrasto AA sul
+  // fondo chiaro dell'accent (L~94).
+  const accentFg = ensureReadableOn(
+    { h: a.h, s: Math.min(a.s + 10, 90), l: Math.max(a.l - 18, 24) },
+    { h: a.h, s: Math.min(a.s, 70), l: 94 },
+  );
   return {
-    '--primary': trip(c.h, c.s, c.l),
-    '--primary-foreground': fg,
-    '--ring': trip(c.h, c.s, c.l),
+    '--primary': trip(primarySurface.bg.h, primarySurface.bg.s, primarySurface.bg.l),
+    '--primary-foreground': primarySurface.fg,
+    // Ring = tinta primaria scurita: focus indicator con contrasto adeguato.
+    '--ring': trip(primarySurface.bg.h, primarySurface.bg.s, primarySurface.bg.l),
     // Accent tenue (sfondo di stati hover/selezione): molto chiaro dal colore accent.
     '--accent': trip(a.h, Math.min(a.s, 70), 94),
-    '--accent-foreground': trip(a.h, Math.min(a.s + 10, 90), Math.max(a.l - 18, 24)),
+    '--accent-foreground': trip(accentFg.h, accentFg.s, accentFg.l),
     '--sidebar-accent': trip(a.h, Math.min(a.s, 70), 92),
     // Gradiente di sfondo app: velo diffuso della tinta primaria.
     '--app-gradient-a': trip(c.h, Math.min(c.s, 72), 94),
     '--app-gradient-b': trip(c.h, 24, 98),
-    // Gradiente dell'header: dal colore header a una variante più profonda.
-    '--header-gradient-a': trip(hd.h, hd.s, Math.max(hd.l - 4, 18)),
-    '--header-gradient-b': trip(hd.h + 12, Math.min(hd.s + 6, 92), Math.max(hd.l - 16, 12)),
-    '--header-foreground': hfg,
-    // Alone/glow colorato per bagliori ed evidenziazioni.
+    // Gradiente dell'header: dalla tinta header leggibile a una più profonda.
+    '--header-gradient-a': trip(headerSurface.bg.h, headerSurface.bg.s, headerSurface.bg.l),
+    '--header-gradient-b': trip(
+      headerSurface.bg.h + 12,
+      Math.min(headerSurface.bg.s + 4, 92),
+      Math.max(headerSurface.bg.l - 7, 10),
+    ),
+    '--header-foreground': headerSurface.fg,
+    // Alone/glow colorato per bagliori ed evidenziazioni (decorativo, niente testo).
     '--brand-glow': trip(c.h, c.s, c.l),
     // Ombra colorata (brand) per profondità premium.
-    '--shadow-color': trip(hd.h, Math.min(hd.s + 10, 90), Math.max(hd.l - 26, 10)),
+    '--shadow-color': trip(hd0.h, Math.min(hd0.s + 10, 90), Math.max(hd0.l - 26, 10)),
   };
 }
 
 function clamp(n: number, min: number, max: number): number {
   return Math.round(Math.max(min, Math.min(max, n)));
+}
+
+// ── Helper contrasto WCAG ────────────────────────────────────────────────────
+
+/** Luminanza relativa (WCAG) da HSL. */
+function relLuminance({ h, s, l }: Hsl): number {
+  const [r, g, b] = hslToRgb(h, s, l);
+  const lin = (v: number) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+/** Rapporto di contrasto WCAG tra due colori HSL. */
+function contrast(a: Hsl, b: Hsl): number {
+  const la = relLuminance(a);
+  const lb = relLuminance(b);
+  const hi = Math.max(la, lb);
+  const lo = Math.min(la, lb);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+const WHITE: Hsl = { h: 0, s: 0, l: 100 };
+const NEAR_BLACK = (h: number): Hsl => ({ h, s: 30, l: 12 });
+
+/**
+ * Rende una tinta usabile come SUPERFICIE con testo sopra, garantendo >=4.5:1.
+ * Strategia: prova il testo bianco scurendo progressivamente la tinta; se la
+ * tinta è così chiara che il bianco non basta mai, usa testo quasi-nero.
+ * Ritorna il colore di sfondo (eventualmente scurito) e il foreground scelto.
+ */
+function ensureReadableSurface(c: Hsl): { bg: Hsl; fg: string } {
+  const trip = (x: Hsl) => `${Math.round(((x.h % 360) + 360) % 360)} ${clamp(x.s, 0, 100)}% ${clamp(x.l, 0, 100)}%`;
+  // 1) testo bianco: scurisci la L finché contrasto >=4.5 (fino a L minimo 20).
+  for (let l = c.l; l >= 20; l -= 1) {
+    const bg = { h: c.h, s: c.s, l };
+    if (contrast(bg, WHITE) >= 4.5) return { bg, fg: '0 0% 100%' };
+  }
+  // 2) tinta troppo chiara per il bianco: usa testo quasi-nero sulla tinta
+  //    originale (schiarita se serve) finché contrasto >=4.5.
+  const dark = NEAR_BLACK(c.h);
+  for (let l = c.l; l <= 96; l += 1) {
+    const bg = { h: c.h, s: c.s, l };
+    if (contrast(bg, dark) >= 4.5) return { bg, fg: trip(dark) };
+  }
+  return { bg: { h: c.h, s: c.s, l: 96 }, fg: trip(dark) };
+}
+
+/** Scurisce `fg` finché ha contrasto >=4.5 sul fondo `bg` (per testo su accent). */
+function ensureReadableOn(fg: Hsl, bg: Hsl): Hsl {
+  const out = { ...fg };
+  for (let l = fg.l; l >= 10; l -= 1) {
+    out.l = l;
+    if (contrast(out, bg) >= 4.5) return out;
+  }
+  return out;
+}
+
+/** HSL (h 0-360, s/l 0-100) → RGB 0-1. */
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const sN = s / 100;
+  const lN = l / 100;
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = sN * Math.min(lN, 1 - lN);
+  const f = (n: number) => lN - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [f(0), f(8), f(4)];
 }
 
 /** Converte #RGB/#RRGGBB in HSL (h 0-360, s/l 0-100). null se non valido. */
