@@ -37,6 +37,25 @@ export function isOidcEnabled(): boolean {
   return process.env.NEXT_PUBLIC_AUTH_MODE === 'oidc';
 }
 
+/**
+ * URL dell'endpoint di logout di Cognito. Invalida la **sessione del pool**
+ * (cookie su auth.knowkube.com): senza questo, il logout locale non basta e un
+ * nuovo accesso rientra senza richiedere credenziali. `logout_uri` deve essere
+ * tra gli "Allowed sign-out URLs" dell'app-client. Ritorna null se OIDC/dominio
+ * non configurati (si fa solo il logout locale).
+ */
+export function oidcLogoutUrl(): string | null {
+  if (!isOidcEnabled()) return null;
+  const authDomain = process.env.NEXT_PUBLIC_OIDC_AUTH_DOMAIN;
+  const clientId = process.env.NEXT_PUBLIC_OIDC_CLIENT_ID;
+  const redirectUri = process.env.NEXT_PUBLIC_OIDC_REDIRECT_URI;
+  if (!authDomain || !clientId || !redirectUri) return null;
+  // Torna alla pagina di login dopo il sign-out del pool.
+  const logoutUri = new URL('/login', redirectUri).toString();
+  const p = new URLSearchParams({ client_id: clientId, logout_uri: logoutUri });
+  return `https://${authDomain}/logout?${p.toString()}`;
+}
+
 export function getOidcConfig(): OidcConfig {
   const issuer = process.env.NEXT_PUBLIC_OIDC_ISSUER;
   const clientId = process.env.NEXT_PUBLIC_OIDC_CLIENT_ID;

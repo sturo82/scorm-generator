@@ -8,6 +8,7 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { SidebarNav } from './sidebar';
 import { AppBrand } from './app-brand';
 import { getSession, logout, type DevSession } from '@/lib/auth';
+import { oidcLogoutUrl } from '@/lib/oidc';
 
 /** Header responsive: menu hamburger + drawer su mobile, user menu, theme toggle. */
 export function AppHeader() {
@@ -31,8 +32,18 @@ export function AppHeader() {
     : 'U';
 
   function handleLogout() {
+    // Pulisce la sessione locale...
     logout();
-    router.push('/login');
+    // ...e invalida anche la SESSIONE del pool Cognito (altrimenti un nuovo
+    // accesso rientra senza chiedere credenziali). L'endpoint /logout di Cognito
+    // chiude il cookie di sessione e rimanda a /login. Fallback locale se OIDC
+    // non è configurato.
+    const url = oidcLogoutUrl();
+    if (url) {
+      window.location.assign(url);
+    } else {
+      router.push('/login');
+    }
   }
 
   return (
