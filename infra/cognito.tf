@@ -144,28 +144,27 @@ resource "aws_cognito_managed_login_branding" "web" {
   user_pool_id = aws_cognito_user_pool.main.id
   client_id    = aws_cognito_user_pool_client.web.id
 
-  # Settings = default premium di Cognito con: famiglia colore portata al verde di
-  # piattaforma K Scorm (SOLO il form), sfondo d'ecosistema Knowkube (velo ambra
-  # condiviso), logo e sfondo via asset. Esattamente uno tra settings e
-  # use_cognito_provided_values è ammesso.
+  # Settings = tema DARK coerente con la landing di architect (sfondo verde-nero
+  # #0c1311 + velo verde), con il form brandizzato K Scorm. L'ecosistema è scuro;
+  # ogni prodotto cambia solo il colore del velo/accenti (verde per K Scorm).
+  # Esattamente uno tra settings e use_cognito_provided_values è ammesso.
   # NB: plan mostra un diff perpetuo benigno sui borderRadius (8 <-> 8.0): l'API
   # memorizza i float con ".0" mentre jsonencode di Terraform li normalizza a int.
-  # Non modifica nulla di reale (il branding applicato è corretto).
   settings = file("${path.module}/managed-login-settings.json")
 
-  # Logo del form (K Scorm, versione a colori) per la modalità chiara.
+  # Logo del form in DARK mode: wordmark K Scorm bianco (visibile su card scura).
   asset {
     category   = "FORM_LOGO"
-    color_mode = "LIGHT"
+    color_mode = "DARK"
     extension  = "PNG"
-    bytes      = filebase64("${path.module}/cognito-logo.png")
+    bytes      = filebase64("${path.module}/cognito-logo-dark.png")
   }
 
-  # Sfondo pagina: stesso velo premium della home (gradiente radiale verde di
-  # piattaforma su base neutra), così la login è coerente con l'app e non piatta.
+  # Sfondo pagina (DARK): replica fedele del body scuro della landing architect
+  # (#0c1311 + velo verde radiale). Coerente con l'ecosistema, non piatto.
   asset {
     category   = "PAGE_BACKGROUND"
-    color_mode = "LIGHT"
+    color_mode = "DARK"
     extension  = "PNG"
     bytes      = filebase64("${path.module}/cognito-bg.png")
   }
