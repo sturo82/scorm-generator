@@ -37,10 +37,17 @@ data "aws_iam_policy_document" "github_assume" {
       variable = "token.actions.githubusercontent.com:aud"
       values   = ["sts.amazonaws.com"]
     }
+    # GitHub emette il claim `sub` in due formati: quello "classico"
+    # (repo:owner/repo:...) e quello nuovo con gli ID numerici immutabili di
+    # owner e repo (repo:owner@<id>/repo@<id>:...). Copriamo entrambi, così la
+    # trust policy non si rompe quando GitHub usa la forma con ID.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:*"]
+      values = [
+        "repo:${var.github_repo}:*",
+        "repo:${split("/", var.github_repo)[0]}@*/${split("/", var.github_repo)[1]}@*:*",
+      ]
     }
   }
 }
