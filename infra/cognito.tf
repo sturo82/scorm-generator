@@ -73,7 +73,7 @@ resource "aws_cognito_user_pool" "main" {
                 Se non ti aspettavi questo invito, ignora questa email.
               </p>
             </div>
-            <p style="text-align:center;margin:16px 0 0;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#5f726a;">Knowkube · ecosistema</p>
+            <p style="text-align:center;margin:16px 0 0;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#5f726a;">Knowkube</p>
           </div>
         </div>
       HTML
