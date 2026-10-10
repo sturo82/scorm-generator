@@ -56,6 +56,31 @@ Queste scelte sono **vincolanti** per allineare Manager e i prodotti.
    - secret **hashati** a DB (no plaintext), confronto a tempo costante;
    - sostituibile con validazione JWT Cognito dietro la stessa permission.
 
+5. **Ownership delle risorse Cognito (Opzione 1 — confermata).** Il pool è
+   **condiviso** ma le risorse d'ecosistema le **crea e possiede Manager** dalla
+   console `/ecosystem/` (via API AWS, con pieni permessi):
+   - **resource server** (identifier **`ecosystem`**, scope `entitlements.read`,
+     `wallet.read`, `wallet.write`);
+   - **client M2M** per prodotto (client_credentials);
+   - **client OIDC** per prodotto (login owner) e **provisioning owner**
+     (`admin-create-user` con `custom:tenant_id` = slug company).
+   Lo stack Terraform di K Scorm **NON** gestisce queste risorse (per evitare
+   conflitti): tocca solo ciò che era già suo (pool, custom domain, Managed Login
+   branding, client `scorm-web`, template email). **Regola:** nessuno dei due
+   ricrea il pool; Manager aggiunge solo risorse-figlie.
+
+6. **Parametri di aggancio al pool (uguali per tutte le app; si usa l'ID, NON il
+   nome `scorm-users`):**
+   ```
+   POOL ID = eu-west-1_jvwWWna9i
+   ISSUER  = https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_jvwWWna9i
+   JWKS    = <issuer>/.well-known/jwks.json
+   LOGIN   = https://auth.knowkube.com   (dominio owner, uguale per tutti)
+   REGION  = eu-west-1
+   ```
+   Resource server identifier atteso = **`ecosystem`** → scope completi
+   `ecosystem/entitlements.read`, `ecosystem/wallet.read`, `ecosystem/wallet.write`.
+
 ---
 
 ## 1. Modello dati (Manager)

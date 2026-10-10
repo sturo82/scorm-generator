@@ -121,13 +121,23 @@ prodotto), quindi tenere `product/feature/reference` sempre valorizzati.
 
 ## 4. Autenticazione service-to-service verso Manager
 
+- Le credenziali M2M (client_id/secret per prodotto) le **emette Manager** dalla
+  console `/ecosystem/` (control plane): il prodotto NON crea client sul pool, li
+  **riceve** e li mette nei propri secret.
 - Grant **client_credentials** su Cognito; ogni prodotto ha il **proprio**
   app-client M2M con gli scope minimi:
   `ecosystem/entitlements.read`, `ecosystem/wallet.read`, `ecosystem/wallet.write`.
 - Token via `POST https://auth.knowkube.com/oauth2/token`
   (`grant_type=client_credentials&scope=...`); cache del token fino a scadenza.
+- Endpoint API Manager: base `https://manager.knowkube.com/api/ecosystem/`
+  (`/entitlements`, `/wallet`, `/wallet/holds`, …).
 - Credenziali del client M2M nei secret del prodotto (es. Secrets Manager), MAI
   nel codice/repo.
+
+> Pool d'ecosistema (uguale per tutti; si usa l'**ID**, non il nome): POOL ID
+> `eu-west-1_jvwWWna9i`, issuer
+> `https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_jvwWWna9i`, login
+> `https://auth.knowkube.com`. Resource server identifier = `ecosystem`.
 
 ---
 
