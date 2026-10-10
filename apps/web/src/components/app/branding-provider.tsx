@@ -58,41 +58,66 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
   // Palette derivata dai colori del brand. Tre colori in input (primario +
   // accent opzionale + header opzionale) → set coerente di token (primario,
   // hover, accent, superfici, header, bordi, ombre) per una resa enterprise.
-  // Se non ci sono campi, si rimuovono gli override e il tema CSS di default
-  // riprende il controllo.
+  // Palette derivata dal brand del tenant. È THEME-AWARE: in dark mode gli
+  // accenti/gradienti devono restare scuri (altrimenti si schiariscono e il
+  // testo diventa illeggibile). Inoltre, se il colore del tenant coincide con il
+  // default di piattaforma, NON applichiamo override: il tema CSS (che gestisce
+  // già light/dark con contrasto AA) resta la fonte di verità. Si ricalcola anche
+  // al cambio di tema (classe .dark su <html>).
   React.useEffect(() => {
     const root = document.documentElement;
-    const primary = data?.primaryColor ? hexToHsl(data.primaryColor) : null;
-    const accent = data?.accentColor ? hexToHsl(data.accentColor) : null;
-    const header = data?.headerColor ? hexToHsl(data.headerColor) : null;
 
-    // Token derivati dal brand (chiave CSS → valore). null = rimuovi override.
-    const vars: Record<string, string | null> = primary
-      ? deriveBrandTokens(primary, accent, header)
-      : {
-          '--primary': null,
-          '--primary-foreground': null,
-          '--ring': null,
-          '--accent': null,
-          '--accent-foreground': null,
-          '--sidebar-accent': null,
-          '--app-gradient-a': null,
-          '--app-gradient-b': null,
-          '--header-gradient-a': null,
-          '--header-gradient-b': null,
-          '--header-foreground': null,
-          '--brand-glow': null,
-          '--shadow-color': null,
-        };
+    const CLEAR_KEYS = [
+      '--primary',
+      '--primary-foreground',
+      '--ring',
+      '--accent',
+      '--accent-foreground',
+      '--sidebar-accent',
+      '--app-gradient-a',
+      '--app-gradient-b',
+      '--header-gradient-a',
+      '--header-gradient-b',
+      '--header-foreground',
+      '--brand-glow',
+      '--shadow-color',
+    ];
 
-    for (const [k, v] of Object.entries(vars)) {
-      if (v == null) root.style.removeProperty(k);
-      else root.style.setProperty(k, v);
-    }
+    const apply = () => {
+      const primary = data?.primaryColor ? hexToHsl(data.primaryColor) : null;
+      const accent = data?.accentColor ? hexToHsl(data.accentColor) : null;
+      const header = data?.headerColor ? hexToHsl(data.headerColor) : null;
+
+      // Nessun primario, oppure il brand coincide col default di piattaforma
+      // (verde K Scorm) senza accent/header custom → lascia il tema CSS.
+      const isPlatformDefault =
+        !accent &&
+        !header &&
+        (data?.primaryColor ?? '').toLowerCase() === PLATFORM_DEFAULT_PRIMARY;
+
+      if (!primary || isPlatformDefault) {
+        for (const k of CLEAR_KEYS) root.style.removeProperty(k);
+        return;
+      }
+
+      const isDark = root.classList.contains('dark');
+      const vars = deriveBrandTokens(primary, accent, header, isDark);
+      for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+    };
+
+    apply();
+
+    // Ricalcola quando cambia il tema (toggle o preferenza di sistema).
+    const obs = new MutationObserver(apply);
+    obs.observe(root, { attributes: true, attributeFilter: ['class'] });
+    return () => obs.disconnect();
   }, [data?.primaryColor, data?.accentColor, data?.headerColor]);
 
   return <>{children}</>;
 }
+
+/** Colore primario di default della piattaforma (verde K Scorm). Lowercase. */
+const PLATFORM_DEFAULT_PRIMARY = '#22b573';
 
 /** MIME per <link type> dedotto dall'estensione/URL della favicon. */
 function faviconType(href: string): string | null {
@@ -120,51 +145,84 @@ interface Hsl {
  *          Se assente, derivato dal primario.
  * I valori sono nel formato "H S% L%" atteso dalle var del tema (hsl(var(--x))).
  */
-function deriveBrandTokens(c: Hsl, acc: Hsl | null, hdr: Hsl | null): Record<string, string> {
+function deriveBrandTokens(
+  c: Hsl,
+  acc: Hsl | null,
+  hdr: Hsl | null,
+  isDark: boolean,
+): Record<string, string> {
   const trip = (h: number, s: number, l: number) =>
     `${Math.round(((h % 360) + 360) % 360)} ${clamp(s, 0, 100)}% ${clamp(l, 0, 100)}%`;
 
-  // WCAG AA: le superfici che portano testo (bottoni "primary", header) devono
-  // dare contrasto >=4.5:1 col loro foreground. I colori del tenant sono
-  // arbitrari, quindi scuriamo la tinta finché il testo bianco è leggibile e,
-  // se nemmeno così basta (tinta troppo chiara/satura), usiamo testo scuro.
-  const primarySurface = ensureReadableSurface(c);
+  // --- Primario / header: superfici con testo sopra → contrasto AA. ---
+  // In light serve testo bianco su tinta scurita; in dark i bottoni usano la
+  // tinta brillante con testo scuro (più leggibile sul fondo scuro).
+  const a = acc ?? c;
   const hd0 = hdr ?? c;
-  const headerSurface = ensureReadableSurface(hd0);
+  let primaryBg: Hsl;
+  let primaryFg: string;
+  let headerBg: Hsl;
+  let headerFg: string;
+  if (isDark) {
+    // Tinta brillante (schiarita se troppo scura) + testo quasi-nero.
+    primaryBg = { h: c.h, s: c.s, l: Math.max(c.l, 48) };
+    primaryFg = darkTextOn(primaryBg);
+    headerBg = { h: hd0.h, s: hd0.s, l: Math.max(hd0.l, 46) };
+    headerFg = darkTextOn(headerBg);
+  } else {
+    const ps = ensureReadableSurface(c);
+    primaryBg = ps.bg;
+    primaryFg = ps.fg;
+    const hs = ensureReadableSurface(hd0);
+    headerBg = hs.bg;
+    headerFg = hs.fg;
+  }
 
-  // Accent: dal campo dedicato oppure derivato dal primario (tinta chiara).
-  const a = acc ?? { h: c.h, s: Math.min(c.s, 70), l: 55 };
-  // Foreground dell'accent soft: tinta scura dell'accent, con contrasto AA sul
-  // fondo chiaro dell'accent (L~94).
-  const accentFg = ensureReadableOn(
-    { h: a.h, s: Math.min(a.s + 10, 90), l: Math.max(a.l - 18, 24) },
-    { h: a.h, s: Math.min(a.s, 70), l: 94 },
-  );
+  // --- Accent soft (sfondo di box/voci attive) + suo foreground. ---
+  // THEME-AWARE: chiaro in light, scuro in dark (altrimenti schiarisce il box e
+  // il testo diventa illeggibile). Il foreground è ricavato per contrasto reale.
+  const accentBg: Hsl = isDark
+    ? { h: a.h, s: Math.min(a.s, 45), l: 16 }
+    : { h: a.h, s: Math.min(a.s, 70), l: 94 };
+  const sidebarAccentBg: Hsl = isDark
+    ? { h: a.h, s: Math.min(a.s, 45), l: 16 }
+    : { h: a.h, s: Math.min(a.s, 70), l: 92 };
+  const accentFg = isDark
+    ? { h: a.h, s: Math.min(a.s + 20, 90), l: 72 } // testo chiaro su accent scuro
+    : ensureReadableOn({ h: a.h, s: Math.min(a.s + 10, 90), l: 34 }, accentBg);
+
   return {
-    '--primary': trip(primarySurface.bg.h, primarySurface.bg.s, primarySurface.bg.l),
-    '--primary-foreground': primarySurface.fg,
-    // Ring = tinta primaria scurita: focus indicator con contrasto adeguato.
-    '--ring': trip(primarySurface.bg.h, primarySurface.bg.s, primarySurface.bg.l),
-    // Accent tenue (sfondo di stati hover/selezione): molto chiaro dal colore accent.
-    '--accent': trip(a.h, Math.min(a.s, 70), 94),
+    '--primary': trip(primaryBg.h, primaryBg.s, primaryBg.l),
+    '--primary-foreground': primaryFg,
+    '--ring': trip(primaryBg.h, primaryBg.s, primaryBg.l),
+    '--accent': trip(accentBg.h, accentBg.s, accentBg.l),
     '--accent-foreground': trip(accentFg.h, accentFg.s, accentFg.l),
-    '--sidebar-accent': trip(a.h, Math.min(a.s, 70), 92),
-    // Gradiente di sfondo app: velo diffuso della tinta primaria.
-    '--app-gradient-a': trip(c.h, Math.min(c.s, 72), 94),
-    '--app-gradient-b': trip(c.h, 24, 98),
+    '--sidebar-accent': trip(sidebarAccentBg.h, sidebarAccentBg.s, sidebarAccentBg.l),
+    // Gradiente di sfondo app: velo diffuso, chiaro in light, scuro in dark.
+    '--app-gradient-a': isDark
+      ? trip(c.h, Math.min(c.s, 40), 13)
+      : trip(c.h, Math.min(c.s, 72), 94),
+    '--app-gradient-b': isDark ? trip(c.h, 24, 6) : trip(c.h, 24, 98),
     // Gradiente dell'header: dalla tinta header leggibile a una più profonda.
-    '--header-gradient-a': trip(headerSurface.bg.h, headerSurface.bg.s, headerSurface.bg.l),
+    '--header-gradient-a': trip(headerBg.h, headerBg.s, headerBg.l),
     '--header-gradient-b': trip(
-      headerSurface.bg.h + 12,
-      Math.min(headerSurface.bg.s + 4, 92),
-      Math.max(headerSurface.bg.l - 7, 10),
+      headerBg.h + 12,
+      Math.min(headerBg.s + 4, 92),
+      Math.max(headerBg.l - 7, 10),
     ),
-    '--header-foreground': headerSurface.fg,
+    '--header-foreground': headerFg,
     // Alone/glow colorato per bagliori ed evidenziazioni (decorativo, niente testo).
     '--brand-glow': trip(c.h, c.s, c.l),
     // Ombra colorata (brand) per profondità premium.
     '--shadow-color': trip(hd0.h, Math.min(hd0.s + 10, 90), Math.max(hd0.l - 26, 10)),
   };
+}
+
+/** Testo scuro o bianco su una superficie brillante, scegliendo per contrasto. */
+function darkTextOn(bg: Hsl): string {
+  const dark: Hsl = { h: bg.h, s: 40, l: 8 };
+  if (contrast(bg, dark) >= 4.5) return `${Math.round(bg.h)} 40% 8%`;
+  return '0 0% 100%';
 }
 
 function clamp(n: number, min: number, max: number): number {
