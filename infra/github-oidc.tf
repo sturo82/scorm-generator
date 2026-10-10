@@ -7,6 +7,18 @@ variable "github_repo" {
   type        = string
 }
 
+variable "enable_api_dns_validation" {
+  description = <<-EOT
+    I record di validazione del dominio custom App Runner sono noti SOLO dopo
+    aver creato l'associazione (set apply-time), quindi un for_each su di essi
+    non è pianificabile al primo apply. Deploy in due passi:
+      1) apply con questo = false  -> crea associazione + tutto il resto;
+      2) apply con questo = true   -> aggiunge i record di validazione in Route53.
+  EOT
+  type        = bool
+  default     = false
+}
+
 resource "aws_iam_openid_connect_provider" "github" {
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]

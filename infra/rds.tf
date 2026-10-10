@@ -17,6 +17,9 @@ resource "aws_db_parameter_group" "pg" {
   family = "postgres16"
 
   # Impone connessioni cifrate: essenziale dato che il DB è su endpoint pubblico.
+  # NB: lasciamo apply_method al default (pending-reboot), che è anche ciò che
+  # AWS riporta per questo parametro: specificare "immediate" causa un diff
+  # perpetuo perché il provider rilegge sempre "pending-reboot".
   parameter {
     name  = "rds.force_ssl"
     value = "1"

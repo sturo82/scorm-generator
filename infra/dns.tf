@@ -38,10 +38,13 @@ resource "aws_apprunner_custom_domain_association" "api" {
 }
 
 resource "aws_route53_record" "api_validation" {
-  for_each = {
-    for r in aws_apprunner_custom_domain_association.api.certificate_validation_records :
-    r.name => r
-  }
+  # Creati solo al SECONDO apply (var.enable_api_dns_validation = true), quando i
+  # record di validazione dell'associazione dominio App Runner sono già noti.
+  # Al primo apply (false) il set è vuoto e il blocco è pianificabile.
+  for_each = var.enable_api_dns_validation ? {
+    for i, r in tolist(aws_apprunner_custom_domain_association.api.certificate_validation_records) :
+    tostring(i) => r
+  } : {}
   zone_id = data.aws_route53_zone.main.zone_id
   name    = each.value.name
   type    = each.value.type

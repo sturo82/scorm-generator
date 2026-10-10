@@ -7,3 +7,6 @@ crash.log
 # Valori reali (segreti/dominio): versiona solo .example
 terraform.tfvars
 backend.tf
+# Piani salvati: possono contenere valori sensibili.
+tfplan
+*.tfplan

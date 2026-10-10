@@ -43,27 +43,34 @@ export function logout(): void {
 }
 
 /**
- * Costruisce e salva una sessione a partire dai token OIDC reali. L'access token
- * dell'IdP diventa il Bearer verso l'API (che lo valida via JWKS). I claim
- * servono solo a popolare la UI; l'autorizzazione resta server-side.
+ * Costruisce e salva una sessione a partire dai token OIDC reali. Il Bearer
+ * verso l'API è l'ID token dell'IdP: a differenza dell'access token di Cognito,
+ * l'ID token porta i claim applicativi (`custom:tenant_id`, email, ruolo) che
+ * l'API usa per risolvere il tenant. L'API lo valida via JWKS con
+ * `OIDC_TOKEN_USE=id`. I claim servono anche a popolare la UI; l'autorizzazione
+ * resta server-side.
  */
 export function loginWithOidc(args: {
-  accessToken: string;
+  bearerToken: string;
   claims: Record<string, unknown>;
 }): DevSession {
-  const { accessToken, claims } = args;
+  const { bearerToken, claims } = args;
   const str = (v: unknown, fallback: string) => (typeof v === 'string' && v ? v : fallback);
+  // Cognito espone i custom attribute come `custom:tenant_id` / `custom:role`;
+  // altri IdP possono usare claim piatti. Proviamo entrambe le forme.
+  const tenantId = str(claims['custom:tenant_id'], str(claims.tenant_id, 'tenant'));
+  const role = str(claims['custom:role'], str(claims.role, 'OWNER'));
   const session: DevSession = {
-    token: accessToken,
+    token: bearerToken,
     user: {
       id: str(claims.sub, 'u-oidc'),
       email: str(claims.email, ''),
       displayName: str(claims.name, str(claims.email, 'Utente')),
-      role: str(claims.role, 'OWNER'),
+      role,
     },
     tenant: {
-      id: str(claims.tenant_id, 'tenant'),
-      name: str(claims.tenant_name, 'Tenant'),
+      id: tenantId,
+      name: str(claims.tenant_name, tenantId),
     },
   };
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(session));

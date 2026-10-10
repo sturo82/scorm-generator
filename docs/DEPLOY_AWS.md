@@ -1,7 +1,8 @@
 # Deploy su AWS (App Runner + Terraform)
 
 Guida al deploy di produzione su AWS, regione **Irlanda (eu-west-1)**, con la
-generazione immagini (Bedrock Stability) in **us-east-1**. Il frontend è
+generazione immagini (Bedrock Stability) in **us-west-2** (Oregon, dove il modello
+`stable-image-core` è disponibile su questo account). Il frontend è
 **statico** (S3 + CloudFront), l'API gira su **AWS App Runner**, il database è
 **RDS Postgres + pgvector**, lo storage **S3**, il login utenti **Cognito**,
 deploy continuo via **GitHub Actions**.
@@ -20,7 +21,7 @@ tu con le tue credenziali: niente è applicato automaticamente.
           │                         (egress pubblico)
      S3 (frontend statico)               │
                                           ├──► Bedrock eu-west-1 (LLM/embeddings)
-                                          ├──► Bedrock us-east-1 (immagini)
+                                          ├──► Bedrock us-west-2 (immagini)
                                           ├──► Polly / Transcribe / Unsplash
                                           ├──► S3 (pacchetti/media)
                                           └──► RDS Postgres + pgvector
@@ -42,8 +43,10 @@ Scelte di costo:
 - Account AWS con accesso amministrativo per il primo apply.
 - Terraform ≥ 1.6, AWS CLI, Docker.
 - Hosted zone Route53 esistente per `knowkube.com`.
-- Accesso ai modelli Bedrock abilitato nella console (Claude in eu-west-1,
-  Stability in us-east-1): va richiesto una tantum da **Bedrock → Model access**.
+- Accesso ai modelli Bedrock (verificato su questo account): Claude Sonnet 4.6
+  attivo in eu-west-1, Stable Image Core in us-west-2. Se mancasse l'accesso, si
+  richiede da **Bedrock → Model access**. (Nota: il certificato ACM di CloudFront
+  resta sempre in us-east-1, è un requisito di CloudFront indipendente da Bedrock.)
 
 ## 1. Bootstrap dello stato Terraform (una tantum)
 
@@ -183,7 +186,7 @@ Per evitare NAT Gateway e VPC connector, RDS ha un **endpoint pubblico**. Non è
 - **Utente applicativo non-superuser** (`scorm_app`): privilegi minimi.
 
 Chi preferisce RDS totalmente privato può reintrodurre VPC connector + interface
-endpoint (accettando il costo e i limiti su us-east-1/Unsplash) o un NAT Gateway.
+endpoint (accettando il costo e i limiti su us-west-2/Unsplash) o un NAT Gateway.
 
 ## Sicurezza — isolamento multi-tenant e RLS
 

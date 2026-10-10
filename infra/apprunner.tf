@@ -28,7 +28,9 @@ resource "aws_apprunner_service" "api" {
           AUTH_PROVIDER               = "oidc"
           OIDC_ISSUER                 = local.cognito_issuer
           OIDC_AUDIENCE               = aws_cognito_user_pool_client.web.id
-          OIDC_TOKEN_USE              = "access"
+          # Il web usa l'ID token come Bearer: l'access token di Cognito non
+          # include i custom attribute (`custom:tenant_id`), l'ID token sì.
+          OIDC_TOKEN_USE              = "id"
           OIDC_TENANT_CLAIM           = "custom:tenant_id,tenant_id"
           CORS_ORIGINS                = var.cors_origins != "" ? var.cors_origins : "https://${var.web_domain}"
           WEB_APP_URL                 = "https://${var.web_domain}"

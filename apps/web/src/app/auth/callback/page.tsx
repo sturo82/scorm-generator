@@ -26,12 +26,16 @@ export default function AuthCallbackPage() {
       }
       try {
         const tokens = await completeLogin(window.location.search);
+        // Il Bearer verso l'API è l'ID token: porta `custom:tenant_id` ed email,
+        // che l'access token di Cognito non include. Fallback all'access token
+        // se l'IdP non ha restituito un id_token.
+        const bearerToken = tokens.idToken ?? tokens.accessToken;
         // Preferisci i claim dell'id_token per i dati profilo; fallback access.
         const claims = {
           ...decodeJwtPayload(tokens.accessToken),
           ...(tokens.idToken ? decodeJwtPayload(tokens.idToken) : {}),
         };
-        loginWithOidc({ accessToken: tokens.accessToken, claims });
+        loginWithOidc({ bearerToken, claims });
         if (!cancelled) router.replace('/dashboard');
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Autenticazione fallita');

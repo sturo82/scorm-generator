@@ -30,15 +30,15 @@ variable "api_domain" {
 # --- Bedrock / media --------------------------------------------------------
 
 variable "media_region" {
-  description = "Regione per la generazione immagini (Bedrock Stability): solo us-east-1."
+  description = "Regione per la generazione immagini (Bedrock Stability). Su questo account i modelli text-to-image sono in us-west-2 (Oregon)."
   type        = string
-  default     = "us-east-1"
+  default     = "us-west-2"
 }
 
 variable "bedrock_llm_model_id" {
-  description = "Inference profile LLM in EU (es. eu.anthropic.claude-sonnet-4-...)."
+  description = "Inference profile LLM in EU (verificato ACTIVE su eu-west-1)."
   type        = string
-  default     = "eu.anthropic.claude-3-5-sonnet-20240620-v1:0"
+  default     = "eu.anthropic.claude-sonnet-4-6"
 }
 
 variable "bedrock_embeddings_model_id" {

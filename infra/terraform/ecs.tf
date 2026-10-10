@@ -60,7 +60,7 @@ locals {
     # Auth OIDC (Cognito) + gestione utenti admin.
     { name = "OIDC_ISSUER", value = local.cognito_issuer },
     { name = "OIDC_AUDIENCE", value = aws_cognito_user_pool_client.web.id },
-    { name = "OIDC_TOKEN_USE", value = "access" },
+    { name = "OIDC_TOKEN_USE", value = "id" },
     { name = "OIDC_TENANT_CLAIM", value = "custom:tenant_id" },
     { name = "COGNITO_USER_POOL_ID", value = aws_cognito_user_pool.main.id },
     { name = "COGNITO_REGION", value = var.region },
