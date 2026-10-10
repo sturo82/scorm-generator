@@ -88,7 +88,7 @@ export function DesktopSidebar() {
       <div aria-hidden className="h-px bg-gradient-to-r from-primary/20 via-primary/10 to-transparent" />
       <div className="px-5 py-3">
         <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">
-          Knowkube · ecosistema
+          Knowkube
         </p>
       </div>
     </aside>
