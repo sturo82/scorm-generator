@@ -48,7 +48,7 @@ Poiché:
 l'entitlement **non** va messo come CSV sull'utente Cognito (sarebbe duplicato e
 divergente tra co-owner), ma **risolto dalla company** interrogando Manager (B2).
 
-Sull'utente Cognito resta solo l'appartenenza: `custom:company_id`.
+Sull'utente Cognito resta solo l'appartenenza: `custom:tenant_id`.
 
 ---
 
@@ -64,7 +64,7 @@ Sull'utente Cognito resta solo l'appartenenza: `custom:company_id`.
  │                │                   │  dominio auth.knowkube.com     │
  │  - Company      │                   │  Owner (cliente):              │
  │  - Contratti    │                   │    sub, email                  │
- │    (prod/comp)  │                   │    custom:company_id = juve    │
+ │    (prod/comp)  │                   │    custom:tenant_id = juve    │
  │  - API          │◀──────────────────│  App client per prodotto:      │
  │    entitlements │   query al login  │    kscorm-web, klive-web, …    │
  │    della company│                   │   (Managed Login per-brand)    │
@@ -75,7 +75,7 @@ Sull'utente Cognito resta solo l'appartenenza: `custom:company_id`.
          │                            ┌───────────────────────────────┐
          └────────────────────────────│  Prodotto (es. K Scorm) API    │
                                       │  1. valida token (issuer/aud)  │
-                                      │  2. legge custom:company_id    │
+                                      │  2. legge custom:tenant_id    │
                                       │  3. chiede a Manager gli         │
                                       │     entitlement della company   │
                                       │  4. 'kscorm' ∈ products? → ok   │
@@ -102,11 +102,11 @@ Sull'utente Cognito resta solo l'appartenenza: `custom:company_id`.
 |----------------------|---------------------|--------------------------------------------------|
 | `sub`                | `92c5b414-…`        | id immutabile owner                              |
 | `email`              | `mario@juve.com`    | identità                                         |
-| `custom:company_id`  | `juve`              | **appartenenza** alla company (unica, immutabile)|
+| `custom:tenant_id`  | `juve`              | **appartenenza** alla company (unica, immutabile)|
 | `custom:role`        | `OWNER`             | ruolo nel prodotto (owner cliente)               |
 
 > NB: **niente** `custom:platforms` sull'utente. L'entitlement è della company e
-> si risolve via Manager (B2). `custom:company_id` sostituisce di fatto l'uso
+> si risolve via Manager (B2). `custom:tenant_id` sostituisce di fatto l'uso
 > attuale di `custom:tenant_id` (company = tenant). In transizione li teniamo
 > allineati.
 
@@ -139,7 +139,7 @@ richiesta.
    stile d'ecosistema e l'accento del prodotto).
 2. Login una sola volta → sessione del pool. Aprendo un altro prodotto della
    stessa company, l'SSO non richiede di riautenticarsi.
-3. Callback: il prodotto riceve i token; dall'ID token legge `custom:company_id`.
+3. Callback: il prodotto riceve i token; dall'ID token legge `custom:tenant_id`.
 4. **Gate di entitlement**: l'API del prodotto chiede a **Manager** gli
    entitlement della company e verifica che il proprio prodotto sia attivo.
    - non attivo/non presente → accesso negato ("La tua azienda non ha un
@@ -159,7 +159,7 @@ Spec implementativa dedicata: **`docs/MANAGER-ECOSYSTEM-SPEC.md`**. In sintesi:
 - **Wallet virtuale per company** (saldo a crediti + movimenti) con API
   **hold/capture/release/topup** idempotenti: i prodotti riservano e addebitano
   crediti per le feature a consumo. Manager è l'unica fonte del saldo.
-- (Provisioning) Creare gli **owner** nel pool Cognito con `custom:company_id`
+- (Provisioning) Creare gli **owner** nel pool Cognito con `custom:tenant_id`
   quando si attiva un cliente.
 
 ### K Scorm (questo repo) — piccolo
@@ -183,7 +183,7 @@ Spec implementativa dedicata: **`docs/MANAGER-ECOSYSTEM-SPEC.md`**. In sintesi:
 2. **Manager**: definire e implementare l'**API entitlements per company**
    (iniziando dai contratti OnDemand già presenti + aggiungere Scorm). *(lavoro
    su Manager, non su questo repo)*
-3. **Pool**: aggiungere `custom:company_id` allo schema (se non basta
+3. **Pool**: aggiungere `custom:tenant_id` allo schema (se non basta
    `tenant_id`); mantenere `tenant_id = company_id`. *(additivo)*
 4. **K Scorm gate soft**: l'API chiama Manager e verifica l'entitlement, ma in
    assenza di risposta/di dati **consente** (legacy) con log. *(nessun lockout)*
@@ -213,7 +213,7 @@ Reversibilità: fino allo step 4 tutto è additivo; il gate è disattivabile.
 4. **Provisioning e acquisti SU MANAGER (punto di verità unico).** Un cliente può
    avere abbonamenti solo ad alcune piattaforme: l'attivazione/revoca per prodotto
    si decide **esclusivamente in Manager**. Manager:
-   - crea gli **owner** nel pool Cognito con `custom:company_id` (admin-create-user);
+   - crea gli **owner** nel pool Cognito con `custom:tenant_id` (admin-create-user);
    - registra/attiva/disdice i **contratti per prodotto** della company;
    - è l'**unica** fonte dell'entitlement esposta via API ai prodotti.
    I prodotti non decidono mai l'entitlement: lo leggono soltanto.

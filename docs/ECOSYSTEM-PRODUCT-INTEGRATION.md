@@ -39,12 +39,15 @@ OIDC_TOKEN_USE   = id                                                    # vedi 
 Regole:
 - Il **web** usa Authorization Code + PKCE verso `auth.knowkube.com` con il
   **proprio** app-client; il Bearer verso l'API è l'**ID token** (contiene i
-  claim applicativi `custom:company_id`/`custom:role`; l'access token di Cognito
+  claim applicativi `custom:tenant_id`/`custom:role`; l'access token di Cognito
   non li porta).
 - L'**API** valida firma (JWKS), `iss`, audience (`aud`/`client_id`), scadenza e
   `token_use`.
 - Claim usati:
-  - `custom:company_id` → **tenant** del prodotto (obbligatorio);
+  - `custom:tenant_id` → **tenant** del prodotto (obbligatorio). **Il valore è lo
+    slug della company** (company = tenant). Questo è il claim che i prodotti già
+    leggono (K Scorm risolve `custom:tenant_id` di default); NON usare
+    `custom:company_id`.
   - `custom:role` → ruolo dell'owner;
   - `sub`, `email` → identità.
 - Branding: ogni prodotto registra il proprio **Managed Login branding** (sfondo

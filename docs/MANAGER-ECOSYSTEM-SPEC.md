@@ -33,7 +33,7 @@ Queste scelte sono **vincolanti** per allineare Manager e i prodotti.
 1. **Identificatore Company = slug esterno + id numerico interno.** `Company.slug`
    (univoco, **immutabile**, `[a-z0-9-]`, derivato dal nome ALLA creazione e poi
    congelato: il rename del `name` non lo cambia) è l'identificatore usato nelle
-   API d'ecosistema (`company_id = <slug>`) e scritto in `custom:company_id` nel
+   API d'ecosistema (`company_id = <slug>`) e scritto in `custom:tenant_id` nel
    token Cognito. L'`id` numerico resta PK interna; le API risolvono slug→id.
    Vincolo: lo slug nel claim e lo slug in Manager devono coincidere esattamente.
 
@@ -238,7 +238,7 @@ Manager quando si farà il consolidamento.
 ## 7. Provisioning owner (Manager → Cognito)
 
 Quando Manager attiva un cliente:
-- crea l'**owner** nel pool centrale (`admin-create-user`) con `custom:company_id`
+- crea l'**owner** nel pool centrale (`admin-create-user`) con `custom:tenant_id`
   = id della company (+ `custom:role=OWNER`);
 - per co-proprietari aggiuntivi: ulteriori utenti con lo **stesso** `company_id`.
 - alla disdetta: Manager imposta `Contract.status` → `expired/cancelled`
