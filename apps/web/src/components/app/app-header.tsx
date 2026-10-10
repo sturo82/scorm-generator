@@ -54,12 +54,12 @@ export function AppHeader() {
 
         <div className="ml-auto flex items-center gap-2">
           <ThemeToggle />
-          <div className="flex items-center gap-3 rounded-full border border-border bg-foreground/5 py-1 pl-3 pr-1">
+          <div className="flex items-center gap-3 rounded-full border border-white/15 bg-white/10 py-1 pl-3 pr-1">
             <div className="hidden text-right sm:block">
-              <div className="text-sm font-medium leading-tight text-foreground">
+              <div className="text-sm font-medium leading-tight text-white">
                 {session?.user.displayName ?? 'Utente'}
               </div>
-              <div className="text-xs leading-tight text-muted-foreground">{session?.tenant.name}</div>
+              <div className="text-xs leading-tight text-white/60">{session?.tenant.name}</div>
             </div>
             <div className="grid size-8 place-items-center rounded-full bg-primary text-xs font-semibold text-primary-foreground shadow-sm">
               {initials}
