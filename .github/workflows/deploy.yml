@@ -110,7 +110,9 @@ jobs:
           NEXT_PUBLIC_OIDC_SCOPE: openid email profile
           NEXT_PUBLIC_OIDC_AUDIENCE: ${{ vars.COGNITO_CLIENT_ID }}
         run: |
-          npm ci
+          # NODE_ENV=production farebbe saltare le devDependencies (tsc, next):
+          # forziamo l'install completo per avere i tool di build.
+          npm ci --include=dev
           npm run build --workspace @scorm/contracts
           npm run build --workspace @scorm/scorm
           npm run build --workspace @scorm/web
