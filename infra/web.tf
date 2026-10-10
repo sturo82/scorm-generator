@@ -53,6 +53,16 @@ resource "aws_cloudfront_origin_access_control" "web" {
   signing_protocol                  = "sigv4"
 }
 
+# Rewrite degli URI "a directory" verso l'index.html corrispondente. Necessaria
+# perché S3 via OAC non risolve l'index document come il website endpoint.
+resource "aws_cloudfront_function" "rewrite" {
+  name    = "${var.project}-web-rewrite"
+  runtime = "cloudfront-js-2.0"
+  comment = "Mappa /path -> /path/index.html per l'export statico Next.js"
+  publish = true
+  code    = file("${path.module}/cf-rewrite.js")
+}
+
 resource "aws_cloudfront_distribution" "web" {
   enabled             = true
   default_root_object = "index.html"
@@ -73,22 +83,22 @@ resource "aws_cloudfront_distribution" "web" {
     compress               = true
     # Managed-CachingOptimized.
     cache_policy_id = "658327ea-f89d-4fab-a63d-7e88639e58f6"
+
+    # Rewrite /path -> /path/index.html (viewer-request).
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.rewrite.arn
+    }
   }
 
-  # SPA fallback: le route dinamiche (/courses/<id>, /brands/<id>) non hanno un
-  # HTML dedicato per ogni id. Serviamo lo shell segnaposto con 200, poi il
-  # client risolve i dati via API. Con trailingSlash, lo shell è l'index della
-  # route segnaposto; qui mappiamo gli errori S3 (403/404) all'app shell radice.
+  # Le route dinamiche senza HTML dedicato (/courses/<id>, /brands/<id>) usano la
+  # pagina segnaposto generata da generateStaticParams: la function riscrive
+  # l'URI a /<route>/index.html. Per i path realmente inesistenti serviamo la
+  # pagina 404 statica di Next (403 da S3 sul bucket privato) con codice 404.
   custom_error_response {
     error_code            = 403
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 10
-  }
-  custom_error_response {
-    error_code            = 404
-    response_code         = 200
-    response_page_path    = "/index.html"
+    response_code         = 404
+    response_page_path    = "/404.html"
     error_caching_min_ttl = 10
   }
 
