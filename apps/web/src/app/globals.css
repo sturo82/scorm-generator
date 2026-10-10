@@ -200,27 +200,31 @@
     @apply rounded-xl border bg-card shadow-card;
   }
 
-  /* Header d'ecosistema Knowkube: barra scura semi-trasparente con blur e bordo
+  /* Header d'ecosistema Knowkube: barra SCURA semi-trasparente con blur e bordo
      inferiore sottile (stile coerente con manager.knowkube.com), NON una barra a
-     colore pieno. Il colore di piattaforma (verde K Scorm) resta un ACCENTE
-     (logo, CTA, hover), non il fondo. Si fonde con lo sfondo della pagina.
-     Usa i token del tema → coerente in dark/light automaticamente. */
+     colore pieno. Sempre scura (anche in light) così il wordmark bianco è sempre
+     leggibile e tutte le piattaforme condividono la stessa barra d'ecosistema.
+     Il colore di piattaforma (verde K Scorm) resta un ACCENTE (CTA, hover). */
+  .eco-header,
   .brand-header {
-    background-color: hsl(var(--card) / 0.72);
+    background-color: hsl(160 24% 7% / 0.82);
     -webkit-backdrop-filter: saturate(140%) blur(10px);
     backdrop-filter: saturate(140%) blur(10px);
-    color: hsl(var(--foreground));
-    border-bottom: 1px solid hsl(var(--border));
+    color: hsl(160 20% 95%);
+    border-bottom: 1px solid hsl(0 0% 100% / 0.08);
   }
-  /* Pulsanti/link "ghost" dentro l'header: ereditano il colore testo e usano un
-     hover tenue neutro, leggibile sul fondo scuro trasparente. */
+  /* Pulsanti/link "ghost" dentro l'header ereditano il colore testo chiaro, con
+     hover tenue neutro leggibile sul fondo scuro. */
+  .eco-header a,
+  .eco-header button,
   .brand-header a,
   .brand-header button {
     color: inherit;
   }
+  .eco-header button:hover,
   .brand-header button:hover {
-    background-color: hsl(var(--foreground) / 0.08) !important;
-    color: hsl(var(--foreground)) !important;
+    background-color: hsl(0 0% 100% / 0.1) !important;
+    color: hsl(160 20% 95%) !important;
   }
 
   /* Card premium con sottile alone brand sul bordo superiore e hover elevato. */

@@ -10,17 +10,21 @@ import { Card, CardContent } from '@/components/ui/card';
 export default function HomePage() {
   return (
     <main className="min-h-dvh">
-      {/* Header d'ecosistema: barra sticky scura semi-trasparente con blur e
-          bordo sottile (coerente con manager.knowkube.com). Accenti = verde K Scorm. */}
-      <header className="sticky top-0 z-30 border-b border-border bg-card/72 backdrop-blur-md backdrop-saturate-150">
-        <div className="container flex items-center justify-between py-4">
-          <div className="flex items-center gap-2.5 font-semibold">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/kscorm-icon.png" alt="K Scorm" className="size-9 rounded-lg object-contain" />
-            K Scorm
-          </div>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/dashboard">Entra</Link>
+      {/* Header d'ecosistema: barra sticky scura con blur e bordo sottile
+          (posizionamento coerente con manager.knowkube.com): wordmark a sinistra,
+          CTA accentata (verde K Scorm) a destra. */}
+      <header className="eco-header sticky top-0 z-30">
+        <div className="container flex h-16 items-center justify-between">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/kscorm-wordmark-white-trim.png"
+            alt="K Scorm"
+            className="h-6 w-auto object-contain"
+          />
+          <Button asChild size="sm">
+            <Link href="/dashboard">
+              <ArrowRight className="size-4" /> Entra
+            </Link>
           </Button>
         </div>
       </header>
