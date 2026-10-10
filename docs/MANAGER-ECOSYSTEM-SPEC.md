@@ -26,12 +26,45 @@ Chiavi-prodotto canoniche: `kscorm`, `klive`, `kdataroom`, `ondemand`
 
 ---
 
+## 0bis. Decisioni di implementazione (Q&A dal team Manager)
+
+Queste scelte sono **vincolanti** per allineare Manager e i prodotti.
+
+1. **Identificatore Company = slug esterno + id numerico interno.** `Company.slug`
+   (univoco, **immutabile**, `[a-z0-9-]`, derivato dal nome ALLA creazione e poi
+   congelato: il rename del `name` non lo cambia) è l'identificatore usato nelle
+   API d'ecosistema (`company_id = <slug>`) e scritto in `custom:company_id` nel
+   token Cognito. L'`id` numerico resta PK interna; le API risolvono slug→id.
+   Vincolo: lo slug nel claim e lo slug in Manager devono coincidere esattamente.
+
+2. **Prodotti = enum curato**, `kscorm|klive|kdataroom|ondemand`, con
+   `UNIQUE(company, product)`. `kmanager` escluso (back-office). L'enum è
+   **estendibile** centralmente (nuovi prodotti aggiunti senza rotture).
+
+3. **App dedicata `ecosystem/`** (isolata: modelli + API M2M + Cognito), NON dentro
+   `customers`. È un bounded context d'ecosistema (futura base dello stack
+   identità); può referenziare `customers` per company/contratti.
+
+4. **Auth M2M Fase 1 = stub `M2MClient` a DB**, accettato come **adapter
+   sostituibile** verso Cognito, a queste condizioni (per non toccare le view al
+   passaggio futuro):
+   - la validazione vive in un'**astrazione** (es. permission DRF
+     `RequireScope("ecosystem/wallet.write")`), non nelle view;
+   - stessa **forma HTTP** del finale: `Authorization: Bearer <token>`, scope
+     identici (`ecosystem/entitlements.read`, `wallet.read`, `wallet.write`),
+     stessi codici 401/403 → i prodotti non cambieranno nulla;
+   - secret **hashati** a DB (no plaintext), confronto a tempo costante;
+   - sostituibile con validazione JWT Cognito dietro la stessa permission.
+
+---
+
 ## 1. Modello dati (Manager)
 
 ```
 Company
-  id            (es. "juve", slug stabile)         PK
-  name          "Juventus FC"
+  id            numerico, PK interna
+  slug          "juve"  — identificatore ESTERNO, univoco, immutabile [a-z0-9-]
+  name          "Juventus FC"  (rinominabile; NON cambia lo slug)
   status        active | suspended
   createdAt
 
