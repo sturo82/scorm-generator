@@ -1,0 +1,96 @@
+/* Branding Hosted UI (classic) di Amazon Cognito - K Scorm (ecosistema Knowkube).
+   Ogni regola targetizza UNA sola classe *-customizable consentita (Cognito
+   rifiuta i selettori raggruppati). Identita di piattaforma: verde #22b573. */
+
+.background-customizable {
+  background: radial-gradient(1100px 540px at 50% -10%, #e9f8f1 0%, #fbfbfa 55%);
+}
+
+.banner-customizable {
+  padding: 28px 0 8px 0;
+  background-color: transparent;
+}
+
+.logo-customizable {
+  max-width: 78%;
+  max-height: 92px;
+}
+
+.label-customizable {
+  color: #2f3a35;
+  font-weight: 600;
+}
+
+.inputField-customizable {
+  border-radius: 10px;
+  border: 1px solid #dde7e2;
+  background-color: #ffffff;
+  color: #212925;
+}
+
+.inputField-customizable:focus {
+  border-color: #22b573;
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(34, 181, 115, 0.18);
+}
+
+.submitButton-customizable {
+  border-radius: 10px;
+  background-color: #22b573;
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.submitButton-customizable:hover {
+  background-color: #1a8f59;
+}
+
+.idpButton-customizable {
+  border-radius: 10px;
+  border: 1px solid #bfe8d5;
+  background-color: #f3fbf7;
+  color: #166a40;
+  font-weight: 600;
+}
+
+.idpButton-customizable:hover {
+  background-color: #e9f8f1;
+  border-color: #22b573;
+}
+
+.socialButton-customizable {
+  border-radius: 10px;
+  border: 1px solid #bfe8d5;
+  background-color: #f3fbf7;
+  color: #166a40;
+  font-weight: 600;
+}
+
+.idpDescription-customizable {
+  color: #5e6b64;
+}
+
+.textDescription-customizable {
+  color: #5e6b64;
+}
+
+.redirect-customizable {
+  color: #1a8f59;
+}
+
+.legalText-customizable {
+  color: #808a84;
+}
+
+.errorMessage-customizable {
+  color: #b4231f;
+}
+
+.passwordCheck-valid-customizable {
+  color: #1a7f45;
+}
+
+.passwordCheck-notValid-customizable {
+  color: #b4231f;
+}

@@ -11,11 +11,10 @@ export default function HomePage() {
   return (
     <main className="min-h-dvh">
       <header className="container flex items-center justify-between py-6">
-        <div className="flex items-center gap-2 font-semibold">
-          <div className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
-            <Sparkles className="size-4" />
-          </div>
-          SCORM Generator
+        <div className="flex items-center gap-2.5 font-semibold">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/kscorm-icon.png" alt="K Scorm" className="size-9 rounded-lg object-contain" />
+          K Scorm
         </div>
         <Button asChild variant="outline" size="sm">
           <Link href="/dashboard">Entra</Link>

@@ -3,31 +3,55 @@
 @tailwind utilities;
 
 /*
- * Token del design system (HSL). Palette premium: superfici neutre fredde,
- * primario indaco/blu profondo. Supporto dark/light tramite classe .dark.
+ * Token del design system (HSL). Modello a due livelli dell'ecosistema Knowkube:
+ *  1) Brand globale Knowkube: 4 accenti ambra condivisi da tutti i prodotti,
+ *     usati come sistema di accenti soft su base neutra.
+ *  2) Identità di piattaforma: UN colore distintivo per prodotto. Per K Scorm è
+ *     il verde #22b573, che guida il primario, gli stati attivi, l'header e il
+ *     glow. Replicabile sugli altri prodotti cambiando solo --platform-accent*.
+ * Supporto dark/light tramite classe .dark.
  */
 @layer base {
   :root {
-    --background: 220 24% 98%;
-    --foreground: 222 47% 11%;
+    /* ── Brand globale Knowkube: palette condivisa (ambra) ─────────────────
+       Accenti comuni a tutti i prodotti. Da usare come ACCENTI su base neutra,
+       mai come sostituzione dei colori funzionali (errore/successo/warning).
+       HEX: bg-soft #FFF4DF · border/hover #F4D59A · accent #D99121 · dark #A96C14 */
+    --brand-bg-soft: 39 100% 94%;
+    --brand-border-hover: 39 80% 78%;
+    --brand-accent: 37 74% 49%;
+    --brand-accent-dark: 35 79% 37%;
+
+    /* ── Identità di piattaforma: K Scorm (verde #22b573) ──────────────────
+       È il colore identificativo del prodotto: primario, stati attivi, icone,
+       dettagli di interfaccia. Cambiare SOLO queste righe per un altro prodotto. */
+    --platform-accent: 153 68% 42%;
+    --platform-accent-dark: 153 70% 32%;
+    --platform-accent-soft: 153 55% 94%;
+
+    --background: 160 24% 99%;
+    --foreground: 160 14% 12%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 160 14% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 160 14% 12%;
 
-    --primary: 234 64% 52%;
+    /* Primario = colore di piattaforma (verde K Scorm). */
+    --primary: var(--platform-accent);
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 16% 95%;
-    --secondary-foreground: 222 47% 20%;
+    --secondary: 160 18% 96%;
+    --secondary-foreground: 160 14% 20%;
 
-    --muted: 220 16% 95%;
-    --muted-foreground: 220 10% 44%;
+    --muted: 160 14% 95%;
+    --muted-foreground: 160 8% 42%;
 
-    --accent: 232 64% 96%;
-    --accent-foreground: 233 58% 34%;
+    /* Accent soft condiviso = background brand Knowkube (ambra) per aree
+       evidenziate, box informativi e voci selezionate. */
+    --accent: var(--brand-bg-soft);
+    --accent-foreground: var(--brand-accent-dark);
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
@@ -38,49 +62,60 @@
     --warning: 32 95% 48%;
     --warning-foreground: 0 0% 100%;
 
-    --border: 220 15% 90%;
-    --input: 220 14% 86%;
-    --ring: 234 64% 52%;
+    --border: 160 16% 90%;
+    --input: 160 16% 84%;
+    --ring: var(--platform-accent);
 
-    /* Colore base delle ombre (navy freddo): ombre premium, non grigio piatto. */
-    --shadow-color: 222 47% 30%;
-    /* Accenti del gradiente di sfondo dell'app. */
-    --app-gradient-a: 232 64% 96%;
-    --app-gradient-b: 220 24% 98%;
-    /* Gradiente dell'header (barra superiore): default = tinta primaria. */
-    --header-gradient-a: 234 64% 52%;
-    --header-gradient-b: 246 70% 42%;
+    /* Colore base delle ombre (verde profondo): ombre premium coerenti. */
+    --shadow-color: 160 30% 18%;
+    /* Accenti del gradiente di sfondo dell'app: velo verde tenue di piattaforma. */
+    --app-gradient-a: 153 55% 94%;
+    --app-gradient-b: 160 24% 99%;
+    /* Gradiente dell'header (barra superiore): dal verde al verde scuro. */
+    --header-gradient-a: 153 68% 42%;
+    --header-gradient-b: 153 70% 32%;
     /* Testo/icone sopra l'header colorato. */
     --header-foreground: 0 0% 100%;
-    /* Alone/glow colorato per bagliori ed evidenziazioni premium. */
-    --brand-glow: 234 64% 52%;
-    /* Accent della sidebar (voce attiva). */
-    --sidebar-accent: 232 64% 95%;
+    /* Alone/glow colorato: verde di piattaforma. */
+    --brand-glow: 153 68% 42%;
+    /* Accent della sidebar (voce attiva): verde soft di piattaforma. */
+    --sidebar-accent: 153 55% 94%;
 
     --radius: 0.7rem;
   }
 
   .dark {
-    --background: 224 44% 6%;
-    --foreground: 210 20% 96%;
+    /* Brand globale Knowkube su fondo scuro: ambra più luminosa per contrasto. */
+    --brand-bg-soft: 37 40% 16%;
+    --brand-border-hover: 36 45% 30%;
+    --brand-accent: 38 85% 58%;
+    --brand-accent-dark: 36 79% 46%;
 
-    --card: 223 39% 10%;
-    --card-foreground: 210 20% 96%;
+    /* Identità K Scorm su fondo scuro: verde più luminoso. */
+    --platform-accent: 153 62% 52%;
+    --platform-accent-dark: 153 60% 40%;
+    --platform-accent-soft: 153 35% 16%;
 
-    --popover: 223 39% 10%;
-    --popover-foreground: 210 20% 96%;
+    --background: 160 24% 6%;
+    --foreground: 160 20% 95%;
 
-    --primary: 232 76% 70%;
-    --primary-foreground: 224 44% 8%;
+    --card: 160 18% 10%;
+    --card-foreground: 160 20% 95%;
 
-    --secondary: 223 28% 16%;
-    --secondary-foreground: 210 20% 96%;
+    --popover: 160 18% 10%;
+    --popover-foreground: 160 20% 95%;
 
-    --muted: 223 28% 16%;
-    --muted-foreground: 215 18% 64%;
+    --primary: var(--platform-accent);
+    --primary-foreground: 160 40% 7%;
 
-    --accent: 232 38% 22%;
-    --accent-foreground: 232 76% 82%;
+    --secondary: 160 12% 16%;
+    --secondary-foreground: 160 20% 95%;
+
+    --muted: 160 12% 16%;
+    --muted-foreground: 160 12% 64%;
+
+    --accent: var(--brand-bg-soft);
+    --accent-foreground: 38 85% 70%;
 
     --destructive: 0 63% 50%;
     --destructive-foreground: 0 0% 100%;
@@ -89,20 +124,20 @@
     --success-foreground: 0 0% 100%;
 
     --warning: 32 90% 55%;
-    --warning-foreground: 222 47% 11%;
+    --warning-foreground: 30 40% 10%;
 
-    --border: 223 24% 19%;
-    --input: 223 24% 22%;
-    --ring: 232 76% 70%;
+    --border: 160 14% 19%;
+    --input: 160 14% 22%;
+    --ring: var(--platform-accent);
 
-    --shadow-color: 224 60% 2%;
-    --app-gradient-a: 232 40% 12%;
-    --app-gradient-b: 224 44% 6%;
-    --header-gradient-a: 232 44% 13%;
-    --header-gradient-b: 246 50% 18%;
-    --header-foreground: 210 20% 96%;
-    --brand-glow: 232 76% 70%;
-    --sidebar-accent: 232 38% 20%;
+    --shadow-color: 160 50% 2%;
+    --app-gradient-a: 153 35% 13%;
+    --app-gradient-b: 160 24% 6%;
+    --header-gradient-a: 153 45% 14%;
+    --header-gradient-b: 153 50% 9%;
+    --header-foreground: 160 20% 95%;
+    --brand-glow: 153 62% 52%;
+    --sidebar-accent: 153 35% 16%;
   }
 }
 

@@ -49,3 +49,7 @@ crash.log
 
 # Zip di esempio Brain-Bites nella root (duplicato in examples/; artefatto)
 /Brain-Bites-Covid-19-and-Healthy-Workspaces.zip
+
+# Libreria sorgente dei loghi dell'ecosistema (input di design, non artefatto):
+# gli asset effettivamente usati sono copiati in apps/web/public/brand/ e infra/.
+/Prodotti Knowkube/

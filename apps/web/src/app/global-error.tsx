@@ -32,7 +32,7 @@ export default function GlobalError({ reset }: { error: Error; reset: () => void
               padding: '0.5rem 1rem',
               borderRadius: 8,
               border: 'none',
-              background: '#4f46e5',
+              background: '#22b573',
               color: '#fff',
               fontWeight: 600,
               cursor: 'pointer',

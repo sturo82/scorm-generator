@@ -21,7 +21,7 @@ export default function NotFound() {
         <p style={{ color: '#64748b', marginTop: '0.5rem' }}>
           La pagina che cerchi non esiste o è stata spostata.
         </p>
-        <Link href="/dashboard" style={{ color: '#4f46e5', fontWeight: 600 }}>
+        <Link href="/dashboard" style={{ color: '#22b573', fontWeight: 600 }}>
           Torna alla dashboard
         </Link>
       </div>

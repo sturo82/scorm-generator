@@ -75,6 +75,16 @@ resource "aws_cognito_user_pool_domain" "main" {
   user_pool_id = aws_cognito_user_pool.main.id
 }
 
+# Branding della Hosted UI (classic): CSS + logo K Scorm (ecosistema Knowkube).
+# CSS <= 3 KB e logo PNG <= 100 KB (vincoli AWS). Il logo è centrato sopra i
+# campi; il CSS applica l'identità verde di piattaforma e gli accenti neutri.
+resource "aws_cognito_user_pool_ui_customization" "main" {
+  user_pool_id = aws_cognito_user_pool_domain.main.user_pool_id
+
+  css        = file("${path.module}/cognito-ui.css")
+  image_file = filebase64("${path.module}/cognito-logo.png")
+}
+
 locals {
   # Issuer OIDC del user pool (per OIDC_ISSUER lato API e NEXT_PUBLIC_OIDC_ISSUER).
   cognito_issuer = "https://cognito-idp.${var.region}.amazonaws.com/${aws_cognito_user_pool.main.id}"

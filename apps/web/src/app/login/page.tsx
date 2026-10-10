@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { login } from '@/lib/auth';
@@ -39,10 +38,13 @@ export default function LoginPage() {
     <main className="grid min-h-dvh place-items-center p-6">
       <Card className="w-full max-w-md">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 grid size-12 place-items-center rounded-xl bg-primary text-primary-foreground">
-            <Sparkles className="size-6" />
-          </div>
-          <CardTitle className="text-xl">Accedi a SCORM Generator</CardTitle>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/kscorm-icon.png"
+            alt="K Scorm"
+            className="mb-2 size-14 rounded-xl object-contain"
+          />
+          <CardTitle className="text-xl">Accedi a K Scorm</CardTitle>
           <CardDescription>
             {oidc
               ? 'Accedi con il tuo provider aziendale (SSO).'

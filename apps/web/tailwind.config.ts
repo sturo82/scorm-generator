@@ -61,6 +61,21 @@ const config: Config = {
         },
         'sidebar-accent': 'hsl(var(--sidebar-accent))',
         'brand-glow': 'hsl(var(--brand-glow))',
+        // Brand globale Knowkube: accenti ambra condivisi (bg-brand-soft,
+        // border-brand-hover, text-brand, text-brand-dark).
+        brand: {
+          soft: 'hsl(var(--brand-bg-soft))',
+          hover: 'hsl(var(--brand-border-hover))',
+          DEFAULT: 'hsl(var(--brand-accent))',
+          dark: 'hsl(var(--brand-accent-dark))',
+        },
+        // Identità di piattaforma (K Scorm = verde): bg-platform, text-platform,
+        // border-platform, bg-platform-soft. Guida gli stati attivi/primari.
+        platform: {
+          soft: 'hsl(var(--platform-accent-soft))',
+          DEFAULT: 'hsl(var(--platform-accent))',
+          dark: 'hsl(var(--platform-accent-dark))',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',
