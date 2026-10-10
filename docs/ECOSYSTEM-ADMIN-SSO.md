@@ -153,11 +153,14 @@ richiesta.
 ## 6. Impatti per componente
 
 ### Manager (back-office) — nuovo lavoro
-- Estendere il modello contratti **oltre OnDemand** (aggiungere i prodotti
-  dell'ecosistema).
-- Esporre l'**API entitlements per company** (service-to-service, autenticata).
+Spec implementativa dedicata: **`docs/MANAGER-ECOSYSTEM-SPEC.md`**. In sintesi:
+- Estendere il modello contratti **oltre OnDemand** (aggiungere i prodotti).
+- Esporre l'**API entitlements per company** (OAuth2 client-credentials).
+- **Wallet virtuale per company** (saldo a crediti + movimenti) con API
+  **hold/capture/release/topup** idempotenti: i prodotti riservano e addebitano
+  crediti per le feature a consumo. Manager è l'unica fonte del saldo.
 - (Provisioning) Creare gli **owner** nel pool Cognito con `custom:company_id`
-  quando si attiva un cliente. È Manager a fare il provisioning degli owner.
+  quando si attiva un cliente.
 
 ### K Scorm (questo repo) — piccolo
 - Issuer già sul pool centrale (A1, nessun cambio).
