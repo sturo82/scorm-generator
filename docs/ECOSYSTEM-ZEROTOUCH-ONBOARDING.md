@@ -92,10 +92,11 @@ credential chain dell'SDK. Scegliamo SigV4 per questo (copertura universale AWS)
 non perché un prodotto sta su App Runner.
 
 **Difese obbligatorie di Manager sulla richiesta pre-firmata (anti-SSRF /
-anti-replay):** `host` ∈ allowlist degli endpoint STS (`sts.<region>.amazonaws.com`,
-nessun host arbitrario); `Action=GetCallerIdentity` e nient'altro; `X-Amz-Date`
-entro una finestra stretta (es. 5 min); rifiuto di qualsiasi richiesta che non sia
-esattamente una GetCallerIdentity.
+anti-replay):** `host` ∈ allowlist degli **endpoint STS SOLO regionali**
+(`sts.<region>.amazonaws.com`); l'endpoint globale `sts.amazonaws.com` (legacy)
+**non** è ammesso. Nessun host arbitrario; `Action=GetCallerIdentity` e
+nient'altro; `X-Amz-Date` entro una finestra stretta (es. 5 min); rifiuto di
+qualsiasi richiesta che non sia esattamente una GetCallerIdentity.
 
 **Strategia 2 (FUTURA, fuori scope) — OIDC/token del workload.**
 Per workload FUORI da AWS (altro cloud/on-prem) o contesti con token d'identità
@@ -121,6 +122,26 @@ console, lato Manager.
 > **derivato dalla firma** (solo chi detiene il ruolo può produrla). L'operatore
 > approva un'identità verificata, non una stringa inviata dal client.
 
+**Forma dell'ARN e pattern (importante).** STS restituisce l'ARN nella forma
+**`assumed-role`** (credenziali temporanee del ruolo di esecuzione), es.
+`arn:aws:sts::123456789012:assumed-role/<exec-role>/<request-id>`. I pattern di
+approvazione matchano QUESTA forma (non `arn:aws:iam::...:role/...`). È l'ARN del
+**componente che chiama Manager** (il backend: container/Lambda), non dell'intero
+stack. Regole:
+- **Approva questo ARN**: solo quel deployment.
+- **Approva pattern** (es. `arn:aws:sts::123456789012:assumed-role/ondemand-*`):
+  tutte le installazioni con quella convenzione di nome **nello stesso account**
+  si agganciano da sole, anche future → attrito zero per le whitelabel.
+- **VIETATO il jolly sull'account** (`arn:aws:sts::*:assumed-role/...`): un
+  pattern è vincolato a **un singolo account**. Account diversi = una riga per
+  account noto. (Vincolo di sicurezza, confermato con Manager.)
+
+**Attrito-zero pieno (whitelabel):** con stesso account + convenzione di naming
+dei ruoli (Terraform parametrico), UNA riga pattern copre tutte le whitelabel
+presenti e future: ne deployi una nuova e si auto-provisiona senza toccare
+Manager. Consapevole: un pattern aggancia deployment futuri **senza revisione
+umana** — accettabile perché account e naming sono sotto il nostro controllo.
+
 ---
 
 ## 3. Endpoint: self-register con auto-provisioning
@@ -139,11 +160,12 @@ body {
     "OWNER":"OWNER","ADMIN":"ADMIN","MEMBER":"EDITOR","VIEWER":"VIEWER"
   },
   "stsRequest": {                            // richiesta sts:GetCallerIdentity PRE-FIRMATA
-    "url": "https://sts.eu-west-1.amazonaws.com/...",   // Action=GetCallerIdentity, firmata SigV4
+    "url": "https://sts.eu-west-1.amazonaws.com/",      // host STS REGIONALE (no globale)
     "method": "POST",
     "headers": { "...": "..." },             // Authorization SigV4, X-Amz-Date, host STS
     "body": "Action=GetCallerIdentity&Version=2011-06-15"
-  }
+  },
+  "rotateM2m": false                         // true = Manager ricrea il client M2M (nuovo secret nel kit)
 }
 ```
 Manager ri-esegue `stsRequest` verso STS, ottiene l'ARN del chiamante e decide
@@ -300,6 +322,26 @@ Entitlement/Wallet/Contract/Owner restano come già specificato (non cambiano).
 | `installationId` mancante | 400 `missing_installation_id` | — |
 | Installazione già esistente | 200 | update metadati, nessuna ricreazione |
 | Manager irraggiungibile al boot | — | il prodotto parte comunque e ritenta (non bloccante) |
+
+---
+
+## 7bis. Attivazione del workload-auth (flag, OFF di default)
+
+Il flag `workload_auth_enabled` (su EcosystemConfig di Manager) è **OFF di
+default**: finché è spento, il self-register accetta **solo** il Bearer M2M
+(nessun rischio in produzione). L'onboarding automatico è pronto nel codice ma
+**inerte** finché non lo si accende.
+
+Procedura per il test end-to-end (in **staging**):
+1. Il prodotto parte e chiama self-register firmato → compare come richiesta in
+   attesa (`202 pending_approval`).
+2. In console Manager (**Ecosistema → Onboarding automatico**,
+   `/ecosystem/allowlist/`): approvare l'ARN del prodotto (o il pattern).
+3. Accendere l'interruttore `workload_auth_enabled`.
+4. Al ritentativo il prodotto riceve il provisioning kit.
+
+Rotazione M2M: self-register con `"rotateM2m": true` → Manager ricrea il client
+M2M (nuovo secret nel kit una volta), invalida il precedente.
 
 ---
 

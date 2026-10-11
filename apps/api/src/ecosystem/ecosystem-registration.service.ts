@@ -28,6 +28,28 @@ const KSCORM_ECO_ROLE_MAP = {
  * al login (EntitlementService), non questo annuncio.
  *
  * Attivo solo se `ECOSYSTEM_SELF_REGISTER=true` e il client M2M è configurato.
+ *
+ * ─── TODO (onboarding ad attrito zero — vedi docs/ECOSYSTEM-ZEROTOUCH-ONBOARDING.md) ───
+ * Oggi questo servizio usa SOLO il Bearer M2M (richiede che le credenziali M2M
+ * siano già configurate). Per l'onboarding automatico "da prodotto nuovo" manca,
+ * da implementare QUANDO Manager accende `workload_auth_enabled` in staging:
+ *
+ *   1) WORKLOAD-IDENTITY (primo giro, senza M2M): costruire una richiesta
+ *      `sts:GetCallerIdentity` PRE-FIRMATA SigV4 con le credenziali del ruolo di
+ *      esecuzione (default credential chain dell'SDK AWS) e allegarla come campo
+ *      `stsRequest` nel body. Host STS REGIONALE (sts.<region>.amazonaws.com, mai
+ *      il globale). Firmare AL MOMENTO della chiamata (finestra 5 min).
+ *   2) RETRY SU 202: `202 pending_approval` NON è un errore → ritentare in
+ *      background (es. ogni retryAfterSec) finché un operatore approva l'ARN in
+ *      console; non bloccare mai il boot.
+ *   3) PROVISIONING KIT (200): persistere `m2m.clientSecret` (mostrato una volta)
+ *      nel secret store; usare `oidc.clientId` come audience e servirlo al web a
+ *      runtime (config dinamica, non build-time); applicare `settings`.
+ *   4) GIRI SUCCESSIVI: usare il Bearer M2M (come ora); `rotateM2m:true` per
+ *      ruotare il secret.
+ *
+ * Finché il flag Manager è OFF, l'endpoint accetta solo Bearer M2M: questo
+ * servizio resta corretto così com'è e il TODO è inerte in produzione.
  */
 @Injectable()
 export class EcosystemRegistrationService implements OnModuleInit {

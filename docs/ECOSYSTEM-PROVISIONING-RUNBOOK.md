@@ -135,6 +135,13 @@ crea l'utente dai claim (ruolo = mapping eco-role) → dentro, senza pre-creazio
 Una sola installazione; ogni cliente = un tenant dentro la stessa installazione.
 `PRODUCT_KEY = INSTALLATION_ID = kscorm`.
 
+> ⚠️ MODELLO AGGIORNATO: con l'onboarding ad attrito zero
+> (`ECOSYSTEM-ZEROTOUCH-ONBOARDING.md`), i passi A1 (crea M2M) e A2 (client web
+> OIDC) NON sono più manuali: K Scorm li ottiene dal **provisioning kit** al primo
+> self-register firmato SigV4, dopo l'approvazione dell'ARN in console. La Fase A
+> qui sotto descrive il modello manuale originario, superato; resta utile come
+> riferimento dei valori/parametri.
+
 **Fase A — identità**
 - A1 (Manager): crea client M2M `kscorm` → consegna `client_id` + **secret
   rigenerato** (il precedente era stato condiviso in chiaro: va rigenerato come
@@ -176,9 +183,28 @@ Note mono:
 N installazioni, **infra propria** per cliente/region, stessa codebase.
 Es. `PRODUCT_KEY=ondemand`, `INSTALLATION_ID=ondemand-acme-eu`.
 
+> ⚠️ MODELLO AGGIORNATO — onboarding ad attrito zero. La creazione delle
+> credenziali d'identità (client M2M + client web OIDC) NON è più un passo manuale
+> di Manager né della pipeline: avviene **automaticamente al primo self-register**
+> firmato con la workload identity (SigV4). Vedi `ECOSYSTEM-ZEROTOUCH-ONBOARDING.md`.
+> La Fase A qui sotto resta valida solo per la parte INFRA (creare Lambda/DB/
+> ruolo), non per le credenziali: quelle le ottiene il prodotto dal provisioning
+> kit. La pipeline NON crea client Cognito.
+
 **Differenza chiave vs mono:** la Fase A si ripete **per ogni installazione** e
 va **automatizzata** (pipeline di provisioning parametrica), perché crea anche
 infra dedicata. Ma le installazioni esistenti NON si toccano.
+
+**Allowlist ARN (attrito zero per le whitelabel).** L'ARN da approvare su Manager
+è nella forma **`assumed-role`** del ruolo di esecuzione del backend, es.
+`arn:aws:sts::<account>:assumed-role/ondemand-acme-eu-exec/<req-id>`. Con una
+convenzione di naming dei ruoli (Terraform parametrico) **nello stesso account**,
+UNA riga pattern copre tutte le whitelabel presenti e future:
+`arn:aws:sts::<account>:assumed-role/ondemand-*`. Deployi una nuova whitelabel e
+si auto-provisiona senza toccare Manager. **Vietato il jolly sull'account**
+(`sts::*:...`): account diversi = una riga per account noto (vincolo di
+sicurezza). Il discriminante è "quante convenzioni/account diversi", non "quante
+whitelabel".
 
 **Fase A — identità (per OGNI installazione, via pipeline)**
 Input della pipeline: `installationId`, `region`, `domains`, `companyId`.
