@@ -4,7 +4,8 @@
 > K Live, K Dataroom, OnDemand, …) deve seguire per integrarsi nell'ecosistema.
 > È il "contratto" lato prodotto; la controparte (fonte di verità) è **Manager**,
 > specificato in `docs/MANAGER-ECOSYSTEM-SPEC.md`. Modello generale in
-> `docs/ECOSYSTEM-ADMIN-SSO.md`.
+> `docs/ECOSYSTEM-ADMIN-SSO.md`. Come nasce un prodotto (provisioning identità,
+> a monte di questo runtime): `docs/ECOSYSTEM-PROVISIONING-RUNBOOK.md`.
 >
 > Terminologia: `<PRODUCT_KEY>` = chiave canonica del prodotto
 > (`kscorm`|`klive`|`kdataroom`|`ondemand`). `company` = tenant del prodotto.

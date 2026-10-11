@@ -6,6 +6,7 @@
 > entitlement né saldo, li leggono/richiedono a Manager.
 >
 > Contesto completo nel design: `docs/ECOSYSTEM-ADMIN-SSO.md`.
+> Procedura di onboarding prodotto: `docs/ECOSYSTEM-PROVISIONING-RUNBOOK.md`.
 
 ---
 
