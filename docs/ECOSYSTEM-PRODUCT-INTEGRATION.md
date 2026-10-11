@@ -43,41 +43,102 @@ Regole:
   non li porta).
 - L'**API** valida firma (JWKS), `iss`, audience (`aud`/`client_id`), scadenza e
   `token_use`.
+- OIDC si configura **una volta sola nella vita**: pool unico, un solo client web
+  per prodotto, `auth.knowkube.com`. Aggiungere prodotti/installazioni NON tocca
+  OIDC. Il "quale prodotto/cliente è attivo" NON vive nel token: lo decide
+  Manager (§2).
 - Claim usati:
   - `custom:tenant_id` → **tenant** del prodotto (obbligatorio). **Il valore è lo
     slug della company** (company = tenant). Questo è il claim che i prodotti già
     leggono (K Scorm risolve `custom:tenant_id` di default); NON usare
     `custom:company_id`.
-  - `custom:role` → ruolo dell'owner;
-  - `sub`, `email` → identità.
+  - `custom:eco_role` → **eco-role** dell'owner (vocabolario d'ecosistema
+    `OWNER|ADMIN|MEMBER|VIEWER`); il prodotto lo **mappa** sul proprio ruolo
+    interno (vedi §2bis). Fallback a `custom:role` finché Manager non emette il
+    nuovo claim.
+  - `sub`, `email` → identità (usati anche dal JIT provisioning, §2).
 - Branding: ogni prodotto registra il proprio **Managed Login branding** (sfondo
   d'ecosistema comune, accento = colore del prodotto). Header/logo/colori seguono
   lo stile d'ecosistema condiviso (vedi §9).
 
 ---
 
-## 2. Gate di entitlement (accesso al prodotto)
+## 1bis. Self-register (l'installazione si annuncia a Manager)
 
-Al primo ingresso autenticato (e poi con cache), il prodotto verifica che la
-company abbia il prodotto attivo.
+Ogni prodotto/whitelabel è un'installazione (per OnDemand: infra propria per
+cliente/region). All'avvio **si annuncia** a Manager. È un **contratto HTTP**,
+implementabile in qualsiasi stack (Node `fetch`, Django `httpx`, …): NON è una
+libreria condivisa, sono poche righe locali al prodotto.
 
 ```
-GET {MANAGER_URL}/ecosystem/entitlements?company_id=<company>
+POST {MANAGER_URL}/installations/self      Authorization: Bearer <M2M>
+body {
+  product:        "<PRODUCT_KEY>",
+  installationId: "<univoco>",      # mono-prodotto: = PRODUCT_KEY; whitelabel: es. "ondemand-acme-eu"
+  region:         "<aws-region>",
+  domains:        ["<dominio servito>"],
+  ecoRoleMap:     { OWNER:"...", ADMIN:"...", MEMBER:"...", VIEWER:"..." }   # opzionale (solo display su Manager)
+}
+→ 200 { installationId, status:"available", enforce, walletEnabled }
+```
+Regole:
+- **Idempotente** (upsert su `installationId`) → chiamalo a ogni avvio/deploy.
+- **Non bloccante**: se Manager non risponde, il prodotto parte comunque e
+  ritenta; ciò che conta davvero per l'accesso è il gate al login (§2).
+- Manager registra l'installazione come **disponibile ma DISATTIVA**:
+  l'attivazione per-company è una scelta separata su Manager.
+
+---
+
+## 2. Gate di entitlement (accesso al prodotto) + JIT provisioning
+
+A ogni ingresso autenticato (con cache), il prodotto verifica che la company
+abbia il prodotto/installazione **attivo**, poi — se è il primo accesso — crea
+l'utente al volo (JIT).
+
+```
+GET {MANAGER_URL}/entitlements?company_id=<company>
 Authorization: Bearer <token client_credentials, scope ecosystem/entitlements.read>
-→ products[].{product,status,graceUntil}
+→ products[].{product,installationId,available,status,graceUntil}
 ```
-Decisione:
-- accesso **consentito** se esiste il contratto di `<PRODUCT_KEY>` con
-  `status ∈ {active, grace}`;
-- altrimenti **negato** con 403 e messaggio: *"La tua azienda non ha un contratto
-  attivo per <Nome prodotto>."*
+Decisione (gate):
+- accesso **consentito** se esiste il contratto di `<PRODUCT_KEY>` (e, per prodotti
+  multi-installazione, del proprio `installationId`) con `status ∈ {active, grace}`;
+- altrimenti **negato** con 403: *"La tua azienda non ha un contratto attivo per
+  <Nome prodotto>."*
+
+**JIT provisioning** (dopo il gate, mai prima):
+- se l'utente (`email`/`sub` + tenant) **non esiste** nel prodotto, crealo al volo
+  dai claim del token, con ruolo interno = mapping di `custom:eco_role` (§2bis);
+- così l'owner entra **senza essere pre-creato** nel prodotto;
+- vincolo: il JIT avviene SOLO se il gate ha detto "attivo" → nessun utente creato
+  per company non abilitate.
 
 Requisiti:
-- **Cache** breve per company (es. 60s) per non interrogare Manager a ogni call.
-- **Modalità soft → hard**: all'avvio dell'integrazione, se Manager non risponde o
-  non ha dati per la company, **consenti** e logga un warning. Attiva il blocco
-  (hard) solo quando gli entitlement del prodotto sono popolati e stabili.
-- Il gate è a livello **company**, quindi vale per tutti gli owner co-proprietari.
+- **Cache** breve per company (es. 60s).
+- **Modalità soft → hard**: in soft (o errore infra) **consenti** + log warning;
+  passa a **hard** solo quando gli entitlement sono popolati e stabili.
+- Il gate è a livello **company**: vale per tutti gli owner co-proprietari.
+
+---
+
+## 2bis. Mapping eco-role → ruolo interno
+
+Il token porta `custom:eco_role` ∈ `{OWNER, ADMIN, MEMBER, VIEWER}`. Il prodotto
+tiene una tabella **in casa propria** e la applica (nel JIT e, se vuole, a ogni
+accesso):
+
+```
+# esempio K Scorm
+OWNER → OWNER   ADMIN → ADMIN   MEMBER → EDITOR   VIEWER → VIEWER
+```
+- Il mapping lo **esegue sempre il prodotto** (disaccoppiamento). Manager non
+  conosce i ruoli interni.
+- Default sicuro se il claim manca o è sconosciuto: **VIEWER** (minimo privilegio).
+- Il prodotto può promuovere/declassare internamente oltre il default (autz fine):
+  non risale a Manager.
+- `ecoRoleMap` nel self-register (§1bis) è **opzionale e solo per display** su
+  Manager; non è la verità operativa.
 
 ---
 
@@ -134,6 +195,18 @@ prodotto), quindi tenere `product/feature/reference` sempre valorizzati.
 - Credenziali del client M2M nei secret del prodotto (es. Secrets Manager), MAI
   nel codice/repo.
 
+> **M2M vs client web OIDC — regola di gestione (non confondere i due).**
+> - **Client M2M** (service-to-service, `client_credentials`): di Manager,
+>   **rotabili liberamente** dal control plane. Nessun impatto sul login utente.
+> - **Client web OIDC** (login utenti, Auth Code + PKCE): **del prodotto**, NON
+>   creato da Manager. Il prodotto valida l'ID token su `aud` = client ID, e tale
+>   audience è cablata nell'infra del prodotto. Quindi il **client ID web non si
+>   cambia al volo**: un cambio tocca sia il build del web
+>   (`NEXT_PUBLIC_OIDC_CLIENT_ID`) sia l'audience dell'API (`OIDC_AUDIENCE`) e
+>   richiede un redeploy coordinato. Manager, se serve, interviene **sul client
+>   web esistente del prodotto**, non ne crea uno nuovo. (K Scorm: `scorm-web` =
+>   `48i3t9p2g5vqdkajssi7bv92r8`.)
+
 > Pool d'ecosistema (uguale per tutti; si usa l'**ID**, non il nome): POOL ID
 > `eu-west-1_jvwWWna9i`, issuer
 > `https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_jvwWWna9i`, login
@@ -147,7 +220,8 @@ prodotto), quindi tenere `product/feature/reference` sempre valorizzati.
 |---|---|---|
 | Token mancante/non valido | 401 | redirect al login SSO |
 | `company_id` assente nel token | 403 | "Account non associato a un'azienda" |
-| Prodotto non in entitlement | 403 | "La tua azienda non ha un contratto attivo per <Prodotto>" |
+| Prodotto/installazione non attivo | 403 | "La tua azienda non ha un contratto attivo per <Prodotto>" |
+| Utente al primo accesso (JIT) | — | crea l'utente dai claim e prosegui (nessun errore) |
 | Crediti insufficienti (hold 409) | 402/409 | "Crediti insufficienti per questa operazione" |
 | Manager irraggiungibile (gate soft) | — | consenti + log warning (nessun errore utente) |
 | Manager irraggiungibile (wallet) | 503 | "Servizio momentaneamente non disponibile, riprova" |
@@ -156,39 +230,62 @@ prodotto), quindi tenere `product/feature/reference` sempre valorizzati.
 
 ## 6. Configurazione richiesta (ogni prodotto)
 
+Config **comune a tutte le installazioni** (uguale, si copia):
 ```
-OIDC_ISSUER, OIDC_AUTH_DOMAIN, OIDC_CLIENT_ID, OIDC_TOKEN_USE=id
+OIDC_ISSUER, OIDC_AUTH_DOMAIN, OIDC_TOKEN_USE=id   # pool unico d'ecosistema
 MANAGER_URL                      # base URL API Manager
-MANAGER_M2M_CLIENT_ID / SECRET   # app-client client_credentials (da Secrets)
-ENTITLEMENT_ENFORCE=soft|hard    # feature flag del gate
-ENTITLEMENT_CACHE_TTL_SEC=60
-WALLET_ENABLED=true|false        # abilita hold/capture
+ECOSYSTEM_TOKEN_URL              # https://auth.knowkube.com/oauth2/token
+ECOSYSTEM_SCOPES                 # entitlements.read wallet.read wallet.write
 ```
+Config **per installazione** (cambia; NON vive in Terraform condiviso, viene dal
+provisioning parametrico dell'installazione):
+```
+PRODUCT_KEY                      # kscorm | ondemand | ...
+INSTALLATION_ID                  # univoco (mono-prodotto: = PRODUCT_KEY)
+OIDC_CLIENT_ID                   # client web del prodotto (una volta sola)
+MANAGER_M2M_CLIENT_ID / SECRET   # client_credentials del prodotto (da Secrets)
+ENTITLEMENT_ENFORCE=off|soft|hard
+ENTITLEMENT_CACHE_TTL_SEC=60
+WALLET_ENABLED=true|false
+```
+> Nota: `ENTITLEMENT_ENFORCE`/`WALLET_ENABLED` possono essere **default** letti
+> anche dalla risposta del self-register (§1bis), così lo stato d'attivazione lo
+> comanda Manager a runtime senza redeploy. Le env restano come fallback.
 
 ---
 
-## 7. Checklist onboarding di un nuovo prodotto
+## 7. Checklist onboarding di un nuovo prodotto/installazione
 
-1. Registrare un **app-client** nel pool centrale (login utenti, PKCE) + branding
-   Managed Login (accento del prodotto).
-2. Registrare un **app-client M2M** (client_credentials) con gli scope Manager.
-3. Config §6; `OIDC_ISSUER` = pool centrale.
-4. Implementare: validazione token → `company_id` come tenant.
-5. Implementare **gate entitlement** (soft → hard) con cache.
-6. Implementare **hold/capture/release** su ogni feature a consumo, con
+1. (Prodotto nuovo) Riusare il **client web OIDC** del prodotto nel pool centrale
+   (login utenti, PKCE) + branding Managed Login (accento del prodotto). OIDC si
+   configura **una volta sola**; una nuova installazione NON crea client nuovi.
+2. Ricevere da Manager un **client M2M** (client_credentials) con gli scope.
+3. Config §6 (comune + per-installazione); `OIDC_ISSUER` = pool centrale.
+4. Implementare il **self-register** (§1bis), idempotente e non bloccante.
+5. Implementare: validazione token → `company_id` come tenant.
+6. Implementare **gate entitlement** (soft → hard) con cache **+ JIT provisioning**
+   dopo il gate, con **mapping eco-role** (§2bis).
+7. Implementare **hold/capture/release** su ogni feature a consumo, con
    `reference` idempotente.
-7. Mappare gli **errori** come §5.
-8. Verifiche: SSO reale tra prodotti della stessa company; accesso negato se
-   prodotto non in contratto; hold insufficiente; capture parziale; retry
-   idempotente.
+8. Mappare gli **errori** come §5.
+9. (Installazione nuova) Provisionare l'infra in modo **parametrico**
+   (`installationId/product/region`), senza toccare le installazioni esistenti.
+10. Verifiche: self-register idempotente; SSO silenzioso tra prodotti della stessa
+    company; JIT al primo accesso; accesso negato se non attivo; hold
+    insufficiente; capture parziale; retry idempotente.
 
 ---
 
 ## 8. Cosa NON deve fare un prodotto
-- Non creare login proprietario per gli owner.
-- Non mantenere un proprio saldo crediti o decidere entitlement.
-- Non fidarsi di `company_id`/tenant forniti dal client (solo dal token).
+- Non creare login proprietario per gli owner; non riconfigurare OIDC per prodotto
+  o installazione (si fa una volta sola).
+- Non mantenere un proprio saldo crediti o decidere entitlement/attivazione.
+- Non decidere da sé i ruoli d'ecosistema: usa `custom:eco_role` e lo **mappa**.
+- Non creare l'utente **prima** del gate entitlement (JIT solo dopo il "sì").
+- Non fidarsi di `company_id`/tenant/ruolo forniti dal client (solo dal token).
 - Non eseguire feature a pagamento senza hold confermato.
+- Non mettere lo stato d'attivazione o l'identità dell'installazione **in
+  Terraform** da editare a mano: viene dal provisioning parametrico + Manager.
 - Non hardcodare segreti o URL di Manager senza config.
 
 ---
@@ -216,8 +313,8 @@ utente, nome company e avatar iniziali (`background = accento`,
 Testi del blocco in colori **chiari fissi** (il fondo header è sempre scuro).
 
 Identità d'ecosistema **sempre visibile**: tagline persistente **"by Knowkube"**
-accanto/sotto il logo e footer **"Knowkube · ecosistema"**, indipendenti dal
-white-label del tenant.
+accanto/sotto il logo e footer **"Knowkube"**, indipendenti dal white-label del
+tenant.
 
 Accessibilità (vincolo d'ecosistema): tutta la UI deve essere **WCAG 2.1 AA** —
 contrasto testo ≥ 4.5:1 (≥ 3:1 per large/elementi UI), focus visibile, skip-link

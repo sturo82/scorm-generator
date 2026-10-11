@@ -13,10 +13,15 @@
 
 Manager è l'unico punto dove si decidono:
 1. **Company** (aziende cliente) e i loro **owner** (clienti co-proprietari).
-2. **Contratti/entitlement**: quali prodotti ha attivi una company.
+2. **Contratti/entitlement**: quali prodotti/installazioni ha attivi una company.
 3. **Wallet** (portafoglio virtuale a crediti) per company: saldo + movimenti,
    usato dai prodotti per acquistare feature interne a consumo.
 4. **Provisioning**: creazione degli owner nel pool Cognito centrale.
+5. **Registro delle installazioni**: ogni prodotto/whitelabel si **annuncia** a
+   Manager (self-register) e Manager tiene l'elenco di cosa esiste, dove e per
+   quale company è *disponibile* o *attivo* (vedi §0ter e §4bis).
+6. **Hub / pagina di snodo**: dopo il login l'owner sceglie da Manager in quale
+   prodotto/installazione entrare; l'ingresso è SSO silenzioso (vedi §7bis).
 
 I prodotti chiamano Manager via **OAuth2 client-credentials** (M2M). Nessun
 prodotto tiene un proprio saldo o decide l'entitlement.
@@ -62,12 +67,27 @@ Queste scelte sono **vincolanti** per allineare Manager e i prodotti.
    - **resource server** (identifier **`ecosystem`**, scope `entitlements.read`,
      `wallet.read`, `wallet.write`);
    - **client M2M** per prodotto (client_credentials);
-   - **client OIDC** per prodotto (login owner) e **provisioning owner**
-     (`admin-create-user` con `custom:tenant_id` = slug company).
+   - **provisioning owner** (`admin-create-user` con `custom:tenant_id` = slug
+     company).
    Lo stack Terraform di K Scorm **NON** gestisce queste risorse (per evitare
    conflitti): tocca solo ciò che era già suo (pool, custom domain, Managed Login
    branding, client `scorm-web`, template email). **Regola:** nessuno dei due
    ricrea il pool; Manager aggiunge solo risorse-figlie.
+
+   **Eccezione importante — client web OIDC (login owner).** Questo client NON
+   è una risorsa che Manager crea per il prodotto: Manager **riusa il client web
+   già esistente del prodotto** (per K Scorm: `scorm-web` =
+   `48i3t9p2g5vqdkajssi7bv92r8`). Motivo: il prodotto valida l'ID token su
+   `aud` = client ID, e quell'audience è **cablata nell'infrastruttura del
+   prodotto** (per K Scorm `OIDC_AUDIENCE` in App Runner, da Terraform). Perciò:
+   - **Client M2M (service-to-service):** di Manager, **rotabili liberamente**
+     dal control plane (es. `71nb14…`). Nessun impatto sul login utente.
+   - **Client web OIDC (login utenti):** del prodotto. **Mai cambiare il client
+     ID al volo.** È legato a due punti nel prodotto — build del web
+     (`NEXT_PUBLIC_OIDC_CLIENT_ID`) e audience dell'API in infra
+     (`OIDC_AUDIENCE`); un cambio richiede un change coordinato con redeploy di
+     web **e** API. Manager, se serve, agisce **sul client esistente**
+     (callback/branding), non ne crea uno nuovo.
 
 6. **Parametri di aggancio al pool (uguali per tutte le app; si usa l'ID, NON il
    nome `scorm-users`):**
@@ -80,6 +100,60 @@ Queste scelte sono **vincolanti** per allineare Manager e i prodotti.
    ```
    Resource server identifier atteso = **`ecosystem`** → scope completi
    `ecosystem/entitlements.read`, `ecosystem/wallet.read`, `ecosystem/wallet.write`.
+
+---
+
+## 0ter. Modello d'attivazione (prodotti e installazioni) — principi
+
+Decisioni di impianto frozen in questa sezione. Obiettivo: **infra stabile**;
+aggiungere/togliere prodotti o installazioni = **operazione-dati su Manager**,
+senza `terraform apply` sulle installazioni esistenti e senza riconfigurare OIDC.
+
+1. **Prodotto vs installazione.**
+   - *Prodotto* = un software (codebase): `kscorm`, `ondemand`, `klive`, …
+   - *Installazione* = un deployment con **infra propria** (Lambda/DB/region
+     dedicati) di quel software. Un prodotto "mono" (es. K Scorm) ha **una**
+     installazione; OnDemand ne ha **N** (una o più whitelabel per cliente,
+     anche in region diverse). Codebase condivisa, infra isolata per
+     installazione.
+
+2. **OIDC si configura UNA VOLTA SOLA.** Pool unico d'ecosistema, un unico
+   dominio di login (`auth.knowkube.com`). Aggiungere prodotti/installazioni
+   **non** tocca OIDC: il login usa sempre lo stesso pool. Il discriminante
+   "quale prodotto, quale cliente, è attivo?" **non** vive nel token né
+   nell'infra: lo decide Manager (fonte di verità) ed è chiesto a runtime.
+
+3. **Self-register (l'installazione si annuncia).** All'avvio ogni installazione
+   chiama Manager (`POST /ecosystem/installations/self`, §4bis) dichiarando
+   `product`, `installationId`, `region`, `domains`. Manager fa **upsert** e la
+   registra come **disponibile, di default DISATTIVATA**. È un **contratto HTTP**,
+   non una libreria: ogni prodotto lo implementa nel proprio stack (Node, Django,
+   …) con poche righe. Idempotente e **non bloccante** (se Manager non risponde,
+   l'installazione parte comunque e ritenta).
+
+4. **Disponibile ≠ attivo.** Manager, per ogni **company**, flagga quali
+   prodotti/installazioni sono *disponibili* e quali *attivi* (default: non
+   attivo). L'owner può entrare **solo** nei prodotti/installazioni **attivi** per
+   la sua company.
+
+5. **JIT provisioning (nessun utente da creare prima).** Al primo ingresso valido
+   e **dopo** il gate di entitlement, il prodotto crea l'utente al volo dai claim
+   del token (`email`, `custom:tenant_id`, ruolo). L'owner entra senza essere
+   stato pre-creato nel prodotto. Il JIT avviene SOLO se il gate dice "attivo",
+   così non si creano utenti per company non abilitate.
+
+6. **Ruoli: vocabolario d'ecosistema astratto + mapping nel prodotto.** Manager
+   NON assegna ruoli interni del prodotto. Assegna un **eco-role** da un
+   vocabolario piccolo e stabile; ogni prodotto lo **mappa** sul proprio ruolo
+   interno (vedi §1ter). Così prodotti con ruoli diversi non si accoppiano e un
+   prodotto può cambiare i propri ruoli senza impattare Manager né gli altri.
+
+**Il solo vincolo che resta** (scenario infra-per-installazione): creare una
+nuova installazione richiede comunque di **provisionare la sua infra** (è
+inevitabile). L'obiettivo raggiunto è: (a) zero modifiche alle installazioni
+esistenti; (b) provisioning **parametrico/automatizzabile** (modulo + pipeline su
+`installationId/product/region`), non editing a mano di Terraform condiviso;
+(c) attivazione/disattivazione e stato = **solo Manager**, zero infra.
 
 ---
 
@@ -98,17 +172,32 @@ Owner  (cliente co-proprietario; 1..N per company, stesso livello)
   companyId     FK → Company
   cognitoSub    sub dell'utente nel pool centrale
   email
+  ecoRole       OWNER | ADMIN | MEMBER | VIEWER   (vedi §1ter)
   createdAt
 
-Contract (entitlement per prodotto, 1 per (company, product))
+Installation (deployment di un prodotto; registrato via self-register §4bis)
+  id            PK interna
+  installationId  stringa univoca, es. "kscorm" o "ondemand-acme-eu"
+  product       kscorm | klive | kdataroom | ondemand
+  region        es. "eu-west-1"
+  domains       lista domini serviti (per branding/UX dell'hub)
+  ecoRoleMap    JSON opzionale (eco-role → ruolo interno), SOLO per display §1ter
+  firstSeenAt   primo self-register
+  lastSeenAt    ultimo self-register (heartbeat all'avvio)
+  UNIQUE(installationId)
+
+Contract (entitlement; 1 per (company, product[, installation]))
   companyId     FK
   product       kscorm | klive | kdataroom | ondemand
-  status        active | grace | expired | cancelled
+  installationId  (opzionale) specifica l'installazione, per prodotti multi-
+                installazione (OnDemand); null = prodotto mono (es. kscorm)
+  available     bool  — Manager l'ha reso disponibile per la company
+  status        active | grace | expired | cancelled   (attivo ⟺ active|grace)
   plan          (opzionale: nome piano)
   startAt
   endAt         (null = a tempo indeterminato)
   graceUntil    (null se non in grace)
-  UNIQUE(companyId, product)
+  UNIQUE(companyId, product, installationId)
 
 Wallet (uno per company)
   companyId     FK (PK)
@@ -133,6 +222,43 @@ Note:
 - **company = tenant** nei prodotti (confermato).
 - `Contract.status = grace` finché `now < graceUntil`: in grace l'entitlement è
   ancora **attivo** per i prodotti (accesso consentito), ma segnalato.
+
+---
+
+## 1ter. Vocabolario eco-role (ruoli d'ecosistema) + mapping
+
+Vocabolario **unico, stabile, versionato**. È l'unico "ruolo" che Manager
+assegna e che viaggia nell'ecosistema (claim `custom:eco_role`). Quattro livelli,
+a livello **company/cliente**:
+
+```
+OWNER   co-proprietario azienda: gestisce tutto, invita owner, titolare contratto
+ADMIN   gestisce operatività e utenti, NON la titolarità del contratto
+MEMBER  utente operativo
+VIEWER  sola lettura
+```
+
+Regole:
+- **Manager assegna solo l'eco-role.** NON conosce né assegna i ruoli interni dei
+  prodotti.
+- **Ogni prodotto mappa in casa propria** eco-role → ruolo interno. Esempi:
+  ```
+  K Scorm:   OWNER→OWNER      ADMIN→ADMIN   MEMBER→EDITOR   VIEWER→VIEWER
+  OnDemand:  OWNER→SUPERADMIN ADMIN→ADMIN   MEMBER→EDITOR   VIEWER→VIEWER
+  K Live:    OWNER→HOST_ADMIN ADMIN→HOST    MEMBER→SPEAKER  VIEWER→ATTENDEE
+  ```
+- **Chi ESEGUE il mapping = sempre il prodotto** (non negoziabile: tiene tutto
+  disaccoppiato). **Chi CONOSCE il mapping = il prodotto per forza; Manager solo
+  se vuole mostrarlo in UI** (via `Installation.ecoRoleMap`, puramente
+  informativo, NON la verità operativa).
+- Un prodotto può promuovere/declassare internamente un utente oltre il default
+  d'ecosistema (autorizzazione fine, interna): **non** risale a Manager.
+- Non esiste un "superadmin" nel vocabolario clienti. Un eventuale
+  amministratore di piattaforma trasversale a tutti i clienti è **staff interno
+  Knowkube**, modellato separatamente (mai assegnabile a un owner cliente).
+
+Il vocabolario è un **contratto condiviso versionato**: cambiarlo impatta tutti i
+prodotti, quindi va trattato come breaking change d'ecosistema.
 
 ---
 
@@ -177,13 +303,63 @@ GET /ecosystem/entitlements?company_id=juve
 → 200 {
   "company_id": "juve",
   "products": [
-    { "product": "ondemand", "status": "active", "graceUntil": null },
-    { "product": "kscorm",   "status": "active", "graceUntil": null }
+    { "product": "ondemand", "installationId": "ondemand-juve-eu",
+      "available": true, "status": "active", "graceUntil": null },
+    { "product": "kscorm",   "installationId": null,
+      "available": true, "status": "active", "graceUntil": null }
   ]
 }
 ```
 Semantica per i prodotti: accesso consentito se esiste un contratto del prodotto
-con `status ∈ {active, grace}`. Altrimenti negato.
+(ed eventuale `installationId`) con `status ∈ {active, grace}`. Altrimenti negato.
+Un prodotto multi-installazione (OnDemand) filtra anche per il proprio
+`installationId`; un prodotto mono (kscorm) ignora il campo.
+
+---
+
+## 4bis. API — Installazioni (self-register + hub)
+
+Contratto HTTP implementabile in **qualsiasi stack** (Node/Django/…). È un
+contratto, non una libreria.
+
+### POST /ecosystem/installations/self   (self-register, all'avvio)
+L'installazione si annuncia. **Idempotente** (upsert su `installationId`),
+**non bloccante** lato prodotto. Autenticata col client M2M del prodotto.
+```
+scope ecosystem/entitlements.read (o uno scope dedicato installations.write)
+body {
+  "product": "ondemand",
+  "installationId": "ondemand-acme-eu",
+  "region": "eu-west-1",
+  "domains": ["acme.ondemand.knowkube.com"],
+  "ecoRoleMap": { "OWNER":"SUPERADMIN","ADMIN":"ADMIN",
+                  "MEMBER":"EDITOR","VIEWER":"VIEWER" }   // opzionale (display)
+}
+→ 200 {
+  "installationId": "ondemand-acme-eu",
+  "status": "available",          // registrata; attivazione per-company separata
+  "enforce": "hard",              // modalità gate suggerita (opzionale)
+  "walletEnabled": true           // opzionale
+}
+```
+Note:
+- Default **disponibile, non attivo** per nessuna company finché Manager non
+  flagga l'attivazione.
+- Il prodotto chiama questo endpoint a ogni avvio/deploy; serve da heartbeat
+  (`lastSeenAt`). Un fallimento NON deve impedire al prodotto di partire.
+
+### GET /ecosystem/hub?company_id=<slug>   (tessere per l'owner)
+Usato dall'hub di Manager per mostrare all'owner i prodotti/installazioni
+**attivi** per la sua company (vedi §7bis).
+```
+scope ecosystem/entitlements.read
+→ 200 { "company_id":"acme", "tiles":[
+    { "product":"kscorm","installationId":null,
+      "loginUrl":"https://architect.knowkube.com/login","label":"K Scorm" },
+    { "product":"ondemand","installationId":"ondemand-acme-eu",
+      "loginUrl":"https://acme.ondemand.knowkube.com/login","label":"OnDemand" }
+] }
+```
 
 ---
 
@@ -269,6 +445,37 @@ Quando Manager attiva un cliente:
 - alla disdetta: Manager imposta `Contract.status` → `expired/cancelled`
   (eventuale `graceUntil`); l'owner mantiene il login ma i prodotti negano
   l'accesso al termine del grace.
+- `custom:eco_role` = eco-role dell'owner (default `OWNER` per il co-proprietario,
+  vedi §1ter). È l'unico "ruolo" nel token; i prodotti lo mappano in casa.
+
+---
+
+## 7bis. Hub + SSO silenzioso + JIT (ingresso owner, scenario B)
+
+Obiettivo (nelle parole del prodotto): *Pippo, owner di Acme, fa login una volta,
+clicca "K Scorm" nell'hub ed entra come `pippo@email.com` **senza** essere stato
+pre-creato su K Scorm.*
+
+Flusso:
+1. Pippo fa login su Manager via OIDC (pool d'ecosistema) → si crea la **sessione
+   di pool** su `auth.knowkube.com`.
+2. **Hub di Manager** (`GET /ecosystem/hub`, §4bis): mostra le tessere dei
+   prodotti/installazioni **attivi** per Acme.
+3. Pippo clicca una tessera → Manager lo manda al login OIDC di quel
+   prodotto/installazione (stesso pool). Grazie alla sessione di pool esistente,
+   Cognito **non ridomanda le credenziali**: redirect di ritorno automatico
+   (**SSO silenzioso**, comportamento nativo del pool — nessun handoff custom).
+4. Il prodotto riceve l'ID token (claim `email`, `custom:tenant_id=acme`,
+   `custom:eco_role`), e nel suo auth-guard:
+   - valida il token (firma/iss/aud/scadenza);
+   - **gate entitlement**: chiede a Manager "Acme ha questo prodotto/installazione
+     attivo?" (§4) → se no, 403;
+   - **JIT provisioning**: se l'utente non esiste, lo crea dai claim con il ruolo
+     interno ottenuto mappando `custom:eco_role` (§1ter). SOLO dopo il gate.
+   - Pippo è dentro, senza pre-creazione. ✅
+
+Punti fermi: SSO silenzioso = gratis col pool unico; "senza creare l'utente" =
+JIT, **lato prodotto**; nessuno di questi passi tocca OIDC o l'infra.
 
 ---
 
@@ -283,12 +490,21 @@ Quando Manager attiva un cliente:
    `kscorm` per la company di test (`juve`/`knowkube`).
 7. Test: entitlement attivo/grace/scaduto; hold con saldo sufficiente/insufficiente;
    capture parziale; release; idempotency su reference ripetuto; concorrenza.
+8. Registro **Installation** + endpoint `self-register` idempotente (§4bis);
+   flag *disponibile/attivo* per (company, prodotto/installazione).
+9. **Hub** (`GET /ecosystem/hub`) con le tessere dei prodotti attivi e `loginUrl`
+   per l'ingresso SSO (§7bis).
+10. `custom:eco_role` emesso nel token owner secondo il vocabolario §1ter.
 
 ---
 
 ## 9. Cosa resta ai prodotti (NON Manager)
 
+- **Self-register** all'avvio (§4bis), idempotente e non bloccante, nel proprio
+  stack.
 - Gate entitlement al login (chiamata §4) con cache breve e **modalità soft**
   iniziale (consenti se Manager non risponde) → poi hard.
+- **JIT provisioning** dell'utente dai claim, dopo il gate; **mapping eco-role →
+  ruolo interno** (§1ter) in casa del prodotto.
 - Hold/capture/release attorno alle feature a pagamento (§5–§6).
 - Metering tecnico locale finché non si consolida in Manager.
