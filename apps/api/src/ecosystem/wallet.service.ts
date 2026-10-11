@@ -83,8 +83,8 @@ export class WalletService {
   }
 
   /** Abilitato = flag effettivo (Manager comanda, env fallback) + M2M configurato. */
-  get isEnabled(): boolean {
-    return this.settings.walletEnabled && this.http.isConfigured();
+  async isEnabled(): Promise<boolean> {
+    return this.settings.walletEnabled && (await this.http.isConfigured());
   }
 
   /**
@@ -92,7 +92,7 @@ export class WalletService {
    * InsufficientCreditsException su 409. Se disabilitato, no-op.
    */
   async hold(input: CreateHoldInput): Promise<WalletHold> {
-    if (!this.isEnabled) {
+    if (!(await this.isEnabled())) {
       return { holdId: `noop:${input.reference}`, status: 'noop' };
     }
     try {
@@ -118,7 +118,7 @@ export class WalletService {
    * `companyId` è richiesto da Manager nel body.
    */
   async capture(companyId: string, holdId: string, amount?: number): Promise<void> {
-    if (!this.isEnabled || holdId.startsWith('noop:')) return;
+    if (holdId.startsWith('noop:') || !(await this.isEnabled())) return;
     try {
       await this.http.post(`wallet/holds/${encodeURIComponent(holdId)}/capture`, {
         company_id: companyId,
@@ -137,7 +137,7 @@ export class WalletService {
    * richiesto da Manager nel body.
    */
   async release(companyId: string, holdId: string): Promise<void> {
-    if (!this.isEnabled || holdId.startsWith('noop:')) return;
+    if (holdId.startsWith('noop:') || !(await this.isEnabled())) return;
     try {
       await this.http.post(`wallet/holds/${encodeURIComponent(holdId)}/release`, {
         company_id: companyId,

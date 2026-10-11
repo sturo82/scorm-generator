@@ -662,3 +662,32 @@ model AuditEvent {
   @@index([tenantId])
   @@index([tenantId, createdAt])
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Ecosistema Knowkube — identità dell'installazione (onboarding zero-touch).
+// Riga SINGOLA a livello di processo (NON tenant-scoped): persiste il
+// "provisioning kit" ricevuto da Manager al self-register, così sopravvive ai
+// restart. Il secret M2M NON è qui: vive in Secrets Manager (riferito per ARN).
+// `id` fisso = "self" per garantire la singola riga (upsert idempotente).
+// ───────────────────────────────────────────────────────────────────────────
+model EcosystemInstallation {
+  id             String   @id @default("self")
+  installationId String
+  productKey     String
+  // OIDC risolto a runtime dal kit (audience = oidcClientId).
+  oidcIssuer     String?
+  oidcClientId   String?
+  oidcAuthDomain String?
+  oidcScope      String?
+  // M2M: solo riferimenti non-segreti; il secret è in Secrets Manager.
+  m2mClientId        String?
+  m2mSecretArn       String?
+  // Impostazioni comandate da Manager.
+  enforce        String?  // off | soft | hard
+  walletEnabled  Boolean  @default(false)
+  // Stato dell'onboarding: pending (202) | provisioned.
+  status         String   @default("pending")
+  lastKitAt      DateTime?
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+}

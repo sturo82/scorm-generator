@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import type { AppConfig } from '../config/configuration.js';
+import { EcosystemCredentialsService } from './ecosystem-credentials.service.js';
 
 /** Risposta minima dell'endpoint token OAuth2 (client-credentials). */
 interface TokenResponse {
@@ -16,12 +15,13 @@ interface TokenResponse {
  * processo e rinnovato poco prima della scadenza (skew di sicurezza), così le
  * chiamate verso Manager non pagano un round-trip al token endpoint ogni volta.
  *
- * Nessuna credenziale finisce nei log: in caso d'errore si logga solo lo stato.
+ * Le credenziali M2M arrivano da EcosystemCredentialsService (kit persistito o
+ * env). Nessuna credenziale finisce nei log: in caso d'errore si logga solo lo
+ * stato HTTP.
  */
 @Injectable()
 export class EcosystemTokenService {
   private readonly logger = new Logger(EcosystemTokenService.name);
-  private readonly cfg: AppConfig['ecosystem'];
 
   /** Token corrente in cache + istante (ms epoch) di scadenza effettiva. */
   private cached?: { accessToken: string; expiresAtMs: number };
@@ -30,24 +30,21 @@ export class EcosystemTokenService {
 
   /** Secondi di anticipo con cui consideriamo il token "scaduto". */
   private static readonly EXPIRY_SKEW_SEC = 30;
+  /** Timeout (ms) della chiamata al token endpoint. */
+  private static readonly TIMEOUT_MS = 5000;
 
-  constructor(config: ConfigService<AppConfig, true>) {
-    this.cfg = config.get('ecosystem', { infer: true });
-  }
+  constructor(private readonly credentials: EcosystemCredentialsService) {}
 
-  /** True se la configurazione M2M è completa (token endpoint + credenziali). */
-  isConfigured(): boolean {
-    return Boolean(this.cfg.tokenUrl && this.cfg.m2mClientId && this.cfg.m2mClientSecret);
+  /** True se esistono credenziali M2M (kit persistito o env). */
+  async isConfigured(): Promise<boolean> {
+    return this.credentials.isConfigured();
   }
 
   /**
-   * Ritorna un access token valido, dalla cache se possibile. Lancia se la
-   * configurazione è incompleta o il token endpoint fallisce.
+   * Ritorna un access token valido, dalla cache se possibile. Lancia se non ci
+   * sono credenziali o il token endpoint fallisce.
    */
   async getToken(): Promise<string> {
-    if (!this.isConfigured()) {
-      throw new Error('Ecosystem M2M non configurato (tokenUrl/clientId/clientSecret mancanti)');
-    }
     const now = Date.now();
     if (this.cached && this.cached.expiresAtMs > now) {
       return this.cached.accessToken;
@@ -61,25 +58,27 @@ export class EcosystemTokenService {
     return this.inflight;
   }
 
-  /** Invalida la cache (usato in caso di 401 per forzare un refresh). */
+  /** Invalida la cache del token (usato in caso di 401 per forzare un refresh). */
   invalidate(): void {
     this.cached = undefined;
   }
 
   private async fetchToken(): Promise<string> {
-    const basic = Buffer.from(
-      `${this.cfg.m2mClientId}:${this.cfg.m2mClientSecret}`,
-    ).toString('base64');
+    const creds = await this.credentials.resolve();
+    if (!creds) {
+      throw new Error('Ecosystem M2M non configurato (nessun kit persistito né env)');
+    }
+    const basic = Buffer.from(`${creds.clientId}:${creds.clientSecret}`).toString('base64');
     const body = new URLSearchParams({
       grant_type: 'client_credentials',
-      scope: this.cfg.scopes,
+      scope: creds.scopes,
     });
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.cfg.httpTimeoutMs);
+    const timeout = setTimeout(() => controller.abort(), EcosystemTokenService.TIMEOUT_MS);
     let res: Response;
     try {
-      res = await fetch(this.cfg.tokenUrl as string, {
+      res = await fetch(creds.tokenUrl, {
         method: 'POST',
         headers: {
           Authorization: `Basic ${basic}`,
@@ -106,9 +105,7 @@ export class EcosystemTokenService {
     const expiresAtMs =
       Date.now() + Math.max(0, data.expires_in - EcosystemTokenService.EXPIRY_SKEW_SEC) * 1000;
     this.cached = { accessToken: data.access_token, expiresAtMs };
-    this.logger.log(
-      `Token M2M ecosistema ottenuto (scadenza ~${data.expires_in}s, scope: ${data.scope ?? this.cfg.scopes})`,
-    );
+    this.logger.log(`Token M2M ecosistema ottenuto (scadenza ~${data.expires_in}s)`);
     return data.access_token;
   }
 }

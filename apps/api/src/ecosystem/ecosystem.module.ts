@@ -2,9 +2,11 @@ import { Global, Module } from '@nestjs/common';
 import { EcosystemTokenService } from './ecosystem-token.service.js';
 import { EcosystemHttpService } from './ecosystem-http.service.js';
 import { EcosystemSettingsService } from './ecosystem-settings.service.js';
-import { EcosystemRegistrationService } from './ecosystem-registration.service.js';
+import { EcosystemCredentialsService } from './ecosystem-credentials.service.js';
+import { EcosystemProvisioningService } from './ecosystem-provisioning.service.js';
 import { EntitlementService } from './entitlement.service.js';
 import { WalletService } from './wallet.service.js';
+import { EcosystemConfigController } from './ecosystem-config.controller.js';
 
 /**
  * Lato CONSUMER dell'ecosistema Knowkube: K Scorm consuma i servizi di Manager
@@ -15,15 +17,18 @@ import { WalletService } from './wallet.service.js';
  */
 @Global()
 @Module({
+  controllers: [EcosystemConfigController],
   providers: [
+    EcosystemCredentialsService,
     EcosystemTokenService,
     EcosystemHttpService,
     EcosystemSettingsService,
-    EcosystemRegistrationService,
+    EcosystemProvisioningService,
     EntitlementService,
     WalletService,
   ],
   exports: [
+    EcosystemCredentialsService,
     EcosystemTokenService,
     EcosystemHttpService,
     EcosystemSettingsService,

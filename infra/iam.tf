@@ -89,10 +89,17 @@ data "aws_iam_policy_document" "api_permissions" {
   # pool lo fa Manager. La vecchia statement "CognitoAdmin" (AdminCreateUser/
   # AdminDeleteUser per gli inviti) è stata rimossa con l'onboarding ecosistema.
 
-  # Lettura dei soli segreti del progetto.
+  # Lettura dei segreti del progetto + scrittura del solo secret M2M d'ecosistema
+  # (onboarding zero-touch: l'app persiste il secret ricevuto nel provisioning
+  # kit tramite Put/CreateSecret). Scope ristretto al prefisso del progetto.
   statement {
-    sid       = "Secrets"
-    actions   = ["secretsmanager:GetSecretValue"]
+    sid = "Secrets"
+    actions = [
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:PutSecretValue",
+      "secretsmanager:CreateSecret",
+      "secretsmanager:DescribeSecret",
+    ]
     resources = ["arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:${var.project}/*"]
   }
 }

@@ -199,8 +199,9 @@ variable "ecosystem_token_url" {
 }
 
 variable "manager_m2m_client_id" {
-  description = "client_id M2M di K Scorm emesso da Manager (NON segreto). Il secret vive in Secrets Manager."
+  description = "OPZIONALE. client_id M2M di fallback (modalità manuale). Nell'onboarding zero-touch le credenziali M2M arrivano dal provisioning kit (secret in Secrets Manager scritto dall'app): lasciare vuoto."
   type        = string
+  default     = ""
 }
 
 variable "entitlement_enforce_fallback" {
@@ -219,8 +220,9 @@ variable "ecosystem_cognito_user_pool_id" {
 }
 
 variable "ecosystem_oidc_client_id" {
-  description = "Client ID web OIDC del prodotto nel pool d'ecosistema (OIDC_AUDIENCE). Da Manager."
+  description = "OPZIONALE. Audience OIDC di fallback (modalità manuale). Nell'onboarding zero-touch il client web OIDC è creato da Manager e scoperto a runtime dal provisioning kit: lasciare vuoto."
   type        = string
+  default     = ""
 }
 
 variable "ecosystem_auth_domain" {

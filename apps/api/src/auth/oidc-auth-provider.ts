@@ -5,12 +5,20 @@ export interface OidcAuthProviderOptions {
   /** Issuer dell'IdP (claim `iss` atteso). */
   issuer: string;
   /**
-   * Audience attesa. Validata contro il claim `aud` e, in fallback, contro
-   * `client_id`. Questo copre gli access token di Amazon Cognito, che NON hanno
-   * `aud` ma espongono `client_id` (gli ID token invece usano `aud`). Se omessa,
-   * la validazione dell'audience è disattivata (sconsigliato in produzione).
+   * Audience attesa (statica). Validata contro il claim `aud` e, in fallback,
+   * contro `client_id`. Copre gli access token di Cognito (che usano `client_id`
+   * invece di `aud`). Se sia `audience` sia `audienceResolver` sono omessi, la
+   * validazione dell'audience è disattivata (sconsigliato in produzione).
    */
   audience?: string;
+  /**
+   * Resolver async dell'audience, risolto a RUNTIME a ogni verify. Usato
+   * dall'onboarding zero-touch, dove il client OIDC (e quindi l'audience) è
+   * creato da Manager e noto solo dopo il provisioning, non al deploy. Se
+   * ritorna un valore, ha precedenza su `audience`. Se ritorna null si ricade su
+   * `audience` (se presente).
+   */
+  audienceResolver?: () => Promise<string | null>;
   /** URI del JWKS dell'IdP per la verifica della firma RS256. */
   jwksUri: string;
   /**
@@ -62,13 +70,17 @@ export class OidcAuthProvider implements AuthProvider {
     const { payload } = await jwtVerify(token, this.jwks, {
       issuer: this.options.issuer,
     });
-    this.assertAudience(payload);
+    await this.assertAudience(payload);
     this.assertTokenUse(payload);
     return this.toClaims(payload);
   }
 
-  private assertAudience(payload: JWTPayload & Record<string, unknown>): void {
-    const expected = this.options.audience;
+  private async assertAudience(payload: JWTPayload & Record<string, unknown>): Promise<void> {
+    // Precedenza: resolver runtime (zero-touch) → audience statica.
+    const resolved = this.options.audienceResolver
+      ? await this.options.audienceResolver()
+      : null;
+    const expected = resolved ?? this.options.audience;
     if (!expected) return;
     const aud = payload.aud;
     const audMatches = Array.isArray(aud) ? aud.includes(expected) : aud === expected;

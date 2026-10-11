@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfig } from '../config/configuration.js';
 import { SsoModule } from '../sso/sso.module.js';
+import { EcosystemCredentialsService } from '../ecosystem/ecosystem-credentials.service.js';
 import { AUTH_PROVIDER } from './auth-provider.js';
 import { JwtAuthProvider } from './jwt-auth-provider.js';
 import { DevAuthProvider } from './dev-auth-provider.js';
@@ -21,8 +22,11 @@ import { RolesGuard } from './roles.guard.js';
   providers: [
     {
       provide: AUTH_PROVIDER,
-      inject: [ConfigService],
-      useFactory: (config: ConfigService<AppConfig, true>) => {
+      inject: [ConfigService, EcosystemCredentialsService],
+      useFactory: (
+        config: ConfigService<AppConfig, true>,
+        credentials: EcosystemCredentialsService,
+      ) => {
         const auth = config.get('auth', { infer: true });
         switch (auth.provider) {
           case 'jwt':
@@ -51,6 +55,10 @@ import { RolesGuard } from './roles.guard.js';
             return new OidcAuthProvider({
               issuer: auth.oidcIssuer,
               audience: auth.oidcAudience,
+              // Zero-touch: l'audience (client web OIDC) è creata da Manager e
+              // nota solo dopo il provisioning. Risolta a runtime dal kit
+              // persistito; fallback su OIDC_AUDIENCE (modalità manuale).
+              audienceResolver: () => credentials.getOidcAudience(),
               jwksUri,
               tenantClaim,
               expectedTokenUse: auth.oidcTokenUse,

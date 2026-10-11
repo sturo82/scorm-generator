@@ -32,9 +32,9 @@ export class EcosystemHttpService {
     this.cfg = config.get('ecosystem', { infer: true });
   }
 
-  /** True se è noto l'URL base di Manager e le credenziali M2M. */
-  isConfigured(): boolean {
-    return Boolean(this.cfg.managerUrl) && this.tokens.isConfigured();
+  /** True se è noto l'URL base di Manager e ci sono credenziali M2M (kit o env). */
+  async isConfigured(): Promise<boolean> {
+    return Boolean(this.cfg.managerUrl) && (await this.tokens.isConfigured());
   }
 
   async get<T>(path: string, query?: Record<string, string>): Promise<T> {
@@ -55,7 +55,7 @@ export class EcosystemHttpService {
   }
 
   private async request<T>(method: 'GET' | 'POST', url: string, body?: unknown): Promise<T> {
-    if (!this.isConfigured()) {
+    if (!(await this.isConfigured())) {
       throw new EcosystemRequestError(undefined, 'Ecosystem non configurato');
     }
     // Primo tentativo con token in cache; su 401 rinnova e riprova una volta.

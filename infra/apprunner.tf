@@ -62,15 +62,16 @@ resource "aws_apprunner_service" "api" {
           COGNITO_USER_POOL_ID        = var.ecosystem_cognito_user_pool_id
           COGNITO_REGION              = var.region
           STOCK_IMAGE_PROVIDER        = var.stock_image_provider
-          # --- Ecosistema Knowkube (consumer: K Scorm -> Manager) ---
-          # Config comune d'ecosistema + identita installazione. Il client_id M2M
-          # NON e segreto (il secret si, vedi runtime_environment_secrets). Stato
-          # d'attivazione (enforce/wallet) lo comanda Manager via self-register
-          # (opzione b): qui ENTITLEMENT_ENFORCE resta solo come fallback.
+          # --- Ecosistema Knowkube (consumer: K Scorm -> Manager), ONBOARDING ZERO-TOUCH ---
+          # Al primo avvio l'app si auto-provisiona (self-register firmato SigV4)
+          # e riceve il provisioning kit: client web OIDC (audience), credenziali
+          # M2M (secret in Secrets Manager), enforce/wallet. Quindi NON servono a
+          # mano: OIDC client id, M2M client id/secret, enforce. I valori sotto
+          # sono solo fallback per la modalità manuale (vuoti = zero-touch puro).
           MANAGER_URL             = var.manager_url
           ECOSYSTEM_TOKEN_URL     = var.ecosystem_token_url
           ECOSYSTEM_SCOPES        = "ecosystem/entitlements.read ecosystem/wallet.read ecosystem/wallet.write"
-          MANAGER_M2M_CLIENT_ID   = var.manager_m2m_client_id
+          MANAGER_M2M_CLIENT_ID   = var.manager_m2m_client_id # vuoto in zero-touch
           PRODUCT_KEY             = "kscorm"
           INSTALLATION_ID         = "kscorm"
           INSTALLATION_REGION     = var.region
@@ -81,12 +82,14 @@ resource "aws_apprunner_service" "api" {
         }
 
         runtime_environment_secrets = {
-          DATABASE_URL              = aws_secretsmanager_secret.database_url.arn
-          AUTH_JWT_SECRET           = aws_secretsmanager_secret.jwt_auth.arn
-          INTEGRATION_JWT_SECRET    = aws_secretsmanager_secret.jwt_integration.arn
-          SSO_USER_JWT_SECRET       = aws_secretsmanager_secret.jwt_sso_user.arn
-          UNSPLASH_ACCESS_KEY       = aws_secretsmanager_secret.unsplash.arn
-          MANAGER_M2M_CLIENT_SECRET = aws_secretsmanager_secret.manager_m2m.arn
+          DATABASE_URL           = aws_secretsmanager_secret.database_url.arn
+          AUTH_JWT_SECRET        = aws_secretsmanager_secret.jwt_auth.arn
+          INTEGRATION_JWT_SECRET = aws_secretsmanager_secret.jwt_integration.arn
+          SSO_USER_JWT_SECRET    = aws_secretsmanager_secret.jwt_sso_user.arn
+          UNSPLASH_ACCESS_KEY    = aws_secretsmanager_secret.unsplash.arn
+          # NB: MANAGER_M2M_CLIENT_SECRET NON è iniettato come env: nell'onboarding
+          # zero-touch l'app lo PERSISTE e lo LEGGE da Secrets Manager (per ARN) a
+          # runtime, dal provisioning kit. Non è noto al deploy.
         }
       }
     }
