@@ -16,6 +16,10 @@ export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // Avvio automatico del flusso OIDC: true quando si arriva dall'hub d'ecosistema
+  // con ?sso=1. In quel caso NON mostriamo il bottone: facciamo partire subito
+  // beginLogin() (SSO silenzioso grazie alla sessione di pool già attiva).
+  const [autoSso, setAutoSso] = React.useState(false);
   const oidc = isOidcEnabled();
 
   // "Torna indietro" dinamico: la destinazione dipende da dove si proviene.
@@ -51,17 +55,35 @@ export default function LoginPage() {
     }
   }, []);
 
-  async function handleLogin() {
-    setLoading(true);
-    setError(null);
-    if (oidc) {
+  const startOidc = React.useCallback(
+    async (loginHint?: string) => {
+      setLoading(true);
+      setError(null);
       try {
-        await beginLogin();
+        await beginLogin(loginHint ? { loginHint } : undefined);
         // beginLogin reindirizza all'IdP; non torna qui in caso di successo.
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Errore di autenticazione');
         setLoading(false);
+        setAutoSso(false); // mostra il bottone per riprovare manualmente
       }
+    },
+    [],
+  );
+
+  // Ingresso dall'hub d'ecosistema: ?sso=1 → avvia subito il flusso OIDC, senza
+  // bottone intermedio. login_hint (email) è propagato se presente.
+  React.useEffect(() => {
+    if (!oidc) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('sso') !== '1') return;
+    setAutoSso(true);
+    void startOidc(params.get('login_hint') ?? undefined);
+  }, [oidc, startOidc]);
+
+  async function handleLogin() {
+    if (oidc) {
+      await startOidc();
       return;
     }
     login();
@@ -86,9 +108,19 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <Button data-testid="login-button" size="lg" onClick={handleLogin} disabled={loading}>
-            {loading ? 'Accesso…' : oidc ? 'Accedi con SSO' : 'Entra come Dev Owner'}
-          </Button>
+          {autoSso && !error ? (
+            <p
+              data-testid="login-redirecting"
+              className="text-center text-sm text-muted-foreground"
+              aria-live="polite"
+            >
+              Reindirizzamento all’accesso sicuro…
+            </p>
+          ) : (
+            <Button data-testid="login-button" size="lg" onClick={handleLogin} disabled={loading}>
+              {loading ? 'Accesso…' : oidc ? 'Accedi con SSO' : 'Entra come Dev Owner'}
+            </Button>
+          )}
           {error ? (
             <p data-testid="login-error" className="text-center text-xs text-destructive">
               {error}

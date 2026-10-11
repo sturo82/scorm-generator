@@ -125,7 +125,7 @@ async function sha256Challenge(verifier: string): Promise<string> {
  * Avvia il flusso: genera PKCE + state, li salva in sessionStorage e reindirizza
  * all'authorization endpoint dell'IdP.
  */
-export async function beginLogin(): Promise<void> {
+export async function beginLogin(options?: { loginHint?: string }): Promise<void> {
   const config = getOidcConfig();
   const discovered = await discover(config.issuer);
   const authorization_endpoint = applyAuthDomain(
@@ -149,6 +149,10 @@ export async function beginLogin(): Promise<void> {
     code_challenge_method: 'S256',
   });
   if (config.audience) params.set('audience', config.audience);
+  // Opzionale: pre-popola l'email nel form Cognito (passato dall'hub di Manager
+  // come login_hint). Non tocca lo state/PKCE, che restano generati e validati
+  // qui lato prodotto.
+  if (options?.loginHint) params.set('login_hint', options.loginHint);
 
   window.location.assign(`${authorization_endpoint}?${params.toString()}`);
 }
