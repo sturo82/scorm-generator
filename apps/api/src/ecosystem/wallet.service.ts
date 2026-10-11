@@ -2,7 +2,7 @@ import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfig } from '../config/configuration.js';
 import { EcosystemHttpService, EcosystemRequestError } from './ecosystem-http.service.js';
-import { PRODUCT_KEY } from './entitlement.service.js';
+import { EcosystemSettingsService } from './ecosystem-settings.service.js';
 
 /** Hold creato (o già esistente, per idempotenza) sul wallet di Manager. */
 export interface WalletHold {
@@ -72,17 +72,19 @@ export class WalletUnavailableException extends HttpException {
 @Injectable()
 export class WalletService {
   private readonly logger = new Logger(WalletService.name);
-  private readonly enabled: boolean;
+  private readonly productKey: string;
 
   constructor(
     config: ConfigService<AppConfig, true>,
     private readonly http: EcosystemHttpService,
+    private readonly settings: EcosystemSettingsService,
   ) {
-    this.enabled = config.get('ecosystem', { infer: true }).walletEnabled;
+    this.productKey = config.get('ecosystem', { infer: true }).productKey;
   }
 
+  /** Abilitato = flag effettivo (Manager comanda, env fallback) + M2M configurato. */
   get isEnabled(): boolean {
-    return this.enabled && this.http.isConfigured();
+    return this.settings.walletEnabled && this.http.isConfigured();
   }
 
   /**
@@ -96,7 +98,7 @@ export class WalletService {
     try {
       return await this.http.post<WalletHold>('wallet/holds', {
         company_id: input.companyId,
-        product: PRODUCT_KEY,
+        product: this.productKey,
         feature: input.feature,
         amount: input.amount,
         reference: input.reference,
@@ -113,11 +115,13 @@ export class WalletService {
   /**
    * Addebita il consumo reale su un hold. `amount` può essere ≤ a quello
    * riservato; omettendolo si cattura l'intero hold. Se disabilitato, no-op.
+   * `companyId` è richiesto da Manager nel body.
    */
-  async capture(holdId: string, amount?: number): Promise<void> {
+  async capture(companyId: string, holdId: string, amount?: number): Promise<void> {
     if (!this.isEnabled || holdId.startsWith('noop:')) return;
     try {
       await this.http.post(`wallet/holds/${encodeURIComponent(holdId)}/capture`, {
+        company_id: companyId,
         ...(amount !== undefined ? { amount } : {}),
       });
     } catch (err) {
@@ -129,12 +133,15 @@ export class WalletService {
 
   /**
    * Libera un hold (operazione fallita/annullata). Best-effort: non lancia, così
-   * non maschera l'errore originale che ha innescato il release.
+   * non maschera l'errore originale che ha innescato il release. `companyId` è
+   * richiesto da Manager nel body.
    */
-  async release(holdId: string): Promise<void> {
+  async release(companyId: string, holdId: string): Promise<void> {
     if (!this.isEnabled || holdId.startsWith('noop:')) return;
     try {
-      await this.http.post(`wallet/holds/${encodeURIComponent(holdId)}/release`, {});
+      await this.http.post(`wallet/holds/${encodeURIComponent(holdId)}/release`, {
+        company_id: companyId,
+      });
     } catch (err) {
       this.logger.warn(`Wallet release fallito (hold=${holdId}): ${describe(err)}`);
     }
@@ -152,10 +159,10 @@ export class WalletService {
     const held = await this.hold(input);
     try {
       const { result, consumed } = await work();
-      await this.capture(held.holdId, consumed);
+      await this.capture(input.companyId, held.holdId, consumed);
       return result;
     } catch (err) {
-      await this.release(held.holdId);
+      await this.release(input.companyId, held.holdId);
       throw err;
     }
   }

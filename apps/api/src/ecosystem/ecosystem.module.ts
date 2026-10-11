@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { EcosystemTokenService } from './ecosystem-token.service.js';
 import { EcosystemHttpService } from './ecosystem-http.service.js';
+import { EcosystemSettingsService } from './ecosystem-settings.service.js';
 import { EcosystemRegistrationService } from './ecosystem-registration.service.js';
 import { EntitlementService } from './entitlement.service.js';
 import { WalletService } from './wallet.service.js';
@@ -17,10 +18,17 @@ import { WalletService } from './wallet.service.js';
   providers: [
     EcosystemTokenService,
     EcosystemHttpService,
+    EcosystemSettingsService,
     EcosystemRegistrationService,
     EntitlementService,
     WalletService,
   ],
-  exports: [EcosystemTokenService, EcosystemHttpService, EntitlementService, WalletService],
+  exports: [
+    EcosystemTokenService,
+    EcosystemHttpService,
+    EcosystemSettingsService,
+    EntitlementService,
+    WalletService,
+  ],
 })
 export class EcosystemModule {}

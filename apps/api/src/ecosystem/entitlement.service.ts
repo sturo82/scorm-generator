@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfig } from '../config/configuration.js';
 import { EcosystemHttpService } from './ecosystem-http.service.js';
+import { EcosystemSettingsService, type EnforceMode } from './ecosystem-settings.service.js';
 
 /** Chiave canonica di default di questo prodotto nell'ecosistema. */
 export const PRODUCT_KEY = 'kscorm';
@@ -56,14 +57,16 @@ export class EntitlementService {
   constructor(
     config: ConfigService<AppConfig, true>,
     private readonly http: EcosystemHttpService,
+    private readonly settings: EcosystemSettingsService,
   ) {
     this.cfg = config.get('ecosystem', { infer: true });
     this.productKey = this.cfg.productKey || PRODUCT_KEY;
     this.installationId = this.cfg.installationId;
   }
 
-  get mode(): AppConfig['ecosystem']['entitlementEnforce'] {
-    return this.cfg.entitlementEnforce;
+  /** Modalità gate effettiva (Manager comanda; env è fallback). */
+  get mode(): EnforceMode {
+    return this.settings.enforce;
   }
 
   /**
@@ -72,7 +75,7 @@ export class EntitlementService {
    * lancia mai per motivi di entitlement.
    */
   async assertCompanyEntitled(companyId: string): Promise<void> {
-    if (this.cfg.entitlementEnforce === 'off') return;
+    if (this.mode === 'off') return;
 
     let entitlement: ProductEntitlement | null;
     try {
@@ -85,14 +88,19 @@ export class EntitlementService {
       return;
     }
 
-    const allowed = entitlement
+    // Regola Manager: accesso = available AND status ∈ {active, grace}.
+    // `available` è opzionale nella risposta: se assente (vecchie risposte) non
+    // blocca sul solo flag, ci si basa sullo status.
+    const statusOk = entitlement
       ? entitlement.status === 'active' || entitlement.status === 'grace'
       : false;
+    const availableOk = entitlement ? entitlement.available !== false : false;
+    const allowed = statusOk && availableOk;
 
     if (allowed) return;
 
     const status = entitlement?.status ?? 'none';
-    if (this.cfg.entitlementEnforce === 'soft') {
+    if (this.mode === 'soft') {
       this.logger.warn(
         `[soft] company=${companyId} senza contratto attivo per ${this.productKey} (status=${status}); accesso consentito`,
       );

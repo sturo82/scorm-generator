@@ -2,6 +2,15 @@ import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { AppConfig } from '../config/configuration.js';
 import { EcosystemHttpService } from './ecosystem-http.service.js';
+import { EcosystemSettingsService } from './ecosystem-settings.service.js';
+
+/** Risposta attesa dal self-register (campi opzionali pilotati da Manager). */
+interface SelfRegisterResponse {
+  installationId?: string;
+  status?: string;
+  enforce?: unknown;
+  walletEnabled?: unknown;
+}
 
 /** Mapping eco-role → ruolo interno di K Scorm, inviato a Manager solo per display. */
 const KSCORM_ECO_ROLE_MAP = {
@@ -28,6 +37,7 @@ export class EcosystemRegistrationService implements OnModuleInit {
   constructor(
     config: ConfigService<AppConfig, true>,
     private readonly http: EcosystemHttpService,
+    private readonly settings: EcosystemSettingsService,
   ) {
     this.cfg = config.get('ecosystem', { infer: true });
   }
@@ -54,9 +64,15 @@ export class EcosystemRegistrationService implements OnModuleInit {
       ecoRoleMap: KSCORM_ECO_ROLE_MAP,
     };
     try {
-      await this.http.post('installations/self', body);
+      const res = await this.http.post<SelfRegisterResponse>('installations/self', body);
+      // Opzione b: Manager comanda enforce/walletEnabled; applichiamo i valori
+      // ricevuti (sovrascrivono i default di env).
+      this.settings.applyFromManager({
+        enforce: res?.enforce,
+        walletEnabled: res?.walletEnabled,
+      });
       this.logger.log(
-        `Self-register ok: product=${this.cfg.productKey} installation=${this.cfg.installationId}`,
+        `Self-register ok: product=${this.cfg.productKey} installation=${this.cfg.installationId} status=${res?.status ?? 'n/d'}`,
       );
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
