@@ -25,6 +25,22 @@ prodotto NON parte con una credenziale. Si autentica al primo contatto con la
 Manager verifica crittograficamente. Nessun "secret di bootstrap" da custodire,
 ruotare o condividere.
 
+**Indipendenza dallo stack (requisito):** la soluzione NON deve dipendere dal
+tipo di deploy. Ogni prodotto può girare su stack diversi (Lambda, ECS/Fargate,
+Elastic Beanstalk, App Runner, EC2, …). La verifica d'identità è perciò un
+**meccanismo PLUGGABILE** (una strategia "verifica workload"), non cablata a un
+singolo ambiente:
+- **Implementazione 1 — SigV4 (AWS), trasversale a TUTTI gli stack AWS.** È il
+  minimo comune denominatore: ogni compute AWS fornisce al workload credenziali
+  IAM e l'SDK sa firmare SigV4. Il prodotto fa la stessa identica cosa ovunque
+  giri; non c'è nulla di specifico ad App Runner.
+- **Estensione futura — OIDC/token del workload.** Per eventuali workload FUORI
+  da AWS (altro cloud/on-prem), si aggiunge una strategia che valida un token
+  OIDC del workload, SENZA rifare l'endpoint. Fuori scope per ora.
+
+Regola: scegliere SigV4 perché è trasversale agli stack AWS, **non** perché un
+prodotto specifico è su App Runner.
+
 **Pool d'ecosistema (uguale per tutti; parametri che Manager già conosce):**
 ```
 POOL ID = eu-west-1_jvwWWna9i
@@ -52,24 +68,40 @@ Resource server = "ecosystem"  (scope: entitlements.read, wallet.read, wallet.wr
 ## 2. Il modello di autenticazione del PRIMO contatto (workload identity)
 
 Problema da risolvere: il prodotto deve poter chiamare `self-register` **prima**
-di avere qualsiasi credenziale M2M. Soluzione: firma la richiesta con la propria
-identità AWS; Manager la verifica senza che nessun segreto sia stato scambiato.
+di avere qualsiasi credenziale M2M. Soluzione: prova la propria identità con una
+**strategia di verifica pluggabile**; Manager la verifica senza che nessun
+segreto sia stato scambiato. L'endpoint NON è cablato a una singola strategia:
+espone un punto di estensione "verifica workload" con N implementazioni.
 
-Due varianti accettabili (Manager sceglie l'implementazione; il prodotto
-supporta quella scelta):
+**Strategia 1 (ORA) — AWS SigV4 + GetCallerIdentity. Trasversale a tutti gli
+stack AWS.**
+Il prodotto costruisce una richiesta `sts:GetCallerIdentity` **pre-firmata** con
+le sue credenziali IAM (SigV4) e la allega al self-register. Manager la ri-esegue
+verso STS e ottiene l'**ARN del chiamante**. Nessun segreto condiviso: la prova è
+la firma, producibile solo da chi detiene il ruolo.
+Funziona **identico** su qualunque compute AWS, perché tutti forniscono al
+workload credenziali IAM e l'SDK sa firmare SigV4:
+```
+Lambda        → execution role
+ECS/Fargate   → task role
+Beanstalk/EC2 → instance profile
+App Runner    → instance role
+```
+Il prodotto NON fa nulla di diverso a seconda dello stack: usa la default
+credential chain dell'SDK. Scegliamo SigV4 per questo (copertura universale AWS),
+non perché un prodotto sta su App Runner.
 
-**Variante A — AWS SigV4 + GetCallerIdentity (consigliata).**
-Il prodotto firma la richiesta di self-register con le sue credenziali IAM
-(SigV4). Manager verifica l'identità chiedendo a STS **chi è** il chiamante
-(pattern "AWS IAM auth": il prodotto allega una richiesta `sts:GetCallerIdentity`
-pre-firmata; Manager la esegue e ottiene l'ARN del ruolo del prodotto). Nessun
-segreto condiviso: la prova è la firma SigV4, verificabile solo da chi detiene il
-ruolo.
+**Difese obbligatorie di Manager sulla richiesta pre-firmata (anti-SSRF /
+anti-replay):** `host` ∈ allowlist degli endpoint STS (`sts.<region>.amazonaws.com`,
+nessun host arbitrario); `Action=GetCallerIdentity` e nient'altro; `X-Amz-Date`
+entro una finestra stretta (es. 5 min); rifiuto di qualsiasi richiesta che non sia
+esattamente una GetCallerIdentity.
 
-**Variante B — Token d'istanza/OIDC del workload.**
-Se il prodotto gira in un contesto con token d'identità del workload (es.
-IRSA/OIDC su EKS), presenta quel token; Manager lo valida contro l'issuer del
-provider. (Per App Runner/Lambda la Variante A è più diretta.)
+**Strategia 2 (FUTURA, fuori scope) — OIDC/token del workload.**
+Per workload FUORI da AWS (altro cloud/on-prem) o contesti con token d'identità
+(es. IRSA/OIDC): il prodotto presenta un token del workload, Manager lo valida
+contro l'issuer. Si aggiunge come nuova implementazione della stessa astrazione,
+senza modificare il contratto dell'endpoint.
 
 **Allowlist (controllo d'ammissione):** Manager tiene una lista di **ARN di
 ruolo autorizzati** a provisionare (o un pattern, es.
@@ -238,8 +270,11 @@ Entitlement/Wallet/Contract/Owner restano come già specificato (non cambiano).
 
 ## 8. Definition of Done (lato Manager)
 
-1. Verifica **workload identity** sul self-register (SigV4+GetCallerIdentity o
-   token), con **allowlist** di ARN/pattern.
+1. Verifica **workload identity** sul self-register tramite **strategia
+   pluggabile** (astrazione "verifica workload"), con prima implementazione
+   **SigV4+GetCallerIdentity** e difese anti-SSRF/anti-replay (§2); **allowlist**
+   di ARN/pattern. L'endpoint è **dual-auth**: workload-identity al primo giro,
+   Bearer M2M ai giri successivi (retro-compatibile col test Bearer esistente).
 2. Auto-creazione idempotente su Cognito di **client web OIDC** + **client M2M**
    per installazione nuova, con callback/logout derivati dai `domains`.
 3. Risposta con **provisioning kit** completo (oidc + m2m + settings) come §3.
@@ -249,6 +284,18 @@ Entitlement/Wallet/Contract/Owner restano come già specificato (non cambiano).
 7. Test: prodotto nuovo che si auto-provisiona da zero (solo ruolo IAM);
    secondo self-register idempotente; ARN non in allowlist rifiutato; login owner
    end-to-end dopo l'attivazione.
+
+### Consegna a fasi (committabili separatamente)
+Per tenere il lavoro verificabile, l'implementazione Manager può procedere così:
+- **Fase 1:** modelli (`Installation` arricchita + `ProvisioningAllowlist`) +
+  migrazioni + admin/UI minima per gestire l'allowlist.
+- **Fase 2:** auto-provisioning Cognito (crea client OIDC + M2M al primo
+  self-register) + provisioning kit nella risposta, ancora dietro **Bearer**
+  (testa la creazione risorse senza SigV4).
+- **Fase 3:** auth **workload-identity** (SigV4+GetCallerIdentity) con allowlist
+  ARN, dietro l'**astrazione pluggabile**, in **dual-auth** sull'endpoint.
+- **Fase 4:** rotazione M2M (`rotateM2m`) + allowlist `client_id` sulle API
+  ecosistema + documentazione.
 
 ---
 
