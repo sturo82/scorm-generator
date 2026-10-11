@@ -90,6 +90,12 @@ export interface AppConfig {
     installationDomains: string[];
     /** Abilita il self-register all'avvio (POST /installations/self). */
     selfRegisterEnabled: boolean;
+    /**
+     * Nome del secret M2M in Secrets Manager dove persistere il client_secret
+     * ricevuto nel kit. DEVE combaciare col prefisso consentito dalla policy IAM
+     * (default `scorm/…`, come creato da Terraform), NON con productKey.
+     */
+    m2mSecretName: string;
     /** Card del prodotto nell'hub owner (campi opzionali; merge lato Manager). */
     card: {
       displayName?: string;
@@ -251,6 +257,7 @@ export function loadConfiguration(): AppConfig {
         .map((d) => d.trim())
         .filter(Boolean),
       selfRegisterEnabled: env('ECOSYSTEM_SELF_REGISTER', 'false') === 'true',
+      m2mSecretName: env('ECOSYSTEM_M2M_SECRET_NAME', 'scorm/MANAGER_M2M_CLIENT_SECRET'),
       card: {
         displayName: env('ECOSYSTEM_CARD_DISPLAY_NAME', 'K Scorm'),
         logoUrl: env(

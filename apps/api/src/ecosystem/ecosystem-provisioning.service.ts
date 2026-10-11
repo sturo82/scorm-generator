@@ -266,7 +266,8 @@ export class EcosystemProvisioningService implements OnModuleInit {
 
   /** Scrive il secret M2M in Secrets Manager (crea o aggiorna) e ritorna l'ARN. */
   private async storeM2mSecret(secret: string): Promise<string> {
-    const name = `${this.cfg.productKey}/MANAGER_M2M_CLIENT_SECRET`;
+    // Nome allineato alla policy IAM (prefisso progetto `scorm/`), NON productKey.
+    const name = this.cfg.m2mSecretName;
     try {
       const out = await this.secrets.send(
         new PutSecretValueCommand({ SecretId: name, SecretString: secret }),
