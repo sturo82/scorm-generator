@@ -46,8 +46,18 @@ export function isOidcEnabled(): boolean {
  */
 export function oidcLogoutUrl(): string | null {
   if (!isOidcEnabled()) return null;
-  const authDomain = process.env.NEXT_PUBLIC_OIDC_AUTH_DOMAIN;
-  const clientId = process.env.NEXT_PUBLIC_OIDC_CLIENT_ID;
+  // Preferisci la config runtime (zero-touch) messa in cache al login; fallback
+  // alle env build-time. Il client_id del logout deve combaciare con quello del
+  // login, quindi usiamo lo stesso valore risolto.
+  let runtime: RuntimeOidcConfig | null = null;
+  try {
+    const cached = sessionStorage.getItem(RUNTIME_CFG_KEY);
+    runtime = cached ? (JSON.parse(cached) as RuntimeOidcConfig) : null;
+  } catch {
+    runtime = null;
+  }
+  const authDomain = runtime?.authDomain ?? process.env.NEXT_PUBLIC_OIDC_AUTH_DOMAIN;
+  const clientId = runtime?.clientId ?? process.env.NEXT_PUBLIC_OIDC_CLIENT_ID;
   const redirectUri = process.env.NEXT_PUBLIC_OIDC_REDIRECT_URI;
   if (!authDomain || !clientId || !redirectUri) return null;
   // Torna alla pagina di login dopo il sign-out del pool.
@@ -56,22 +66,66 @@ export function oidcLogoutUrl(): string | null {
   return `https://${authDomain}/logout?${p.toString()}`;
 }
 
-export function getOidcConfig(): OidcConfig {
-  const issuer = process.env.NEXT_PUBLIC_OIDC_ISSUER;
-  const clientId = process.env.NEXT_PUBLIC_OIDC_CLIENT_ID;
+/** Risposta dell'endpoint runtime config OIDC dell'API (onboarding zero-touch). */
+interface RuntimeOidcConfig {
+  issuer: string | null;
+  clientId: string | null;
+  authDomain: string | null;
+  scope: string;
+  provisioned: boolean;
+}
+
+const RUNTIME_CFG_KEY = 'scorm.oidc.runtime';
+
+/**
+ * Config OIDC servita dall'API a RUNTIME (`GET /ecosystem/oidc-config`). Nel
+ * modello zero-touch il client web OIDC è creato da Manager e noto solo dopo il
+ * provisioning: il web non può avere issuer/clientId a build-time, quindi li
+ * legge qui. Best-effort + cache per sessione; ritorna null se non disponibile
+ * (si ricade sulle env build-time).
+ */
+async function fetchRuntimeOidcConfig(): Promise<RuntimeOidcConfig | null> {
+  const cached = sessionStorage.getItem(RUNTIME_CFG_KEY);
+  if (cached) return JSON.parse(cached) as RuntimeOidcConfig;
+  const apiBase = process.env.NEXT_PUBLIC_API_URL;
+  if (!apiBase) return null;
+  try {
+    const res = await fetch(`${apiBase.replace(/\/$/, '')}/ecosystem/oidc-config`);
+    if (!res.ok) return null;
+    const doc = (await res.json()) as RuntimeOidcConfig;
+    sessionStorage.setItem(RUNTIME_CFG_KEY, JSON.stringify(doc));
+    return doc;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Config OIDC effettiva. Precedenza: config RUNTIME dall'API (zero-touch) →
+ * env build-time (fallback/modalità manuale). `redirectUri` e `authDomain`
+ * restano dalle env se il runtime non li fornisce. Async perché può interrogare
+ * l'API.
+ */
+export async function getOidcConfig(): Promise<OidcConfig> {
+  const runtime = await fetchRuntimeOidcConfig();
+
+  const issuer = runtime?.issuer ?? process.env.NEXT_PUBLIC_OIDC_ISSUER;
+  const clientId = runtime?.clientId ?? process.env.NEXT_PUBLIC_OIDC_CLIENT_ID;
   const redirectUri = process.env.NEXT_PUBLIC_OIDC_REDIRECT_URI;
   if (!issuer || !clientId || !redirectUri) {
     throw new Error(
-      'OIDC abilitato ma NEXT_PUBLIC_OIDC_ISSUER / CLIENT_ID / REDIRECT_URI non configurati',
+      'OIDC abilitato ma issuer/clientId (runtime o env) o REDIRECT_URI mancanti',
     );
   }
   return {
     issuer: issuer.replace(/\/$/, ''),
     clientId,
     redirectUri,
-    scope: process.env.NEXT_PUBLIC_OIDC_SCOPE ?? 'openid profile email',
+    scope: runtime?.scope ?? process.env.NEXT_PUBLIC_OIDC_SCOPE ?? 'openid profile email',
+    // Cognito usa client_id come audience: coincide con clientId risolto a runtime.
     audience: process.env.NEXT_PUBLIC_OIDC_AUDIENCE,
-    authDomain: process.env.NEXT_PUBLIC_OIDC_AUTH_DOMAIN || undefined,
+    authDomain:
+      runtime?.authDomain ?? process.env.NEXT_PUBLIC_OIDC_AUTH_DOMAIN ?? undefined,
   };
 }
 
@@ -126,7 +180,7 @@ async function sha256Challenge(verifier: string): Promise<string> {
  * all'authorization endpoint dell'IdP.
  */
 export async function beginLogin(options?: { loginHint?: string }): Promise<void> {
-  const config = getOidcConfig();
+  const config = await getOidcConfig();
   const discovered = await discover(config.issuer);
   const authorization_endpoint = applyAuthDomain(
     discovered.authorization_endpoint,
@@ -168,7 +222,7 @@ export interface OidcTokens {
  * (nessun client secret). Da chiamare nella pagina /auth/callback.
  */
 export async function completeLogin(search: string): Promise<OidcTokens> {
-  const config = getOidcConfig();
+  const config = await getOidcConfig();
   const url = new URLSearchParams(search);
   const code = url.get('code');
   const returnedState = url.get('state');
