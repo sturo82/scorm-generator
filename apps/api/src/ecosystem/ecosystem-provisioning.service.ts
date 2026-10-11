@@ -111,6 +111,8 @@ export class EcosystemProvisioningService implements OnModuleInit {
           region: this.cfg.installationRegion,
           domains: this.cfg.installationDomains,
           ecoRoleMap: KSCORM_ECO_ROLE_MAP,
+          // Card del prodotto per l'hub owner (opzionale, merge lato Manager).
+          card: this.buildCard(),
           stsRequest,
         }),
         signal: AbortSignal.timeout(this.cfg.httpTimeoutMs),
@@ -230,5 +232,20 @@ export class EcosystemProvisioningService implements OnModuleInit {
 
   private base(): string {
     return (this.cfg.managerUrl ?? '').replace(/\/+$/, '');
+  }
+
+  /**
+   * Costruisce il blocco `card` per l'hub owner, includendo solo i campi
+   * valorizzati (merge lato Manager, non replace). Ritorna undefined se vuoto.
+   */
+  private buildCard(): Record<string, string> | undefined {
+    const c = this.cfg.card;
+    const card: Record<string, string> = {};
+    if (c.displayName) card.displayName = c.displayName;
+    if (c.logoUrl) card.logoUrl = c.logoUrl;
+    if (c.tagline) card.tagline = c.tagline;
+    if (c.description) card.description = c.description;
+    if (c.accentColor) card.accentColor = c.accentColor;
+    return Object.keys(card).length > 0 ? card : undefined;
   }
 }

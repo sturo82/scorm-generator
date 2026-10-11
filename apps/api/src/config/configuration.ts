@@ -90,6 +90,14 @@ export interface AppConfig {
     installationDomains: string[];
     /** Abilita il self-register all'avvio (POST /installations/self). */
     selfRegisterEnabled: boolean;
+    /** Card del prodotto nell'hub owner (campi opzionali; merge lato Manager). */
+    card: {
+      displayName?: string;
+      logoUrl?: string;
+      tagline?: string;
+      description?: string;
+      accentColor?: string;
+    };
     /**
      * Gate di entitlement:
      *  - 'off'  → nessuna verifica (default);
@@ -243,6 +251,19 @@ export function loadConfiguration(): AppConfig {
         .map((d) => d.trim())
         .filter(Boolean),
       selfRegisterEnabled: env('ECOSYSTEM_SELF_REGISTER', 'false') === 'true',
+      card: {
+        displayName: env('ECOSYSTEM_CARD_DISPLAY_NAME', 'K Scorm'),
+        logoUrl: env(
+          'ECOSYSTEM_CARD_LOGO_URL',
+          'https://architect.knowkube.com/brand/kscorm-icon.png',
+        ),
+        tagline: env('ECOSYSTEM_CARD_TAGLINE', 'Formazione SCORM e tracciamento'),
+        description: env(
+          'ECOSYSTEM_CARD_DESCRIPTION',
+          'Crea corsi, pubblica pacchetti SCORM e monitora i completamenti.',
+        ),
+        accentColor: env('ECOSYSTEM_CARD_ACCENT', '#22b573'),
+      },
       entitlementEnforce: env(
         'ENTITLEMENT_ENFORCE',
         'off',
