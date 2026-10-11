@@ -89,15 +89,23 @@ export class EcosystemProvisioningService implements OnModuleInit {
       this.logger.warn('Self-register abilitato ma MANAGER_URL assente: salto onboarding');
       return;
     }
-    // Se già provisionati, carica il kit persistito nelle settings runtime, poi
-    // rimanda un self-register "di refresh" (heartbeat) via Bearer M2M per
-    // aggiornare i metadati lato Manager — es. la card dell'hub. Idempotente e
-    // non bloccante: Manager aggiorna lastSeenAt + card, senza ricreare nulla.
     const existing = await this.loadPersisted();
     if (existing?.status === 'provisioned') {
-      this.applySettings(existing.enforce, existing.walletEnabled);
-      this.logger.log('Installazione già provisionata: kit caricato dal DB');
-      void this.refreshViaBearer();
+      // Non fidarsi del solo status: verificare che le credenziali M2M siano
+      // DAVVERO risolvibili (secret leggibile da Secrets Manager). Se non lo
+      // sono (es. secret mai scritto per permessi mancanti al primo giro),
+      // forziamo un re-provisioning con rotazione per riottenere il secret.
+      const creds = await this.credentials.resolve();
+      if (creds) {
+        this.applySettings(existing.enforce, existing.walletEnabled);
+        this.logger.log('Installazione già provisionata: kit caricato dal DB');
+        void this.refreshViaBearer();
+        return;
+      }
+      this.logger.warn(
+        'Status=provisioned ma secret M2M non risolvibile: forzo re-provisioning (rotateM2m)',
+      );
+      void this.attempt(true);
       return;
     }
     // Non ancora provisionati: self-register con workload-identity (SigV4), in
@@ -127,8 +135,13 @@ export class EcosystemProvisioningService implements OnModuleInit {
     }
   }
 
-  /** Un tentativo di self-register workload-auth; schedula un retry su 202. */
-  private async attempt(): Promise<void> {
+  /**
+   * Un tentativo di self-register workload-auth; schedula un retry su 202.
+   * `rotateM2m=true` chiede a Manager di riemettere il secret M2M (serve quando
+   * siamo "provisioned" lato Manager ma non abbiamo un secret utilizzabile: il
+   * secret è mostrato una volta sola, quindi senza rotazione non lo riavremmo).
+   */
+  private async attempt(rotateM2m = false): Promise<void> {
     try {
       const stsRequest = await buildSignedStsRequest(this.cfg.installationRegion);
       const res = await fetch(`${this.base()}/installations/self`, {
@@ -142,6 +155,7 @@ export class EcosystemProvisioningService implements OnModuleInit {
           ecoRoleMap: KSCORM_ECO_ROLE_MAP,
           // Card del prodotto per l'hub owner (opzionale, merge lato Manager).
           card: this.buildCard(),
+          ...(rotateM2m ? { rotateM2m: true } : {}),
           stsRequest,
         }),
         signal: AbortSignal.timeout(this.cfg.httpTimeoutMs),
@@ -154,10 +168,19 @@ export class EcosystemProvisioningService implements OnModuleInit {
       }
       if (res.status === 200) {
         const kit = (await res.json()) as ProvisioningKit;
-        await this.persistKit(kit);
-        this.logger.log(
-          `Self-register ok: provisioning kit ricevuto e persistito (installation=${this.cfg.installationId})`,
+        const complete = await this.persistKit(kit);
+        if (complete) {
+          this.logger.log(
+            `Self-register ok: provisioning kit completo persistito (installation=${this.cfg.installationId})`,
+          );
+          return;
+        }
+        // Kit senza secret M2M utilizzabile: NON siamo realmente operativi.
+        // Ritentiamo chiedendo esplicitamente la rotazione del secret.
+        this.logger.warn(
+          'Self-register: kit senza secret M2M utilizzabile — ritento con rotateM2m per farmelo riemettere',
         );
+        this.scheduleRetry(true);
         return;
       }
       // Altri status: logga (senza corpo, può contenere dettagli) e ritenta.
@@ -170,24 +193,36 @@ export class EcosystemProvisioningService implements OnModuleInit {
     }
   }
 
-  private scheduleRetry(): void {
+  private scheduleRetry(rotate = false): void {
     if (this.retryTimer) return;
     this.retryTimer = setTimeout(() => {
       this.retryTimer = undefined;
-      void this.attempt();
+      void this.attempt(rotate);
     }, EcosystemProvisioningService.RETRY_MS);
     // Non trattenere il processo in uscita per via del timer.
     this.retryTimer.unref?.();
   }
 
-  /** Persiste il kit: secret M2M in Secrets Manager, resto nel DB. */
-  private async persistKit(kit: ProvisioningKit): Promise<void> {
+  /**
+   * Persiste il kit: secret M2M in Secrets Manager, resto nel DB. Ritorna true
+   * se il kit è COMPLETO, cioè abbiamo un secret M2M utilizzabile (appena
+   * ricevuto o già persistito in precedenza) → status `provisioned`. Ritorna
+   * false se manca il secret: salviamo i metadati ma restiamo `pending`, così il
+   * caller ritenta (con rotateM2m) finché non otteniamo il secret. Non
+   * marcarsi mai `provisioned` senza credenziali utilizzabili.
+   */
+  private async persistKit(kit: ProvisioningKit): Promise<boolean> {
+    const existing = await this.loadPersisted();
     let m2mSecretArn: string | undefined;
     if (kit.m2m?.clientSecret) {
       m2mSecretArn = await this.storeM2mSecret(kit.m2m.clientSecret);
     }
+    // Secret utilizzabile se arrivato ora, oppure già persistito in un ARN valido.
+    const effectiveArn = m2mSecretArn ?? existing?.m2mSecretArn ?? undefined;
+    const complete = Boolean(kit.m2m?.clientId && effectiveArn);
     const enforce = this.normalizeEnforce(kit.settings?.enforce);
     const walletEnabled = kit.settings?.walletEnabled === true;
+    const status = complete ? 'provisioned' : 'pending';
 
     await this.prisma.ecosystemInstallation.upsert({
       where: { id: INSTALLATION_ROW_ID },
@@ -203,7 +238,7 @@ export class EcosystemProvisioningService implements OnModuleInit {
         m2mSecretArn,
         enforce,
         walletEnabled,
-        status: 'provisioned',
+        status,
         lastKitAt: new Date(),
       },
       update: {
@@ -217,7 +252,7 @@ export class EcosystemProvisioningService implements OnModuleInit {
         ...(m2mSecretArn ? { m2mSecretArn } : {}),
         enforce,
         walletEnabled,
-        status: 'provisioned',
+        status,
         lastKitAt: new Date(),
       },
     });
@@ -226,6 +261,7 @@ export class EcosystemProvisioningService implements OnModuleInit {
     // Le credenziali M2M sono cambiate (nuovo kit): invalida la cache così gate
     // e wallet usano subito le nuove, senza aspettare la scadenza.
     this.credentials.invalidate();
+    return complete;
   }
 
   /** Scrive il secret M2M in Secrets Manager (crea o aggiorna) e ritorna l'ARN. */
