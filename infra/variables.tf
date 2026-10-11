@@ -183,3 +183,48 @@ variable "stock_image_provider" {
   type        = string
   default     = "none"
 }
+
+# --- Ecosistema Knowkube (consumer K Scorm -> Manager) ---------------------
+
+variable "manager_url" {
+  description = "URL base dell'API ecosistema di Manager (senza slash finale)."
+  type        = string
+  default     = "https://manager.knowkube.com/api/ecosystem"
+}
+
+variable "ecosystem_token_url" {
+  description = "Token endpoint OAuth2 (Cognito) per il client-credentials M2M."
+  type        = string
+  default     = "https://auth.knowkube.com/oauth2/token"
+}
+
+variable "manager_m2m_client_id" {
+  description = "client_id M2M di K Scorm emesso da Manager (NON segreto). Il secret vive in Secrets Manager."
+  type        = string
+}
+
+variable "entitlement_enforce_fallback" {
+  description = "Fallback di ENTITLEMENT_ENFORCE se Manager non risponde al self-register (opzione b: Manager comanda). off|soft|hard."
+  type        = string
+  default     = "soft"
+}
+
+# --- OIDC d'ecosistema (ricevuto da Manager; K Scorm NON gestisce Cognito) ----
+# Un prodotto nuovo riceve questi parametri da Manager e li LEGGE: pool, client
+# web OIDC e dominio di login sono risorse d'ecosistema di proprietà di Manager.
+
+variable "ecosystem_cognito_user_pool_id" {
+  description = "ID del user pool d'ecosistema (es. eu-west-1_jvwWWna9i). Da Manager."
+  type        = string
+}
+
+variable "ecosystem_oidc_client_id" {
+  description = "Client ID web OIDC del prodotto nel pool d'ecosistema (OIDC_AUDIENCE). Da Manager."
+  type        = string
+}
+
+variable "ecosystem_auth_domain" {
+  description = "Dominio custom della login d'ecosistema (es. auth.knowkube.com). Da Manager."
+  type        = string
+  default     = "auth.knowkube.com"
+}

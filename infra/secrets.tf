@@ -70,6 +70,21 @@ resource "aws_secretsmanager_secret_version" "jwt_sso_user" {
   secret_string = random_password.jwt_sso_user.result
 }
 
+# Client secret M2M d'ecosistema (K Scorm -> Manager). Placeholder gestito come
+# Unsplash: il valore reale si imposta FUORI Terraform (console/CLI AWS), mai nel
+# repo; ignore_changes evita che un apply lo riazzeri. Il client_id (non segreto)
+# sta invece come env in apprunner.tf (var.manager_m2m_client_id).
+resource "aws_secretsmanager_secret" "manager_m2m" {
+  name = "${var.project}/MANAGER_M2M_CLIENT_SECRET"
+}
+resource "aws_secretsmanager_secret_version" "manager_m2m" {
+  secret_id     = aws_secretsmanager_secret.manager_m2m.id
+  secret_string = "REPLACE_ME"
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}
+
 # Chiave Unsplash (stock): placeholder, da popolare fuori Terraform. ignore_changes
 # evita che un apply la riazzeri dopo che l'hai impostata manualmente.
 resource "aws_secretsmanager_secret" "unsplash" {

@@ -23,11 +23,11 @@ resource "aws_apprunner_service" "api" {
         port = "3000"
 
         runtime_environment_variables = {
-          NODE_ENV                    = "production"
-          PORT                        = "3000"
-          AUTH_PROVIDER               = "oidc"
-          OIDC_ISSUER                 = local.cognito_issuer
-          OIDC_AUDIENCE               = aws_cognito_user_pool_client.web.id
+          NODE_ENV      = "production"
+          PORT          = "3000"
+          AUTH_PROVIDER = "oidc"
+          OIDC_ISSUER   = local.cognito_issuer
+          OIDC_AUDIENCE = var.ecosystem_oidc_client_id
           # Il web usa l'ID token come Bearer: l'access token di Cognito non
           # include i custom attribute (`custom:tenant_id`), l'ID token sì.
           OIDC_TOKEN_USE              = "id"
@@ -59,17 +59,34 @@ resource "aws_apprunner_service" "api" {
           SPEECH_DEFAULT_VOICE        = var.speech_default_voice
           S3_BUCKET                   = aws_s3_bucket.assets.bucket
           S3_REGION                   = var.region
-          COGNITO_USER_POOL_ID        = aws_cognito_user_pool.main.id
+          COGNITO_USER_POOL_ID        = var.ecosystem_cognito_user_pool_id
           COGNITO_REGION              = var.region
           STOCK_IMAGE_PROVIDER        = var.stock_image_provider
+          # --- Ecosistema Knowkube (consumer: K Scorm -> Manager) ---
+          # Config comune d'ecosistema + identita installazione. Il client_id M2M
+          # NON e segreto (il secret si, vedi runtime_environment_secrets). Stato
+          # d'attivazione (enforce/wallet) lo comanda Manager via self-register
+          # (opzione b): qui ENTITLEMENT_ENFORCE resta solo come fallback.
+          MANAGER_URL             = var.manager_url
+          ECOSYSTEM_TOKEN_URL     = var.ecosystem_token_url
+          ECOSYSTEM_SCOPES        = "ecosystem/entitlements.read ecosystem/wallet.read ecosystem/wallet.write"
+          MANAGER_M2M_CLIENT_ID   = var.manager_m2m_client_id
+          PRODUCT_KEY             = "kscorm"
+          INSTALLATION_ID         = "kscorm"
+          INSTALLATION_REGION     = var.region
+          INSTALLATION_DOMAINS    = var.web_domain
+          ECOSYSTEM_SELF_REGISTER = "true"
+          ENTITLEMENT_ENFORCE     = var.entitlement_enforce_fallback
+          WALLET_ENABLED          = "false"
         }
 
         runtime_environment_secrets = {
-          DATABASE_URL           = aws_secretsmanager_secret.database_url.arn
-          AUTH_JWT_SECRET        = aws_secretsmanager_secret.jwt_auth.arn
-          INTEGRATION_JWT_SECRET = aws_secretsmanager_secret.jwt_integration.arn
-          SSO_USER_JWT_SECRET    = aws_secretsmanager_secret.jwt_sso_user.arn
-          UNSPLASH_ACCESS_KEY    = aws_secretsmanager_secret.unsplash.arn
+          DATABASE_URL              = aws_secretsmanager_secret.database_url.arn
+          AUTH_JWT_SECRET           = aws_secretsmanager_secret.jwt_auth.arn
+          INTEGRATION_JWT_SECRET    = aws_secretsmanager_secret.jwt_integration.arn
+          SSO_USER_JWT_SECRET       = aws_secretsmanager_secret.jwt_sso_user.arn
+          UNSPLASH_ACCESS_KEY       = aws_secretsmanager_secret.unsplash.arn
+          MANAGER_M2M_CLIENT_SECRET = aws_secretsmanager_secret.manager_m2m.arn
         }
       }
     }

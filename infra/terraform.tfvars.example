@@ -26,3 +26,9 @@ stock_image_provider = "unsplash"
 # Impostati dalla CI a ogni deploy (tag immagine). In locale lascia "latest".
 api_image_tag = "latest"
 web_image_tag = "latest"
+
+# Ecosistema Knowkube (consumer: K Scorm -> Manager).
+# client_id M2M emesso da Manager (NON segreto). Il secret va in Secrets Manager
+# (scorm/MANAGER_M2M_CLIENT_SECRET), impostato via CLI, mai nel repo.
+manager_m2m_client_id = "<client_id M2M da Manager>"
+# Opzionali (hanno default): manager_url, ecosystem_token_url, entitlement_enforce_fallback

@@ -83,12 +83,11 @@ data "aws_iam_policy_document" "api_permissions" {
     resources = ["*"]
   }
 
-  # Cognito: gestione utenti (inviti) nel solo user pool dell'app.
-  statement {
-    sid       = "CognitoAdmin"
-    actions   = ["cognito-idp:AdminCreateUser", "cognito-idp:AdminDeleteUser"]
-    resources = [aws_cognito_user_pool.main.arn]
-  }
+  # NB: nessun permesso diretto su Cognito. Come prodotto d'ecosistema, K Scorm
+  # non crea/elimina utenti nel pool (è di Manager): l'identità applicativa è nel
+  # suo DB (JIT provisioning al primo login). Il provisioning degli owner nel
+  # pool lo fa Manager. La vecchia statement "CognitoAdmin" (AdminCreateUser/
+  # AdminDeleteUser per gli inviti) è stata rimossa con l'onboarding ecosistema.
 
   # Lettura dei soli segreti del progetto.
   statement {
