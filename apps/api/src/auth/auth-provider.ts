@@ -10,6 +10,12 @@ export interface VerifiedClaims {
   /** Tenant a cui appartiene il token. */
   tenantId: string;
   email?: string;
+  /**
+   * Ruolo d'ecosistema grezzo dal claim (`custom:eco_role`, fallback
+   * `custom:role`/`role`), non ancora mappato sul ruolo interno. Usato dal JIT
+   * provisioning. Undefined se assente.
+   */
+  ecoRole?: string;
   /** Claim grezzi, per usi futuri. */
   raw: Record<string, unknown>;
 }

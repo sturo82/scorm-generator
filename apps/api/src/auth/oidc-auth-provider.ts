@@ -99,12 +99,26 @@ export class OidcAuthProvider implements AuthProvider {
       subject,
       tenantId,
       email: typeof payload.email === 'string' ? payload.email : undefined,
+      ecoRole: this.resolveEcoRole(payload),
       raw: payload,
     };
   }
 
   private resolveTenant(payload: Record<string, unknown>): string | undefined {
     for (const claim of this.tenantClaims) {
+      const value = payload[claim];
+      if (typeof value === 'string' && value.length > 0) return value;
+    }
+    return undefined;
+  }
+
+  /**
+   * Ruolo d'ecosistema: preferisce `custom:eco_role`, con fallback a
+   * `custom:role`/`role` finché Manager non emette il nuovo claim. Il mapping sul
+   * ruolo interno avviene a valle (lato prodotto), non qui.
+   */
+  private resolveEcoRole(payload: Record<string, unknown>): string | undefined {
+    for (const claim of ['custom:eco_role', 'custom:role', 'role']) {
       const value = payload[claim];
       if (typeof value === 'string' && value.length > 0) return value;
     }

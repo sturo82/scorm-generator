@@ -9,6 +9,8 @@ import {
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { UserTokenService } from '../sso/user-token.service.js';
+import { EntitlementService } from '../ecosystem/entitlement.service.js';
+import { mapEcoRoleToInternal } from '../ecosystem/eco-role.js';
 import { AUTH_PROVIDER, type AuthProvider } from './auth-provider.js';
 import { AUTH_CONTEXT_KEY, type AuthContext } from './auth-context.js';
 import { IS_PUBLIC_KEY } from './public.decorator.js';
@@ -34,6 +36,7 @@ export class AuthGuard implements CanActivate {
     @Inject(AUTH_PROVIDER) private readonly auth: AuthProvider,
     private readonly prisma: PrismaService,
     private readonly userTokens: UserTokenService,
+    private readonly entitlements: EntitlementService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -54,7 +57,7 @@ export class AuthGuard implements CanActivate {
     //  2) il provider configurato (dev/jwt/oidc).
     // Il token SSO si riconosce da un verify che va a buon fine con la sua chiave;
     // in caso contrario si ricade sul provider principale.
-    let claims: { subject: string; tenantId: string; email?: string };
+    let claims: { subject: string; tenantId: string; email?: string; ecoRole?: string };
     const ssoClaims = this.tryVerifySsoToken(token);
     if (ssoClaims) {
       claims = ssoClaims;
@@ -65,6 +68,13 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException('Token di accesso non valido');
       }
     }
+
+    // Gate di entitlement d'ecosistema: la company (= tenant, slug dal token)
+    // deve avere un contratto attivo per K Scorm. Controllato da Manager (fonte
+    // di verità) PRIMA di risolvere/creare l'utente, così il JIT non crea utenti
+    // per company non abilitate. No-op se ENTITLEMENT_ENFORCE=off; in 'hard'
+    // lancia 403; fail-open su errori infrastrutturali (vedi service).
+    await this.entitlements.assertCompanyEntitled(claims.tenantId);
 
     let user = await this.prisma.user.findUnique({
       where: {
@@ -77,6 +87,19 @@ export class AuthGuard implements CanActivate {
     // frontend può lavorare contro l'API vera senza seed manuale.
     if (!user && this.auth.id === 'dev') {
       user = await this.provisionDevUser(claims.tenantId, claims.subject, claims.email);
+    }
+
+    // JIT provisioning d'ecosistema (solo provider OIDC): al primo accesso, dopo
+    // che il gate ha confermato l'entitlement, crea l'utente dai claim del token
+    // mappando l'eco-role sul ruolo interno. Così l'owner entra senza essere
+    // pre-creato. Non attivo in dev (gestito sopra) né per i token SSO.
+    if (!user && this.auth.id === 'oidc') {
+      user = await this.provisionEcosystemUser(
+        claims.tenantId,
+        claims.subject,
+        claims.email,
+        claims.ecoRole,
+      );
     }
 
     if (!user) {
@@ -114,6 +137,48 @@ export class AuthGuard implements CanActivate {
           email: email ?? 'dev@example.test',
           displayName: 'Dev Owner',
           role: 'OWNER',
+        },
+      });
+    });
+    return this.prisma.user.findUnique({
+      where: { tenantId_externalId: { tenantId, externalId } },
+      select: { id: true, role: true, tenantId: true },
+    });
+  }
+
+  /**
+   * JIT provisioning d'ecosistema (provider OIDC). Al primo accesso di un owner
+   * la cui company è stata confermata attiva dal gate, crea tenant (se assente) e
+   * utente dai claim del token. Il ruolo interno deriva dal mapping dell'eco-role
+   * (`custom:eco_role`), con default sicuro VIEWER. Mirror del flusso di
+   * seed-owner.mjs (RLS set_config + plan + tenant + user), reso idempotente.
+   */
+  private async provisionEcosystemUser(
+    tenantId: string,
+    externalId: string,
+    email: string | undefined,
+    ecoRole: string | undefined,
+  ) {
+    const role = mapEcoRoleToInternal(ecoRole);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_tenant', ${tenantId}, true)`;
+      const existingTenant = await tx.tenant.findUnique({ where: { id: tenantId } });
+      if (!existingTenant) {
+        // Company nuova (pilota/cliente interno): crea un piano di default.
+        const plan = await tx.plan.create({
+          data: { tier: 'ENTERPRISE', limits: {}, featureFlags: {} },
+        });
+        await tx.tenant.create({ data: { id: tenantId, name: tenantId, planId: plan.id } });
+      }
+      await tx.user.upsert({
+        where: { tenantId_externalId: { tenantId, externalId } },
+        update: {},
+        create: {
+          tenantId,
+          externalId,
+          email: email ? email.toLowerCase() : `${externalId}@no-email.local`,
+          displayName: email ?? 'Owner',
+          role,
         },
       });
     });

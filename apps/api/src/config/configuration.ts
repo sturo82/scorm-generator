@@ -63,6 +63,47 @@ export interface AppConfig {
     /** Ruolo massimo che una terza parte può assegnare via SSO (mai OWNER). */
     maxRole: 'ADMIN' | 'EDITOR' | 'VIEWER';
   };
+  /**
+   * Ecosistema Knowkube (lato CONSUMER): K Scorm consuma i servizi di Manager
+   * (fonte di verità per entitlement e wallet) via OAuth2 client-credentials.
+   * Separato da `integration`/`sso`, che sono il lato SERVER (K Scorm come IdP
+   * per terze parti). Default: disabilitato/soft, così è sicuro in produzione
+   * finché Manager non espone/attiva gli endpoint `cognito`.
+   */
+  ecosystem: {
+    /** URL base dell'API Manager, es. https://manager.knowkube.com/api/ecosystem */
+    managerUrl?: string;
+    /** Endpoint token OAuth2 (Cognito), es. https://auth.knowkube.com/oauth2/token */
+    tokenUrl?: string;
+    /** Credenziali M2M (client-credentials) emesse da Manager. */
+    m2mClientId?: string;
+    m2mClientSecret?: string;
+    /** Scope richiesti al token (CSV). */
+    scopes: string;
+    /** Chiave canonica del prodotto nell'ecosistema (es. "kscorm"). */
+    productKey: string;
+    /** Id univoco dell'installazione (mono-prodotto: = productKey). */
+    installationId: string;
+    /** Region dell'installazione (per il self-register). */
+    installationRegion: string;
+    /** Domini serviti dall'installazione (CSV), per branding/hub su Manager. */
+    installationDomains: string[];
+    /** Abilita il self-register all'avvio (POST /installations/self). */
+    selfRegisterEnabled: boolean;
+    /**
+     * Gate di entitlement:
+     *  - 'off'  → nessuna verifica (default);
+     *  - 'soft' → verifica ma non blocca (consente + log warning su errori);
+     *  - 'hard' → nega l'accesso se la company non ha contratto attivo/grace.
+     */
+    entitlementEnforce: 'off' | 'soft' | 'hard';
+    /** TTL (secondi) della cache entitlement per company. */
+    entitlementCacheTtlSec: number;
+    /** Abilita hold/capture/release del wallet (feature a consumo). */
+    walletEnabled: boolean;
+    /** Timeout (ms) delle chiamate HTTP verso Manager. */
+    httpTimeoutMs: number;
+  };
   /** URL base della web app (per i redirect SSO documentati). */
   webAppUrl: string;
   /** Origini CORS consentite (CSV). */
@@ -184,6 +225,31 @@ export function loadConfiguration(): AppConfig {
       userTokenTtlSec: Number(env('SSO_USER_TOKEN_TTL_SEC', '28800')),
       ticketTtlSec: Number(env('SSO_TICKET_TTL_SEC', '60')),
       maxRole: env('SSO_MAX_ROLE', 'ADMIN') as AppConfig['sso']['maxRole'],
+    },
+    ecosystem: {
+      managerUrl: process.env['MANAGER_URL'],
+      tokenUrl: process.env['ECOSYSTEM_TOKEN_URL'],
+      m2mClientId: process.env['MANAGER_M2M_CLIENT_ID'],
+      m2mClientSecret: process.env['MANAGER_M2M_CLIENT_SECRET'],
+      scopes: env(
+        'ECOSYSTEM_SCOPES',
+        'ecosystem/entitlements.read ecosystem/wallet.read ecosystem/wallet.write',
+      ),
+      productKey: env('PRODUCT_KEY', 'kscorm'),
+      installationId: env('INSTALLATION_ID', env('PRODUCT_KEY', 'kscorm')),
+      installationRegion: env('INSTALLATION_REGION', env('AWS_REGION', 'eu-west-1')),
+      installationDomains: env('INSTALLATION_DOMAINS', '')
+        .split(',')
+        .map((d) => d.trim())
+        .filter(Boolean),
+      selfRegisterEnabled: env('ECOSYSTEM_SELF_REGISTER', 'false') === 'true',
+      entitlementEnforce: env(
+        'ENTITLEMENT_ENFORCE',
+        'off',
+      ) as AppConfig['ecosystem']['entitlementEnforce'],
+      entitlementCacheTtlSec: Number(env('ENTITLEMENT_CACHE_TTL_SEC', '60')),
+      walletEnabled: env('WALLET_ENABLED', 'false') === 'true',
+      httpTimeoutMs: Number(env('ECOSYSTEM_HTTP_TIMEOUT_MS', '5000')),
     },
     webAppUrl: env('WEB_APP_URL', 'http://localhost:3100'),
     corsOrigins: env('CORS_ORIGINS', 'http://localhost:3100')

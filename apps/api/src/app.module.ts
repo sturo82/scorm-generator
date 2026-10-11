@@ -22,6 +22,7 @@ import { VideosModule } from './videos/videos.module.js';
 import { StockImagesModule } from './stock-images/stock-images.module.js';
 import { IntegrationModule } from './integration/integration.module.js';
 import { SsoModule } from './sso/sso.module.js';
+import { EcosystemModule } from './ecosystem/ecosystem.module.js';
 import { HealthController } from './health/health.controller.js';
 
 @Module({
@@ -51,6 +52,7 @@ import { HealthController } from './health/health.controller.js';
     StockImagesModule,
     IntegrationModule,
     SsoModule,
+    EcosystemModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
