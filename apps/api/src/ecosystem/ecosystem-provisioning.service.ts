@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import type { AppConfig } from '../config/configuration.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { EcosystemCredentialsService } from './ecosystem-credentials.service.js';
+import { EcosystemHttpService } from './ecosystem-http.service.js';
 import { EcosystemSettingsService } from './ecosystem-settings.service.js';
 import { buildSignedStsRequest } from './sts-request.js';
 
@@ -76,6 +77,7 @@ export class EcosystemProvisioningService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly settings: EcosystemSettingsService,
     private readonly credentials: EcosystemCredentialsService,
+    private readonly http: EcosystemHttpService,
   ) {
     this.cfg = config.get('ecosystem', { infer: true });
     this.secrets = new SecretsManagerClient({ region: this.cfg.installationRegion });
@@ -87,15 +89,42 @@ export class EcosystemProvisioningService implements OnModuleInit {
       this.logger.warn('Self-register abilitato ma MANAGER_URL assente: salto onboarding');
       return;
     }
-    // Se già provisionati, carica il kit persistito nelle settings runtime e basta.
+    // Se già provisionati, carica il kit persistito nelle settings runtime, poi
+    // rimanda un self-register "di refresh" (heartbeat) via Bearer M2M per
+    // aggiornare i metadati lato Manager — es. la card dell'hub. Idempotente e
+    // non bloccante: Manager aggiorna lastSeenAt + card, senza ricreare nulla.
     const existing = await this.loadPersisted();
     if (existing?.status === 'provisioned') {
       this.applySettings(existing.enforce, existing.walletEnabled);
       this.logger.log('Installazione già provisionata: kit caricato dal DB');
+      void this.refreshViaBearer();
       return;
     }
-    // Non blocca il boot: avvia il tentativo in background.
+    // Non ancora provisionati: self-register con workload-identity (SigV4), in
+    // background, con retry su 202.
     void this.attempt();
+  }
+
+  /**
+   * Refresh dei metadati per un'installazione GIÀ provisionata: self-register
+   * via Bearer M2M (dual-auth lato Manager, giri successivi). Aggiorna card e
+   * lastSeenAt, non ricrea credenziali. Best-effort: non lancia, non blocca.
+   */
+  private async refreshViaBearer(): Promise<void> {
+    try {
+      await this.http.post('installations/self', {
+        product: this.cfg.productKey,
+        installationId: this.cfg.installationId,
+        region: this.cfg.installationRegion,
+        domains: this.cfg.installationDomains,
+        ecoRoleMap: KSCORM_ECO_ROLE_MAP,
+        card: this.buildCard(),
+      });
+      this.logger.log('Self-register refresh (Bearer): metadati/card aggiornati su Manager');
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Self-register refresh non riuscito: ${reason} (ignorato)`);
+    }
   }
 
   /** Un tentativo di self-register workload-auth; schedula un retry su 202. */
