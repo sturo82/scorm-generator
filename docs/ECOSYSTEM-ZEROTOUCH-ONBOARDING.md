@@ -103,15 +103,23 @@ Per workload FUORI da AWS (altro cloud/on-prem) o contesti con token d'identità
 contro l'issuer. Si aggiunge come nuova implementazione della stessa astrazione,
 senza modificare il contratto dell'endpoint.
 
-**Allowlist (controllo d'ammissione):** Manager tiene una lista di **ARN di
-ruolo autorizzati** a provisionare (o un pattern, es.
-`arn:aws:iam::<account>:role/scorm-*`). Solo i workload in allowlist possono
-auto-provisionarsi. Aggiungere un prodotto nuovo = aggiungere il suo ARN
-all'allowlist (unica azione umana, una riga, lato Manager — non lato prodotto).
+**Controllo d'ammissione — trust-on-first-use con approvazione (nessun ARN da
+comunicare in anticipo).** Il prodotto NON comunica il proprio ARN a voce né lo
+registra prima. Al primo self-register firmato, Manager **scopre** l'ARN dalla
+firma SigV4. Se quel workload non è ancora autorizzato, Manager:
+- registra la richiesta come **in attesa** e risponde `202 pending_approval`
+  (NON è un errore: il prodotto continua a ritentare, non bloccante);
+- mostra la richiesta nella console Manager → un operatore **verifica l'ARN e
+  approva con un clic**.
 
-> Nota: questo è l'UNICO atto "manuale" residuo, ed è su Manager, non sul
-> prodotto. Il prodotto resta a zero-touch. L'allowlist si può anche
-> parametrizzare (pattern per nome ruolo) per azzerare anche questo.
+Al **tentativo successivo** dopo l'approvazione, lo stesso self-register ritorna
+il **provisioning kit** completo. Nessun ARN comunicato a mano, nessuna
+credenziale passata a mano: l'unica azione umana è un clic di approvazione in
+console, lato Manager.
+
+> Perché è sicuro: l'ARN non è auto-dichiarato dal prodotto (falsificabile) ma
+> **derivato dalla firma** (solo chi detiene il ruolo può produrla). L'operatore
+> approva un'identità verificata, non una stringa inviata dal client.
 
 ---
 
@@ -119,8 +127,8 @@ all'allowlist (unica azione umana, una riga, lato Manager — non lato prodotto)
 
 ```
 POST https://manager.knowkube.com/api/ecosystem/installations/self
-Auth: firma workload-identity (SigV4 / token), NON Bearer M2M al primo giro.
-      Nei giri successivi il prodotto può usare la sua M2M (Bearer) già ottenuta.
+Auth: firma workload-identity (SigV4 / token) nel campo `stsRequest`, NON Bearer
+      M2M al primo giro. Nei giri successivi il prodotto usa la M2M (Bearer).
 
 body {
   "product": "kscorm",                       // chiave prodotto (enum ecosistema)
@@ -129,14 +137,26 @@ body {
   "domains": ["architect.knowkube.com"],     // per callback OIDC e branding/hub
   "ecoRoleMap": {                            // opzionale, solo per display su Manager
     "OWNER":"OWNER","ADMIN":"ADMIN","MEMBER":"EDITOR","VIEWER":"VIEWER"
+  },
+  "stsRequest": {                            // richiesta sts:GetCallerIdentity PRE-FIRMATA
+    "url": "https://sts.eu-west-1.amazonaws.com/...",   // Action=GetCallerIdentity, firmata SigV4
+    "method": "POST",
+    "headers": { "...": "..." },             // Authorization SigV4, X-Amz-Date, host STS
+    "body": "Action=GetCallerIdentity&Version=2011-06-15"
   }
 }
 ```
+Manager ri-esegue `stsRequest` verso STS, ottiene l'ARN del chiamante e decide
+(approvato → kit; non ancora → 202). Il prodotto NON invia il proprio ARN: lo
+deriva Manager dalla firma.
 
 **Comportamento di Manager (idempotente su `installationId`):**
 
-1. **Verifica identità** (sezione 2) → ricava l'ARN del workload; se non in
-   allowlist → `403 workload_not_authorized`.
+1. **Verifica identità** (sezione 2) → ri-esegue `stsRequest`, ricava l'ARN del
+   workload. Se il workload **non è ancora approvato** → registra la richiesta
+   come *pending* e risponde **`202 pending_approval`** (non errore; il prodotto
+   ritenta). Un operatore approva con un clic in console. Al tentativo
+   successivo, approvato, si prosegue dal punto 2.
 2. Se l'`installationId` è **nuovo**, crea su Cognito (è owner del pool):
    - **client web OIDC** (public/PKCE, no secret): callback
      `https://<domain>/auth/callback`, logout `https://<domain>/login`, scope
@@ -171,6 +191,14 @@ body {
 }
 ```
 
+**In attesa di approvazione (workload non ancora approvato):**
+```
+→ 202 { "status": "pending_approval", "retryAfterSec": 30 }
+```
+NON è un errore. Il prodotto **ritenta** periodicamente (es. ogni `retryAfterSec`)
+in background, senza bloccare l'avvio. Appena un operatore approva in console, il
+tentativo successivo restituisce `200` col provisioning kit.
+
 **Il prodotto, ricevuto il kit:**
 - **persiste** `m2m.clientId`/`clientSecret` nel proprio secret store (una volta);
 - usa `oidc.clientId` come **audience** per validare gli ID token, e lo serve al
@@ -187,10 +215,12 @@ body {
 [Deploy prodotto]  (solo immagine + ruolo IAM; nessuna credenziale iniettata)
       │
       ▼
-1. Prodotto → POST /installations/self   (firmato workload-identity)
-2. Manager verifica ARN in allowlist
-3. Manager crea client OIDC + client M2M + Installation (se nuovi)
-4. Manager → risponde con provisioning kit (oidc + m2m + settings)
+1. Prodotto → POST /installations/self   (stsRequest firmato SigV4)
+2. Manager ri-esegue stsRequest → ARN del chiamante
+   └─ se NON approvato → 202 pending_approval → il prodotto RITENTA (non bloccante)
+                         Manager: operatore approva con un clic in console
+3. (dopo approvazione) Manager crea client OIDC + client M2M + Installation (se nuovi)
+4. Manager → risponde 200 con provisioning kit (oidc + m2m + settings)
 5. Prodotto persiste M2M, si auto-configura (audience, issuer, enforce, wallet)
       │
       ▼  (operazione-dati su Manager, quando vuoi attivare il cliente)
@@ -223,10 +253,15 @@ Installation
   status           available|...
   firstSeenAt, lastSeenAt
 
-ProvisioningAllowlist
-  pattern          ARN o pattern autorizzato (es. arn:...:role/scorm-*)
-  note
+ProvisioningRequest  (trust-on-first-use: richieste viste, da approvare)
+  workloadArn      ARN derivato dalla firma SigV4 (NON auto-dichiarato)
+  product, installationId, domains[]
+  status           pending | approved | rejected
+  firstSeenAt, decidedAt, decidedBy
 ```
+L'approvazione è un clic in console (status pending→approved). Opzionale: pattern
+di auto-approvazione (es. `arn:...:role/scorm-*`) per saltare il clic sui
+workload fidati.
 
 Entitlement/Wallet/Contract/Owner restano come già specificato (non cambiano).
 
@@ -260,7 +295,7 @@ Entitlement/Wallet/Contract/Owner restano come già specificato (non cambiano).
 | Situazione | HTTP | Azione |
 |---|---|---|
 | Firma workload assente/non valida | 401 | il prodotto non può provisionare |
-| ARN non in allowlist | 403 `workload_not_authorized` | aggiungere l'ARN su Manager |
+| Workload non ancora approvato | **202 `pending_approval`** | NON è errore: il prodotto ritenta; operatore approva con un clic |
 | `product` non valido | 400 `invalid_product` | enum: kscorm\|klive\|kdataroom\|ondemand |
 | `installationId` mancante | 400 `missing_installation_id` | — |
 | Installazione già esistente | 200 | update metadati, nessuna ricreazione |
@@ -272,13 +307,15 @@ Entitlement/Wallet/Contract/Owner restano come già specificato (non cambiano).
 
 1. Verifica **workload identity** sul self-register tramite **strategia
    pluggabile** (astrazione "verifica workload"), con prima implementazione
-   **SigV4+GetCallerIdentity** e difese anti-SSRF/anti-replay (§2); **allowlist**
-   di ARN/pattern. L'endpoint è **dual-auth**: workload-identity al primo giro,
-   Bearer M2M ai giri successivi (retro-compatibile col test Bearer esistente).
+   **SigV4+GetCallerIdentity** e difese anti-SSRF/anti-replay (§2);
+   **trust-on-first-use**: ARN derivato dalla firma, `202 pending_approval` +
+   approvazione con un clic in console (nessun ARN comunicato in anticipo).
+   L'endpoint è **dual-auth**: workload-identity al primo giro, Bearer M2M ai
+   giri successivi (retro-compatibile col test Bearer esistente).
 2. Auto-creazione idempotente su Cognito di **client web OIDC** + **client M2M**
    per installazione nuova, con callback/logout derivati dai `domains`.
 3. Risposta con **provisioning kit** completo (oidc + m2m + settings) come §3.
-4. Modello dati **Installation** + **ProvisioningAllowlist** (§5).
+4. Modello dati **Installation** + **ProvisioningRequest** (pending/approved, §5).
 5. Idempotenza + **rotazione** secret M2M (§6).
 6. (Consigliato) allowlist dei `client_id` ammessi sulle API ecosistema.
 7. Test: prodotto nuovo che si auto-provisiona da zero (solo ruolo IAM);
@@ -287,13 +324,15 @@ Entitlement/Wallet/Contract/Owner restano come già specificato (non cambiano).
 
 ### Consegna a fasi (committabili separatamente)
 Per tenere il lavoro verificabile, l'implementazione Manager può procedere così:
-- **Fase 1:** modelli (`Installation` arricchita + `ProvisioningAllowlist`) +
-  migrazioni + admin/UI minima per gestire l'allowlist.
+- **Fase 1:** modelli (`Installation` arricchita + `ProvisioningRequest`
+  pending/approved) + migrazioni + admin/UI minima per approvare le richieste con
+  un clic.
 - **Fase 2:** auto-provisioning Cognito (crea client OIDC + M2M al primo
   self-register) + provisioning kit nella risposta, ancora dietro **Bearer**
   (testa la creazione risorse senza SigV4).
-- **Fase 3:** auth **workload-identity** (SigV4+GetCallerIdentity) con allowlist
-  ARN, dietro l'**astrazione pluggabile**, in **dual-auth** sull'endpoint.
+- **Fase 3:** auth **workload-identity** (SigV4+GetCallerIdentity) con
+  trust-on-first-use (`202 pending_approval` + approvazione in console), dietro
+  l'**astrazione pluggabile**, in **dual-auth** sull'endpoint.
 - **Fase 4:** rotazione M2M (`rotateM2m`) + allowlist `client_id` sulle API
   ecosistema + documentazione.
 
