@@ -183,6 +183,15 @@ deriva Manager dalla firma.
    - **client web OIDC** (public/PKCE, no secret): callback
      `https://<domain>/auth/callback`, logout `https://<domain>/login`, scope
      `openid email profile`, per ciascun dominio in `domains`;
+     **⚠️ OBBLIGATORIO: associare al client la hosted UI / Managed Login** —
+     identity provider `COGNITO` abilitato per la hosted UI + un **Managed Login
+     branding style** assegnato a QUESTO client. Senza, l'authorize del client
+     redirige alla pagina di login del dominio ma questa risponde **403** (manca
+     la UI configurata). Sintomo tipico: il login **dall'hub funziona** (sessione
+     di pool già attiva → SSO silenzioso, UI mai mostrata) ma il **login diretto
+     fallisce** (nessuna sessione → serve la hosted UI, che dà 403). Il branding
+     può essere condiviso d'ecosistema (stesso style per tutti i client), ma
+     l'**associazione al client va fatta a OGNI client creato**.
    - **client M2M** dedicato (grant `client_credentials`) con scope
      `ecosystem/entitlements.read ecosystem/wallet.read ecosystem/wallet.write`;
    - riga **Installation** (stato: *available*, non attiva per nessuna company).
@@ -321,6 +330,7 @@ Entitlement/Wallet/Contract/Owner restano come già specificato (non cambiano).
 | `product` non valido | 400 `invalid_product` | enum: kscorm\|klive\|kdataroom\|ondemand |
 | `installationId` mancante | 400 `missing_installation_id` | — |
 | Installazione già esistente | 200 | update metadati, nessuna ricreazione |
+| Login diretto → pagina `/login` del dominio dà **403** | 403 (hosted UI) | manca la **hosted UI/Managed Login branding** sul client OIDC: associarla al client (vedi §3.2). L'hub funziona lo stesso, il login diretto no. |
 | Manager irraggiungibile al boot | — | il prodotto parte comunque e ritenta (non bloccante) |
 
 ---
@@ -355,7 +365,10 @@ M2M (nuovo secret nel kit una volta), invalida il precedente.
    L'endpoint è **dual-auth**: workload-identity al primo giro, Bearer M2M ai
    giri successivi (retro-compatibile col test Bearer esistente).
 2. Auto-creazione idempotente su Cognito di **client web OIDC** + **client M2M**
-   per installazione nuova, con callback/logout derivati dai `domains`.
+   per installazione nuova, con callback/logout derivati dai `domains`, **e
+   associazione della hosted UI / Managed Login branding al client web OIDC**
+   (identity provider `COGNITO` + branding style), altrimenti il login diretto
+   dà 403 (vedi §3.2 e §7).
 3. Risposta con **provisioning kit** completo (oidc + m2m + settings) come §3.
 4. Modello dati **Installation** + **ProvisioningRequest** (pending/approved, §5).
 5. Idempotenza + **rotazione** secret M2M (§6).
