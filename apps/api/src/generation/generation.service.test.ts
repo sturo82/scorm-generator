@@ -104,6 +104,14 @@ describe('GenerationService (async)', () => {
     await service.handleJob({ type: 'course.generate_outline', jobId: 'job1', courseId: 'c1' }, ctx);
     // Salva l'outline sul corso.
     expect(courseUpdate).toHaveBeenCalled();
+    // I flag dei test sono FORZATI dal brief (requestedAssessments: ['final']),
+    // non lasciati al modello: finale sì, intermedi no su tutti i moduli.
+    const savedOutline = courseUpdate.mock.calls[0]?.[0]?.data?.outline as {
+      hasFinalAssessment: boolean;
+      modules: Array<{ hasIntermediateAssessment: boolean }>;
+    };
+    expect(savedOutline.hasFinalAssessment).toBe(true);
+    expect(savedOutline.modules.every((m) => m.hasIntermediateAssessment === false)).toBe(true);
     // Materializzazione automatica.
     expect(materializeOutline).toHaveBeenCalledWith('t1', 'c1');
     // Metering del consumo (input + output token).

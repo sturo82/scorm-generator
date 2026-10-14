@@ -391,7 +391,22 @@ export class GenerationService {
       // JSON tool-use (stop=max_tokens) lasciando `modules` incompleto/assente.
       maxTokens: 8000,
     });
-    const outline = CourseOutline.parse(JSON.parse(result.text));
+    const generated = CourseOutline.parse(JSON.parse(result.text));
+    // I flag dei test NON sono una scelta libera del modello: derivano dal brief.
+    // Il prompt chiede all'LLM di impostarli "secondo i test richiesti", ma il
+    // modello a volte li applica a casaccio (es. un solo modulo). Qui li FORZIAMO
+    // in modo deterministico: se il brief richiede gli intermedi, OGNI modulo ne
+    // ha uno; se richiede il finale, il corso ha il test finale.
+    const wantsIntermediate = brief.requestedAssessments.includes('intermediate');
+    const wantsFinal = brief.requestedAssessments.includes('final');
+    const outline: CourseOutlineType = {
+      ...generated,
+      hasFinalAssessment: wantsFinal,
+      modules: generated.modules.map((m) => ({
+        ...m,
+        hasIntermediateAssessment: wantsIntermediate,
+      })),
+    };
     await this.recordUsage({
       tenantId: ctx.tenant.tenantId,
       courseId,
@@ -709,8 +724,25 @@ export class GenerationService {
     jobId?: string,
   ): Promise<void> {
     const course = await this.requireCourse(ctx.tenant.tenantId, courseId);
-    const parsed = course.outline ? CourseOutline.safeParse(course.outline) : null;
-    if (!parsed?.success) return;
+
+    // I test da generare derivano dal BRIEF (la richiesta esplicita dell'utente),
+    // non dai flag per-modulo dell'outline: il brief chiede "intermedi" e/o
+    // "finale" per l'intero corso e non c'è un controllo per-modulo. Se richiesti
+    // gli intermedi, se ne genera uno per OGNI modulo; se richiesto il finale,
+    // uno per il corso. (L'outline resta la fonte per titoli/lezioni.)
+    const briefParsed = course.brief ? Brief.safeParse(course.brief) : null;
+    const requested = briefParsed?.success ? briefParsed.data.requestedAssessments : [];
+    const outlineParsed = course.outline ? CourseOutline.safeParse(course.outline) : null;
+    // Fallback ai flag dell'outline per corsi senza brief leggibile.
+    const wantsIntermediate =
+      requested.includes('intermediate') ||
+      (!!outlineParsed?.success && outlineParsed.data.modules.some((m) => m.hasIntermediateAssessment));
+    const wantsFinal =
+      requested.includes('final') || (!!outlineParsed?.success && outlineParsed.data.hasFinalAssessment);
+    if (!wantsIntermediate && !wantsFinal) return;
+
+    const courseTitle = outlineParsed?.success ? outlineParsed.data.title : course.title;
+    const outlineModules = outlineParsed?.success ? outlineParsed.data.modules : [];
 
     // Assessment già presenti (non duplichiamo).
     const existing = await this.prisma.assessment.findMany({
@@ -726,7 +758,7 @@ export class GenerationService {
     const modules = await this.prisma.module.findMany({
       where: { courseId },
       orderBy: { position: 'asc' },
-      select: { id: true, title: true, lessons: { select: { blocks: true } } },
+      select: { id: true, title: true, lessons: { select: { title: true, blocks: true } } },
     });
 
     // Una lezione "ha contenuti" se il suo array blocks (JSONB) non è vuoto.
@@ -746,34 +778,36 @@ export class GenerationService {
     }> = [];
 
     let skippedForContent = 0;
-    for (let i = 0; i < parsed.data.modules.length; i++) {
-      const mo = parsed.data.modules[i]!;
-      if (mo.hasIntermediateAssessment && modules[i]) {
-        const key = `INTERMEDIATE:${modules[i]!.id}`;
-        if (!existingSet.has(key)) {
-          // Salta se il modulo non ha ancora contenuti (verranno generati prima).
-          if (!moduleHasContent(i)) {
-            skippedForContent++;
-            continue;
-          }
-          tasks.push({
-            scope: 'intermediate',
-            focus: `Modulo "${mo.title}": ${mo.lessons.map((l) => l.title).join(', ')}`,
-            moduleTitle: mo.title,
-            // Collega il test intermedio al suo modulo: senza moduleId lo step
-            // non entra nella sequenza del player e il gating non si attiva.
-            moduleId: modules[i]!.id,
-          });
+    if (wantsIntermediate) {
+      for (let i = 0; i < modules.length; i++) {
+        const mod = modules[i]!;
+        const key = `INTERMEDIATE:${mod.id}`;
+        if (existingSet.has(key)) continue;
+        // Salta se il modulo non ha ancora contenuti (verranno generati prima).
+        if (!moduleHasContent(i)) {
+          skippedForContent++;
+          continue;
         }
+        // Titoli lezione: preferisci quelli del DB (allineati ai contenuti).
+        const lessonTitles = mod.lessons.map((l) => l.title).filter(Boolean);
+        tasks.push({
+          scope: 'intermediate',
+          focus: `Modulo "${mod.title}": ${lessonTitles.join(', ')}`,
+          moduleTitle: mod.title,
+          // Collega il test intermedio al suo modulo: senza moduleId lo step
+          // non entra nella sequenza del player e il gating non si attiva.
+          moduleId: mod.id,
+        });
       }
     }
     // Il test finale copre l'intero corso: generabile solo se TUTTE le lezioni
     // hanno contenuti.
-    if (parsed.data.hasFinalAssessment && !existingSet.has('FINAL:final')) {
+    if (wantsFinal && !existingSet.has('FINAL:final')) {
       if (courseFullyHasContent) {
+        const titles = (outlineModules.length ? outlineModules.map((m) => m.title) : modules.map((m) => m.title)).join(', ');
         tasks.push({
           scope: 'final',
-          focus: `Intero corso "${parsed.data.title}": ${parsed.data.modules.map((m) => m.title).join(', ')}`,
+          focus: `Intero corso "${courseTitle}": ${titles}`,
           moduleTitle: '',
         });
       } else {
@@ -824,26 +858,56 @@ export class GenerationService {
       documentIds: brief?.success ? brief.data.knowledgeDocIds : undefined,
     });
 
-    const result = await this.llm.generate({
-      system: systemPrompt(voice),
-      messages: [
-        {
-          role: 'user',
-          content: assessmentPrompt({
-            courseTitle: course.title,
-            scope,
-            focus,
-            language: course.language,
-            context: formatContext(retrieved.chunks),
-          }),
-        },
-      ],
-      schema: assessmentJsonSchema as Record<string, unknown>,
-      temperature: 0.5,
-      // Margine ampio per evitare troncamenti del JSON tool-use con Sonnet 4.6.
-      maxTokens: 8000,
-    });
-    const assessment = Assessment.parse(JSON.parse(result.text));
+    // Un singolo tentativo: genera e valida l'assessment. Come per i contenuti,
+    // la chiamata è non deterministica e può produrre JSON malformato o non
+    // conforme (ZodError): errori RECUPERABILI con un nuovo tentativo.
+    const attempt = async (temperature: number): Promise<{ assessment: AssessmentType; result: LLMResult }> => {
+      const result = await this.llm.generate({
+        system: systemPrompt(voice),
+        messages: [
+          {
+            role: 'user',
+            content: assessmentPrompt({
+              courseTitle: course.title,
+              scope,
+              focus,
+              language: course.language,
+              context: formatContext(retrieved.chunks),
+            }),
+          },
+        ],
+        schema: assessmentJsonSchema as Record<string, unknown>,
+        temperature,
+        // Margine ampio per evitare troncamenti del JSON tool-use con Sonnet 4.6.
+        maxTokens: 8000,
+      });
+      if (result.finishReason === 'max_tokens') {
+        throw new Error('Generazione test troncata (limite token)');
+      }
+      const assessment = Assessment.parse(JSON.parse(result.text));
+      return { assessment, result };
+    };
+
+    // Retry automatico sugli errori recuperabili (fino a 3 tentativi), così
+    // l'utente non deve ritentare a mano un test fallito per variabilità LLM.
+    const MAX_ATTEMPTS = 3;
+    let success: { assessment: AssessmentType; result: LLMResult } | undefined;
+    let lastErr: unknown;
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      try {
+        success = await attempt(i === 0 ? 0.5 : 0.3);
+        if (i > 0) this.logger.log(`Assessment ${scope} "${focus.slice(0, 30)}": generato al tentativo ${i + 1}/${MAX_ATTEMPTS}`);
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (!isRecoverableGenerationError(err) || i === MAX_ATTEMPTS - 1) break;
+        this.logger.warn(
+          `Assessment ${scope}: tentativo ${i + 1}/${MAX_ATTEMPTS} fallito (${err instanceof Error ? err.message : 'errore'}), ritento…`,
+        );
+      }
+    }
+    if (!success) throw lastErr ?? new Error('Generazione test non riuscita');
+    const { assessment, result } = success;
     await this.recordUsage({
       tenantId: ctx.tenant.tenantId,
       courseId,
