@@ -5,6 +5,8 @@ import {
   INTERACTIONS_CSS,
   compileTheme,
   groupBlocksIntoConcepts,
+  courseLabels,
+  type CourseLabels,
   type Brand,
   type Block,
   type Assessment,
@@ -98,6 +100,10 @@ export function CoursePreview({ courseId }: { courseId: string }) {
     () => (brand.data ? compileTheme(toBrand(brand.data)) : null),
     [brand.data],
   );
+
+  // Etichette strutturali nella LINGUA DEL CORSO (non dell'app): nav, panoramiche,
+  // intro/esito test, ecc. Fallback inglese per lingue non gestite.
+  const labels = React.useMemo(() => courseLabels(course.data?.language), [course.data?.language]);
 
   // URL del logo del brand pronto per <img>: preferisce il valore risolto dal
   // server (logoDisplayUrl, signed URL per i loghi caricati); se assente, usa
@@ -244,7 +250,7 @@ export function CoursePreview({ courseId }: { courseId: string }) {
             />
           </span>
         )}
-        <ViewToggle value={view} onChange={setView} />
+        <ViewToggle value={view} onChange={setView} labels={labels} />
       </header>
 
       {/* Barra di avanzamento brandizzata (primario → accento). */}
@@ -264,6 +270,7 @@ export function CoursePreview({ courseId }: { courseId: string }) {
           steps={steps}
           currentStep={current}
           position={navPosition}
+          labels={labels}
           onSelect={(i) => setStepIdx(i)}
         />
 
@@ -271,20 +278,22 @@ export function CoursePreview({ courseId }: { courseId: string }) {
           {step ? (
             <>
               {step.kind === 'lesson' ? (
-                <LessonPreview key={step.lesson.id} step={step} view={view} />
+                <LessonPreview key={step.lesson.id} step={step} view={view} labels={labels} />
               ) : step.kind === 'course_overview' ? (
                 <CourseOverviewPreview
                   key="course-overview"
                   course={course.data}
                   modules={modules.data ?? []}
+                  labels={labels}
                 />
               ) : step.kind === 'assessment' ? (
-                <AssessmentPreview key={`assess-${step.assessment.id}`} courseId={courseId} step={step} />
+                <AssessmentPreview key={`assess-${step.assessment.id}`} courseId={courseId} step={step} labels={labels} />
               ) : (
                 <ModuleOverviewPreview
                   key={`module-overview-${step.module.id}`}
                   module={step.module}
                   moduleIndex={step.moduleIndex}
+                  labels={labels}
                 />
               )}
               <div className="mt-5 flex items-center justify-between gap-3">
@@ -294,10 +303,10 @@ export function CoursePreview({ courseId }: { courseId: string }) {
                   onClick={() => setStepIdx((i) => Math.max(0, i - 1))}
                   className="rounded-lg border bg-card px-4 py-2 text-sm font-semibold shadow-sm disabled:opacity-40"
                 >
-                  ‹ Precedente
+                  ‹ {labels.prev}
                 </button>
                 <span className="text-xs text-muted-foreground">
-                  {current + 1} di {steps.length}
+                  {labels.stepStatus(current + 1, steps.length)}
                 </span>
                 <button
                   type="button"
@@ -306,12 +315,12 @@ export function CoursePreview({ courseId }: { courseId: string }) {
                   className="rounded-lg px-4 py-2 text-sm font-semibold shadow-sm disabled:opacity-40"
                   style={{ background: BRAND_ACCENT_GRADIENT, color: 'var(--brand-on-primary, #fff)' }}
                 >
-                  Successivo ›
+                  {labels.next} ›
                 </button>
               </div>
             </>
           ) : (
-            <p className="text-sm text-muted-foreground">Nessuna lezione.</p>
+            <p className="text-sm text-muted-foreground">{labels.lessonEmpty}</p>
           )}
         </div>
       </div>
@@ -340,11 +349,13 @@ function CourseIndex({
   steps,
   currentStep,
   position = 'side',
+  labels,
   onSelect,
 }: {
   steps: PreviewStep[];
   currentStep: number;
   position?: 'side' | 'top';
+  labels: CourseLabels;
   onSelect: (stepIndex: number) => void;
 }) {
   const itemClass = (active: boolean, strong: boolean): string =>
@@ -365,7 +376,7 @@ function CourseIndex({
             return (
               <li key="course-overview">
                 <button type="button" onClick={() => onSelect(i)} aria-current={active ? 'true' : undefined} className={itemClass(active, true)} style={activeStyle(active)}>
-                  📋 Panoramica del corso
+                  📋 {labels.courseOverview}
                 </button>
               </li>
             );
@@ -410,7 +421,7 @@ function CourseIndex({
                 <span className={cn('grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold', active ? 'bg-white/25' : 'bg-amber-500/20 text-amber-700')} aria-hidden>
                   ?
                 </span>
-                <span className="truncate">{s.assessment.title || (s.assessment.scope === 'final' ? 'Valutazione finale' : 'Test')}</span>
+                <span className="truncate">{s.assessment.title || (s.assessment.scope === 'final' ? labels.finalAssessment : labels.testGeneric)}</span>
               </button>
             </li>
           );
@@ -426,7 +437,7 @@ function CourseIndex({
         style={{ borderTop: `3px solid ${BRAND_ACCENT}` }}
       >
         <summary className="cursor-pointer px-2 py-1.5 text-xs font-semibold uppercase tracking-wide" style={{ color: BRAND_ACCENT }}>
-          Programma del corso
+          {labels.programme}
         </summary>
         <div className="mt-1">{list}</div>
       </details>
@@ -441,7 +452,7 @@ function CourseIndex({
       style={{ borderTop: `3px solid ${BRAND_ACCENT}` }}
     >
       <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: BRAND_ACCENT }}>
-        Programma del corso
+        {labels.programme}
       </p>
       {list}
     </nav>
@@ -457,9 +468,11 @@ function CourseIndex({
 function AssessmentPreview({
   courseId,
   step,
+  labels,
 }: {
   courseId: string;
   step: { moduleTitle: string; assessment: AssessmentIndexView };
+  labels: CourseLabels;
 }) {
   const isFinal = step.assessment.scope === 'final';
   const detail = useAssessment(courseId, step.assessment.id);
@@ -468,9 +481,9 @@ function AssessmentPreview({
   return (
     <div className="rounded-2xl border bg-background p-6">
       <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-        {isFinal ? 'Valutazione finale' : 'Test intermedio'} · {step.moduleTitle}
+        {isFinal ? labels.finalAssessment : labels.intermediateTest} · {step.moduleTitle}
       </p>
-      <h2 className="mt-1 text-xl font-bold">{step.assessment.title || 'Test'}</h2>
+      <h2 className="mt-1 text-xl font-bold">{step.assessment.title || labels.testGeneric}</h2>
       <p className="mt-2 text-sm text-muted-foreground">
         {isFinal
           ? 'Test finale del corso. Nel pacchetto SCORM è valutato e riporta l’esito all’LMS.'
@@ -493,7 +506,7 @@ function AssessmentPreview({
               Anteprima domande ({questions.length})
             </p>
             <p className="text-[11px] text-muted-foreground">
-              Soglia di superamento: {Math.round((detail.data.masteryScore ?? 0.8) * 100)}%
+              {labels.masteryThreshold(Math.round((detail.data.masteryScore ?? 0.8) * 100))}
             </p>
           </div>
           <ol className="mt-3 space-y-4">
@@ -610,9 +623,11 @@ function QuestionBody({ question: q }: { question: Assessment['questions'][numbe
 function CourseOverviewPreview({
   course,
   modules,
+  labels,
 }: {
   course: CourseView | undefined;
   modules: ModuleView[];
+  labels: CourseLabels;
 }) {
   const totalLessons = modules.reduce((a, m) => a + m.lessons.length, 0);
   return (
@@ -633,17 +648,17 @@ function CourseOverviewPreview({
       <div className="space-y-5 p-6">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Panoramica del corso
+            {labels.courseOverview}
           </p>
-          <h2 className="mt-1 text-2xl font-bold leading-tight">{course?.title ?? 'Corso'}</h2>
+          <h2 className="mt-1 text-2xl font-bold leading-tight">{course?.title ?? ''}</h2>
           {course?.description && (
             <p className="mt-2 text-pretty text-muted-foreground">{course.description}</p>
           )}
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <StatBadge value={modules.length} label={modules.length === 1 ? 'Modulo' : 'Moduli'} />
-          <StatBadge value={totalLessons} label={totalLessons === 1 ? 'Lezione' : 'Lezioni'} />
+          <StatBadge value={modules.length} label={labels.moduleWord(modules.length)} />
+          <StatBadge value={totalLessons} label={labels.lessonWord(totalLessons)} />
         </div>
 
         {course?.instructor && (
@@ -684,7 +699,7 @@ function CourseOverviewPreview({
         {modules.length > 0 && (
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Programma del corso
+              {labels.programme}
             </p>
             <ol className="space-y-2">
               {modules.map((m, mi) => (
@@ -702,7 +717,7 @@ function CourseOverviewPreview({
                     <p className="text-sm font-semibold">{m.title}</p>
                     {m.summary && <p className="text-xs text-muted-foreground">{m.summary}</p>}
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {m.lessons.length} {m.lessons.length === 1 ? 'lezione' : 'lezioni'}
+                      {labels.lessonCount(m.lessons.length)}
                     </p>
                   </div>
                 </li>
@@ -719,9 +734,11 @@ function CourseOverviewPreview({
 function ModuleOverviewPreview({
   module: m,
   moduleIndex,
+  labels,
 }: {
   module: ModuleView;
   moduleIndex: number;
+  labels: CourseLabels;
 }) {
   const objectives = m.objectives ?? [];
   return (
@@ -733,20 +750,20 @@ function ModuleOverviewPreview({
       <div className="space-y-5 p-6">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Modulo {moduleIndex + 1}
+            {labels.moduleN(moduleIndex + 1)}
           </p>
           <h2 className="mt-1 text-2xl font-bold leading-tight">{m.title}</h2>
           {m.summary && <p className="mt-2 text-pretty text-muted-foreground">{m.summary}</p>}
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <StatBadge value={m.lessons.length} label={m.lessons.length === 1 ? 'Lezione' : 'Lezioni'} />
+          <StatBadge value={m.lessons.length} label={labels.lessonWord(m.lessons.length)} />
         </div>
 
         {objectives.length > 0 && (
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Obiettivi
+              {labels.objectives}
             </p>
             <ul className="grid gap-1.5 text-sm sm:grid-cols-2">
               {objectives.map((o, i) => (
@@ -762,7 +779,7 @@ function ModuleOverviewPreview({
         {m.lessons.length > 0 && (
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Lezioni del modulo
+              {labels.moduleLessons}
             </p>
             <ol className="space-y-1.5">
               {m.lessons.map((l, li) => (
@@ -813,9 +830,11 @@ function StatBadge({ value, label }: { value: number; label: string }) {
 function LessonPreview({
   step,
   view,
+  labels,
 }: {
   step: { moduleIndex: number; moduleTitle: string; lesson: LessonView; lessonIndexInModule: number };
   view: ViewMode;
+  labels: CourseLabels;
 }) {
   const lesson = step.lesson;
   const concepts = React.useMemo(
@@ -839,7 +858,7 @@ function LessonPreview({
       <article className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <header className="border-b p-5">
           <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--brand-primary, #4f46e5)' }}>
-            Modulo {step.moduleIndex + 1} · {step.moduleTitle} · Video
+            {labels.moduleN(step.moduleIndex + 1)} · {step.moduleTitle} · Video
           </p>
           <div className="mt-1 flex items-center gap-2">
             <h3 className="text-xl font-bold">{lesson.title}</h3>
@@ -865,7 +884,7 @@ function LessonPreview({
       {/* Intestazione lezione */}
       <header className="border-b p-5">
         <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--brand-primary, #4f46e5)' }}>
-          Modulo {step.moduleIndex + 1} · {step.moduleTitle}
+          {labels.moduleN(step.moduleIndex + 1)} · {step.moduleTitle}
         </p>
         <div className="mt-1 flex items-center gap-2">
           <h3 className="text-xl font-bold">{lesson.title}</h3>
@@ -883,7 +902,7 @@ function LessonPreview({
         )}
         {lesson.narrationUrl && (
           <audio controls src={lesson.narrationUrl} className="mt-3 w-full max-w-md">
-            Il tuo browser non supporta l&apos;audio.
+            {labels.audioFallback}
           </audio>
         )}
       </header>
@@ -891,7 +910,7 @@ function LessonPreview({
       {/* Corpo: concetti */}
       <div className="p-5">
       {concepts.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nessun contenuto in questa lezione.</p>
+        <p className="text-sm text-muted-foreground">{labels.lessonEmpty}</p>
       ) : view === 'scroll' ? (
         // Scorrimento: tutte le sezioni impilate.
         <div className="space-y-6">
@@ -917,7 +936,7 @@ function LessonPreview({
                       ? 'border-primary bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:bg-accent/40',
                   )}
-                  title={c.title ?? `Concetto ${ci + 1}`}
+                  title={c.title ?? labels.conceptN(ci + 1)}
                 >
                   {ci + 1}
                 </button>
@@ -937,10 +956,10 @@ function LessonPreview({
                 onClick={() => setSub((s) => Math.max(0, s - 1))}
                 className="rounded-lg border px-3 py-1.5 text-sm font-medium disabled:opacity-40"
               >
-                ‹ Precedente
+                ‹ {labels.prev}
               </button>
               <span className="text-xs text-muted-foreground">
-                Concetto {current + 1} di {concepts.length}
+                {labels.conceptStatus(current + 1, concepts.length)}
               </span>
               <button
                 type="button"
@@ -948,7 +967,7 @@ function LessonPreview({
                 onClick={() => setSub((s) => Math.min(concepts.length - 1, s + 1))}
                 className="rounded-lg border border-primary bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-40"
               >
-                Successivo ›
+                {labels.next} ›
               </button>
             </div>
           )}
@@ -970,11 +989,11 @@ function ConceptSection({ title, blocks, index }: { title?: string; blocks: Bloc
   );
 }
 
-function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (v: ViewMode) => void }) {
+function ViewToggle({ value, onChange, labels }: { value: ViewMode; onChange: (v: ViewMode) => void; labels: CourseLabels }) {
   const modes: Array<{ id: ViewMode; label: string }> = [
-    { id: 'slide', label: 'Slide' },
-    { id: 'scroll', label: 'Scorrimento' },
-    { id: 'hybrid', label: 'Ibrido' },
+    { id: 'slide', label: labels.viewSlide },
+    { id: 'scroll', label: labels.viewScroll },
+    { id: 'hybrid', label: labels.viewHybrid },
   ];
   return (
     <div className="inline-flex gap-1 rounded-full bg-muted p-1" role="group" aria-label="Modalità di visualizzazione">

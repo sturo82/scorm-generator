@@ -11,6 +11,18 @@
 (function (global) {
   'use strict';
 
+  /* Etichette del quiz nella LINGUA DEL CORSO (letta da window.__COURSE__).
+     Allineato a @scorm/contracts/course-labels.ts per it/en; fallback inglese. */
+  var QUIZ_LABELS = {
+    en: { submit: 'Submit answers', yes: 'True', no: 'False', answer: 'Answer', blankN: function (i) { return 'Blank ' + i; } },
+    it: { submit: 'Invia risposte', yes: 'Vero', no: 'Falso', answer: 'Risposta', blankN: function (i) { return 'Spazio ' + i; } },
+  };
+  function quizLabels() {
+    var course = global.__COURSE__ || {};
+    var key = String(course.language || '').slice(0, 2).toLowerCase();
+    return QUIZ_LABELS[key] || QUIZ_LABELS.en;
+  }
+
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
     if (attrs) {
@@ -83,7 +95,7 @@
     });
 
     var feedback = el('div', { class: 'assessment-feedback', hidden: 'hidden', role: 'status' });
-    var submit = el('button', { class: 'assessment-submit', type: 'button' }, ['Invia risposte']);
+    var submit = el('button', { class: 'assessment-submit', type: 'button' }, [quizLabels().submit]);
     submit.addEventListener('click', function () {
       if (typeof options.onSubmit === 'function') options.onSubmit(answers, feedback, submit);
     });
@@ -100,7 +112,7 @@
       case 'single_choice':
       case 'true_false': {
         var opts = q.type === 'true_false'
-          ? [{ id: 'true', text: 'Vero' }, { id: 'false', text: 'Falso' }]
+          ? [{ id: 'true', text: quizLabels().yes }, { id: 'false', text: quizLabels().no }]
           : (q.choices || []);
         opts.forEach(function (c) {
           var oid = name + '_' + c.id;
@@ -128,7 +140,7 @@
         break;
       }
       case 'short_text': {
-        var text = el('input', { type: 'text', class: 'text-answer', 'aria-label': q.prompt || 'Risposta' });
+        var text = el('input', { type: 'text', class: 'text-answer', 'aria-label': q.prompt || quizLabels().answer });
         text.addEventListener('input', function () { answers[q.id] = text.value; });
         wrap.appendChild(text);
         break;
@@ -157,9 +169,9 @@
       case 'fill_blank': {
         answers[q.id] = {};
         (q.blanks || []).forEach(function (blank) {
-          var inp = el('input', { type: 'text', 'aria-label': 'Spazio ' + blank.index, style: 'width:10em' });
+          var inp = el('input', { type: 'text', 'aria-label': quizLabels().blankN(blank.index), style: 'width:10em' });
           inp.addEventListener('input', function () { answers[q.id][blank.index] = inp.value; });
-          wrap.appendChild(el('label', { class: 'blank-row' }, ['Spazio ' + blank.index + ': ', inp]));
+          wrap.appendChild(el('label', { class: 'blank-row' }, [quizLabels().blankN(blank.index) + ': ', inp]));
         });
         break;
       }

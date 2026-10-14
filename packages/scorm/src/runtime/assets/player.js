@@ -15,8 +15,89 @@
 (function (global) {
   'use strict';
 
+  /*
+   * Etichette STRUTTURALI del player nella LINGUA DEL CORSO (non dell'app).
+   * Deve restare allineato a @scorm/contracts/course-labels.ts (stesso contenuto
+   * per it/en): questa è la copia vanilla per il pacchetto SCORM, che non può
+   * importare il modulo TS. Fallback all'inglese per lingue non gestite.
+   */
+  var LABELS = {
+    en: {
+      courseOverview: 'Course overview',
+      programme: 'Course programme',
+      objectives: 'Objectives',
+      lessons: 'Lessons',
+      moduleN: function (n) { return 'Module ' + n; },
+      moduleWord: function (n) { return n === 1 ? 'Module' : 'Modules'; },
+      lessonWord: function (n) { return n === 1 ? 'Lesson' : 'Lessons'; },
+      lessonCountParen: function (n) { return ' (' + n + (n === 1 ? ' lesson)' : ' lessons)'); },
+      next: 'Next', prev: 'Previous', completeCourse: 'Finish course',
+      progressStep: function (c, t) { return 'Step ' + c + ' of ' + t; },
+      conceptPrev: '\u2039 Previous concept',
+      conceptNext: 'Next concept \u203A',
+      conceptCompleted: 'Concept completed',
+      conceptStatus: function (c, t) { return 'Concept ' + c + ' of ' + t; },
+      conceptN: function (n) { return 'Concept ' + n; },
+      conceptsAria: 'Lesson concepts',
+      finalAssessment: 'Final assessment', testGeneric: 'Test',
+      assessmentGateIntro: function (p) { return 'Pass this test (threshold ' + p + '%) to unlock the next module.'; },
+      assessmentFinalIntro: 'Complete the final test of the course.',
+      assessmentNoQuestions: 'This test has no questions yet: no assessment required.',
+      scoreLabel: function (p) { return 'Score: ' + p + '%. '; },
+      quizPass: 'Passed!', quizFail: 'Not passed: try again.',
+      listenLesson: 'Listen to the lesson',
+      courseCompletedTitle: 'Course completed',
+      courseCompletedBody: 'You have completed every step of the course.',
+      courseEndedTitle: 'Course ended',
+      courseEndedFail: 'You reached the end, but not all tests were passed.',
+      hintPassTest: 'Pass the test to continue.',
+      hintScrollToEnd: 'Scroll to the end to continue.',
+      viewSlide: 'Slide', viewScroll: 'Scroll', viewHybrid: 'Hybrid',
+      viewAria: 'Display mode', overviewSuffix: ' — Overview',
+    },
+    it: {
+      courseOverview: 'Panoramica del corso',
+      programme: 'Programma del corso',
+      objectives: 'Obiettivi',
+      lessons: 'Lezioni',
+      moduleN: function (n) { return 'Modulo ' + n; },
+      moduleWord: function (n) { return n === 1 ? 'Modulo' : 'Moduli'; },
+      lessonWord: function (n) { return n === 1 ? 'Lezione' : 'Lezioni'; },
+      lessonCountParen: function (n) { return ' (' + n + (n === 1 ? ' lezione)' : ' lezioni)'); },
+      next: 'Avanti', prev: 'Precedente', completeCourse: 'Completa corso',
+      progressStep: function (c, t) { return 'Passo ' + c + ' di ' + t; },
+      conceptPrev: '\u2039 Concetto precedente',
+      conceptNext: 'Concetto successivo \u203A',
+      conceptCompleted: 'Concetto completato',
+      conceptStatus: function (c, t) { return 'Concetto ' + c + ' di ' + t; },
+      conceptN: function (n) { return 'Concetto ' + n; },
+      conceptsAria: 'Concetti della lezione',
+      finalAssessment: 'Valutazione finale', testGeneric: 'Test',
+      assessmentGateIntro: function (p) { return 'Supera questo test (soglia ' + p + '%) per sbloccare il modulo successivo.'; },
+      assessmentFinalIntro: 'Completa il test finale del corso.',
+      assessmentNoQuestions: 'Questo test non ha ancora domande: nessuna valutazione richiesta.',
+      scoreLabel: function (p) { return 'Punteggio: ' + p + '%. '; },
+      quizPass: 'Superato!', quizFail: 'Non superato: riprova.',
+      listenLesson: 'Ascolta la lezione',
+      courseCompletedTitle: 'Corso completato',
+      courseCompletedBody: 'Hai completato tutti i passi del corso.',
+      courseEndedTitle: 'Corso terminato',
+      courseEndedFail: 'Hai raggiunto la fine, ma non tutti i test risultano superati.',
+      hintPassTest: 'Supera il test per proseguire.',
+      hintScrollToEnd: 'Scorri fino in fondo per proseguire.',
+      viewSlide: 'Slide', viewScroll: 'Scorrimento', viewHybrid: 'Ibrido',
+      viewAria: 'Modalità di visualizzazione', overviewSuffix: ' — Panoramica',
+    },
+  };
+  function pickLabels(language) {
+    var key = String(language || '').slice(0, 2).toLowerCase();
+    return LABELS[key] || LABELS.en;
+  }
+
   function Player(course, options) {
     this.course = course;
+    // Etichette del player nella lingua del corso (fallback inglese).
+    this.labels = pickLabels(course && course.language);
     this.scorm = (options && options.scorm) || global.SCORM;
     this.renderers = (options && options.renderers) || global.Renderers;
     this.root = (options && options.root) || null;
@@ -67,8 +148,9 @@
         steps.push({ kind: 'assessment', id: 'assess:' + a.id, moduleTitle: m.title, assessment: a, gate: true });
       });
     });
+    var L = pickLabels(course && course.language);
     finals.forEach(function (a) {
-      steps.push({ kind: 'assessment', id: 'assess:' + a.id, moduleTitle: 'Valutazione finale', assessment: a, gate: false });
+      steps.push({ kind: 'assessment', id: 'assess:' + a.id, moduleTitle: L.finalAssessment, assessment: a, gate: false });
     });
     return steps;
   }
@@ -243,13 +325,14 @@
   Player.prototype.buildViewModeToggle = function () {
     var self = this;
     var current = this.viewMode();
+    var L = this.labels;
     var wrap = el('div', 'view-toggle');
     wrap.setAttribute('role', 'group');
-    wrap.setAttribute('aria-label', 'Modalità di visualizzazione');
+    wrap.setAttribute('aria-label', L.viewAria);
     var modes = [
-      { id: 'slide', label: 'Slide' },
-      { id: 'scroll', label: 'Scorrimento' },
-      { id: 'hybrid', label: 'Ibrido' },
+      { id: 'slide', label: L.viewSlide },
+      { id: 'scroll', label: L.viewScroll },
+      { id: 'hybrid', label: L.viewHybrid },
     ];
     modes.forEach(function (m) {
       var btn = textEl('button', m.label);
@@ -349,9 +432,10 @@
     var modules = c.modules || [];
     var totalLessons = 0;
     modules.forEach(function (m) { totalLessons += (m.lessons || []).length; });
+    var L = this.labels;
     var stats = el('div', 'overview-stats');
-    stats.appendChild(statBadge(modules.length, modules.length === 1 ? 'Modulo' : 'Moduli'));
-    stats.appendChild(statBadge(totalLessons, totalLessons === 1 ? 'Lezione' : 'Lezioni'));
+    stats.appendChild(statBadge(modules.length, L.moduleWord(modules.length)));
+    stats.appendChild(statBadge(totalLessons, L.lessonWord(totalLessons)));
     wrap.appendChild(stats);
 
     // Docente.
@@ -373,7 +457,7 @@
 
     // Indice dei moduli.
     if (modules.length > 0) {
-      wrap.appendChild(textEl('h2', 'Programma del corso')).className = 'overview-section-title';
+      wrap.appendChild(textEl('h2', L.programme)).className = 'overview-section-title';
       var ol = document.createElement('ol');
       ol.className = 'overview-module-list';
       modules.forEach(function (m) {
@@ -381,7 +465,7 @@
         li.appendChild(textEl('strong', m.title));
         if (m.summary) li.appendChild(textEl('span', ' — ' + m.summary));
         var count = (m.lessons || []).length;
-        li.appendChild(textEl('span', ' (' + count + (count === 1 ? ' lezione)' : ' lezioni)')));
+        li.appendChild(textEl('span', L.lessonCountParen(count)));
         ol.appendChild(li);
       });
       wrap.appendChild(ol);
@@ -408,19 +492,20 @@
       wrap.appendChild(hero);
     }
 
-    wrap.appendChild(textEl('h1', 'Modulo ' + (step.moduleIndex + 1) + ': ' + m.title));
+    var L = this.labels;
+    wrap.appendChild(textEl('h1', L.moduleN(step.moduleIndex + 1) + ': ' + m.title));
     if (m.summary) wrap.appendChild(textEl('p', m.summary)).className = 'overview-desc';
 
     // Conteggio lezioni.
     var lessons = m.lessons || [];
     var stats = el('div', 'overview-stats');
-    stats.appendChild(statBadge(lessons.length, lessons.length === 1 ? 'Lezione' : 'Lezioni'));
+    stats.appendChild(statBadge(lessons.length, L.lessonWord(lessons.length)));
     wrap.appendChild(stats);
 
     // Obiettivi del modulo.
     var objectives = m.objectives || [];
     if (objectives.length > 0) {
-      wrap.appendChild(textEl('h2', 'Obiettivi')).className = 'overview-section-title';
+      wrap.appendChild(textEl('h2', L.objectives)).className = 'overview-section-title';
       var ul = document.createElement('ul');
       ul.className = 'overview-objectives';
       objectives.forEach(function (obj) {
@@ -431,7 +516,7 @@
 
     // Elenco lezioni.
     if (lessons.length > 0) {
-      wrap.appendChild(textEl('h2', 'Lezioni')).className = 'overview-section-title';
+      wrap.appendChild(textEl('h2', L.lessons)).className = 'overview-section-title';
       var ol = document.createElement('ol');
       ol.className = 'overview-lesson-list';
       lessons.forEach(function (l) {
@@ -463,7 +548,7 @@
 
     if (lesson.narrationKey) {
       var audioWrap = el('div', 'lesson-audio');
-      audioWrap.appendChild(textEl('p', 'Ascolta la lezione'));
+      audioWrap.appendChild(textEl('p', this.labels.listenLesson));
       var audio = document.createElement('audio');
       audio.setAttribute('controls', 'controls');
       audio.setAttribute('src', lesson.narrationKey);
@@ -595,8 +680,9 @@
   Player.prototype.buildConceptStepper = function (step, concepts) {
     var self = this;
     var wrap = el('div', 'concept-stepper');
+    var L = this.labels;
     wrap.setAttribute('role', 'tablist');
-    wrap.setAttribute('aria-label', 'Concetti della lezione');
+    wrap.setAttribute('aria-label', L.conceptsAria);
     for (var i = 0; i < concepts.length; i++) {
       (function (i) {
         var dot = el('button', 'concept-dot');
@@ -605,7 +691,7 @@
         dot.setAttribute('type', 'button');
         dot.setAttribute('role', 'tab');
         dot.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
-        dot.setAttribute('aria-label', 'Concetto ' + (i + 1) + (concepts[i].title ? ': ' + concepts[i].title : ''));
+        dot.setAttribute('aria-label', L.conceptN(i + 1) + (concepts[i].title ? ': ' + concepts[i].title : ''));
         if (isCurrent) dot.className += ' is-current';
         if (reached) dot.className += ' is-reached';
         else { dot.className += ' is-locked'; dot.disabled = true; }
@@ -624,7 +710,8 @@
     var self = this;
     var nav = el('div', 'concept-nav');
 
-    var prev = textEl('button', '‹ Concetto precedente');
+    var L = this.labels;
+    var prev = textEl('button', L.conceptPrev);
     prev.className = 'concept-prev';
     prev.disabled = step._sub === 0;
     prev.addEventListener('click', function () {
@@ -632,7 +719,7 @@
     });
 
     var atLast = step._sub >= concepts.length - 1;
-    var next = textEl('button', atLast ? 'Concetto completato' : 'Concetto successivo ›');
+    var next = textEl('button', atLast ? L.conceptCompleted : L.conceptNext);
     next.className = 'concept-next';
     next.disabled = atLast;
     next.addEventListener('click', function () {
@@ -644,7 +731,7 @@
     });
 
     var status = el('span', 'concept-status');
-    status.textContent = 'Concetto ' + (step._sub + 1) + ' di ' + concepts.length;
+    status.textContent = L.conceptStatus(step._sub + 1, concepts.length);
 
     nav.appendChild(prev);
     nav.appendChild(status);
@@ -657,9 +744,10 @@
     var assessment = step.assessment;
     // Assessment senza domande: non è un gate valido. Lo auto-completiamo (con
     // avviso) per non bloccare l'avanzamento in un vicolo cieco.
+    var L = this.labels;
     if (!assessment.questions || assessment.questions.length === 0) {
       var warn = el('p', 'assessment-intro');
-      warn.textContent = 'Questo test non ha ancora domande: nessuna valutazione richiesta.';
+      warn.textContent = L.assessmentNoQuestions;
       main.appendChild(warn);
       this.markComplete(step);
       return;
@@ -667,8 +755,8 @@
     var mastery = typeof assessment.masteryScore === 'number' ? assessment.masteryScore : 0.8;
     var intro = el('p', 'assessment-intro');
     intro.textContent = step.gate
-      ? 'Supera questo test (soglia ' + Math.round(mastery * 100) + '%) per sbloccare il modulo successivo.'
-      : 'Completa il test finale del corso.';
+      ? L.assessmentGateIntro(Math.round(mastery * 100))
+      : L.assessmentFinalIntro;
     main.appendChild(intro);
 
     var view = this.renderers.renderAssessment(assessment, {
@@ -677,8 +765,8 @@
         feedbackEl.removeAttribute('hidden');
         feedbackEl.className = 'assessment-feedback ' + (result.passed ? 'is-pass' : 'is-fail');
         feedbackEl.textContent =
-          'Punteggio: ' + Math.round(result.scaled * 100) + '%. ' +
-          (result.passed ? 'Superato!' : 'Non superato: riprova.');
+          L.scoreLabel(Math.round(result.scaled * 100)) +
+          (result.passed ? L.quizPass : L.quizFail);
         // Report del punteggio all'LMS.
         if (self.scorm && self.scorm.setScore) {
           self.scorm.setScore(result.scaled, result.raw, 0, result.max);
@@ -746,7 +834,7 @@
     var fill = el('div', 'course-progress-fill');
     fill.style.width = pct + '%';
     bar.appendChild(fill);
-    wrap.appendChild(textEl('span', 'Passo ' + (this.index + 1) + ' di ' + total));
+    wrap.appendChild(textEl('span', this.labels.progressStep(this.index + 1, total)));
     wrap.appendChild(bar);
     return wrap;
   };
@@ -811,6 +899,7 @@
    */
   Player.prototype.buildCourseIndex = function (navPos) {
     var self = this;
+    var L = this.labels;
     navPos = navPos === 'top' ? 'top' : 'side';
     // Frontiera: indice del primo step non completo (fin lì si può navigare).
     var frontier = 0;
@@ -824,13 +913,13 @@
       container = el('details', 'course-index');
       container.open = false;
       var summary = document.createElement('summary');
-      summary.textContent = 'Programma del corso';
+      summary.textContent = L.programme;
       container.appendChild(summary);
       closeAfterClick = true;
     } else {
       container = el('nav', 'course-index course-index-side');
-      container.setAttribute('aria-label', 'Programma del corso');
-      var heading = textEl('p', 'Programma del corso');
+      container.setAttribute('aria-label', L.programme);
+      var heading = textEl('p', L.programme);
       heading.className = 'course-index-title';
       container.appendChild(heading);
     }
@@ -849,9 +938,9 @@
       (function (i, step) {
         var label;
         if (step.kind === 'lesson') label = step.lesson.title;
-        else if (step.kind === 'course_overview') label = 'Panoramica del corso';
-        else if (step.kind === 'module_overview') label = step.moduleTitle + ' — Panoramica';
-        else label = (step.assessment.title || 'Test');
+        else if (step.kind === 'course_overview') label = L.courseOverview;
+        else if (step.kind === 'module_overview') label = step.moduleTitle + L.overviewSuffix;
+        else label = (step.assessment.title || L.testGeneric);
         var reachable = i <= frontier;
         var isCurrent = i === self.index;
         var isDone = self.isStepComplete(i);
@@ -884,12 +973,13 @@
     var nav = el('nav', 'course-nav');
     var self = this;
 
-    var prev = textEl('button', 'Precedente');
+    var L = this.labels;
+    var prev = textEl('button', L.prev);
     prev.disabled = this.index === 0;
     prev.addEventListener('click', function () { self.go(self.index - 1); });
 
     var last = this.index === this.steps.length - 1;
-    var next = textEl('button', last ? 'Completa corso' : 'Avanti');
+    var next = textEl('button', last ? L.completeCourse : L.next);
     next.className = 'nav-next';
     next.disabled = !this.isStepComplete(this.index);
     next.addEventListener('click', function () {
@@ -902,8 +992,8 @@
     if (!this.isStepComplete(this.index)) {
       var step = this.steps[this.index];
       hint.textContent = step && step.kind === 'assessment'
-        ? 'Supera il test per proseguire.'
-        : 'Scorri fino in fondo per proseguire.';
+        ? L.hintPassTest
+        : L.hintScrollToEnd;
     }
 
     nav.appendChild(prev);
@@ -1021,12 +1111,13 @@
     if (this.root) {
       this.root.innerHTML = '';
       var done = el('div', 'course-done');
+      var L = this.labels;
       if (outcome.hasAssessments && !outcome.allPassed) {
-        done.appendChild(textEl('h1', 'Corso terminato'));
-        done.appendChild(textEl('p', 'Hai raggiunto la fine, ma non tutti i test risultano superati.'));
+        done.appendChild(textEl('h1', L.courseEndedTitle));
+        done.appendChild(textEl('p', L.courseEndedFail));
       } else {
-        done.appendChild(textEl('h1', 'Corso completato'));
-        done.appendChild(textEl('p', 'Hai completato tutti i passi del corso.'));
+        done.appendChild(textEl('h1', L.courseCompletedTitle));
+        done.appendChild(textEl('p', L.courseCompletedBody));
       }
       this.root.appendChild(done);
     }

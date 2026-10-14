@@ -4,6 +4,8 @@
  * indicato. Nessuna risorsa esterna: tutto è relativo al pacchetto (offline,
  * Requisito 9.4).
  */
+import { courseLabels } from '@scorm/contracts';
+
 export interface PageTemplateInput {
   courseTitle: string;
   language: string;
@@ -11,6 +13,7 @@ export interface PageTemplateInput {
 
 export function renderScoPage(input: PageTemplateInput): string {
   const title = escapeHtml(input.courseTitle);
+  const labels = courseLabels(input.language);
   return `<!doctype html>
 <html lang="${escapeHtml(input.language)}">
 <head>
@@ -28,7 +31,7 @@ export function renderScoPage(input: PageTemplateInput): string {
        gli script del runtime vengano eseguiti. -->
   <div id="course-loader" class="course-loader" role="status" aria-live="polite">
     <span class="course-loader-spinner" aria-hidden="true"></span>
-    <span class="course-loader-text">Caricamento del corso…</span>
+    <span class="course-loader-text">${escapeHtml(labels.loading)}</span>
   </div>
   <div id="root" role="application" aria-label="${title}"></div>
   <script src="../runtime/scorm-api.js"></script>
