@@ -686,8 +686,11 @@ function CourseOverviewPreview({
               {modules.map((m, mi) => (
                 <li key={m.id} className="flex items-start gap-3 rounded-lg border bg-background p-3">
                   <span
-                    className="grid size-6 shrink-0 place-items-center rounded-full text-xs font-bold text-primary-foreground"
-                    style={{ background: 'var(--brand-primary, #4f46e5)' }}
+                    className="grid size-6 shrink-0 place-items-center rounded-full text-xs font-bold"
+                    style={{
+                      background: 'var(--brand-primary, #4f46e5)',
+                      color: 'var(--brand-on-primary, #fff)',
+                    }}
                   >
                     {mi + 1}
                   </span>
@@ -761,8 +764,11 @@ function ModuleOverviewPreview({
               {m.lessons.map((l, li) => (
                 <li key={l.id} className="flex items-start gap-3 rounded-lg border bg-background p-3">
                   <span
-                    className="grid size-6 shrink-0 place-items-center rounded-full text-xs font-bold text-primary-foreground"
-                    style={{ background: 'var(--brand-primary, #4f46e5)' }}
+                    className="grid size-6 shrink-0 place-items-center rounded-full text-xs font-bold"
+                    style={{
+                      background: 'var(--brand-primary, #4f46e5)',
+                      color: 'var(--brand-on-primary, #fff)',
+                    }}
                   >
                     {li + 1}
                   </span>
