@@ -3,12 +3,17 @@ import { BrandingProvider } from '@/components/app/branding-provider';
 import { DesktopSidebar } from '@/components/app/sidebar';
 import { AppHeader } from '@/components/app/app-header';
 import { AppVersion } from '@/components/app/app-version';
+import { UpdatingOverlay } from '@/components/app/updating-overlay';
+import { DeployStatusProvider } from '@/lib/use-deploy-status';
 
 /** Layout dell'area applicativa autenticata: sidebar desktop + header + contenuto. */
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthGuard>
       <BrandingProvider>
+       <DeployStatusProvider>
+        {/* Overlay di cortesia durante gli aggiornamenti dell'API (deploy). */}
+        <UpdatingOverlay />
         {/* Skip-link (WCAG 2.4.1): visibile solo al focus da tastiera, porta
             direttamente al contenuto principale saltando sidebar e header. */}
         <a
@@ -35,6 +40,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <AppVersion />
           </div>
         </div>
+       </DeployStatusProvider>
       </BrandingProvider>
     </AuthGuard>
   );
