@@ -15,7 +15,10 @@
 -- NB: i costi dei consumi GIA' registrati a 0 non vengono ricalcolati
 -- retroattivamente (lo storico resta immutabile); il calcolo corretto vale per
 -- i consumi successivi.
+-- ON CONFLICT: idempotente. Le righe potrebbero già esistere (fix applicato a
+-- mano in produzione prima che questa migrazione fosse eseguita da migrate).
 INSERT INTO "PricingRate" ("id","provider","model","unit","region","unitPriceUsd","perUnits","validFrom","note")
 VALUES
   ('rate_claude46_eu_in',  'BEDROCK_LLM', 'eu.anthropic.claude-sonnet-4-6', 'INPUT_TOKENS',  'eu-west-1',  3.30000000, 1000000, '2025-10-01T00:00:00Z', 'Claude Sonnet 4.6 EU input, listino AWS Bedrock (region EU)'),
-  ('rate_claude46_eu_out', 'BEDROCK_LLM', 'eu.anthropic.claude-sonnet-4-6', 'OUTPUT_TOKENS', 'eu-west-1', 16.50000000, 1000000, '2025-10-01T00:00:00Z', 'Claude Sonnet 4.6 EU output, listino AWS Bedrock (region EU)');
+  ('rate_claude46_eu_out', 'BEDROCK_LLM', 'eu.anthropic.claude-sonnet-4-6', 'OUTPUT_TOKENS', 'eu-west-1', 16.50000000, 1000000, '2025-10-01T00:00:00Z', 'Claude Sonnet 4.6 EU output, listino AWS Bedrock (region EU)')
+ON CONFLICT ("id") DO NOTHING;
