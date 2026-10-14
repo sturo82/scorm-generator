@@ -700,7 +700,7 @@
         else { dot.className += ' is-locked'; dot.disabled = true; }
         dot.appendChild(textEl('span', String(i + 1)));
         dot.addEventListener('click', function () {
-          if (i <= step._reached) { step._sub = i; self.render(); }
+          if (i <= step._reached) { step._sub = i; self.render(); self.scrollToTop(); }
         });
         wrap.appendChild(dot);
       })(i);
@@ -718,7 +718,7 @@
     prev.className = 'concept-prev';
     prev.disabled = step._sub === 0;
     prev.addEventListener('click', function () {
-      if (step._sub > 0) { step._sub--; self.render(); }
+      if (step._sub > 0) { step._sub--; self.render(); self.scrollToTop(); }
     });
 
     var atLast = step._sub >= concepts.length - 1;
@@ -730,6 +730,7 @@
         step._sub++;
         if (step._sub > step._reached) step._reached = step._sub;
         self.render();
+        self.scrollToTop();
       }
     });
 

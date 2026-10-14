@@ -367,7 +367,7 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
    deve stare SOPRA di essa, non coprirla. --rag-bottom tiene conto dell'altezza
    della nav bar + un margine, così FAB e pannello galleggiano al di sopra del
    pulsante Avanti. */
-.rag-fab, .rag-panel { --rag-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px)); }
+.rag-fab, .rag-panel { --rag-bottom: calc(7rem + env(safe-area-inset-bottom, 0px)); }
 .rag-fab {
   position: fixed; right: 1.25rem; bottom: var(--rag-bottom); z-index: 50;
   display: inline-flex; align-items: center; gap: 0.5rem;
