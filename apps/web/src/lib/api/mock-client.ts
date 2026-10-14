@@ -386,6 +386,14 @@ export class MockApiClient implements ApiClient {
     this.pushAudit('course.generate_all_content', 'course', courseId);
     return ref;
   }
+  async generateAllAssessments(courseId: string): Promise<JobRef> {
+    await delay(150);
+    const ref = this.startJob(courseId, 'course.generate_all_assessments', () => {
+      // Mock: segna i test come generati (nessuna logica reale di contenuto).
+    });
+    this.pushAudit('course.generate_all_assessments', 'course', courseId);
+    return ref;
+  }
   async listActiveCourseIds() {
     await delay(100);
     // Mock: nessun job attivo persistente (i job mock completano subito).

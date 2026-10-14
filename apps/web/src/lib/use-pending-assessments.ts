@@ -3,10 +3,13 @@
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getApiClient } from './api/client';
-import { useAssessments, qk } from './api/hooks';
+import { useActiveJobs, useAssessments, useJobStatus, qk } from './api/hooks';
 import type { ModuleView } from './api/types';
 
 const api = getApiClient();
+
+/** Tipo del job batch server-side che genera tutti i test mancanti. */
+const BATCH_JOB_TYPE = 'course.generate_all_assessments';
 
 /** Un test ancora da generare: un intermedio di un modulo, o il test finale. */
 export interface PendingAssessment {
@@ -26,29 +29,20 @@ export interface PendingAssessment {
   ready: boolean;
 }
 
-/** Attende il completamento di un job di generazione (polling imperativo). */
-async function waitForJob(courseId: string, jobId: string, signal: { cancelled: boolean }): Promise<void> {
-  // Limite di sicurezza: ~4 min (200 × 1200ms) per singolo test, poi smette di
-  // attendere e passa al successivo (il job prosegue comunque sul server).
-  for (let i = 0; i < 200; i++) {
-    if (signal.cancelled) return;
-    const job = await api.getJob(courseId, jobId);
-    if (job.status === 'COMPLETED' || job.status === 'FAILED') return;
-    await new Promise((r) => setTimeout(r, 1200));
-  }
-}
-
 /**
  * Calcola i test del corso ancora DA GENERARE e offre un'azione per generarli
- * tutti in sequenza. "Pendente" = non esiste ancora un assessment per quello
- * scope/modulo (stessa euristica usata dalla gestione test): un modulo senza
- * test intermedio collegato, più il test finale se assente.
+ * tutti con un UNICO job batch SERVER-SIDE. Il job vive sul server: resiste a
+ * reload/chiusura del browser e viene ripreso dai job attivi del corso (come
+ * "genera tutti i contenuti").
  *
- * I moduli vengono passati dal chiamante (già disponibili nella pagina), così
- * si evita una fetch duplicata.
+ * "Pendente" = non esiste ancora un assessment per quello scope/modulo. "Pronto"
+ * = il contenuto necessario esiste (vedi PendingAssessment.ready).
+ *
+ * I moduli vengono passati dal chiamante (già disponibili nella pagina).
  */
 export function usePendingAssessments(courseId: string, modules: ModuleView[]) {
   const assessments = useAssessments(courseId);
+  const activeJobs = useActiveJobs(courseId);
   const qc = useQueryClient();
 
   const list = React.useMemo(() => assessments.data ?? [], [assessments.data]);
@@ -81,50 +75,61 @@ export function usePendingAssessments(courseId: string, modules: ModuleView[]) {
   const readyPending = React.useMemo(() => pending.filter((p) => p.ready), [pending]);
   const blockedPending = React.useMemo(() => pending.filter((p) => !p.ready), [pending]);
 
-  // Stato della generazione in blocco (una sequenza alla volta per corso).
-  const [running, setRunning] = React.useState(false);
-  const [progress, setProgress] = React.useState<{ done: number; total: number }>({ done: 0, total: 0 });
-  const cancelRef = React.useRef<{ cancelled: boolean }>({ cancelled: false });
-
+  // --- Job batch server-side (ripresa stato dopo reload/navigazione) --------
+  const [batchJobId, setBatchJobId] = React.useState<string | null>(null);
+  const serverBatch = React.useMemo(
+    () => activeJobs.data?.find((j) => j.type === BATCH_JOB_TYPE) ?? null,
+    [activeJobs.data],
+  );
+  // Idrata il jobId dal server se un batch è già in corso (ripresa stato).
   React.useEffect(() => {
-    return () => {
-      cancelRef.current.cancelled = true;
-    };
-  }, []);
+    if (serverBatch && !batchJobId) setBatchJobId(serverBatch.id);
+  }, [serverBatch, batchJobId]);
+
+  const batchJob = useJobStatus(courseId, batchJobId);
+  const running =
+    Boolean(serverBatch) ||
+    (Boolean(batchJobId) && (batchJob.data?.status === 'QUEUED' || batchJob.data?.status === 'RUNNING'));
+
+  // Alla fine del batch: ricarica test e moduli, azzera il jobId una volta sola.
+  const prevStatus = React.useRef<string | undefined>(undefined);
+  React.useEffect(() => {
+    const status = batchJob.data?.status;
+    if (!batchJobId || !status) return;
+    if (status !== prevStatus.current && (status === 'COMPLETED' || status === 'FAILED')) {
+      qc.invalidateQueries({ queryKey: ['courses', courseId, 'assessments'] });
+      qc.invalidateQueries({ queryKey: qk.modules(courseId) });
+      qc.invalidateQueries({ queryKey: qk.jobs(courseId) });
+      setBatchJobId(null);
+    }
+    prevStatus.current = status;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchJob.data?.status]);
+
+  // Mentre il batch gira, ricarica periodicamente la lista test per mostrare i
+  // test che completano uno a uno (avanzamento incrementale).
+  React.useEffect(() => {
+    if (!running) return;
+    const t = setInterval(
+      () => qc.invalidateQueries({ queryKey: ['courses', courseId, 'assessments'] }),
+      2500,
+    );
+    return () => clearInterval(t);
+  }, [running, courseId, qc]);
 
   /**
-   * Genera in sequenza i test pendenti PRONTI (quelli il cui contenuto esiste).
-   * I bloccati vengono ignorati: prima vanno generati i contenuti. Ritorna il
-   * numero di test avviati.
+   * Avvia il job batch server-side che genera tutti i test mancanti di cui
+   * esiste il contenuto. Ritorna true se avviato, false se non c'è nulla di
+   * pronto o un batch è già in corso. Il server decide esattamente quali
+   * generare (stessa regola "pronti"), quindi qui basta accodare.
    */
-  const generateAllPending = React.useCallback(async (): Promise<number> => {
-    if (running) return 0;
-    const items = readyPending;
-    if (items.length === 0) return 0;
-    const signal = { cancelled: false };
-    cancelRef.current = signal;
-    setRunning(true);
-    setProgress({ done: 0, total: items.length });
-    try {
-      for (let i = 0; i < items.length; i++) {
-        if (signal.cancelled) break;
-        const it = items[i]!;
-        const { jobId } = await api.generateAssessment(courseId, {
-          scope: it.scope,
-          moduleId: it.moduleId,
-        });
-        await waitForJob(courseId, jobId, signal);
-        // Aggiorna la lista test man mano che completano.
-        qc.invalidateQueries({ queryKey: ['courses', courseId, 'assessments'] });
-        setProgress({ done: i + 1, total: items.length });
-      }
-      return items.length;
-    } finally {
-      if (!signal.cancelled) setRunning(false);
-      qc.invalidateQueries({ queryKey: ['courses', courseId, 'assessments'] });
-      qc.invalidateQueries({ queryKey: qk.jobs(courseId) });
-    }
-  }, [running, readyPending, courseId, qc]);
+  const generateAllPending = React.useCallback(async (): Promise<boolean> => {
+    if (running || readyPending.length === 0) return false;
+    const { jobId } = await api.generateAllAssessments(courseId);
+    setBatchJobId(jobId);
+    qc.invalidateQueries({ queryKey: qk.jobs(courseId) });
+    return true;
+  }, [running, readyPending.length, courseId, qc]);
 
   return {
     /** Tutti i test ancora da generare (pronti + bloccati). */
@@ -139,11 +144,9 @@ export function usePendingAssessments(courseId: string, modules: ModuleView[]) {
     blockedPending,
     /** Quanti test sono bloccati (contenuti mancanti). */
     blockedCount: blockedPending.length,
-    /** True mentre la generazione in blocco è in corso. */
+    /** True mentre il job batch server-side è in corso (ripreso dopo reload). */
     running,
-    /** Avanzamento della generazione in blocco. */
-    progress,
-    /** Genera in sequenza i soli test pronti. */
+    /** Avvia il job batch server-side. Ritorna true se avviato. */
     generateAllPending,
     /** True finché la lista dei test non è pronta. */
     loading: assessments.isLoading,

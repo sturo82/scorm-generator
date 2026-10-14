@@ -39,7 +39,8 @@ export type GenJobType =
   | 'course.generate_outline'
   | 'course.generate_content'
   | 'course.generate_all_content'
-  | 'course.generate_assessment';
+  | 'course.generate_assessment'
+  | 'course.generate_all_assessments';
 
 /** Parametri trasportati nel payload del job (oltre al jobId). */
 export interface GenJobPayload {
@@ -165,6 +166,17 @@ export class GenerationService {
     return this.enqueue(ctx, courseId, 'course.generate_all_content', { courseId });
   }
 
+  /**
+   * Accoda la generazione di TUTTI i test ancora mancanti (intermedi + finale)
+   * con un UNICO job batch lato server. Genera solo i test il cui contenuto
+   * esiste già (vedi autoGenerateAssessments): resiliente a reload/chiusura del
+   * browser e ripreso dai job attivi del corso.
+   */
+  async enqueueAllAssessments(ctx: RequestContext, courseId: string): Promise<{ jobId: string }> {
+    await this.requireCourse(ctx.tenant.tenantId, courseId);
+    return this.enqueue(ctx, courseId, 'course.generate_all_assessments', { courseId });
+  }
+
   /** Stato di un job (per il polling del client). Isolato per tenant. */
   async getJob(tenantId: string, courseId: string, jobId: string): Promise<GenJobView> {
     const job = await this.prisma.generationJob.findFirst({
@@ -259,6 +271,11 @@ export class GenerationService {
         break;
       case 'course.generate_all_content':
         await this.executeJob(payload.jobId, () => this.runAllContent(ctx, payload.courseId, payload.jobId));
+        break;
+      case 'course.generate_all_assessments':
+        await this.executeJob(payload.jobId, () =>
+          this.autoGenerateAssessments(ctx, payload.courseId, payload.jobId),
+        );
         break;
       case 'course.generate_assessment':
         await this.executeJob(payload.jobId, () =>
@@ -665,12 +682,24 @@ export class GenerationService {
     });
     const existingSet = new Set(existing.map((a) => `${a.scope}:${a.moduleId ?? 'final'}`));
 
-    // Moduli del DB per collegare moduleId agli assessment intermedi.
+    // Moduli del DB (con le lezioni e i rispettivi blocks) per collegare il
+    // moduleId agli assessment intermedi e per verificare che il CONTENUTO
+    // esista: i test si basano sul RAG dei contenuti delle lezioni, quindi
+    // generarli prima dei contenuti produrrebbe domande di scarsa qualità.
     const modules = await this.prisma.module.findMany({
       where: { courseId },
       orderBy: { position: 'asc' },
-      select: { id: true, title: true },
+      select: { id: true, title: true, lessons: { select: { blocks: true } } },
     });
+
+    // Una lezione "ha contenuti" se il suo array blocks (JSONB) non è vuoto.
+    const lessonHasBlocks = (blocks: unknown): boolean =>
+      Array.isArray(blocks) && blocks.length > 0;
+    const moduleHasContent = (i: number): boolean =>
+      !!modules[i] && modules[i]!.lessons.some((l) => lessonHasBlocks(l.blocks));
+    const allLessons = modules.flatMap((m) => m.lessons);
+    const courseFullyHasContent =
+      allLessons.length > 0 && allLessons.every((l) => lessonHasBlocks(l.blocks));
 
     const tasks: Array<{
       scope: 'intermediate' | 'final';
@@ -679,11 +708,17 @@ export class GenerationService {
       moduleId?: string;
     }> = [];
 
+    let skippedForContent = 0;
     for (let i = 0; i < parsed.data.modules.length; i++) {
       const mo = parsed.data.modules[i]!;
       if (mo.hasIntermediateAssessment && modules[i]) {
         const key = `INTERMEDIATE:${modules[i]!.id}`;
         if (!existingSet.has(key)) {
+          // Salta se il modulo non ha ancora contenuti (verranno generati prima).
+          if (!moduleHasContent(i)) {
+            skippedForContent++;
+            continue;
+          }
           tasks.push({
             scope: 'intermediate',
             focus: `Modulo "${mo.title}": ${mo.lessons.map((l) => l.title).join(', ')}`,
@@ -695,14 +730,25 @@ export class GenerationService {
         }
       }
     }
+    // Il test finale copre l'intero corso: generabile solo se TUTTE le lezioni
+    // hanno contenuti.
     if (parsed.data.hasFinalAssessment && !existingSet.has('FINAL:final')) {
-      tasks.push({
-        scope: 'final',
-        focus: `Intero corso "${parsed.data.title}": ${parsed.data.modules.map((m) => m.title).join(', ')}`,
-        moduleTitle: '',
-      });
+      if (courseFullyHasContent) {
+        tasks.push({
+          scope: 'final',
+          focus: `Intero corso "${parsed.data.title}": ${parsed.data.modules.map((m) => m.title).join(', ')}`,
+          moduleTitle: '',
+        });
+      } else {
+        skippedForContent++;
+      }
     }
 
+    if (skippedForContent > 0) {
+      this.logger.log(
+        `Assessment automatici: ${skippedForContent} saltati (contenuti lezioni non ancora generati)`,
+      );
+    }
     if (tasks.length === 0) return;
 
     this.logger.log(`Assessment automatici: ${tasks.length} da generare`);

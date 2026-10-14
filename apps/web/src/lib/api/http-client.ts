@@ -129,6 +129,9 @@ export class HttpApiClient implements ApiClient {
   generateAllContent(courseId: string) {
     return this.request<JobRef>(`/courses/${courseId}/generate/content/all`, { method: 'POST' });
   }
+  generateAllAssessments(courseId: string) {
+    return this.request<JobRef>(`/courses/${courseId}/generate/assessment/all`, { method: 'POST' });
+  }
   listActiveCourseIds() {
     return this.request<Array<{ courseId: string; jobs: number }>>('/jobs/active');
   }

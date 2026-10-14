@@ -442,13 +442,15 @@ function AssessmentManager({
 
   async function handleGenerateAllPending() {
     try {
-      const n = await pendingAssessments.generateAllPending();
+      const started = await pendingAssessments.generateAllPending();
       toast.show(
-        n > 0 ? `Generati ${n} test` : 'Genera prima i contenuti delle lezioni',
-        n > 0 ? 'success' : 'info',
+        started
+          ? 'Generazione test avviata: prosegue sul server anche se chiudi la pagina'
+          : 'Genera prima i contenuti delle lezioni',
+        started ? 'success' : 'info',
       );
     } catch {
-      toast.show('Generazione dei test non completata', 'error');
+      toast.show('Avvio della generazione non riuscito', 'error');
     }
   }
 
@@ -492,17 +494,15 @@ function AssessmentManager({
               {repair.isPending ? 'Riparazione…' : `Correggi test orfani (${orphanCount})`}
             </Button>
           )}
-          {readyCount > 0 && (
+          {(readyCount > 0 || batchRunning) && (
             <Button
               size="sm"
               onClick={handleGenerateAllPending}
               disabled={batchRunning || generating}
-              title="Genera in sequenza i test pronti (il cui contenuto esiste già)"
+              title="Genera i test pronti (il cui contenuto esiste già) in un job sul server"
             >
               <Wand2 className="size-4" />
-              {batchRunning
-                ? `Generazione… (${pendingAssessments.progress.done}/${pendingAssessments.progress.total})`
-                : `Genera ${readyCount} pronti`}
+              {batchRunning ? 'Generazione…' : `Genera ${readyCount} pronti`}
             </Button>
           )}
         </div>
@@ -515,8 +515,8 @@ function AssessmentManager({
 
         {batchRunning && (
           <AiWorking
-            label={`Sto generando i test… ${pendingAssessments.progress.done}/${pendingAssessments.progress.total}`}
-            hint="La generazione prosegue qui: evita di chiudere la pagina finché non termina."
+            label="Sto generando i test del corso…"
+            hint="La generazione gira sul server: puoi ricaricare la pagina o navigare altrove senza interromperla."
           />
         )}
 

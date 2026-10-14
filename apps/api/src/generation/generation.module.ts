@@ -38,6 +38,7 @@ export class GenerationModule implements OnModuleInit {
       'course.generate_content',
       'course.generate_all_content',
       'course.generate_assessment',
+      'course.generate_all_assessments',
     ];
     for (const type of types) {
       this.jobs.register<GenJobPayload & { jobId: string }>(

@@ -94,6 +94,13 @@ export class GenerationController {
     return this.generation.enqueueAssessment(ctx, courseId, dto.scope, dto.focus ?? '', dto.moduleId);
   }
 
+  /** Genera TUTTI i test mancanti (di cui esiste il contenuto) in un unico job. */
+  @Post('assessment/all')
+  @HttpCode(202)
+  allAssessments(@CurrentContext() ctx: AuthContext, @Param('courseId') courseId: string) {
+    return this.generation.enqueueAllAssessments(ctx, courseId);
+  }
+
   /** Genera le immagini mancanti nei block della lezione (placeholder -> reali). */
   @Post('lessons/:lessonId/images')
   generateImages(

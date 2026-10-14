@@ -82,13 +82,15 @@ export function CourseWizard({ courseId }: { courseId: string }) {
 
   async function handleGenerateAllTests() {
     try {
-      const n = await pendingTests.generateAllPending();
+      const started = await pendingTests.generateAllPending();
       toast.show(
-        n > 0 ? `Generati ${n} test` : 'Genera prima i contenuti delle lezioni',
-        n > 0 ? 'success' : 'info',
+        started
+          ? 'Generazione test avviata: prosegue sul server anche se chiudi la pagina'
+          : 'Genera prima i contenuti delle lezioni',
+        started ? 'success' : 'info',
       );
     } catch {
-      toast.show('Generazione dei test non completata', 'error');
+      toast.show('Avvio della generazione non riuscito', 'error');
     }
   }
 
@@ -227,14 +229,14 @@ export function CourseWizard({ courseId }: { courseId: string }) {
                   : `${pendingTests.pendingCount} test da generare`}
               </p>
               <p className="truncate text-xs text-amber-800/80">
-                {pendingTests.readyCount > 0
-                  ? pendingTests.running
-                    ? `Generazione… ${pendingTests.progress.done}/${pendingTests.progress.total}`
-                    : `${pendingTests.readyCount} pronti` +
+                {pendingTests.running
+                  ? 'Generazione in corso sul server…'
+                  : pendingTests.readyCount > 0
+                    ? `${pendingTests.readyCount} pronti` +
                       (pendingTests.blockedCount > 0
                         ? ` · ${pendingTests.blockedCount} in attesa dei contenuti`
                         : '')
-                  : 'Genera prima i contenuti delle lezioni'}
+                    : 'Genera prima i contenuti delle lezioni'}
               </p>
             </div>
           </div>
@@ -242,12 +244,10 @@ export function CourseWizard({ courseId }: { courseId: string }) {
             <Button variant="outline" size="sm" onClick={goToTests} disabled={pendingTests.running}>
               Vedi i test
             </Button>
-            {pendingTests.readyCount > 0 && (
+            {(pendingTests.readyCount > 0 || pendingTests.running) && (
               <Button size="sm" onClick={handleGenerateAllTests} disabled={pendingTests.running}>
                 <Wand2 className="size-4" />
-                {pendingTests.running
-                  ? `${pendingTests.progress.done}/${pendingTests.progress.total}`
-                  : `Genera ${pendingTests.readyCount} pronti`}
+                {pendingTests.running ? 'Generazione…' : `Genera ${pendingTests.readyCount} pronti`}
               </Button>
             )}
           </div>

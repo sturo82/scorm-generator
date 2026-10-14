@@ -267,6 +267,8 @@ export interface ApiClient {
   generateLessonContent(courseId: string, lessonId: string, toneInstruction?: string): Promise<JobRef>;
   /** Genera i contenuti di TUTTE le lezioni vuote in un unico job server-side. */
   generateAllContent(courseId: string): Promise<JobRef>;
+  /** Genera TUTTI i test mancanti (di cui esiste il contenuto) in un unico job. */
+  generateAllAssessments(courseId: string): Promise<JobRef>;
   /** Corsi del tenant con generazione attiva (per il badge "in generazione"). */
   listActiveCourseIds(): Promise<ActiveCourseJobs[]>;
   /** Carica un video dell'utente e lo associa al segnaposto video di un block. */
