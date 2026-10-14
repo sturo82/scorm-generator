@@ -53,15 +53,19 @@ resource "aws_apprunner_service" "api" {
           BEDROCK_REGION              = var.region
           BEDROCK_LLM_MODEL_ID        = var.bedrock_llm_model_id
           BEDROCK_EMBEDDINGS_MODEL_ID = var.bedrock_embeddings_model_id
-          MEDIA_REGION                = var.media_region
-          IMAGE_MODEL_ID              = var.image_model_id
-          TRANSCRIBE_REGION           = var.region
-          SPEECH_DEFAULT_VOICE        = var.speech_default_voice
-          S3_BUCKET                   = aws_s3_bucket.assets.bucket
-          S3_REGION                   = var.region
-          COGNITO_USER_POOL_ID        = var.ecosystem_cognito_user_pool_id
-          COGNITO_REGION              = var.region
-          STOCK_IMAGE_PROVIDER        = var.stock_image_provider
+          # Dimensione vettori embeddings. Titan v2 accetta SOLO 256|512|1024.
+          # Senza questa, il default dell'app è 64 (valore da test) -> Bedrock
+          # risponde ValidationException e l'ingestion knowledge va in errore.
+          EMBEDDINGS_DIMENSIONS = "1024"
+          MEDIA_REGION          = var.media_region
+          IMAGE_MODEL_ID        = var.image_model_id
+          TRANSCRIBE_REGION     = var.region
+          SPEECH_DEFAULT_VOICE  = var.speech_default_voice
+          S3_BUCKET             = aws_s3_bucket.assets.bucket
+          S3_REGION             = var.region
+          COGNITO_USER_POOL_ID  = var.ecosystem_cognito_user_pool_id
+          COGNITO_REGION        = var.region
+          STOCK_IMAGE_PROVIDER  = var.stock_image_provider
           # --- Ecosistema Knowkube (consumer: K Scorm -> Manager), ONBOARDING ZERO-TOUCH ---
           # Al primo avvio l'app si auto-provisiona (self-register firmato SigV4)
           # e riceve il provisioning kit: client web OIDC (audience), credenziali
