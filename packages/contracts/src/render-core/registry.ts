@@ -40,7 +40,7 @@ export const registry: Record<string, BlockRenderer> = {
   accordion_tabs: (payload) => renderAccordionTabs(payload),
   click_reveal: (payload) => renderClickReveal(payload),
   carousel_steps: renderCarouselSteps,
-  flashcard: (payload) => renderFlashcard(payload),
+  flashcard: renderFlashcard,
   dragdrop_match: renderDragDropMatch,
   sorting_categories: renderSortingCategories,
   dragdrop_order: renderDragDropOrder,

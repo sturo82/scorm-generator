@@ -382,6 +382,10 @@ export interface ApiClient {
     moduleId: string,
     input: AttachStockCoverInput,
   ): Promise<{ attached: true; url: string }>;
+  /** Carica un'immagine dal PC e la imposta come copertina del corso. */
+  uploadCover(courseId: string, file: File): Promise<{ attached: true; url: string }>;
+  /** Carica un'immagine dal PC e la imposta come copertina di un modulo. */
+  uploadModuleCover(courseId: string, moduleId: string, file: File): Promise<{ attached: true; url: string }>;
   /** Scambia un ticket SSO monouso con una sessione utente (Scenario 2). */
   redeemSso(ticket: string): Promise<SsoRedeemResult>;
 }

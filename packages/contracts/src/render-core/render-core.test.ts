@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { renderBlock, isHandledByCore } from './registry.js';
 import { imagePlaceholderSlot } from './blocks/media.js';
+import { courseLabels } from '../course-labels.js';
 import { videoEmbedUrl, fmtTime, sortCues } from './video.js';
 import { initialState, reduce, renderStateful } from './stateful.js';
 import { buildCourseSteps, groupConcepts } from './course-structure.js';
@@ -57,7 +58,7 @@ describe('render-core registry', () => {
   it('in contesto AUTORE (renderPlaceholder) rende visibile il placeholder immagine con il prompt', () => {
     const authorCtx: RenderContext = {
       resolveMedia: (m) => m.storageKey ?? null,
-      renderPlaceholder: (m) => imagePlaceholderSlot(m),
+      renderPlaceholder: (m) => imagePlaceholderSlot(m, courseLabels('it')),
     };
     const vnode = renderBlock(
       {
@@ -261,7 +262,7 @@ describe('render-core stateful reducers (logica + scoring)', () => {
     let s = initialState(spec);
     s = reduce(spec, s, { ev: 'place', arg: 'c1', arg2: 'i1' });
     s = reduce(spec, s, { ev: 'place', arg: 'c1', arg2: 'i2' }); // i2 sbagliato (dovrebbe essere c2)
-    const vnode = renderStateful(spec, s, () => null);
+    const vnode = renderStateful(spec, s, () => null, courseLabels('it'));
     const json = JSON.stringify(vnode);
     expect(json).toContain('assessment-feedback');
     expect(json).toContain('1 su 2 corretti');

@@ -676,3 +676,22 @@ export function useAttachStockModuleCover(courseId: string) {
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.modules(courseId) }),
   });
 }
+
+/** Carica un'immagine dal PC e la imposta come copertina del corso. */
+export function useUploadCover(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => api.uploadCover(courseId, file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.course(courseId) }),
+  });
+}
+
+/** Carica un'immagine dal PC e la imposta come copertina di un modulo. */
+export function useUploadModuleCover(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { moduleId: string; file: File }) =>
+      api.uploadModuleCover(courseId, vars.moduleId, vars.file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.modules(courseId) }),
+  });
+}

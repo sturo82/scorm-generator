@@ -278,7 +278,7 @@ export function CoursePreview({ courseId }: { courseId: string }) {
           {step ? (
             <>
               {step.kind === 'lesson' ? (
-                <LessonPreview key={step.lesson.id} step={step} view={view} labels={labels} />
+                <LessonPreview key={step.lesson.id} step={step} view={view} labels={labels} language={course.data?.language} />
               ) : step.kind === 'course_overview' ? (
                 <CourseOverviewPreview
                   key="course-overview"
@@ -831,10 +831,12 @@ function LessonPreview({
   step,
   view,
   labels,
+  language,
 }: {
   step: { moduleIndex: number; moduleTitle: string; lesson: LessonView; lessonIndexInModule: number };
   view: ViewMode;
   labels: CourseLabels;
+  language?: string;
 }) {
   const lesson = step.lesson;
   const concepts = React.useMemo(
@@ -867,11 +869,11 @@ function LessonPreview({
         </header>
         <div className="space-y-5 p-5">
           {/* Video + trascrizione/tab a tutta larghezza */}
-          {videoBlock && <BlockRenderer block={videoBlock} />}
+          {videoBlock && <BlockRenderer block={videoBlock} language={language} />}
           {/* Attività e approfondimenti sotto, in griglia responsive */}
           {rest.length > 0 && (
             <div className="grid gap-3 sm:grid-cols-2">
-              {rest.map((b) => <BlockRenderer key={b.id} block={b} />)}
+              {rest.map((b) => <BlockRenderer key={b.id} block={b} language={language} />)}
             </div>
           )}
         </div>
@@ -915,7 +917,7 @@ function LessonPreview({
         // Scorrimento: tutte le sezioni impilate.
         <div className="space-y-6">
           {concepts.map((c, ci) => (
-            <ConceptSection key={ci} title={c.title} blocks={c.blocks as unknown as Block[]} index={ci} />
+            <ConceptSection key={ci} title={c.title} blocks={c.blocks as unknown as Block[]} index={ci} language={language} />
           ))}
         </div>
       ) : (
@@ -947,6 +949,7 @@ function LessonPreview({
             title={concepts[current]?.title}
             blocks={(concepts[current]?.blocks ?? []) as unknown as Block[]}
             index={current}
+            language={language}
           />
           {concepts.length > 1 && (
             <div className="flex items-center justify-between gap-3 border-t pt-3">
@@ -978,12 +981,12 @@ function LessonPreview({
   );
 }
 
-function ConceptSection({ title, blocks, index }: { title?: string; blocks: Block[]; index: number }) {
+function ConceptSection({ title, blocks, index, language }: { title?: string; blocks: Block[]; index: number; language?: string }) {
   return (
     <section className="concept space-y-3" data-concept-index={index}>
       {title && <h4 className="concept-title text-base font-semibold">{title}</h4>}
       {blocks.map((b) => (
-        <BlockRenderer key={b.id} block={b} />
+        <BlockRenderer key={b.id} block={b} language={language} />
       ))}
     </section>
   );

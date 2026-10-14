@@ -5,7 +5,7 @@
  * 'toggle' (self-flip tramite [data-toggle-self]).
  */
 
-import { h, hHtml, withBehavior, type VNode, type VChild } from '../vnode.js';
+import { h, hHtml, withBehavior, blockLabels, type VNode, type VChild, type RenderContext } from '../vnode.js';
 
 interface RichLike {
   html?: string;
@@ -23,16 +23,17 @@ function face(side: 'front' | 'back', label: string, content?: RichLike): VNode 
   ]);
 }
 
-export function renderFlashcard(payload: Record<string, unknown>): VNode {
+export function renderFlashcard(payload: Record<string, unknown>, ctx: RenderContext): VNode {
   const cards = (payload.cards as CardItem[]) || [];
+  const L = blockLabels(ctx);
   const btns: VChild[] = cards.map((card) => {
     const inner = h('div', { class: 'flashcard-inner' }, [
-      face('front', 'Fronte', card.front),
-      face('back', 'Retro', card.back),
+      face('front', L.flashcardFront, card.front),
+      face('back', L.flashcardBack, card.back),
     ]);
     return h(
       'button',
-      { class: 'flashcard', type: 'button', 'aria-pressed': 'false', 'aria-label': 'Gira la carta', 'data-toggle-self': '' },
+      { class: 'flashcard', type: 'button', 'aria-pressed': 'false', 'aria-label': L.flashcardFlip, 'data-toggle-self': '' },
       [inner],
     );
   });

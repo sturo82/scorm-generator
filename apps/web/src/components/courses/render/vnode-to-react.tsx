@@ -23,6 +23,7 @@ import {
   type StatefulSpec,
   type StatefulState,
 } from '@scorm/contracts/render-core';
+import type { CourseLabels } from '@scorm/contracts';
 
 /**
  * Converte una stringa CSS inline ("left:50%;top:30%") nell'oggetto che React
@@ -73,6 +74,12 @@ function withAttrs(node: VNode, patch: Record<string, string | number | boolean 
   return { ...node, attrs: { ...(node.attrs || {}), ...patch } };
 }
 
+/**
+ * Etichette del corso per le re-render stateful (dnd/scenario) dell'adapter.
+ * Fornite da BlockRenderer; se assenti, renderStateful usa il fallback inglese.
+ */
+const LabelsContext = React.createContext<CourseLabels | undefined>(undefined);
+
 /** Renderizza un singolo VChild (nodo, testo o niente) come React node. */
 export function renderVChild(child: VChild, key?: React.Key): React.ReactNode {
   if (child == null) return null;
@@ -82,12 +89,15 @@ export function renderVChild(child: VChild, key?: React.Key): React.ReactNode {
 }
 
 /** Componente che proietta un VNode in elementi React. */
-export function VNodeView({ node }: { node: VNode }): React.ReactElement {
-  // Se il nodo porta un behavior interattivo, delega al gestore con stato.
-  if (node.behavior) {
-    return <BehaviorView node={node} behavior={node.behavior} />;
-  }
-  return <PlainVNode node={node} />;
+export function VNodeView({ node, labels }: { node: VNode; labels?: CourseLabels }): React.ReactElement {
+  const inner = node.behavior ? (
+    <BehaviorView node={node} behavior={node.behavior} />
+  ) : (
+    <PlainVNode node={node} />
+  );
+  // Se arrivano labels (root del block), le pubblichiamo nel contesto per le
+  // re-render stateful annidate. Altrimenti si eredita il contesto esistente.
+  return labels ? <LabelsContext.Provider value={labels}>{inner}</LabelsContext.Provider> : inner;
 }
 
 /** Proiezione "pura" di un VNode (nessuna interazione). */
@@ -141,6 +151,7 @@ const previewResolve = (m: Record<string, unknown>): string | null =>
 function StatefulView({ node, spec }: { node: VNode; spec: StatefulSpec }): React.ReactElement {
   const [state, setState] = React.useState<StatefulState>(() => initialState(spec));
   const dragValue = React.useRef<string | null>(null);
+  const labels = React.useContext(LabelsContext);
 
   function dispatch(ev: string, arg?: string, arg2?: string): void {
     setState((s) => reduce(spec, s, { ev, arg, arg2 }));
@@ -173,7 +184,7 @@ function StatefulView({ node, spec }: { node: VNode; spec: StatefulSpec }): Reac
 
   // Il guscio (.block + prompt) viene dal node; il contenuto [data-stateful] è
   // ri-renderizzato dal core in base allo stato.
-  const inner = renderStateful(spec, state, previewResolve);
+  const inner = renderStateful(spec, state, previewResolve, labels);
   const shell = mapTree(node, (n) =>
     n.attrs && n.attrs['data-stateful'] !== undefined ? { ...n, children: [inner] } : n,
   );
@@ -404,6 +415,7 @@ function HotspotView({ node }: { node: VNode }): React.ReactElement {
 /** carousel: mostra uno slide per volta con prev/next e stato. */
 function CarouselView({ node }: { node: VNode }): React.ReactElement {
   const [idx, setIdx] = React.useState(0);
+  const labels = React.useContext(LabelsContext);
   let slideCount = 0;
   mapTree(node, (n) => {
     if (n.attrs?.['data-carousel-slide'] !== undefined) slideCount++;
@@ -417,7 +429,8 @@ function CarouselView({ node }: { node: VNode }): React.ReactElement {
       return withAttrs(n, { hidden: on ? undefined : 'hidden' });
     }
     if (n.attrs?.['data-carousel-status'] !== undefined) {
-      return { ...n, children: ['Passo ' + (idx + 1) + ' di ' + slideCount], html: undefined };
+      const text = labels ? labels.carouselStatus(idx + 1, slideCount) : 'Passo ' + (idx + 1) + ' di ' + slideCount;
+      return { ...n, children: [text], html: undefined };
     }
     if (n.attrs?.['data-carousel-prev'] !== undefined) {
       return withAttrs(n, { disabled: idx === 0 ? 'true' : undefined });

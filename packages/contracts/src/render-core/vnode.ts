@@ -12,6 +12,7 @@
  */
 
 import type { MediaRef } from '../primitives.js';
+import { courseLabels, type CourseLabels } from '../course-labels.js';
 
 /** Valore ammesso per un attributo di un VNode. */
 export type VAttrValue = string | number | boolean | undefined;
@@ -84,6 +85,18 @@ export interface RenderContext {
    * pulito). Se assente, il comportamento è identico a prima.
    */
   renderPlaceholder?: (ref: MediaRef) => VNode | null;
+  /**
+   * Etichette interne ai block nella LINGUA DEL CORSO (carosello, drag&drop,
+   * flashcard, trascrizione video, credito foto, slot placeholder immagine).
+   * Fornite dall'host (anteprima/export) da courseLabels(course.language). Se
+   * assenti, i renderer usano il fallback inglese via blockLabels().
+   */
+  labels?: CourseLabels;
+}
+
+/** Etichette dei block dal contesto, con fallback (inglese) se non fornite. */
+export function blockLabels(ctx: RenderContext): CourseLabels {
+  return ctx.labels ?? courseLabels(undefined);
 }
 
 /** Costruttore di un VNode con figli. */

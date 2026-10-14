@@ -400,6 +400,37 @@ export class HttpApiClient implements ApiClient {
       { method: 'POST', body: JSON.stringify(input) },
     );
   }
+  /** Carica un'immagine dal PC e la imposta come copertina del corso. */
+  async uploadCover(courseId: string, file: File) {
+    const session = getSession();
+    const form = new FormData();
+    form.append('file', file);
+    const headers = new Headers();
+    if (session) headers.set('Authorization', `Bearer ${session.token}`);
+    const res = await fetch(`${this.baseUrl}/courses/${courseId}/stock-images/cover/upload`, {
+      method: 'POST',
+      headers,
+      body: form,
+    });
+    if (res.status === 401) void handleSessionExpired();
+    if (!res.ok) throw new Error(`Upload copertina fallito: ${res.status}`);
+    return (await res.json()) as { attached: true; url: string };
+  }
+  /** Carica un'immagine dal PC e la imposta come copertina di un modulo. */
+  async uploadModuleCover(courseId: string, moduleId: string, file: File) {
+    const session = getSession();
+    const form = new FormData();
+    form.append('file', file);
+    const headers = new Headers();
+    if (session) headers.set('Authorization', `Bearer ${session.token}`);
+    const res = await fetch(
+      `${this.baseUrl}/courses/${courseId}/stock-images/modules/${moduleId}/cover/upload`,
+      { method: 'POST', headers, body: form },
+    );
+    if (res.status === 401) void handleSessionExpired();
+    if (!res.ok) throw new Error(`Upload copertina modulo fallito: ${res.status}`);
+    return (await res.json()) as { attached: true; url: string };
+  }
   redeemSso(ticket: string) {
     return this.request<SsoRedeemResult>('/sso/redeem', {
       method: 'POST',

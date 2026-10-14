@@ -11,6 +11,7 @@
  */
 
 import { h, hHtml, type VNode, type VChild, type StatefulSpec } from './vnode.js';
+import { courseLabels, type CourseLabels } from '../course-labels.js';
 
 /* ----------------------------- Tipi di stato ----------------------------- */
 
@@ -137,16 +138,18 @@ export function renderStateful(
   spec: StatefulSpec,
   state: StatefulState,
   resolveMedia: MediaResolver,
+  labels?: CourseLabels,
 ): VNode {
+  const L = labels ?? courseLabels(undefined);
   switch (spec.type) {
     case 'dnd-match':
-      return renderMatch(spec, state as DndMatchState);
+      return renderMatch(spec, state as DndMatchState, L);
     case 'dnd-sort':
-      return renderSort(spec, state as DndSortState);
+      return renderSort(spec, state as DndSortState, L);
     case 'dnd-order':
-      return renderOrder(spec, state as DndOrderState);
+      return renderOrder(spec, state as DndOrderState, L);
     case 'scenario':
-      return renderScenario(spec, state as ScenarioState, resolveMedia);
+      return renderScenario(spec, state as ScenarioState, resolveMedia, L);
   }
 }
 
@@ -156,7 +159,7 @@ interface Pair {
   left: string;
   right: string;
 }
-function renderMatch(spec: StatefulSpec, s: DndMatchState): VNode {
+function renderMatch(spec: StatefulSpec, s: DndMatchState, L: CourseLabels): VNode {
   const pairs = (spec.payload.pairs as Pair[]) || [];
   const rights = pairs.map((p) => p.right);
   const used: Record<string, boolean> = {};
@@ -195,7 +198,7 @@ function renderMatch(spec: StatefulSpec, s: DndMatchState): VNode {
         'data-ev': value ? 'clear' : 'drop',
         'data-arg': pair.id,
       },
-      [value || 'Trascina o clicca qui…'],
+      [value || L.dndDropHere],
     );
     return h('div', { class: 'dnd-row' }, [h('span', { class: 'dnd-left' }, [pair.left]), slot]);
   });
@@ -213,7 +216,7 @@ interface SortCat {
   id: string;
   label: string;
 }
-function renderSort(spec: StatefulSpec, s: DndSortState): VNode {
+function renderSort(spec: StatefulSpec, s: DndSortState, L: CourseLabels): VNode {
   const items = (spec.payload.items as SortItem[]) || [];
   const categories = (spec.payload.categories as SortCat[]) || [];
   const done = items.every((it) => s.placement[it.id]);
@@ -265,9 +268,7 @@ function renderSort(spec: StatefulSpec, s: DndSortState): VNode {
     const allOk = correct === items.length;
     children.push(
       h('p', { class: 'assessment-feedback ' + (allOk ? 'is-pass' : 'is-fail') }, [
-        allOk
-          ? 'Tutto corretto!'
-          : correct + ' su ' + items.length + ' corretti. Clicca un elemento per rimetterlo nel pozzo.',
+        allOk ? L.dndAllCorrect : L.dndPartial(correct, items.length),
       ]),
     );
   }
@@ -282,7 +283,7 @@ interface OrderItem {
 function items(spec: StatefulSpec): OrderItem[] {
   return (spec.payload.items as OrderItem[]) || [];
 }
-function renderOrder(spec: StatefulSpec, s: DndOrderState): VNode {
+function renderOrder(spec: StatefulSpec, s: DndOrderState, L: CourseLabels): VNode {
   const byId: Record<string, OrderItem> = {};
   items(spec).forEach((it) => (byId[it.id] = it));
   const rows: VChild[] = s.order.map((id, idx) => {
@@ -295,7 +296,7 @@ function renderOrder(spec: StatefulSpec, s: DndOrderState): VNode {
       {
         class: 'order-btn',
         type: 'button',
-        'aria-label': 'Sposta su',
+        'aria-label': L.moveUp,
         disabled: idx === 0 ? 'true' : undefined,
         'data-ev': 'move',
         'data-arg': String(idx),
@@ -308,7 +309,7 @@ function renderOrder(spec: StatefulSpec, s: DndOrderState): VNode {
       {
         class: 'order-btn',
         type: 'button',
-        'aria-label': 'Sposta giù',
+        'aria-label': L.moveDown,
         disabled: idx === s.order.length - 1 ? 'true' : undefined,
         'data-ev': 'move',
         'data-arg': String(idx),
@@ -342,11 +343,11 @@ interface ScenarioNode {
 function nodeById(spec: StatefulSpec, id: string): ScenarioNode | undefined {
   return ((spec.payload.nodes as ScenarioNode[]) || []).find((n) => n.id === id);
 }
-function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: MediaResolver): VNode {
+function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: MediaResolver, L: CourseLabels): VNode {
   const node = nodeById(spec, s.currentId);
   const children: VChild[] = [];
   if (!node) {
-    children.push(h('p', { class: 'scenario-end' }, ['Scenario senza nodo iniziale.']));
+    children.push(h('p', { class: 'scenario-end' }, [L.scenarioNoStart]));
     return h('div', { class: 'scenario-view', 'aria-live': 'polite' }, children);
   }
   if (node.media) {
@@ -363,9 +364,9 @@ function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: Medi
     });
   }
   if (s.ended || noChoices) {
-    children.push(h('p', { class: 'scenario-end' }, ['Fine scenario. Punteggio: ' + s.score]));
+    children.push(h('p', { class: 'scenario-end' }, [L.scenarioEnd(s.score)]));
     children.push(
-      h('button', { class: 'scenario-restart', type: 'button', 'data-ev': 'restart' }, ['Ricomincia']),
+      h('button', { class: 'scenario-restart', type: 'button', 'data-ev': 'restart' }, [L.scenarioRestart]),
     );
   }
   return h('div', { class: 'scenario-view', 'aria-live': 'polite' }, children);

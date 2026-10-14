@@ -1,8 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import type { Block } from '@scorm/contracts';
-import { INTERACTIONS_CSS } from '@scorm/contracts';
+import type { Block, CourseLabels } from '@scorm/contracts';
+import { INTERACTIONS_CSS, courseLabels } from '@scorm/contracts';
 import {
   renderBlock as coreRenderBlock,
   isHandledByCore,
@@ -20,15 +20,21 @@ import { VNodeView } from '@/components/courses/render/vnode-to-react';
  * In anteprima lo `storageKey` è già risolto dall'API in URL firmato, quindi
  * resolveMedia lo restituisce tale e quale (nell'export sarebbe ../media/...).
  */
-const CORE_CTX: RenderContext = {
-  resolveMedia: (m) => m.storageKey ?? null,
-  // Anteprima (autore): rende VISIBILI i placeholder immagine generati ma non
-  // ancora riempiti, con la descrizione suggerita. Nell'export SCORM questo hook
-  // NON è fornito, quindi i placeholder restano invisibili (pacchetto pulito).
-  renderPlaceholder: (m) => imagePlaceholderSlot(m),
-};
+/** Costruisce il RenderContext dell'anteprima per una data lingua del corso. */
+function buildCtx(labels: CourseLabels): RenderContext {
+  return {
+    resolveMedia: (m) => m.storageKey ?? null,
+    // Anteprima (autore): rende VISIBILI i placeholder immagine generati ma non
+    // ancora riempiti, con la descrizione suggerita. Nell'export SCORM questo hook
+    // NON è fornito, quindi i placeholder restano invisibili (pacchetto pulito).
+    renderPlaceholder: (m) => imagePlaceholderSlot(m, labels),
+    labels,
+  };
+}
 
-export function BlockRenderer({ block }: { block: Block }) {
+export function BlockRenderer({ block, language }: { block: Block; language?: string }) {
+  // Etichette interne ai block nella lingua del corso (fallback inglese).
+  const labels = React.useMemo(() => courseLabels(language), [language]);
   // Scope del brand + micro-interazioni condivise (stesse dell'anteprima/corso):
   // senza queste i block interattivi (hotspot, drag&drop, sorting, scenario)
   // sarebbero privi di stile e dei token --ix-* nell'editor. data-motion abilita
@@ -37,7 +43,7 @@ export function BlockRenderer({ block }: { block: Block }) {
     <div className="brand-scope rounded-lg border bg-background p-4" data-motion="sober">
       <style dangerouslySetInnerHTML={{ __html: INTERACTIONS_CSS }} />
       <style dangerouslySetInnerHTML={{ __html: IMAGE_PLACEHOLDER_CSS }} />
-      {renderByType(block)}
+      {renderByType(block, labels)}
     </div>
   );
 }
@@ -82,11 +88,11 @@ const IMAGE_PLACEHOLDER_CSS = `
 .block-media-ph-hint { margin: 0; font-size: 0.76rem; opacity: 0.7; }
 `;
 
-function renderByType(block: Block): React.ReactElement {
+function renderByType(block: Block, labels: CourseLabels): React.ReactElement {
   const type = block.type as string;
   const payload = block.payload as Record<string, unknown>;
   if (isHandledByCore(type)) {
-    return <VNodeView node={coreRenderBlock({ type, payload }, CORE_CTX)} />;
+    return <VNodeView node={coreRenderBlock({ type, payload }, buildCtx(labels))} labels={labels} />;
   }
   return <p className="text-sm text-muted-foreground">[tipo non supportato: {type}]</p>;
 }

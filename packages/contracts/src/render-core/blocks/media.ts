@@ -8,7 +8,8 @@
  */
 
 import type { MediaRef, MediaAttribution } from '../../primitives.js';
-import { h, hHtml, type VNode, type VChild, type RenderContext } from '../vnode.js';
+import type { CourseLabels } from '../../course-labels.js';
+import { h, hHtml, blockLabels, type VNode, type VChild, type RenderContext } from '../vnode.js';
 
 /**
  * Costruisce lo slot VISIBILE per un placeholder immagine non riempito (solo
@@ -18,13 +19,13 @@ import { h, hHtml, type VNode, type VChild, type RenderContext } from '../vnode.
  * l'inserimento vero avviene nella scheda "Struttura e contenuti". È pensato per
  * essere passato come RenderContext.renderPlaceholder dall'anteprima web.
  */
-export function imagePlaceholderSlot(m: MediaRef): VNode {
+export function imagePlaceholderSlot(m: MediaRef, labels: CourseLabels): VNode {
   const prompt = (m.placeholderPrompt || '').trim();
   const alt = (m.alt || '').trim();
   const children: VChild[] = [
     h('div', { class: 'block-media-ph-head' }, [
       h('span', { class: 'block-media-ph-ico', 'aria-hidden': 'true' }, ['🖼']),
-      h('span', { class: 'block-media-ph-badge' }, ['Immagine da inserire']),
+      h('span', { class: 'block-media-ph-badge' }, [labels.imagePlaceholderBadge]),
     ]),
   ];
   if (prompt) {
@@ -32,17 +33,13 @@ export function imagePlaceholderSlot(m: MediaRef): VNode {
   }
   if (alt) {
     children.push(
-      hHtml('p', { class: 'block-media-ph-alt' }, `<strong>Alt:</strong> ${escapeText(alt)}`),
+      hHtml('p', { class: 'block-media-ph-alt' }, `<strong>${escapeText(labels.imagePlaceholderAltLabel)}:</strong> ${escapeText(alt)}`),
     );
   }
-  children.push(
-    h('p', { class: 'block-media-ph-hint' }, [
-      'Inseriscila da “Struttura e contenuti” (immagine stock, upload o generazione AI).',
-    ]),
-  );
+  children.push(h('p', { class: 'block-media-ph-hint' }, [labels.imagePlaceholderHint]));
   return h(
     'figure',
-    { class: 'block-media-placeholder', 'data-image-placeholder': 'true', role: 'img', 'aria-label': alt || prompt || 'Immagine da inserire' },
+    { class: 'block-media-placeholder', 'data-image-placeholder': 'true', role: 'img', 'aria-label': alt || prompt || labels.imagePlaceholderBadge },
     children,
   );
 }
@@ -61,14 +58,14 @@ function providerLabel(provider: string): string {
 }
 
 /** Costruisce il credito (figcaption) a partire dall'attribuzione. */
-function creditCaption(attr: MediaAttribution): VNode {
-  const parts: VChild[] = ['Foto di '];
+function creditCaption(attr: MediaAttribution, labels: CourseLabels): VNode {
+  const parts: VChild[] = [labels.photoCreditBy];
   parts.push(
     attr.authorUrl
       ? h('a', { href: attr.authorUrl, target: '_blank', rel: 'noopener noreferrer' }, [attr.authorName])
       : attr.authorName,
   );
-  parts.push(' su ');
+  parts.push(labels.photoCreditOn);
   const label = providerLabel(attr.provider);
   parts.push(
     attr.sourceUrl
@@ -99,5 +96,5 @@ export function mediaImage(
   }
   const img = h('img', { class: imgClass, src, alt: m.alt || '', loading: 'lazy' });
   if (!m.attribution) return img;
-  return h('figure', { class: 'block-media-figure' }, [img, creditCaption(m.attribution)]);
+  return h('figure', { class: 'block-media-figure' }, [img, creditCaption(m.attribution, blockLabels(ctx))]);
 }

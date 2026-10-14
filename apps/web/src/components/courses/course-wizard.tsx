@@ -17,6 +17,7 @@ import {
   useSaveBrief,
   useGenerateCover,
   useAttachStockCover,
+  useUploadCover,
   useUpdateCourseSettings,
   useUploadInstructorAvatar,
   useSetCourseShareable,
@@ -57,6 +58,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
   const saveBrief = useSaveBrief(courseId);
   const genCover = useGenerateCover(courseId);
   const attachStockCover = useAttachStockCover(courseId);
+  const uploadCover = useUploadCover(courseId);
   const updateSettings = useUpdateCourseSettings(courseId);
   const setShareable = useSetCourseShareable(courseId);
   const activeJobs = useActiveJobs(courseId);
@@ -365,7 +367,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
                 disabled={attachStockCover.isPending}
               >
                 <Search className="size-4" />
-                {attachStockCover.isPending ? 'Imposto…' : 'Scegli da Unsplash'}
+                {attachStockCover.isPending ? 'Imposto…' : 'Unsplash o dal PC'}
               </Button>
               <Button variant="outline" size="sm" onClick={handleGenerateCover} disabled={genCover.isPending}>
                 <ImageIcon className="size-4" />
@@ -377,9 +379,23 @@ export function CourseWizard({ courseId }: { courseId: string }) {
           <StockPhotoPicker
             open={coverStockOpen}
             courseId={courseId}
-            title="Scegli la copertina da Unsplash"
-            saving={attachStockCover.isPending}
+            title="Scegli la copertina (Unsplash o dal tuo PC)"
+            saving={attachStockCover.isPending || uploadCover.isPending}
             onClose={() => setCoverStockOpen(false)}
+            onUpload={async (file) => {
+              try {
+                await uploadCover.mutateAsync(file);
+                toast.show('Copertina caricata', 'success');
+                setCoverStockOpen(false);
+              } catch (err) {
+                toast.show(
+                  err instanceof Error && /\b(413|troppo grand|too large)\b/i.test(err.message)
+                    ? 'Immagine troppo grande (max 8MB)'
+                    : 'Caricamento copertina non riuscito',
+                  'error',
+                );
+              }
+            }}
             onSelect={async (photo) => {
               try {
                 await attachStockCover.mutateAsync({ photoId: photo.id, provider: photo.provider });

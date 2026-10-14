@@ -14,6 +14,9 @@ function loadWithCore(): JSDOM {
     runScripts: 'outside-only',
   });
   const win = dom.window as unknown as Record<string, unknown> & { eval: (s: string) => void };
+  // Lingua del corso = italiano: il runtime risolve le etichette dei block in IT
+  // (window.__COURSE__.language), così le asserzioni verificano anche il path i18n.
+  win.eval('window.__COURSE__ = { language: "it" };');
   for (const file of ['render-core.js', 'scorm-api.js', 'scoring.js', 'renderers.js']) {
     win.eval(readFileSync(runtimeAssetPath(file as never), 'utf8'));
   }

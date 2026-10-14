@@ -11,7 +11,8 @@
  */
 
 import type { MediaRef } from '../../primitives.js';
-import { h, hHtml, withBehavior, type VNode, type VChild, type RenderContext } from '../vnode.js';
+import type { CourseLabels } from '../../course-labels.js';
+import { h, hHtml, withBehavior, blockLabels, type VNode, type VChild, type RenderContext } from '../vnode.js';
 import { videoEmbedUrl, fmtTime, type TranscriptCueLike } from '../video.js';
 
 interface RichLike {
@@ -32,10 +33,11 @@ export function renderVideoCheckpoint(payload: Record<string, unknown>, ctx: Ren
   const embed = videoEmbedUrl(vid);
   const alt = vid.alt || '';
   const hasVideo = !!src || !!embed;
+  const L = blockLabels(ctx);
 
   // Tab: Trascrizione (se presente o in elaborazione) + una per sezione.
   const tabs: Array<{ id: string; label: string }> = [];
-  if (transcript.length > 0 || transcriptStatus === 'processing') tabs.push({ id: 'transcript', label: 'Trascrizione' });
+  if (transcript.length > 0 || transcriptStatus === 'processing') tabs.push({ id: 'transcript', label: L.transcript });
   sections.forEach((s) => tabs.push({ id: s.id, label: s.title }));
   const showPanel = tabs.length > 0;
 
@@ -49,7 +51,7 @@ export function renderVideoCheckpoint(payload: Record<string, unknown>, ctx: Ren
       h('div', { class: 'video-frame' }, [
         h('iframe', {
           src: embed,
-          title: alt || 'Video',
+          title: alt || L.videoAlt,
           allow: 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture',
           allowfullscreen: 'allowfullscreen',
           frameborder: '0',
@@ -70,8 +72,8 @@ export function renderVideoCheckpoint(payload: Record<string, unknown>, ctx: Ren
     );
   } else {
     videoCol.push(
-      h('div', { class: 'video-placeholder', role: 'img', 'aria-label': alt || 'Video' }, [
-        '▶ ' + (alt || 'Video in arrivo'),
+      h('div', { class: 'video-placeholder', role: 'img', 'aria-label': alt || L.videoAlt }, [
+        '▶ ' + (alt || L.videoComing),
       ]),
     );
   }
@@ -102,7 +104,7 @@ export function renderVideoCheckpoint(payload: Record<string, unknown>, ctx: Ren
     // Corpo: un pannello per tab (trascrizione + sezioni), uno attivo.
     const panels: VChild[] = [];
     if (transcript.length > 0 || transcriptStatus === 'processing') {
-      panels.push(transcriptPanel(transcript, transcriptStatus, 'transcript' === activeTab));
+      panels.push(transcriptPanel(transcript, transcriptStatus, 'transcript' === activeTab, L));
     }
     sections.forEach((s) => {
       panels.push(
@@ -123,10 +125,10 @@ export function renderVideoCheckpoint(payload: Record<string, unknown>, ctx: Ren
 }
 
 /** Pannello della trascrizione: righe cliccabili (seek) con tempo e testo. */
-function transcriptPanel(transcript: TranscriptCueLike[], status: string, active: boolean): VNode {
+function transcriptPanel(transcript: TranscriptCueLike[], status: string, active: boolean, labels: CourseLabels): VNode {
   let inner: VChild[];
   if (status === 'processing') {
-    inner = [h('p', { class: 'video-transcript-empty' }, ['Trascrizione in elaborazione…'])];
+    inner = [h('p', { class: 'video-transcript-empty' }, [labels.transcriptProcessing])];
   } else if (transcript.length > 0) {
     const rows: VChild[] = transcript.map((cue, i) => {
       const cells: VChild[] = [h('span', { class: 'cue-time' }, [fmtTime(cue.start)])];
@@ -140,7 +142,7 @@ function transcriptPanel(transcript: TranscriptCueLike[], status: string, active
     });
     inner = [h('ol', { class: 'video-transcript' }, rows)];
   } else {
-    inner = [h('p', { class: 'video-transcript-empty' }, ['Nessuna trascrizione disponibile.'])];
+    inner = [h('p', { class: 'video-transcript-empty' }, [labels.transcriptNone])];
   }
   return h(
     'div',

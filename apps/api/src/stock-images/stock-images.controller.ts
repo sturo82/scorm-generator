@@ -94,6 +94,43 @@ export class StockImagesController {
     return this.stock.attachCover(ctx.tenant.tenantId, courseId, { photoId: input.photoId });
   }
 
+  /** Carica un'immagine dal PC e la imposta come copertina del corso (max 8MB). */
+  @Post('cover/upload')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 8 * 1024 * 1024 } }))
+  uploadCover(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @UploadedFile() file: { mimetype: string; buffer: Buffer } | undefined,
+  ) {
+    if (!file) throw new BadRequestException('Nessun file ricevuto (campo "file")');
+    if (!ALLOWED_IMAGE_TYPES.includes(file.mimetype)) {
+      throw new BadRequestException('Formato non supportato: usa PNG, JPEG, WebP o GIF');
+    }
+    return this.stock.attachUploadCover(ctx.tenant.tenantId, courseId, {
+      bytes: file.buffer,
+      contentType: file.mimetype,
+    });
+  }
+
+  /** Carica un'immagine dal PC e la imposta come copertina di un modulo (max 8MB). */
+  @Post('modules/:moduleId/cover/upload')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 8 * 1024 * 1024 } }))
+  uploadModuleCover(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('moduleId') moduleId: string,
+    @UploadedFile() file: { mimetype: string; buffer: Buffer } | undefined,
+  ) {
+    if (!file) throw new BadRequestException('Nessun file ricevuto (campo "file")');
+    if (!ALLOWED_IMAGE_TYPES.includes(file.mimetype)) {
+      throw new BadRequestException('Formato non supportato: usa PNG, JPEG, WebP o GIF');
+    }
+    return this.stock.attachUploadModuleCover(ctx.tenant.tenantId, courseId, moduleId, {
+      bytes: file.buffer,
+      contentType: file.mimetype,
+    });
+  }
+
   /** Imposta un'immagine stock come copertina di un modulo. */
   @Post('modules/:moduleId/cover')
   attachModuleCover(

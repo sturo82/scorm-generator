@@ -75,6 +75,36 @@ export interface CourseLabels {
   viewHybrid: string;
 
   loading: string;
+
+  // --- Etichette interne ai block (renderer condiviso) ---
+  flashcardFront: string;
+  flashcardBack: string;
+  flashcardFlip: string;
+  carouselPrev: string;
+  carouselNext: string;
+  /** "Passo X di Y" / "Step X of Y" (stato del carosello). */
+  carouselStatus: (current: number, total: number) => string;
+  dndDropHere: string;
+  dndAllCorrect: string;
+  /** "X su Y corretti. ..." / "X of Y correct. ...". */
+  dndPartial: (correct: number, total: number) => string;
+  moveUp: string;
+  moveDown: string;
+  scenarioNoStart: string;
+  /** "Fine scenario. Punteggio: N" / "Scenario complete. Score: N". */
+  scenarioEnd: (score: number) => string;
+  scenarioRestart: string;
+  transcript: string;
+  transcriptProcessing: string;
+  transcriptNone: string;
+  videoComing: string;
+  videoAlt: string;
+  /** Credito foto: "Foto di {autore} su {provider}". */
+  photoCreditBy: string;
+  photoCreditOn: string;
+  imagePlaceholderBadge: string;
+  imagePlaceholderHint: string;
+  imagePlaceholderAltLabel: string;
 }
 
 const EN: CourseLabels = {
@@ -127,6 +157,31 @@ const EN: CourseLabels = {
   viewHybrid: 'Hybrid',
 
   loading: 'Loading the course…',
+
+  flashcardFront: 'Front',
+  flashcardBack: 'Back',
+  flashcardFlip: 'Flip the card',
+  carouselPrev: 'Previous',
+  carouselNext: 'Next',
+  carouselStatus: (c, t) => `Step ${c} of ${t}`,
+  dndDropHere: 'Drag or tap here…',
+  dndAllCorrect: 'All correct!',
+  dndPartial: (c, t) => `${c} of ${t} correct. Tap an item to put it back in the pool.`,
+  moveUp: 'Move up',
+  moveDown: 'Move down',
+  scenarioNoStart: 'Scenario has no start node.',
+  scenarioEnd: (s) => `End of scenario. Score: ${s}`,
+  scenarioRestart: 'Restart',
+  transcript: 'Transcript',
+  transcriptProcessing: 'Transcript in progress…',
+  transcriptNone: 'No transcript available.',
+  videoComing: 'Video coming soon',
+  videoAlt: 'Video',
+  photoCreditBy: 'Photo by ',
+  photoCreditOn: ' on ',
+  imagePlaceholderBadge: 'Image to insert',
+  imagePlaceholderHint: 'Insert it from “Structure & content” (stock image, upload or AI generation).',
+  imagePlaceholderAltLabel: 'Alt',
 };
 
 const IT: CourseLabels = {
@@ -180,6 +235,31 @@ const IT: CourseLabels = {
   viewHybrid: 'Ibrido',
 
   loading: 'Caricamento del corso…',
+
+  flashcardFront: 'Fronte',
+  flashcardBack: 'Retro',
+  flashcardFlip: 'Gira la carta',
+  carouselPrev: 'Precedente',
+  carouselNext: 'Successivo',
+  carouselStatus: (c, t) => `Passo ${c} di ${t}`,
+  dndDropHere: 'Trascina o clicca qui…',
+  dndAllCorrect: 'Tutto corretto!',
+  dndPartial: (c, t) => `${c} su ${t} corretti. Clicca un elemento per rimetterlo nel pozzo.`,
+  moveUp: 'Sposta su',
+  moveDown: 'Sposta giù',
+  scenarioNoStart: 'Scenario senza nodo iniziale.',
+  scenarioEnd: (s) => `Fine scenario. Punteggio: ${s}`,
+  scenarioRestart: 'Ricomincia',
+  transcript: 'Trascrizione',
+  transcriptProcessing: 'Trascrizione in elaborazione…',
+  transcriptNone: 'Nessuna trascrizione disponibile.',
+  videoComing: 'Video in arrivo',
+  videoAlt: 'Video',
+  photoCreditBy: 'Foto di ',
+  photoCreditOn: ' su ',
+  imagePlaceholderBadge: 'Immagine da inserire',
+  imagePlaceholderHint: 'Inseriscila da “Struttura e contenuti” (immagine stock, upload o generazione AI).',
+  imagePlaceholderAltLabel: 'Alt',
 };
 
 const SETS: Record<string, CourseLabels> = { it: IT, en: EN };

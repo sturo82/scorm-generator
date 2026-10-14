@@ -58,19 +58,29 @@
 
   // Contesto di rendering per il core condiviso: nel pacchetto SCORM lo
   // storageKey è GIÀ un path relativo (../media/...) riscritto dal builder,
-  // quindi resolveMedia lo restituisce tale e quale.
-  var CORE_CTX = {
-    resolveMedia: function (m) {
-      return m && m.storageKey ? m.storageKey : null;
-    },
-  };
+  // quindi resolveMedia lo restituisce tale e quale. Le etichette interne ai
+  // block seguono la LINGUA DEL CORSO (window.__COURSE__.language) via
+  // RenderCore.courseLabels; calcolate una sola volta e memorizzate.
+  var _coreCtx = null;
+  function coreCtx() {
+    if (_coreCtx) return _coreCtx;
+    var core = global.RenderCore;
+    var course = global.__COURSE__ || {};
+    _coreCtx = {
+      resolveMedia: function (m) {
+        return m && m.storageKey ? m.storageKey : null;
+      },
+      labels: core && core.courseLabels ? core.courseLabels(course.language) : undefined,
+    };
+    return _coreCtx;
+  }
 
   function renderBlock(block) {
     // Tutti i tipi sono gestiti dal renderer condiviso (window.RenderCore):
     // un'unica implementazione per anteprima ed export.
     var core = global.RenderCore;
     if (core && core.isHandledByCore(block.type)) {
-      return core.renderBlockDom(block, CORE_CTX);
+      return core.renderBlockDom(block, coreCtx());
     }
     var fn = fallbackRenderers[block.type];
     if (!fn) return el('div', { class: 'block unknown' }, ['[tipo non supportato: ' + block.type + ']']);

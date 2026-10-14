@@ -7,6 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import type { ObjectStorage, StockImageProvider, StockPhoto } from '@scorm/domain';
 import type { StockImageResult } from '@scorm/contracts';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -175,6 +176,61 @@ export class StockImagesService {
 
     const url = await this.storage.getSignedUrl(key, { expiresInSec: 6 * 3600 });
     this.logger.log(`Copertina corso ${courseId} impostata da stock (${provider.id})`);
+    return { attached: true, url };
+  }
+
+  /**
+   * Imposta un'immagine CARICATA DALL'UTENTE come copertina del corso. Nessun
+   * provider stock richiesto, nessuna attribuzione (contenuto proprio): azzera
+   * l'eventuale coverAttribution preesistente.
+   */
+  async attachUploadCover(
+    tenantId: string,
+    courseId: string,
+    input: { bytes: Buffer; contentType: string },
+  ): Promise<{ attached: true; url: string }> {
+    const course = await this.prisma.course.findFirst({ where: { id: courseId, tenantId } });
+    if (!course) throw new NotFoundException('Corso non trovato');
+
+    const ext = extForContentType(input.contentType);
+    const key = `media/${tenantId}/${courseId}/cover/${randomUUID()}.${ext}`;
+    await this.storage.putObject(key, input.bytes, { contentType: input.contentType });
+
+    await this.prisma.course.update({
+      where: { id: courseId },
+      data: { coverImageKey: key, coverAttribution: Prisma.JsonNull },
+    });
+
+    const url = await this.storage.getSignedUrl(key, { expiresInSec: 6 * 3600 });
+    this.logger.log(`Copertina corso ${courseId} impostata da upload`);
+    return { attached: true, url };
+  }
+
+  /**
+   * Come attachUploadCover ma per la copertina di un MODULO.
+   */
+  async attachUploadModuleCover(
+    tenantId: string,
+    courseId: string,
+    moduleId: string,
+    input: { bytes: Buffer; contentType: string },
+  ): Promise<{ attached: true; url: string }> {
+    const module = await this.prisma.module.findFirst({
+      where: { id: moduleId, course: { id: courseId, tenantId } },
+    });
+    if (!module) throw new NotFoundException('Modulo non trovato');
+
+    const ext = extForContentType(input.contentType);
+    const key = `media/${tenantId}/${courseId}/modules/${moduleId}/cover/${randomUUID()}.${ext}`;
+    await this.storage.putObject(key, input.bytes, { contentType: input.contentType });
+
+    await this.prisma.module.update({
+      where: { id: moduleId },
+      data: { coverImageKey: key, coverAttribution: Prisma.JsonNull },
+    });
+
+    const url = await this.storage.getSignedUrl(key, { expiresInSec: 6 * 3600 });
+    this.logger.log(`Copertina modulo ${moduleId} impostata da upload`);
     return { attached: true, url };
   }
 

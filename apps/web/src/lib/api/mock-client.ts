@@ -842,6 +842,18 @@ export class MockApiClient implements ApiClient {
     await delay();
     return { attached: true, url: 'https://picsum.photos/seed/modcover/1280/720' };
   }
+  async uploadCover(_courseId: string, _file: File): Promise<{ attached: true; url: string }> {
+    await delay();
+    return { attached: true, url: 'https://picsum.photos/seed/upcover/1280/720' };
+  }
+  async uploadModuleCover(
+    _courseId: string,
+    _moduleId: string,
+    _file: File,
+  ): Promise<{ attached: true; url: string }> {
+    await delay();
+    return { attached: true, url: 'https://picsum.photos/seed/upmodcover/1280/720' };
+  }
 
   async redeemSso(_ticket: string): Promise<SsoRedeemResult> {
     await delay();

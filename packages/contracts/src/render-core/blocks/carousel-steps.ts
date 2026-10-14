@@ -6,7 +6,7 @@
  */
 
 import type { MediaRef } from '../../primitives.js';
-import { h, hHtml, withBehavior, type VNode, type VChild, type RenderContext } from '../vnode.js';
+import { h, hHtml, withBehavior, blockLabels, type VNode, type VChild, type RenderContext } from '../vnode.js';
 import { mediaImage } from './media.js';
 
 interface RichLike {
@@ -32,12 +32,13 @@ export function renderCarouselSteps(payload: Record<string, unknown>, ctx: Rende
       inner,
     );
   });
+  const L = blockLabels(ctx);
   const view = h('div', { class: 'carousel-view', role: 'group', 'aria-live': 'polite' }, slides);
-  const prev = h('button', { 'aria-label': 'Precedente', 'data-carousel-prev': '' }, ['‹']);
+  const prev = h('button', { 'aria-label': L.carouselPrev, 'data-carousel-prev': '' }, ['‹']);
   const status = h('span', { class: 'carousel-status', 'data-carousel-status': '' }, [
-    'Passo 1 di ' + steps.length,
+    L.carouselStatus(1, steps.length),
   ]);
-  const next = h('button', { 'aria-label': 'Successivo', 'data-carousel-next': '' }, ['›']);
+  const next = h('button', { 'aria-label': L.carouselNext, 'data-carousel-next': '' }, ['›']);
   const nav = h('div', { class: 'carousel-nav' }, [prev, status, next]);
   return withBehavior(h('div', { class: 'block carousel' }, [view, nav]), { kind: 'carousel', count: steps.length });
 }

@@ -21,6 +21,18 @@ import {
   type StatefulSpec,
   type StatefulState,
 } from '@scorm/contracts/render-core';
+import { courseLabels, type CourseLabels } from '@scorm/contracts';
+
+/**
+ * Etichette dei block nella lingua del corso, lette dal global __COURSE__
+ * (iniettato dal builder). Usate dalle re-render stateful per restare coerenti
+ * con il render iniziale. Fallback inglese.
+ */
+function runtimeLabels(): CourseLabels {
+  const g = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
+  const course = (g.__COURSE__ as { language?: string } | undefined) || undefined;
+  return courseLabels(course?.language);
+}
 
 /** True se il valore è un VNode. */
 function isVNode(x: VChild): x is VNode {
@@ -89,10 +101,11 @@ function applyStateful(root: HTMLElement, spec: StatefulSpec): void {
   const resolve = (m: Record<string, unknown>): string | null =>
     m && typeof m.storageKey === 'string' ? (m.storageKey as string) : null;
   let state: StatefulState = initialState(spec);
+  const labels = runtimeLabels();
 
   function rerender(): void {
     host!.innerHTML = '';
-    host!.appendChild(mount(renderStateful(spec, state, resolve)));
+    host!.appendChild(mount(renderStateful(spec, state, resolve, labels)));
   }
   function dispatch(ev: string, arg?: string, arg2?: string): void {
     state = reduce(spec, state, { ev, arg, arg2 });
@@ -277,13 +290,14 @@ function applyCarousel(root: HTMLElement): void {
   const prev = root.querySelector<HTMLButtonElement>('[data-carousel-prev]');
   const next = root.querySelector<HTMLButtonElement>('[data-carousel-next]');
   const status = root.querySelector<HTMLElement>('[data-carousel-status]');
+  const L = runtimeLabels();
   let idx = 0;
   function render(): void {
     slides.forEach((s, i) => {
       if (i === idx) s.removeAttribute('hidden');
       else s.setAttribute('hidden', 'hidden');
     });
-    if (status) status.textContent = 'Passo ' + (idx + 1) + ' di ' + slides.length;
+    if (status) status.textContent = L.carouselStatus(idx + 1, slides.length);
     if (prev) prev.disabled = idx === 0;
     if (next) next.disabled = idx >= slides.length - 1;
   }
@@ -305,6 +319,7 @@ const RenderCore = {
   renderBlockDom,
   buildCourseSteps,
   groupConcepts,
+  courseLabels,
 };
 
 // Espone il core sul global dell'ambiente di esecuzione: `window` nel browser
