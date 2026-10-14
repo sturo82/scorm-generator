@@ -290,6 +290,10 @@ export interface ApiClient {
   listKnowledge(scope?: KnowledgeScope, courseId?: string): Promise<KnowledgeDocView[]>;
   uploadKnowledge(file: File, scope: KnowledgeScope, courseId?: string): Promise<KnowledgeDocView>;
   deleteKnowledge(id: string): Promise<void>;
+  /** Ri-processa un documento (es. dopo FAILED): ri-accoda l'ingestion. */
+  reprocessKnowledge(id: string): Promise<KnowledgeDocView>;
+  /** URL firmato per scaricare il file originale della knowledge. */
+  getKnowledgeDownloadUrl(id: string): Promise<string>;
 
   // Brand
   listBrands(): Promise<BrandView[]>;

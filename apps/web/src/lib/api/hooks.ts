@@ -425,6 +425,14 @@ export function useDeleteKnowledge() {
   });
 }
 
+export function useReprocessKnowledge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.reprocessKnowledge(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['knowledge'] }),
+  });
+}
+
 // --- Brand ------------------------------------------------------------------
 
 export const useBrands = () => useQuery({ queryKey: qk.brands, queryFn: () => api.listBrands() });

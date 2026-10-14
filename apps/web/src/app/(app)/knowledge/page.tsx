@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { FileText, Trash2 } from 'lucide-react';
+import { Download, FileText, RefreshCw, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/app/page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { IngestStatusBadge } from '@/components/status-badge';
 import { Dropzone } from '@/components/knowledge/dropzone';
 import { useToast } from '@/components/ui/toast';
-import { useKnowledge, useUploadKnowledge, useDeleteKnowledge } from '@/lib/api/hooks';
+import {
+  useKnowledge,
+  useUploadKnowledge,
+  useDeleteKnowledge,
+  useReprocessKnowledge,
+} from '@/lib/api/hooks';
+import { getApiClient } from '@/lib/api/client';
 import { formatBytes } from '@/lib/format';
 
 const ACCEPT =
@@ -19,7 +25,9 @@ export default function KnowledgePage() {
   const docs = useKnowledge('GLOBAL');
   const upload = useUploadKnowledge();
   const del = useDeleteKnowledge();
+  const reprocess = useReprocessKnowledge();
   const toast = useToast();
+  const [busyId, setBusyId] = React.useState<string | null>(null);
 
   async function handleFiles(files: File[]) {
     for (const file of files) {
@@ -39,6 +47,35 @@ export default function KnowledgePage() {
       toast.show('Documento eliminato', 'success');
     } catch {
       toast.show('Eliminazione non riuscita', 'error');
+    }
+  }
+
+  async function handleReprocess(id: string) {
+    try {
+      await reprocess.mutateAsync(id);
+      toast.show('Riprocessamento avviato', 'success');
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : 'Riprocessamento non riuscito', 'error');
+    }
+  }
+
+  async function handleDownload(id: string, name: string) {
+    setBusyId(id);
+    try {
+      const url = await getApiClient().getKnowledgeDownloadUrl(id);
+      // Apre l'URL firmato: il browser scarica il file originale.
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.rel = 'noopener';
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : 'Download non riuscito', 'error');
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -85,6 +122,28 @@ export default function KnowledgePage() {
                   <p className="text-sm text-muted-foreground">{formatBytes(doc.sizeBytes)}</p>
                 </div>
                 <IngestStatusBadge status={doc.status} />
+                {doc.status === 'FAILED' && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Riprocessa documento"
+                    className="text-muted-foreground"
+                    disabled={reprocess.isPending}
+                    onClick={() => handleReprocess(doc.id)}
+                  >
+                    <RefreshCw className="size-4" />
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Scarica documento"
+                  className="text-muted-foreground"
+                  disabled={busyId === doc.id}
+                  onClick={() => handleDownload(doc.id, doc.filename)}
+                >
+                  <Download className="size-4" />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"

@@ -78,6 +78,16 @@ export class KnowledgeController {
     return { url };
   }
 
+  /** Ri-processa un documento (es. dopo FAILED): ri-accoda l'ingestion. */
+  @Post(':id/reprocess')
+  @Roles('EDITOR')
+  async reprocess(
+    @CurrentContext() ctx: AuthContext,
+    @Param('id') id: string,
+  ): Promise<KnowledgeDocView> {
+    return this.knowledge.reprocess(ctx.tenant.tenantId, id, ctx.correlationId);
+  }
+
   @Delete(':id')
   @Roles('EDITOR')
   async remove(

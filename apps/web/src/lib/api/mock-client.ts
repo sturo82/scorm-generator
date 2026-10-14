@@ -493,6 +493,20 @@ export class MockApiClient implements ApiClient {
     this.pushAudit('knowledge.upload', 'knowledge', doc.id);
     return doc;
   }
+  async reprocessKnowledge(docId: string) {
+    await delay(300);
+    const doc = this.knowledge.find((d) => d.id === docId);
+    if (!doc) throw new Error('Documento non trovato');
+    doc.status = 'PROCESSING';
+    setTimeout(() => {
+      doc.status = 'READY';
+    }, 1500);
+    return doc;
+  }
+  async getKnowledgeDownloadUrl(docId: string) {
+    await delay();
+    return `#mock-download/knowledge/${docId}`;
+  }
   async deleteKnowledge(docId: string) {
     await delay();
     this.knowledge = this.knowledge.filter((d) => d.id !== docId);

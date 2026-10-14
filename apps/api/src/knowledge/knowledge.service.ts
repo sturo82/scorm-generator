@@ -136,6 +136,39 @@ export class KnowledgeService {
     return docs.map((d) => this.toView(d));
   }
 
+  /**
+   * Ri-processa un documento già caricato (es. dopo un FAILED): riporta lo stato
+   * a PENDING, azzera l'errore e ri-accoda il job di ingestion. Il file è già su
+   * storage, quindi non serve ri-caricarlo. Idempotente: ri-eseguire l'ingest
+   * sovrascrive gli eventuali chunk/embeddings esistenti del documento.
+   */
+  async reprocess(
+    tenantId: string,
+    docId: string,
+    correlationId?: string,
+  ): Promise<KnowledgeDocView> {
+    const doc = await this.prisma.knowledgeDoc.findFirst({
+      where: { id: docId, tenantId },
+    });
+    if (!doc) throw new NotFoundException('Documento non trovato');
+
+    const updated = await this.prisma.knowledgeDoc.update({
+      where: { id: doc.id },
+      data: { status: 'PENDING', error: null },
+    });
+
+    await this.jobs.enqueue(
+      'knowledge.ingest',
+      { documentId: doc.id },
+      {
+        tenant: { tenantId },
+        correlationId: correlationId ?? randomUUID(),
+      },
+    );
+
+    return this.toView(updated);
+  }
+
   async getDownloadUrl(tenantId: string, docId: string): Promise<string> {
     const doc = await this.prisma.knowledgeDoc.findFirst({
       where: { id: docId, tenantId },

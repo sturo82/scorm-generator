@@ -225,6 +225,11 @@ export class HttpApiClient implements ApiClient {
     return (await res.json()) as KnowledgeDocView;
   }
   async deleteKnowledge(id: string) { await this.request(`/knowledge/${id}`, { method: 'DELETE' }); }
+  reprocessKnowledge(id: string) { return this.request<KnowledgeDocView>(`/knowledge/${id}/reprocess`, { method: 'POST' }); }
+  async getKnowledgeDownloadUrl(id: string) {
+    const { url } = await this.request<{ url: string }>(`/knowledge/${id}/download-url`);
+    return url;
+  }
   listBrands() { return this.request<BrandView[]>('/brands'); }
   getBrand(id: string) { return this.request<BrandView>(`/brands/${id}`); }
   createBrand(def: Omit<BrandView, 'id' | 'tenantId'>) {
