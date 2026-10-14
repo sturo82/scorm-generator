@@ -24,7 +24,9 @@ import {
   useBrands,
 } from '@/lib/api/hooks';
 import { StockPhotoPicker } from '@/components/courses/stock-photo-picker';
+import { usePendingAssessments } from '@/lib/use-pending-assessments';
 import { cn } from '@/lib/cn';
+import { ClipboardCheck } from 'lucide-react';
 
 type StepId = 'brief' | 'structure' | 'content' | 'cover' | 'review';
 
@@ -61,6 +63,31 @@ export function CourseWizard({ courseId }: { courseId: string }) {
   const toast = useToast();
   const [active, setActive] = React.useState<StepId>('brief');
   const [coverStockOpen, setCoverStockOpen] = React.useState(false);
+  // Evidenziazione temporanea della card test quando si arriva dal banner.
+  const [highlightTests, setHighlightTests] = React.useState(false);
+
+  // Test ancora da generare (banner sempre visibile + azione "genera tutti").
+  const pendingTests = usePendingAssessments(courseId, modules.data ?? []);
+
+  // Porta l'utente alla sezione test: step Contenuti + scroll + evidenziazione.
+  function goToTests() {
+    setActive('content');
+    setHighlightTests(true);
+    // Attende il render dello step prima di scrollare alla card dei test.
+    setTimeout(() => {
+      document.getElementById('course-tests')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+    setTimeout(() => setHighlightTests(false), 2600);
+  }
+
+  async function handleGenerateAllTests() {
+    try {
+      const n = await pendingTests.generateAllPending();
+      toast.show(n > 0 ? `Generati ${n} test` : 'Nessun test da generare', n > 0 ? 'success' : 'info');
+    } catch {
+      toast.show('Generazione dei test non completata', 'error');
+    }
+  }
 
   // Generazione in corso (banner persistente + blocco azioni in conflitto).
   const jobsActive = activeJobs.data ?? [];
@@ -179,6 +206,39 @@ export function CourseWizard({ courseId }: { courseId: string }) {
         </div>
       )}
 
+      {/* Banner sempre visibile: test ancora DA GENERARE. Indipendente dai job,
+          così l'utente non li perde (prima erano in fondo allo step Contenuti). */}
+      {hasStructure && pendingTests.pendingCount > 0 && (
+        <div className="flex flex-col gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 shadow-card sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-amber-500/20 text-amber-700">
+              <ClipboardCheck className="size-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-amber-900">
+                {pendingTests.pendingCount === 1
+                  ? 'C’è 1 test da generare'
+                  : `Ci sono ${pendingTests.pendingCount} test da generare`}
+              </p>
+              <p className="truncate text-xs text-amber-800/80">
+                {pendingTests.pending.map((p) => (p.scope === 'final' ? 'Test finale' : p.label)).join(' · ')}
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={goToTests} disabled={pendingTests.running}>
+              Vedi i test
+            </Button>
+            <Button size="sm" onClick={handleGenerateAllTests} disabled={pendingTests.running}>
+              <Wand2 className="size-4" />
+              {pendingTests.running
+                ? `Generazione… (${pendingTests.progress.done}/${pendingTests.progress.total})`
+                : `Genera tutti (${pendingTests.pendingCount})`}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Stepper */}
       <div className="rounded-xl border bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
@@ -258,7 +318,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
           nextLabel="Vai ai media"
           blockedHint={!hasContent ? 'Genera i contenuti di almeno una lezione per procedere.' : undefined}
         >
-          <CourseBuilder courseId={courseId} mode="content" />
+          <CourseBuilder courseId={courseId} mode="content" highlightTests={highlightTests} />
         </StepShell>
       )}
 

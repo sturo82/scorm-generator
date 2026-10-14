@@ -47,6 +47,7 @@ import {
   qk,
 } from '@/lib/api/hooks';
 import { AiWorking, AiWorkingInline } from '@/components/courses/ai-working';
+import { usePendingAssessments } from '@/lib/use-pending-assessments';
 import type { EditorialStatus } from '@/lib/api/types';
 
 /**
@@ -55,7 +56,16 @@ import type { EditorialStatus } from '@/lib/api/types';
  *    permette di editare moduli/lezioni. Non mostra la generazione contenuti.
  *  - 'content': genera i contenuti (singoli o tutti) delle lezioni esistenti.
  */
-export function CourseBuilder({ courseId, mode = 'content' }: { courseId: string; mode?: 'structure' | 'content' }) {
+export function CourseBuilder({
+  courseId,
+  mode = 'content',
+  highlightTests = false,
+}: {
+  courseId: string;
+  mode?: 'structure' | 'content';
+  /** Evidenzia la card dei test (navigazione dal banner "test da generare"). */
+  highlightTests?: boolean;
+}) {
   const modules = useModules(courseId);
   const addModule = useAddModule(courseId);
   const genOutline = useGenerateOutline(courseId);
@@ -176,14 +186,14 @@ export function CourseBuilder({ courseId, mode = 'content' }: { courseId: string
   }
 
   // --- Modalità CONTENUTI ---------------------------------------------------
-  return <ContentBuilder courseId={courseId} />;
+  return <ContentBuilder courseId={courseId} highlightTests={highlightTests} />;
 }
 
 /**
  * Step contenuti: genera i contenuti di tutte le lezioni in un colpo (job a
  * cascata) con avanzamento, oppure di una singola lezione come override.
  */
-function ContentBuilder({ courseId }: { courseId: string }) {
+function ContentBuilder({ courseId, highlightTests = false }: { courseId: string; highlightTests?: boolean }) {
   const modules = useModules(courseId);
   const genAll = useGenerateAllContent(courseId);
   const approveAll = useSetStatusAll(courseId);
@@ -340,7 +350,7 @@ function ContentBuilder({ courseId }: { courseId: string }) {
         ))}
       </div>
 
-      <AssessmentManager courseId={courseId} modules={modules.data} />
+      <AssessmentManager courseId={courseId} modules={modules.data} highlight={highlightTests} />
     </div>
   );
 }
@@ -351,11 +361,21 @@ function ContentBuilder({ courseId }: { courseId: string }) {
  * test finale. Utile per correggere corsi con test orfani (moduleId mancante)
  * o per aggiungerne di nuovi senza rigenerare tutti i contenuti.
  */
-function AssessmentManager({ courseId, modules }: { courseId: string; modules: ModuleView[] }) {
+function AssessmentManager({
+  courseId,
+  modules,
+  highlight = false,
+}: {
+  courseId: string;
+  modules: ModuleView[];
+  /** Evidenzia la card (es. quando si arriva qui dal banner "test da generare"). */
+  highlight?: boolean;
+}) {
   const assessments = useAssessments(courseId);
   const del = useDeleteAssessment(courseId);
   const gen = useGenerateAssessment(courseId);
   const repair = useRepairAssessments(courseId);
+  const pendingAssessments = usePendingAssessments(courseId, modules);
   const toast = useToast();
   const qc = useQueryClient();
   const [jobId, setJobId] = React.useState<string | null>(null);
@@ -375,7 +395,7 @@ function AssessmentManager({ courseId, modules }: { courseId: string; modules: M
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job.data?.status]);
 
-  const generating = Boolean(jobId);
+  const generating = Boolean(jobId) || pendingAssessments.running;
   const list = assessments.data ?? [];
   const orphanCount = list.filter((a) => a.scope === 'intermediate' && !a.moduleId).length;
 
@@ -412,6 +432,18 @@ function AssessmentManager({ courseId, modules }: { courseId: string; modules: M
     }
   }
 
+  async function handleGenerateAllPending() {
+    try {
+      const n = await pendingAssessments.generateAllPending();
+      toast.show(n > 0 ? `Generati ${n} test` : 'Nessun test da generare', n > 0 ? 'success' : 'info');
+    } catch {
+      toast.show('Generazione dei test non completata', 'error');
+    }
+  }
+
+  const pendingCount = pendingAssessments.pendingCount;
+  const batchRunning = pendingAssessments.running;
+
   async function handleDelete(assessmentId: string) {
     try {
       await del.mutateAsync(assessmentId);
@@ -422,21 +454,53 @@ function AssessmentManager({ courseId, modules }: { courseId: string; modules: M
   }
 
   return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
-        <CardTitle className="text-base">Test del corso</CardTitle>
-        {orphanCount > 0 && (
-          <Button size="sm" variant="outline" onClick={handleRepair} disabled={repair.isPending}>
-            <Check className="size-4" />
-            {repair.isPending ? 'Riparazione…' : `Correggi test orfani (${orphanCount})`}
+    <Card
+      id="course-tests"
+      className={cn('scroll-mt-24', highlight && 'ring-2 ring-primary/60')}
+    >
+      <CardHeader className="flex-col items-start gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <CardTitle className="text-base">Test del corso</CardTitle>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {pendingCount > 0
+              ? `${pendingCount} ${pendingCount === 1 ? 'test da generare' : 'test da generare'}`
+              : modules.length === 0
+                ? 'Genera prima la struttura del corso'
+                : 'Tutti i test sono stati generati'}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {orphanCount > 0 && (
+            <Button size="sm" variant="outline" onClick={handleRepair} disabled={repair.isPending || batchRunning}>
+              <Check className="size-4" />
+              {repair.isPending ? 'Riparazione…' : `Correggi test orfani (${orphanCount})`}
+            </Button>
+          )}
+          <Button
+            size="sm"
+            onClick={handleGenerateAllPending}
+            disabled={pendingCount === 0 || batchRunning || generating}
+            title={pendingCount === 0 ? 'Nessun test da generare' : 'Genera in sequenza tutti i test mancanti'}
+          >
+            <Wand2 className="size-4" />
+            {batchRunning
+              ? `Generazione… (${pendingAssessments.progress.done}/${pendingAssessments.progress.total})`
+              : `Genera tutti i test pendenti (${pendingCount})`}
           </Button>
-        )}
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
           I test intermedi bloccano l&apos;avanzamento finché non sono superati; il test finale
           determina l&apos;esito del corso. Un test intermedio deve essere collegato al suo modulo.
         </p>
+
+        {batchRunning && (
+          <AiWorking
+            label={`Sto generando i test… ${pendingAssessments.progress.done}/${pendingAssessments.progress.total}`}
+            hint="La generazione prosegue qui: evita di chiudere la pagina finché non termina."
+          />
+        )}
 
         {list.length > 0 ? (
           <ul className="space-y-2">
