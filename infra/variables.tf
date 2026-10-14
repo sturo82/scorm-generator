@@ -87,6 +87,16 @@ variable "bedrock_llm_model_id" {
   default     = "eu.anthropic.claude-sonnet-4-6"
 }
 
+# Region verso cui il cross-region inference profile EU può instradare le
+# invocazioni. Devono essere TUTTE autorizzate su foundation-model nella policy
+# IAM, altrimenti Bedrock risponde AccessDenied quando instrada fuori eu-west-1.
+# Ricavabile con: aws bedrock get-inference-profile --inference-profile-identifier <id>
+variable "bedrock_inference_regions" {
+  description = "Region del cross-region inference profile EU (per i permessi foundation-model)."
+  type        = list(string)
+  default     = ["eu-west-1", "eu-west-3", "eu-central-1", "eu-north-1", "eu-south-1", "eu-south-2"]
+}
+
 variable "bedrock_embeddings_model_id" {
   description = "Modello embeddings Bedrock (Titan)."
   type        = string

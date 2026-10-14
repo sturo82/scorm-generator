@@ -44,16 +44,30 @@ resource "aws_iam_role" "api_instance" {
 }
 
 data "aws_iam_policy_document" "api_permissions" {
-  # Bedrock: InvokeModel in regione (LLM/embeddings) e in us-east-1 (immagini).
+  # Bedrock: InvokeModel in regione (LLM/embeddings) e in us-west-2 (immagini).
+  #
+  # IMPORTANTE: il LLM (var.bedrock_llm_model_id) è un *cross-region inference
+  # profile* EU (es. eu.anthropic.claude-sonnet-4-6). Invocarlo richiede il
+  # permesso InvokeModel SIA sull'ARN del profilo (in var.region) SIA sui
+  # foundation-model in TUTTE le region verso cui il profilo può instradare —
+  # non solo eu-west-1. Il profilo "EU Claude Sonnet 4.6" instrada su:
+  # eu-west-1, eu-west-3, eu-central-1, eu-north-1, eu-south-1, eu-south-2.
+  # Limitare i foundation-model alla sola var.region causa AccessDenied quando
+  # Bedrock instrada verso un'altra region UE -> l'app vede ProviderUnavailable.
   statement {
     sid     = "Bedrock"
     actions = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
-    resources = [
-      "arn:aws:bedrock:${var.region}::foundation-model/*",
-      "arn:aws:bedrock:${var.media_region}::foundation-model/*",
-      "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:inference-profile/*",
-      "arn:aws:bedrock:${var.media_region}:${data.aws_caller_identity.current.account_id}:inference-profile/*",
-    ]
+    resources = concat(
+      # Foundation model in tutte le region del cross-region inference profile EU
+      # + la region immagini (us-west-2).
+      [for r in var.bedrock_inference_regions : "arn:aws:bedrock:${r}::foundation-model/*"],
+      [
+        "arn:aws:bedrock:${var.media_region}::foundation-model/*",
+        # Il profilo di inferenza si invoca dalla region principale e da quella media.
+        "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:inference-profile/*",
+        "arn:aws:bedrock:${var.media_region}:${data.aws_caller_identity.current.account_id}:inference-profile/*",
+      ],
+    )
   }
 
   # S3: oggetti del solo bucket assets.
