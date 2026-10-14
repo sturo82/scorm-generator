@@ -43,6 +43,38 @@ export function logout(): void {
 }
 
 /**
+ * Gestisce la sessione SCADUTA/non valida (es. l'API risponde 401): pulisce la
+ * sessione locale e porta l'utente al login, invalidando anche la sessione del
+ * pool OIDC se configurata. Senza questo, un token scaduto lasciava l'utente
+ * "dentro" con errori fuorvianti ("corso non trovato") invece di un logout.
+ *
+ * Idempotente: se non c'è sessione o siamo già sul login/callback, non fa nulla
+ * (evita loop di redirect). Import dinamico di lib/oidc per non creare cicli.
+ */
+let handlingExpiry = false;
+export async function handleSessionExpired(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  if (handlingExpiry) return;
+  const path = window.location.pathname;
+  // Niente sessione o già su pagine di autenticazione → nessuna azione.
+  if (!getSession() || path.startsWith('/login') || path.startsWith('/auth/')) return;
+  handlingExpiry = true;
+
+  logout();
+  try {
+    const { oidcLogoutUrl } = await import('./oidc');
+    const url = oidcLogoutUrl();
+    if (url) {
+      window.location.assign(url);
+      return;
+    }
+  } catch {
+    // Fallback: redirect locale al login.
+  }
+  window.location.assign('/login');
+}
+
+/**
  * Costruisce e salva una sessione a partire dai token OIDC reali. Il Bearer
  * verso l'API è l'ID token dell'IdP: a differenza dell'access token di Cognito,
  * l'ID token porta i claim applicativi (`custom:tenant_id`, email, ruolo) che

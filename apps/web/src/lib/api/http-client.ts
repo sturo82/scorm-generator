@@ -1,5 +1,5 @@
 import type { Block, Brief, BriefDraft } from '@scorm/contracts';
-import { getSession } from '../auth';
+import { getSession, handleSessionExpired } from '../auth';
 import type {
   AdminUserView,
   ApiClient,
@@ -52,6 +52,9 @@ export class HttpApiClient implements ApiClient {
 
     const res = await fetch(`${this.baseUrl}${path}`, { ...init, headers });
     if (!res.ok) {
+      // Sessione scaduta/non valida: logout automatico + redirect al login,
+      // invece di propagare errori fuorvianti (es. "corso non trovato").
+      if (res.status === 401) void handleSessionExpired();
       const body = await res.text();
       throw new Error(`API ${res.status}: ${body.slice(0, 300)}`);
     }
@@ -91,6 +94,7 @@ export class HttpApiClient implements ApiClient {
     const headers = new Headers();
     if (session) headers.set('Authorization', `Bearer ${session.token}`);
     const res = await fetch(`${this.baseUrl}/courses/${courseId}/instructor/avatar`, { method: 'POST', headers, body: form });
+    if (res.status === 401) void handleSessionExpired();
     if (!res.ok) throw new Error(`Upload foto fallito: ${res.status}`);
     return (await res.json()) as { avatarKey: string; avatarUrl: string };
   }
@@ -145,6 +149,7 @@ export class HttpApiClient implements ApiClient {
       `${this.baseUrl}/courses/${courseId}/generate/lessons/${lessonId}/blocks/${blockId}/video`,
       { method: 'POST', headers, body: form },
     );
+    if (res.status === 401) void handleSessionExpired();
     if (!res.ok) throw new Error(`Upload video fallito: ${res.status}`);
     return (await res.json()) as { storageKey: string; url: string };
   }
@@ -224,6 +229,7 @@ export class HttpApiClient implements ApiClient {
     const headers = new Headers();
     if (session) headers.set('Authorization', `Bearer ${session.token}`);
     const res = await fetch(`${this.baseUrl}/knowledge/upload?${q.toString()}`, { method: 'POST', headers, body: form });
+    if (res.status === 401) void handleSessionExpired();
     if (!res.ok) throw new Error(`Upload fallito: ${res.status}`);
     return (await res.json()) as KnowledgeDocView;
   }
@@ -249,6 +255,7 @@ export class HttpApiClient implements ApiClient {
     const headers = new Headers();
     if (session) headers.set('Authorization', `Bearer ${session.token}`);
     const res = await fetch(`${this.baseUrl}/brands/${id}/logo`, { method: 'POST', headers, body: form });
+    if (res.status === 401) void handleSessionExpired();
     if (!res.ok) throw new Error(`Upload logo fallito: ${res.status}`);
     return (await res.json()) as BrandView;
   }
@@ -295,6 +302,7 @@ export class HttpApiClient implements ApiClient {
     const headers = new Headers();
     if (session) headers.set('Authorization', `Bearer ${session.token}`);
     const res = await fetch(`${this.baseUrl}/tenant/branding/logo`, { method: 'POST', headers, body: form });
+    if (res.status === 401) void handleSessionExpired();
     if (!res.ok) throw new Error(`Upload logo fallito: ${res.status}`);
     return (await res.json()) as AppBrandingView;
   }
@@ -320,6 +328,7 @@ export class HttpApiClient implements ApiClient {
     const headers = new Headers();
     if (session) headers.set('Authorization', `Bearer ${session.token}`);
     const res = await fetch(`${this.baseUrl}/videos/upload`, { method: 'POST', headers, body: form });
+    if (res.status === 401) void handleSessionExpired();
     if (!res.ok) throw new Error(`Upload video fallito: ${res.status}`);
     return (await res.json()) as VideoAssetView;
   }
