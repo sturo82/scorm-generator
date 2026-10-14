@@ -37,13 +37,32 @@ export function compileTheme(brand: Brand): CompiledTheme {
     warnings.push('Logo primario mancante: verrà usato un segnaposto.');
   }
 
+  // Colori "on-" (testo sopra una superficie) GARANTITI per contrasto WCAG AA
+  // (>=4.5:1). Il brand può fornire un onPrimary/onSurface non conforme (es. un
+  // brand bianco/nero con accostamenti a basso contrasto): invece di fidarci del
+  // valore grezzo, lo usiamo solo se raggiunge la soglia, altrimenti scegliamo
+  // bianco o nero (quello che contrasta di più sulla superficie). Gli sfondi del
+  // brand (primary/secondary/surface) restano INVARIATI: è il testo sopra a
+  // essere reso leggibile. Vale sia per l'anteprima sia per l'export SCORM.
+  const onPrimary = readableOn(brand.colors.primary, brand.colors.onPrimary);
+  const onSurface = readableOn(brand.colors.surface, brand.colors.onSurface);
+  const secondary = brand.colors.secondary;
+  const onSecondary = secondary ? readableOn(secondary, brand.colors.onPrimary) : undefined;
+  if (onPrimary !== brand.colors.onPrimary) {
+    warnings.push('Contrasto testo/primario sotto AA: adeguato automaticamente per leggibilità.');
+  }
+  if (onSurface !== brand.colors.onSurface) {
+    warnings.push('Contrasto testo/superficie sotto AA: adeguato automaticamente per leggibilità.');
+  }
+
   // Token colore come CSS custom properties.
   const colorTokens: Record<string, string | undefined> = {
     '--brand-primary': brand.colors.primary,
-    '--brand-on-primary': brand.colors.onPrimary,
-    '--brand-secondary': brand.colors.secondary,
+    '--brand-on-primary': onPrimary,
+    '--brand-secondary': secondary,
+    '--brand-on-secondary': onSecondary,
     '--brand-surface': brand.colors.surface,
-    '--brand-on-surface': brand.colors.onSurface,
+    '--brand-on-surface': onSurface,
     '--brand-success': brand.colors.success,
     '--brand-warning': brand.colors.warning,
     '--brand-error': brand.colors.error,
@@ -114,4 +133,55 @@ function fontFaceRule(family: string, url: string): string {
 
 function escapeComment(s: string): string {
   return s.replace(/\*\//g, '*\\/');
+}
+
+// ── Contrasto WCAG ───────────────────────────────────────────────────────────
+// Garantisce che il testo "on-" su una superficie del brand sia leggibile
+// (>=4.5:1). Non altera gli sfondi del brand: sceglie solo il colore del testo.
+
+/** Parsa un colore esadecimale (#rgb o #rrggbb) in [r,g,b] 0..255, o null. */
+function parseHex(hex: string): [number, number, number] | null {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  let h = m[1]!;
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  const n = parseInt(h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/** Luminanza relativa WCAG da un colore RGB 0..255. */
+function relLuminance([r, g, b]: [number, number, number]): number {
+  const lin = (v: number) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+/** Rapporto di contrasto WCAG tra due colori RGB. */
+function contrastRatio(a: [number, number, number], b: [number, number, number]): number {
+  const la = relLuminance(a);
+  const lb = relLuminance(b);
+  const hi = Math.max(la, lb);
+  const lo = Math.min(la, lb);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+const WHITE: [number, number, number] = [255, 255, 255];
+const BLACK: [number, number, number] = [17, 17, 17]; // quasi-nero: più morbido del nero puro
+
+/**
+ * Restituisce un colore di testo leggibile sulla superficie `surfaceHex`:
+ *  - se `preferred` (quello del brand) raggiunge già AA (>=4.5:1), lo mantiene;
+ *  - altrimenti sceglie bianco o nero, quello col contrasto maggiore.
+ * Se la superficie non è un hex valido, lascia il valore preferito così com'è.
+ */
+function readableOn(surfaceHex: string, preferred: string): string {
+  const surface = parseHex(surfaceHex);
+  if (!surface) return preferred;
+  const pref = parseHex(preferred);
+  if (pref && contrastRatio(surface, pref) >= 4.5) return preferred;
+  const white = contrastRatio(surface, WHITE);
+  const black = contrastRatio(surface, BLACK);
+  return white >= black ? '#FFFFFF' : '#111111';
 }

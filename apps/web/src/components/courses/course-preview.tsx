@@ -7,12 +7,13 @@ import {
   groupBlocksIntoConcepts,
   type Brand,
   type Block,
+  type Assessment,
 } from '@scorm/contracts';
 import { buildCourseSteps } from '@scorm/contracts/render-core';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EditorialStatusBadge } from '@/components/status-badge';
 import { BlockRenderer } from '@/components/courses/block-renderer';
-import { useCourse, useModules, useBrand, useAssessments } from '@/lib/api/hooks';
+import { useCourse, useModules, useBrand, useAssessments, useAssessment } from '@/lib/api/hooks';
 import { cn } from '@/lib/cn';
 import type { AssessmentIndexView, BrandView, CourseView, LessonView, ModuleView } from '@/lib/api/types';
 import { CourseRagWidget } from '@/components/courses/course-rag-widget';
@@ -97,6 +98,17 @@ export function CoursePreview({ courseId }: { courseId: string }) {
     () => (brand.data ? compileTheme(toBrand(brand.data)) : null),
     [brand.data],
   );
+
+  // URL del logo del brand pronto per <img>: preferisce il valore risolto dal
+  // server (logoDisplayUrl, signed URL per i loghi caricati); se assente, usa
+  // assets.logoPrimaryUrl SOLO quando è un URL esterno (non una storage key).
+  const brandLogoUrl = React.useMemo(() => {
+    const b = brand.data;
+    if (!b) return null;
+    if (b.logoDisplayUrl) return b.logoDisplayUrl;
+    const raw = b.assets.logoPrimaryUrl;
+    return raw && !raw.startsWith('storage:') ? raw : null;
+  }, [brand.data]);
 
   // Sequenza lineare degli step del corso dalla STRUTTURA CONDIVISA
   // (buildCourseSteps di @scorm/contracts/render-core): stessa logica del player
@@ -213,16 +225,21 @@ export function CoursePreview({ courseId }: { courseId: string }) {
             <p className="mt-0.5 text-xs text-muted-foreground">Docente non impostato</p>
           )}
         </div>
-        {/* Logo del brand SEMPRE visibile, se il corso ha un brand con logo. */}
-        {brand.data?.assets.logoPrimaryUrl && (
+        {/* Logo del brand SEMPRE visibile, se il corso ha un brand con logo.
+            Usa l'URL RISOLTO (logoDisplayUrl): per i loghi caricati
+            assets.logoPrimaryUrl è una chiave di storage ("storage:…"), non un
+            URL — usarla come src dà immagine rotta. Il server fornisce già il
+            signed URL in logoDisplayUrl; per i loghi via URL esterno i due
+            coincidono. */}
+        {brandLogoUrl && (
           <span
             className="flex h-10 shrink-0 items-center rounded-lg px-2.5 shadow-sm"
             style={{ background: 'var(--brand-primary, #111)' }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element -- logo del brand (URL esterno o storage) */}
+            {/* eslint-disable-next-line @next/next/no-img-element -- logo del brand (signed URL) */}
             <img
-              src={brand.data.assets.logoPrimaryUrl}
-              alt={`Logo ${brand.data.name}`}
+              src={brandLogoUrl}
+              alt={`Logo ${brand.data?.name ?? ''}`}
               className="h-6 w-auto max-w-[120px] object-contain"
             />
           </span>
@@ -262,7 +279,7 @@ export function CoursePreview({ courseId }: { courseId: string }) {
                   modules={modules.data ?? []}
                 />
               ) : step.kind === 'assessment' ? (
-                <AssessmentPreview key={`assess-${step.assessment.id}`} step={step} />
+                <AssessmentPreview key={`assess-${step.assessment.id}`} courseId={courseId} step={step} />
               ) : (
                 <ModuleOverviewPreview
                   key={`module-overview-${step.module.id}`}
@@ -438,27 +455,151 @@ function CourseIndex({
  * valutazione, che resta nel runtime SCORM.
  */
 function AssessmentPreview({
+  courseId,
   step,
 }: {
+  courseId: string;
   step: { moduleTitle: string; assessment: AssessmentIndexView };
 }) {
   const isFinal = step.assessment.scope === 'final';
+  const detail = useAssessment(courseId, step.assessment.id);
+  const questions = detail.data?.questions ?? [];
+
   return (
     <div className="rounded-2xl border bg-background p-6">
       <p className="text-xs font-semibold uppercase tracking-wide text-primary">
         {isFinal ? 'Valutazione finale' : 'Test intermedio'} · {step.moduleTitle}
       </p>
       <h2 className="mt-1 text-xl font-bold">{step.assessment.title || 'Test'}</h2>
-      <p className="mt-3 text-sm text-muted-foreground">
+      <p className="mt-2 text-sm text-muted-foreground">
         {isFinal
           ? 'Test finale del corso. Nel pacchetto SCORM è valutato e riporta l’esito all’LMS.'
           : 'Test intermedio: nel pacchetto SCORM blocca l’accesso al modulo successivo finché non è superato (gating).'}
       </p>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Le domande e la valutazione sono gestite dal runtime del pacchetto esportato.
-      </p>
+
+      {/* Anteprima AUTORE delle domande: mostra prompt e opzioni con la risposta
+          corretta evidenziata. Nella fruizione reale (runtime SCORM) le risposte
+          non sono rivelate: qui servono all'autore per rivedere il test. */}
+      {detail.isLoading && <Skeleton className="mt-4 h-40 w-full" />}
+      {detail.isError && (
+        <p className="mt-4 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+          Impossibile caricare le domande di questo test.
+        </p>
+      )}
+      {detail.data && questions.length > 0 && (
+        <>
+          <div className="mt-4 flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Anteprima domande ({questions.length})
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              Soglia di superamento: {Math.round((detail.data.masteryScore ?? 0.8) * 100)}%
+            </p>
+          </div>
+          <ol className="mt-3 space-y-4">
+            {questions.map((q, i) => (
+              <li key={q.id} className="rounded-xl border bg-muted/20 p-4">
+                <div className="flex items-start gap-2">
+                  <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                    {i + 1}
+                  </span>
+                  <p className="text-sm font-medium">{questionPrompt(q)}</p>
+                </div>
+                <div className="mt-2 pl-8">
+                  <QuestionBody question={q} />
+                </div>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-4 text-[11px] text-muted-foreground">
+            Le risposte corrette sono evidenziate solo in questa anteprima autore; nel pacchetto
+            SCORM il test è interattivo e valutato dal runtime.
+          </p>
+        </>
+      )}
+      {detail.data && questions.length === 0 && (
+        <p className="mt-4 text-xs text-muted-foreground">Questo test non ha ancora domande.</p>
+      )}
     </div>
   );
+}
+
+/** Testo della domanda (per fill_blank usa il template leggibile). */
+function questionPrompt(q: Assessment['questions'][number]): string {
+  if (q.type === 'fill_blank') return q.prompt || q.template;
+  return q.prompt;
+}
+
+/** Rende il corpo di una domanda in base al tipo, evidenziando la risposta corretta. */
+function QuestionBody({ question: q }: { question: Assessment['questions'][number] }) {
+  const correct = 'rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-emerald-800 dark:text-emerald-300';
+  const normal = 'rounded-md border px-2 py-1';
+  switch (q.type) {
+    case 'single_choice':
+    case 'multiple_choice':
+      return (
+        <ul className="space-y-1.5 text-sm">
+          {q.choices.map((c) => (
+            <li key={c.id} className={c.correct ? correct : normal}>
+              {c.correct ? '✓ ' : ''}
+              {c.text}
+            </li>
+          ))}
+        </ul>
+      );
+    case 'true_false':
+      return (
+        <p className="text-sm">
+          Risposta corretta: <span className="font-semibold">{q.answer ? 'Vero' : 'Falso'}</span>
+        </p>
+      );
+    case 'short_text':
+      return (
+        <p className="text-sm text-muted-foreground">
+          Risposte accettate:{' '}
+          <span className="font-medium text-foreground">{q.acceptedAnswers.join(', ')}</span>
+        </p>
+      );
+    case 'matching':
+      return (
+        <ul className="space-y-1 text-sm">
+          {q.pairs.map((p, i) => (
+            <li key={i} className="flex gap-2">
+              <span className="font-medium">{p.left}</span>
+              <span className="text-muted-foreground">→</span>
+              <span>{p.right}</span>
+            </li>
+          ))}
+        </ul>
+      );
+    case 'ordering':
+      return (
+        <ol className="list-decimal space-y-1 pl-5 text-sm">
+          {[...q.items]
+            .sort((a, b) => a.correctPosition - b.correctPosition)
+            .map((it) => (
+              <li key={it.id}>{it.label}</li>
+            ))}
+        </ol>
+      );
+    case 'fill_blank':
+      return (
+        <p className="text-sm text-muted-foreground">
+          Spazi:{' '}
+          <span className="font-medium text-foreground">
+            {q.blanks.map((b) => b.accepted[0] ?? '—').join(', ')}
+          </span>
+        </p>
+      );
+    case 'interactive':
+      return (
+        <p className="text-sm text-muted-foreground">
+          Interazione valutabile (blocco <code className="text-xs">{q.blockId}</code>).
+        </p>
+      );
+    default:
+      return null;
+  }
 }
 
 /** Pagina riepilogativa del CORSO: hero, descrizione, conteggi, docente, indice moduli. */

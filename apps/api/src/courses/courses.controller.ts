@@ -263,6 +263,16 @@ export class CoursesController {
     return this.modules.listAssessments(ctx.tenant.tenantId, id);
   }
 
+  /** Assessment COMPLETO con le domande (anteprima autore). */
+  @Get(':id/assessments/:assessmentId')
+  getAssessment(
+    @CurrentContext() ctx: AuthContext,
+    @Param('id') id: string,
+    @Param('assessmentId') assessmentId: string,
+  ) {
+    return this.modules.getAssessment(ctx.tenant.tenantId, id, assessmentId);
+  }
+
   @Post(':id/assessments')
   @Roles('EDITOR')
   addAssessment(

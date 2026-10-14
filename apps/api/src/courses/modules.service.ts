@@ -3,10 +3,12 @@ import { z } from 'zod';
 import {
   Block,
   Question,
+  Assessment,
   CourseOutline,
   CONTRACTS_VERSION,
   type Block as BlockType,
   type Question as QuestionType,
+  type Assessment as AssessmentType,
 } from '@scorm/contracts';
 import type { ObjectStorage } from '@scorm/domain';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -341,6 +343,35 @@ export class ModulesService {
       scope: a.scope === 'FINAL' ? ('final' as const) : ('intermediate' as const),
       moduleId: a.moduleId ?? undefined,
     }));
+  }
+
+  /**
+   * Assessment COMPLETO con le domande, per l'anteprima autore (Requisito 6).
+   * Le domande sono ricostruite dai payload tipizzati salvati, ordinate per
+   * posizione, e validate con lo schema Assessment dei contratti.
+   */
+  async getAssessment(
+    tenantId: string,
+    courseId: string,
+    assessmentId: string,
+  ): Promise<AssessmentType> {
+    const a = await this.requireAssessment(tenantId, courseId, assessmentId);
+    const questions = await this.prisma.question.findMany({
+      where: { assessmentId },
+      orderBy: { position: 'asc' },
+      select: { payload: true },
+    });
+    return Assessment.parse({
+      id: a.id,
+      title: a.title,
+      scope: a.scope === 'FINAL' ? 'final' : 'intermediate',
+      moduleId: a.moduleId ?? undefined,
+      questions: questions.map((q) => q.payload),
+      masteryScore: a.masteryScore,
+      maxAttempts: a.maxAttempts ?? undefined,
+      shuffleQuestions: a.shuffleQuestions,
+      shuffleAnswers: a.shuffleAnswers,
+    });
   }
 
   async addAssessment(

@@ -1,4 +1,4 @@
-import type { Block, Brief, BriefDraft } from '@scorm/contracts';
+import type { Assessment, Block, Brief, BriefDraft } from '@scorm/contracts';
 import { computeQuote } from '@scorm/contracts';
 import type {
   AdminUserView,
@@ -264,6 +264,11 @@ export class MockApiClient implements ApiClient {
   async listAssessments(_courseId: string) {
     await delay();
     return [];
+  }
+  async getAssessment(_courseId: string, _assessmentId: string): Promise<Assessment> {
+    await delay();
+    // Mock: nessun assessment reale in memoria.
+    throw new Error('Assessment non trovato (mock)');
   }
   async deleteAssessment(_courseId: string, _assessmentId: string): Promise<void> {
     await delay();

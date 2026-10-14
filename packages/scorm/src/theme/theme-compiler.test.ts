@@ -66,6 +66,34 @@ describe('compileTheme', () => {
     expect(css).not.toContain('display:none');
   });
 
+  it('corregge i colori "on-" sotto contrasto AA (es. testo chiaro su superficie chiara)', () => {
+    // Superficie bianca con onSurface bianco: contrasto 1:1, illeggibile.
+    const brand: Brand = {
+      ...baseBrand,
+      colors: { ...baseBrand.colors, surface: '#FFFFFF', onSurface: '#FFFFFF' },
+    };
+    const { css, warnings } = compileTheme(brand);
+    // Il testo su superficie viene reso scuro (quasi-nero) per leggibilità.
+    expect(css).toContain('--brand-on-surface: #111111;');
+    expect(warnings.some((w) => /contrasto/i.test(w))).toBe(true);
+  });
+
+  it('mantiene un colore "on-" che già rispetta AA', () => {
+    // onPrimary bianco su primario blu scuro: contrasto ampio, invariato.
+    const { css } = compileTheme(baseBrand);
+    expect(css).toContain('--brand-on-primary: #FFFFFF;');
+  });
+
+  it('deriva --brand-on-secondary leggibile quando c\'è il colore secondario', () => {
+    const brand: Brand = {
+      ...baseBrand,
+      colors: { ...baseBrand.colors, secondary: '#111111' },
+    };
+    const { css } = compileTheme(brand);
+    // Su secondario quasi-nero il testo deve essere bianco.
+    expect(css).toContain('--brand-on-secondary: #FFFFFF;');
+  });
+
   it('gestisce la scala tipografica opzionale', () => {
     const brand: Brand = {
       ...baseBrand,

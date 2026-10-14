@@ -1,4 +1,4 @@
-import type { Block, Brief, BriefDraft } from '@scorm/contracts';
+import type { Assessment, Block, Brief, BriefDraft } from '@scorm/contracts';
 import { getSession, handleSessionExpired } from '../auth';
 import type {
   AdminUserView,
@@ -100,6 +100,9 @@ export class HttpApiClient implements ApiClient {
   }
   listModules(courseId: string) { return this.request<ModuleView[]>(`/courses/${courseId}/modules`); }
   listAssessments(courseId: string) { return this.request<AssessmentIndexView[]>(`/courses/${courseId}/assessments`); }
+  getAssessment(courseId: string, assessmentId: string) {
+    return this.request<Assessment>(`/courses/${courseId}/assessments/${assessmentId}`);
+  }
   async deleteAssessment(courseId: string, assessmentId: string) {
     await this.request<{ deleted: boolean }>(`/courses/${courseId}/assessments/${assessmentId}`, { method: 'DELETE' });
   }

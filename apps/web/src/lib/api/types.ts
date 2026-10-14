@@ -2,6 +2,7 @@ import type {
   Brief,
   BriefDraft,
   Block,
+  Assessment,
   PlanLimits,
   FeatureFlags,
   QuotaResource,
@@ -249,6 +250,8 @@ export interface ApiClient {
   setCourseShareable(courseId: string, shareable: boolean): Promise<CourseView>;
   listModules(courseId: string): Promise<ModuleView[]>;
   listAssessments(courseId: string): Promise<AssessmentIndexView[]>;
+  /** Assessment completo con le domande (anteprima autore). */
+  getAssessment(courseId: string, assessmentId: string): Promise<Assessment>;
   /** Elimina un assessment del corso. */
   deleteAssessment(courseId: string, assessmentId: string): Promise<void>;
   /** Ripara i test intermedi orfani: li collega al modulo e rimuove i duplicati. */

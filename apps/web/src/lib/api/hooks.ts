@@ -146,6 +146,14 @@ export const useAssessments = (courseId: string) =>
     enabled: !!courseId,
   });
 
+/** Assessment completo con le domande (anteprima autore). On-demand. */
+export const useAssessment = (courseId: string, assessmentId: string | null) =>
+  useQuery({
+    queryKey: ['courses', courseId, 'assessment', assessmentId],
+    queryFn: () => api.getAssessment(courseId, assessmentId as string),
+    enabled: !!courseId && !!assessmentId,
+  });
+
 /** Elimina un assessment del corso. */
 export function useDeleteAssessment(courseId: string) {
   const qc = useQueryClient();
