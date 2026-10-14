@@ -27,6 +27,7 @@ export function StockPhotoPicker({
   courseId,
   title = "Cerca un'immagine stock royalty-free",
   targets,
+  initialQuery,
   saving,
   onClose,
   onSelect,
@@ -37,6 +38,8 @@ export function StockPhotoPicker({
   title?: string;
   /** Se presente, mostra un selettore di destinazione (block). Omesso = copertina. */
   targets?: StockTarget[];
+  /** Termine di ricerca iniziale (es. dal placeholderPrompt del block). */
+  initialQuery?: string;
   saving: boolean;
   onClose: () => void;
   /** targetId è l'id scelto fra `targets`, oppure undefined in modalità copertina. */
@@ -64,10 +67,21 @@ export function StockPhotoPicker({
   }, [hasTargets, targets, targetId]);
 
   React.useEffect(() => {
-    if (!open) {
+    if (open) {
+      // All'apertura, se è fornito un termine iniziale (es. dalla descrizione
+      // del placeholder del block) precompila ed esegue subito la ricerca.
+      if (initialQuery && initialQuery.trim()) {
+        const q = initialQuery.trim().slice(0, 80);
+        setTerm(q);
+        setQuery(q);
+      }
+    } else {
       setTerm('');
       setQuery('');
     }
+    // Volutamente solo su `open`: non vogliamo ri-eseguire se initialQuery cambia
+    // mentre il dialog è già aperto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const providerLabel = search.data?.provider

@@ -25,6 +25,7 @@ import {
   useBrands,
 } from '@/lib/api/hooks';
 import { StockPhotoPicker } from '@/components/courses/stock-photo-picker';
+import { CoverFramer, COVER_ASPECT } from '@/components/courses/cover-framer';
 import { usePendingAssessments } from '@/lib/use-pending-assessments';
 import { cn } from '@/lib/cn';
 import { ClipboardCheck } from 'lucide-react';
@@ -362,39 +363,33 @@ export function CourseWizard({ courseId }: { courseId: string }) {
         >
           <div className="w-full max-w-2xl overflow-hidden rounded-xl border bg-card">
             {course.data?.coverImageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- URL firmato dinamico
-              <img
-                src={course.data.coverImageUrl}
-                alt={`Copertina: ${course.data.title}`}
-                className="aspect-[21/9] w-full object-cover"
-                style={{ objectPosition: `50% ${coverPos}%` }}
-              />
-            ) : (
-              <div className="flex aspect-[21/9] w-full flex-col items-center justify-center gap-3 bg-muted/40 text-center">
-                <p className="text-sm text-muted-foreground">Nessuna copertina generata</p>
-              </div>
-            )}
-            {/* Regolazione del punto focale verticale: utile quando la copertina
-                (spesso più alta del riquadro 21:9) viene tagliata male in alto. */}
-            {course.data?.coverImageUrl && (
-              <div className="flex items-center gap-3 border-t px-3 py-2.5">
-                <label htmlFor="cover-pos" className="shrink-0 text-xs font-medium text-muted-foreground">
-                  Inquadratura verticale
-                </label>
-                <input
-                  id="cover-pos"
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={coverPos}
-                  aria-label="Posizione verticale della copertina"
-                  className="h-2 flex-1 cursor-pointer accent-primary"
-                  onChange={(e) => setCoverPos(Number(e.target.value))}
-                  onPointerUp={() => handleSetCoverPosition(coverPos)}
-                  onKeyUp={() => handleSetCoverPosition(coverPos)}
+              <>
+                {/* Anteprima FEDELE: stesso rapporto del banner nel corso, con
+                    il punto focale applicato → è esattamente ciò che si vedrà. */}
+                {/* eslint-disable-next-line @next/next/no-img-element -- URL firmato dinamico */}
+                <img
+                  src={course.data.coverImageUrl}
+                  alt={`Copertina: ${course.data.title}`}
+                  className="w-full object-cover"
+                  style={{ aspectRatio: String(COVER_ASPECT), objectPosition: `50% ${coverPos}%` }}
                 />
-                <span className="w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{coverPos}%</span>
+                {/* Strumento di inquadratura: mostra l'immagine INTERA con la
+                    finestra "Visibile nel corso" evidenziata; il resto è oscurato. */}
+                <div className="border-t p-3">
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    Trascina lo slider o la finestra per scegliere cosa mostrare nel banner del corso.
+                  </p>
+                  <CoverFramer
+                    src={course.data.coverImageUrl}
+                    value={coverPos}
+                    onChange={setCoverPos}
+                    onCommit={handleSetCoverPosition}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="flex w-full flex-col items-center justify-center gap-3 bg-muted/40 text-center" style={{ aspectRatio: String(COVER_ASPECT) }}>
+                <p className="text-sm text-muted-foreground">Nessuna copertina generata</p>
               </div>
             )}
             <div className="flex justify-end gap-2 p-2">

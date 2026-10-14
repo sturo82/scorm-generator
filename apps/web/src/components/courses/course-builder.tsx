@@ -782,6 +782,10 @@ function LessonCard({
   const [libraryTargetBlock, setLibraryTargetBlock] = React.useState<string | null>(null);
   // Dialog di ricerca immagini stock (royalty-free).
   const [stockOpen, setStockOpen] = React.useState(false);
+  // Inserimento immagine MIRATO su un singolo block (flusso diretto dalla riga
+  // del block): quando valorizzato, il picker apre con quel solo target e un
+  // termine di ricerca pre-compilato dal placeholderPrompt del block.
+  const [imageTarget, setImageTarget] = React.useState<{ blockId: string; label: string; prompt?: string } | null>(null);
   // Dialog editor della trascrizione video.
   const [transcriptOpen, setTranscriptOpen] = React.useState(false);
   // jobId locale per la generazione del singolo contenuto.
@@ -860,6 +864,45 @@ function LessonCard({
       );
     } catch {
       toast.show('Generazione immagini non riuscita', 'error');
+    }
+  }
+
+  // Handler CONDIVISI per collegare un'immagine a un block (dal picker generale
+  // o da quello mirato per-block): upload da PC o scelta stock.
+  async function attachUploadToBlock(file: File, blockId: string): Promise<boolean> {
+    try {
+      await uploadImage.mutateAsync({ lessonId: lesson.id, blockId, file });
+      toast.show('Immagine caricata e collegata', 'success');
+      return true;
+    } catch (err) {
+      toast.show(
+        err instanceof Error && /\b(413|troppo grand|too large)\b/i.test(err.message)
+          ? 'Immagine troppo grande (max 8MB)'
+          : 'Caricamento immagine non riuscito',
+        'error',
+      );
+      return false;
+    }
+  }
+  async function attachStockToBlock(
+    photo: { id: string; provider: string; alt?: string },
+    blockId: string,
+  ): Promise<boolean> {
+    try {
+      await attachStock.mutateAsync({
+        lessonId: lesson.id,
+        input: { blockId, photoId: photo.id, provider: photo.provider, alt: photo.alt || undefined },
+      });
+      toast.show('Immagine stock collegata', 'success');
+      return true;
+    } catch (err) {
+      toast.show(
+        err instanceof Error && /501|non configurata/i.test(err.message)
+          ? 'Libreria immagini stock non configurata sul server'
+          : 'Collegamento immagine non riuscito',
+        'error',
+      );
+      return false;
     }
   }
 
@@ -1021,6 +1064,26 @@ function LessonCard({
                     <span className="block truncate text-sm font-medium">{meta.label}</span>
                     <span className="block truncate text-xs text-muted-foreground">{blockSummary(b)}</span>
                   </span>
+                  {(() => {
+                    const img = blockImageInfo(b);
+                    if (img.count === 0) return null;
+                    const missing = img.filled < img.count;
+                    return (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        aria-label={missing ? 'Inserisci immagine' : 'Sostituisci immagine'}
+                        title={
+                          missing
+                            ? `Inserisci immagine${img.count > 1 ? ` (${img.count - img.filled} mancanti)` : ''}`
+                            : 'Sostituisci immagine'
+                        }
+                        onClick={() => setImageTarget({ blockId: b.id, label: meta.label, prompt: img.firstPrompt })}
+                      >
+                        <ImageIcon className={cn('size-4', missing && 'text-primary')} />
+                      </Button>
+                    );
+                  })()}
                   <Button
                     size="icon"
                     variant="ghost"
@@ -1174,6 +1237,8 @@ function LessonCard({
         }}
       />
 
+      {/* Picker GENERALE (dal pulsante della lezione): mostra il selettore del
+          block di destinazione. */}
       <StockPhotoPicker
         open={stockOpen}
         courseId={courseId}
@@ -1182,41 +1247,32 @@ function LessonCard({
         onClose={() => setStockOpen(false)}
         onUpload={async (file, blockId) => {
           if (!blockId) return;
-          try {
-            await uploadImage.mutateAsync({ lessonId: lesson.id, blockId, file });
-            toast.show('Immagine caricata e collegata', 'success');
-            setStockOpen(false);
-          } catch (err) {
-            toast.show(
-              err instanceof Error && /\b(413|troppo grand|too large)\b/i.test(err.message)
-                ? 'Immagine troppo grande (max 8MB)'
-                : 'Caricamento immagine non riuscito',
-              'error',
-            );
-          }
+          if (await attachUploadToBlock(file, blockId)) setStockOpen(false);
         }}
         onSelect={async (photo, blockId) => {
           if (!blockId) return;
-          try {
-            await attachStock.mutateAsync({
-              lessonId: lesson.id,
-              input: {
-                blockId,
-                photoId: photo.id,
-                provider: photo.provider,
-                alt: photo.alt || undefined,
-              },
-            });
-            toast.show('Immagine stock collegata', 'success');
-            setStockOpen(false);
-          } catch (err) {
-            toast.show(
-              err instanceof Error && /501|non configurata/i.test(err.message)
-                ? 'Libreria immagini stock non configurata sul server'
-                : 'Collegamento immagine non riuscito',
-              'error',
-            );
-          }
+          if (await attachStockToBlock(photo, blockId)) setStockOpen(false);
+        }}
+      />
+
+      {/* Picker MIRATO (dal pulsante immagine della singola riga block): nessun
+          selettore di destinazione (target già scelto) e ricerca precompilata
+          dalla descrizione del placeholder → inserimento diretto e intuitivo. */}
+      <StockPhotoPicker
+        open={!!imageTarget}
+        courseId={courseId}
+        title={imageTarget ? `Immagine per: ${imageTarget.label}` : 'Immagine'}
+        targets={imageTarget ? [{ id: imageTarget.blockId, label: imageTarget.label, count: 1 }] : []}
+        initialQuery={imageTarget?.prompt}
+        saving={attachStock.isPending || uploadImage.isPending}
+        onClose={() => setImageTarget(null)}
+        onUpload={async (file) => {
+          if (!imageTarget) return;
+          if (await attachUploadToBlock(file, imageTarget.blockId)) setImageTarget(null);
+        }}
+        onSelect={async (photo) => {
+          if (!imageTarget) return;
+          if (await attachStockToBlock(photo, imageTarget.blockId)) setImageTarget(null);
         }}
       />
 
@@ -1273,6 +1329,35 @@ function collectImageBlocks(blocks: Block[]): Array<{ id: string; label: string;
     }
   }
   return out;
+}
+
+/**
+ * Info immagini di un singolo block: quante immagini contiene, quante sono
+ * già riempite (storageKey) e il primo placeholderPrompt (per prefillare la
+ * ricerca stock). Serve al pulsante per-block "aggiungi/sostituisci immagine".
+ */
+function blockImageInfo(block: Block): { count: number; filled: number; firstPrompt?: string } {
+  let count = 0;
+  let filled = 0;
+  let firstPrompt: string | undefined;
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+    if (node === null || typeof node !== 'object') return;
+    const obj = node as Record<string, unknown>;
+    if (obj.kind === 'image') {
+      count += 1;
+      if (typeof obj.storageKey === 'string' && obj.storageKey) filled += 1;
+      if (!firstPrompt && typeof obj.placeholderPrompt === 'string' && obj.placeholderPrompt.trim()) {
+        firstPrompt = obj.placeholderPrompt.trim();
+      }
+    }
+    for (const v of Object.values(obj)) visit(v);
+  };
+  visit(block);
+  return { count, filled, firstPrompt };
 }
 
 /** Etichetta e icona (emoji) leggibili per ciascun tipo di block. */

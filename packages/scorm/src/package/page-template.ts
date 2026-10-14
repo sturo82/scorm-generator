@@ -132,7 +132,7 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 .course-header { margin-bottom: 1.75rem; }
 .course-header h1 { font-size: 1.9rem; margin: 0 0 0.4rem; font-weight: 800; }
 .course-header p { margin: 0; color: var(--pl-primary); font-weight: 600; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; }
-.course-hero { display: block; width: 100%; max-height: 340px; object-fit: cover; border-radius: var(--pl-radius); margin-bottom: 1.5rem; box-shadow: var(--pl-shadow-md); }
+.course-hero { display: block; width: 100%; aspect-ratio: 16 / 6; object-fit: cover; border-radius: var(--pl-radius); margin-bottom: 1.5rem; box-shadow: var(--pl-shadow-md); }
 
 /* Card principale del contenuto */
 .course-main {
@@ -458,7 +458,7 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 
 /* ====== Pagine riepilogative (overview) corso e modulo ====== */
 .overview-page { max-width: none; }
-.overview-hero { display: block; width: 100%; max-height: 300px; object-fit: cover; border-radius: var(--pl-radius); margin-bottom: 1.5rem; box-shadow: var(--pl-shadow-md); }
+.overview-hero { display: block; width: 100%; aspect-ratio: 16 / 6; object-fit: cover; border-radius: var(--pl-radius); margin-bottom: 1.5rem; box-shadow: var(--pl-shadow-md); }
 .overview-page h1 { font-size: 2rem; font-weight: 800; margin: 0 0 0.75rem; line-height: 1.15; }
 .overview-desc { font-size: 1.05rem; line-height: 1.6; color: var(--pl-muted); margin: 0 0 1.5rem; }
 .overview-section-title { font-size: 0.8rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--pl-muted); margin: 1.75rem 0 0.75rem; }

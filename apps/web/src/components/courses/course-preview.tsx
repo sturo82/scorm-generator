@@ -639,8 +639,8 @@ function CourseOverviewPreview({
           <img
             src={course.coverImageUrl}
             alt=""
-            className="h-56 w-full object-cover"
-            style={{ objectPosition: `50% ${course.coverPosition ?? 50}%` }}
+            className="w-full object-cover"
+            style={{ aspectRatio: '16 / 6', objectPosition: `50% ${course.coverPosition ?? 50}%` }}
           />
           {course.coverAttribution && (
             <span className="absolute bottom-1.5 right-1.5 rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white/90">
