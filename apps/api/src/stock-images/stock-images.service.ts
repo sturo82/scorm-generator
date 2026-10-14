@@ -107,6 +107,50 @@ export class StockImagesService {
   }
 
   /**
+   * Collega un'immagine CARICATA DALL'UTENTE (upload da PC) a un MediaRef
+   * immagine del block indicato. A differenza dello stock, non richiede un
+   * provider configurato e non ha attribuzione (contenuto proprio dell'autore).
+   * Il file è salvato su storage (così entra nel pacchetto SCORM offline) e lo
+   * storageKey scritto nel MediaRef; il placeholderPrompt viene rimosso.
+   */
+  async attachUploadToBlock(
+    tenantId: string,
+    courseId: string,
+    lessonId: string,
+    input: { blockId: string; bytes: Buffer; contentType: string; mediaIndex?: number; alt?: string },
+  ): Promise<{ attached: true; url: string }> {
+    const lesson = await this.prisma.lesson.findFirst({
+      where: { id: lessonId, module: { course: { id: courseId, tenantId } } },
+    });
+    if (!lesson) throw new NotFoundException('Lezione non trovata');
+    const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as unknown[]) : [];
+
+    const ref = this.findImageRef(blocks, input.blockId, input.mediaIndex ?? 0);
+    if (!ref) throw new NotFoundException('Nessun MediaRef immagine trovato nel block indicato');
+
+    const ext = extForContentType(input.contentType);
+    const key = `media/${tenantId}/${courseId}/upload/${randomUUID()}.${ext}`;
+    await this.storage.putObject(key, input.bytes, { contentType: input.contentType });
+
+    ref.kind = 'image';
+    ref.source = 'upload';
+    ref.storageKey = key;
+    ref.alt = input.alt ?? ref.alt ?? '';
+    // Immagine propria dell'autore: nessuna attribuzione, nessun placeholder.
+    delete ref.attribution;
+    delete ref.placeholderPrompt;
+
+    await this.prisma.lesson.update({
+      where: { id: lessonId },
+      data: { blocks: blocks as object, updatedAt: new Date() },
+    });
+
+    const url = await this.storage.getSignedUrl(key, { expiresInSec: 6 * 3600 });
+    this.logger.log(`Immagine caricata collegata (lezione ${lessonId}, block ${input.blockId})`);
+    return { attached: true, url };
+  }
+
+  /**
    * Scarica l'immagine stock scelta e la imposta come COPERTINA del corso
    * (coverImageKey) salvando anche l'attribuzione (credito obbligatorio).
    */

@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Search } from 'lucide-react';
+import { Search, Upload } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
 import { Input, Label } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,7 @@ export function StockPhotoPicker({
   saving,
   onClose,
   onSelect,
+  onUpload,
 }: {
   open: boolean;
   courseId: string;
@@ -40,11 +41,19 @@ export function StockPhotoPicker({
   onClose: () => void;
   /** targetId è l'id scelto fra `targets`, oppure undefined in modalità copertina. */
   onSelect: (photo: StockImageResult, targetId?: string) => void;
+  /**
+   * Se presente, abilita l'upload di un'immagine DAL PC: viene mostrato il
+   * pulsante "Carica dal PC" che apre il selettore file e invoca questo callback
+   * con il file scelto e la destinazione selezionata. Omesso = nessun upload
+   * (es. modalità copertina, dove l'upload è gestito altrove).
+   */
+  onUpload?: (file: File, targetId?: string) => void;
 }) {
   const [term, setTerm] = React.useState('');
   const [query, setQuery] = React.useState('');
   const [targetId, setTargetId] = React.useState<string>('');
   const search = useSearchStockImages(courseId, query);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const hasTargets = Array.isArray(targets) && targets.length > 0;
 
@@ -87,6 +96,32 @@ export function StockPhotoPicker({
         <Button type="submit" size="sm" disabled={!term.trim()}>
           <Search className="size-4" /> Cerca
         </Button>
+        {onUpload && (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={saving || !canSelect}
+              onClick={() => fileInputRef.current?.click()}
+              title="Carica un'immagine dal tuo computer"
+            >
+              <Upload className="size-4" /> Carica dal PC
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                // Reset del valore così lo stesso file può essere riselezionato.
+                e.target.value = '';
+                if (file) onUpload(file, hasTargets ? targetId : undefined);
+              }}
+            />
+          </>
+        )}
       </form>
 
       {hasTargets && targets!.length > 1 && (
@@ -116,6 +151,7 @@ export function StockPhotoPicker({
         <p className="text-sm text-muted-foreground">
           Digita una parola chiave e premi «Cerca». Le immagini sono royalty-free; il credito
           all&apos;autore viene salvato e mostrato automaticamente.
+          {onUpload && ' In alternativa usa «Carica dal PC» per inserire una tua immagine.'}
         </p>
       ) : search.isLoading ? (
         <p className="text-sm text-muted-foreground">Cerco immagini…</p>

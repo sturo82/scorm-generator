@@ -643,6 +643,21 @@ export function useAttachStockImage(courseId: string) {
   });
 }
 
+/** Carica un'immagine dal PC e la collega a un block immagine della lezione. */
+export function useUploadBlockImage(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { lessonId: string; blockId: string; file: File; mediaIndex?: number; alt?: string }) =>
+      api.uploadBlockImage(courseId, vars.lessonId, {
+        blockId: vars.blockId,
+        file: vars.file,
+        mediaIndex: vars.mediaIndex,
+        alt: vars.alt,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.modules(courseId) }),
+  });
+}
+
 /** Imposta un'immagine stock come copertina del corso. */
 export function useAttachStockCover(courseId: string) {
   const qc = useQueryClient();

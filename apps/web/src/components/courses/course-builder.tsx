@@ -33,6 +33,7 @@ import {
   useAttachVideoFromLibrary,
   useSetVideoTranscript,
   useAttachStockImage,
+  useUploadBlockImage,
   useVideos,
   useActiveJobs,
   useEditLessonBlocks,
@@ -763,6 +764,7 @@ function LessonCard({
   const uploadVideo = useUploadLessonVideo(courseId);
   const attachVideo = useAttachVideoFromLibrary(courseId);
   const attachStock = useAttachStockImage(courseId);
+  const uploadImage = useUploadBlockImage(courseId);
   const setTranscript = useSetVideoTranscript(courseId);
   const deleteLesson = useDeleteLesson(courseId);
   const editBlocks = useEditLessonBlocks(courseId);
@@ -1176,8 +1178,23 @@ function LessonCard({
         open={stockOpen}
         courseId={courseId}
         targets={imageBlocks}
-        saving={attachStock.isPending}
+        saving={attachStock.isPending || uploadImage.isPending}
         onClose={() => setStockOpen(false)}
+        onUpload={async (file, blockId) => {
+          if (!blockId) return;
+          try {
+            await uploadImage.mutateAsync({ lessonId: lesson.id, blockId, file });
+            toast.show('Immagine caricata e collegata', 'success');
+            setStockOpen(false);
+          } catch (err) {
+            toast.show(
+              err instanceof Error && /\b(413|troppo grand|too large)\b/i.test(err.message)
+                ? 'Immagine troppo grande (max 8MB)'
+                : 'Caricamento immagine non riuscito',
+              'error',
+            );
+          }
+        }}
         onSelect={async (photo, blockId) => {
           if (!blockId) return;
           try {

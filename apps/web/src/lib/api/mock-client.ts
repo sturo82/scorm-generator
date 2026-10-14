@@ -819,6 +819,14 @@ export class MockApiClient implements ApiClient {
     await delay();
     return { attached: true, url: 'https://picsum.photos/seed/attached/1280/720' };
   }
+  async uploadBlockImage(
+    _courseId: string,
+    _lessonId: string,
+    _input: { blockId: string; file: File; mediaIndex?: number; alt?: string },
+  ): Promise<{ attached: true; url: string }> {
+    await delay();
+    return { attached: true, url: 'https://picsum.photos/seed/uploaded/1280/720' };
+  }
   async attachStockCover(
     _courseId: string,
     _input: AttachStockCoverInput,

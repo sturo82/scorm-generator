@@ -368,6 +368,12 @@ export interface ApiClient {
     lessonId: string,
     input: AttachStockImageInput,
   ): Promise<{ attached: true; url: string }>;
+  /** Carica un'immagine dal PC e la collega a un block immagine della lezione. */
+  uploadBlockImage(
+    courseId: string,
+    lessonId: string,
+    input: { blockId: string; file: File; mediaIndex?: number; alt?: string },
+  ): Promise<{ attached: true; url: string }>;
   /** Imposta un'immagine stock come copertina del corso. */
   attachStockCover(courseId: string, input: AttachStockCoverInput): Promise<{ attached: true; url: string }>;
   /** Imposta un'immagine stock come copertina di un modulo. */

@@ -156,6 +156,28 @@ export class HttpApiClient implements ApiClient {
     if (!res.ok) throw new Error(`Upload video fallito: ${res.status}`);
     return (await res.json()) as { storageKey: string; url: string };
   }
+  /** Carica un'immagine dal PC e la collega a un block immagine della lezione. */
+  async uploadBlockImage(
+    courseId: string,
+    lessonId: string,
+    input: { blockId: string; file: File; mediaIndex?: number; alt?: string },
+  ) {
+    const session = getSession();
+    const form = new FormData();
+    form.append('file', input.file);
+    form.append('blockId', input.blockId);
+    if (input.mediaIndex != null) form.append('mediaIndex', String(input.mediaIndex));
+    if (input.alt) form.append('alt', input.alt);
+    const headers = new Headers();
+    if (session) headers.set('Authorization', `Bearer ${session.token}`);
+    const res = await fetch(
+      `${this.baseUrl}/courses/${courseId}/stock-images/lessons/${lessonId}/upload`,
+      { method: 'POST', headers, body: form },
+    );
+    if (res.status === 401) void handleSessionExpired();
+    if (!res.ok) throw new Error(`Upload immagine fallito: ${res.status}`);
+    return (await res.json()) as { attached: true; url: string };
+  }
   generateLessonContent(courseId: string, lessonId: string, toneInstruction?: string) {
     return this.request<JobRef>(`/courses/${courseId}/generate/lessons/${lessonId}/content`, {
       method: 'POST',

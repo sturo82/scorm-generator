@@ -111,3 +111,52 @@ describe('StockImagesService.attachToBlock', () => {
     ).rejects.toBeInstanceOf(NotImplementedException);
   });
 });
+
+describe('StockImagesService.attachUploadToBlock', () => {
+  it('salva il file su storage e scrive storageKey/source=upload, senza provider stock', async () => {
+    // Nessun provider configurato: l'upload da PC NON deve dipenderne.
+    const { svc, putObject, update } = makeService({
+      provider: null,
+      lesson: {
+        id: 'l1',
+        blocks: [
+          {
+            id: 'b1',
+            type: 'rich_text',
+            payload: {
+              content: { html: 'x' },
+              media: [{ kind: 'image', alt: '', placeholderPrompt: 'da sostituire', attribution: { provider: 'Old' } }],
+            },
+          },
+        ],
+      },
+    });
+    const res = await svc.attachUploadToBlock('t1', 'c1', 'l1', {
+      blockId: 'b1',
+      bytes: Buffer.from([1, 2, 3]),
+      contentType: 'image/png',
+      alt: 'mia foto',
+    });
+    expect(res.attached).toBe(true);
+    expect(putObject).toHaveBeenCalledTimes(1);
+    const savedBlocks = (update.mock.calls[0]![0] as { data: { blocks: unknown[] } }).data.blocks;
+    const img = (savedBlocks[0] as { payload: { media: Record<string, unknown>[] } }).payload.media[0]!;
+    expect(img.source).toBe('upload');
+    expect((img.storageKey as string).includes('/upload/')).toBe(true);
+    expect((img.storageKey as string).endsWith('.png')).toBe(true);
+    expect(img.alt).toBe('mia foto');
+    // Placeholder e attribuzione (contenuto proprio) rimossi.
+    expect(img.placeholderPrompt).toBeUndefined();
+    expect(img.attribution).toBeUndefined();
+  });
+
+  it('block senza MediaRef immagine → 404', async () => {
+    const { svc } = makeService({
+      provider: null,
+      lesson: { id: 'l1', blocks: [{ id: 'b1', type: 'rich_text', payload: { content: { html: 'x' } } }] },
+    });
+    await expect(
+      svc.attachUploadToBlock('t1', 'c1', 'l1', { blockId: 'b1', bytes: Buffer.from([1]), contentType: 'image/png' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
