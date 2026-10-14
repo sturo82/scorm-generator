@@ -151,15 +151,18 @@ variable "db_allowed_cidrs" {
 # --- App Runner -------------------------------------------------------------
 
 variable "apprunner_cpu" {
-  description = "CPU dei servizi App Runner (es. 1024 = 1 vCPU)."
+  description = "CPU dei servizi App Runner (es. 1024 = 1 vCPU, 2048 = 2 vCPU)."
   type        = string
-  default     = "1024"
+  # 2 vCPU: l'API (Nest + Prisma) andava in OOM con 1 vCPU/2 GB (exit 137,
+  # restart loop). App Runner richiede >=4 GB con 2 vCPU.
+  default     = "2048"
 }
 
 variable "apprunner_memory" {
-  description = "Memoria dei servizi App Runner (es. 2048 = 2 GB)."
+  description = "Memoria dei servizi App Runner (es. 4096 = 4 GB)."
   type        = string
-  default     = "2048"
+  # 4 GB: raddoppiata rispetto ai 2 GB che causavano OOM.
+  default     = "4096"
 }
 
 variable "api_image_tag" {
