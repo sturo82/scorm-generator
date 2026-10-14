@@ -998,8 +998,49 @@ function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (v: ViewMo
  * principali del CSS generato da compileTheme.
  */
 function scopeThemeCss(css: string): string {
-  return css
-    .replace(/:root\s*\{/g, '.brand-scope {')
-    .replace(/\bbody\s*\{/g, '.brand-scope {')
-    .replace(/\bh1, h2, h3, h4, h5, h6\s*\{/g, '.brand-scope :is(h1,h2,h3,h4,h5,h6) {');
+  return (
+    css
+      // I token del brand (:root/body) vengono definiti SIA sul contenitore
+      // dell'anteprima SIA sul widget chat (fixed, fuori da .brand-scope nel
+      // DOM): così anche la chat eredita i colori del CORSO.
+      .replace(/:root\s*\{/g, '.brand-scope, .brand-chat-scope {')
+      .replace(/\bbody\s*\{/g, '.brand-scope {')
+      .replace(/\bh1, h2, h3, h4, h5, h6\s*\{/g, '.brand-scope :is(h1,h2,h3,h4,h5,h6) {') +
+    '\n' +
+    BRAND_TOKEN_BRIDGE_CSS
+  );
 }
+
+/**
+ * Rimappa i token SEMANTICI dell'app (Tailwind: --foreground, --primary,
+ * --card…) sul brand del CORSO all'interno dell'anteprima (.brand-scope e del
+ * widget chat .brand-chat-scope). Senza questo, le utility come text-foreground,
+ * bg-primary, text-primary-foreground, bg-card eredita(va)no il tema dell'APP
+ * (verde di piattaforma / grigi), non il brand del corso — e in alcuni casi
+ * finivano sotto il contrasto AA sulla superficie del brand.
+ *
+ * I token Tailwind sono triplette HSL avvolte in hsl(var(--x)); usiamo quindi le
+ * varianti --brand-*-hsl generate da compileTheme. I colori "on-" sono già resi
+ * leggibili (>=4.5:1) dal compilatore, quindi testo su superficie/primario
+ * risulta WCAG AA. Le superfici neutre (card/popover/background) restano chiare
+ * usando la superficie del brand, con testo on-surface leggibile sopra.
+ */
+const BRAND_TOKEN_BRIDGE_CSS = `
+.brand-scope, .brand-chat-scope {
+  --background: var(--brand-surface-hsl, var(--background));
+  --foreground: var(--brand-on-surface-hsl, var(--foreground));
+  --card: var(--brand-surface-hsl, var(--card));
+  --card-foreground: var(--brand-on-surface-hsl, var(--card-foreground));
+  --popover: var(--brand-surface-hsl, var(--popover));
+  --popover-foreground: var(--brand-on-surface-hsl, var(--popover-foreground));
+  --primary: var(--brand-primary-hsl, var(--primary));
+  --primary-foreground: var(--brand-on-primary-hsl, var(--primary-foreground));
+  --secondary: var(--brand-secondary-hsl, var(--brand-primary-hsl, var(--secondary)));
+  --secondary-foreground: var(--brand-on-secondary-hsl, var(--brand-on-primary-hsl, var(--secondary-foreground)));
+  --ring: var(--brand-primary-hsl, var(--ring));
+  /* Testo "attenuato": sul brand usiamo l'on-surface leggibile (>=4.5:1) invece
+     del grigio dell'app, che su superfici del brand scure spariva. Si perde un
+     filo di gerarchia visiva, ma il testo secondario resta sempre WCAG AA. */
+  --muted-foreground: var(--brand-on-surface-hsl, var(--muted-foreground));
+}
+`;

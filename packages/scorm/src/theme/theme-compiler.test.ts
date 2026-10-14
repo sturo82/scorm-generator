@@ -31,6 +31,15 @@ describe('compileTheme', () => {
     expect(css).toContain('--brand-error: #D32F2F;');
   });
 
+  it('emette anche le triplette HSL dei token (per i design system basati su hsl(var(--x)))', () => {
+    const { css } = compileTheme(baseBrand);
+    // #0055FF → hsl(220 100% 50%); #FFFFFF → 0 0% 100%; #111111 → 0 0% 7%.
+    expect(css).toContain('--brand-primary-hsl: 220 100% 50%;');
+    expect(css).toContain('--brand-on-primary-hsl: 0 0% 100%;');
+    expect(css).toContain('--brand-surface-hsl: 0 0% 100%;');
+    expect(css).toContain('--brand-on-surface-hsl: 0 0% 7%;');
+  });
+
   it('include le @font-face per i web font dichiarati e li elenca', () => {
     const theme = compileTheme(baseBrand);
     expect(theme.css).toContain('@font-face');

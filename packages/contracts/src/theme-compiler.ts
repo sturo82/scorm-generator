@@ -66,6 +66,17 @@ export function compileTheme(brand: Brand): CompiledTheme {
     '--brand-success': brand.colors.success,
     '--brand-warning': brand.colors.warning,
     '--brand-error': brand.colors.error,
+    // Varianti in triplette HSL "H S% L%" (senza hsl()), per poter alimentare
+    // sistemi di design che avvolgono i token in hsl(var(--x)) (es. i token
+    // semantici Tailwind dell'anteprima web: --primary, --foreground, --card…).
+    // Così l'anteprima può mappare i propri token sul brand del CORSO con lo
+    // stesso contrasto AA garantito dai colori "on-".
+    '--brand-primary-hsl': hexToHslTriplet(brand.colors.primary),
+    '--brand-on-primary-hsl': hexToHslTriplet(onPrimary),
+    '--brand-secondary-hsl': secondary ? hexToHslTriplet(secondary) : undefined,
+    '--brand-on-secondary-hsl': onSecondary ? hexToHslTriplet(onSecondary) : undefined,
+    '--brand-surface-hsl': hexToHslTriplet(brand.colors.surface),
+    '--brand-on-surface-hsl': hexToHslTriplet(onSurface),
   };
 
   // Token tipografici.
@@ -147,6 +158,41 @@ function parseHex(hex: string): [number, number, number] | null {
   if (h.length === 3) h = h.split('').map((c) => c + c).join('');
   const n = parseInt(h, 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/**
+ * Converte un hex (#rgb/#rrggbb) in una tripletta HSL "H S% L%" (senza la
+ * funzione hsl()), nel formato usato dai token Tailwind. Se l'hex non è valido
+ * restituisce undefined (il token verrà omesso e si userà il fallback).
+ */
+function hexToHslTriplet(hex: string): string | undefined {
+  const rgb = parseHex(hex);
+  if (!rgb) return undefined;
+  const [r, g, b] = [rgb[0] / 255, rgb[1] / 255, rgb[2] / 255];
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let h = 0;
+  let s = 0;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      default:
+        h = (r - g) / d + 4;
+    }
+    h /= 6;
+  }
+  const H = Math.round(h * 360);
+  const S = Math.round(s * 100);
+  const L = Math.round(l * 100);
+  return `${H} ${S}% ${L}%`;
 }
 
 /** Luminanza relativa WCAG da un colore RGB 0..255. */

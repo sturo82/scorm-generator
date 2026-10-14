@@ -573,7 +573,7 @@ export function CourseRagWidget({ courseId, onJump }: { courseId: string; onJump
           type="button"
           onClick={() => setOpen(true)}
           title={neuralPreparing ? 'Chiedi al corso — preparazione ricerca intelligente…' : 'Chiedi al corso'}
-          className="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-float transition-transform hover:-translate-y-0.5"
+          className="brand-chat-scope fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-float transition-transform hover:-translate-y-0.5"
         >
           <MessageCircleQuestion className="size-4" /> Chiedi al corso
           {/* Pallino pulsante: segnala che la ricerca neurale si sta preparando
@@ -590,7 +590,7 @@ export function CourseRagWidget({ courseId, onJump }: { courseId: string; onJump
         <div
           role="dialog"
           aria-label="Chiedi al corso"
-          className="fixed bottom-5 right-5 z-40 flex max-h-[min(560px,calc(100vh-2.5rem))] w-[min(380px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-2xl border bg-card shadow-float"
+          className="brand-chat-scope fixed bottom-5 right-5 z-40 flex max-h-[min(560px,calc(100vh-2.5rem))] w-[min(380px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-2xl border bg-card shadow-float"
         >
           <div className="flex items-center justify-between border-b px-4 py-3">
             <span className="font-bold">Chiedi al corso</span>
