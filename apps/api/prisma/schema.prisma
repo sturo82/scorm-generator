@@ -276,6 +276,10 @@ model Course {
   // Attribuzione (JSON) quando la copertina proviene da una libreria stock
   // (Unsplash/Pexels): credito obbligatorio autore + fonte. Null se generata/AI.
   coverAttribution Json?
+  // Posizione verticale del punto focale della copertina (0-100): centro=50.
+  // Applicata come object-position: 50% <N>% in anteprima e player SCORM, così
+  // l'autore può evitare che la copertina venga tagliata male in alto/in basso.
+  coverPosition Int    @default(50)
   // Stile delle micro-interazioni del corso: "sober" (default) | "lively".
   // Propagato ad anteprima web e player SCORM (data-motion). Validato a livello
   // applicativo dall'enum interactionStyle del contratto Course.

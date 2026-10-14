@@ -273,6 +273,7 @@
       hero.className = 'course-hero';
       hero.setAttribute('src', this.course.coverImageKey);
       hero.setAttribute('alt', this.course.title);
+      hero.style.objectPosition = coverObjectPosition(this.course.coverPosition);
       header.appendChild(hero);
     }
     var subtitle;
@@ -416,12 +417,14 @@
     var c = step.course;
     var wrap = el('div', 'overview-page overview-course');
 
-    // Hero con copertina (se presente).
+    // Hero con copertina (se presente). object-position dal punto focale del
+    // corso (coverPosition 0-100), per evitare tagli indesiderati.
     if (c.coverImageKey) {
       var hero = document.createElement('img');
       hero.className = 'overview-hero';
       hero.setAttribute('src', c.coverImageKey);
       hero.setAttribute('alt', c.title);
+      hero.style.objectPosition = coverObjectPosition(c.coverPosition);
       wrap.appendChild(hero);
     }
 
@@ -854,6 +857,7 @@
       thumb.className = 'topbar-cover';
       thumb.setAttribute('src', this.course.coverImageKey);
       thumb.setAttribute('alt', '');
+      thumb.style.objectPosition = coverObjectPosition(this.course.coverPosition);
       bar.appendChild(thumb);
     }
 
@@ -1132,6 +1136,11 @@
     var n = document.createElement(tag);
     n.textContent = text;
     return n;
+  }
+  /** object-position orizzontale centrato + verticale dal punto focale (0-100). */
+  function coverObjectPosition(pos) {
+    var v = typeof pos === 'number' && isFinite(pos) ? Math.max(0, Math.min(100, pos)) : 50;
+    return '50% ' + v + '%';
   }
 
   global.Player = Player;

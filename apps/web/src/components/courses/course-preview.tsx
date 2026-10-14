@@ -190,6 +190,7 @@ export function CoursePreview({ courseId }: { courseId: string }) {
             src={course.data.coverImageUrl}
             alt=""
             className="hidden size-14 shrink-0 rounded-xl object-cover shadow-sm sm:block"
+            style={{ objectPosition: `50% ${course.data.coverPosition ?? 50}%` }}
           />
         )}
         <div className="min-w-0 flex-1">
@@ -635,7 +636,12 @@ function CourseOverviewPreview({
       {course?.coverImageUrl && (
         <div className="relative">
           {/* eslint-disable-next-line @next/next/no-img-element -- copertina firmata */}
-          <img src={course.coverImageUrl} alt="" className="h-56 w-full object-cover" />
+          <img
+            src={course.coverImageUrl}
+            alt=""
+            className="h-56 w-full object-cover"
+            style={{ objectPosition: `50% ${course.coverPosition ?? 50}%` }}
+          />
           {course.coverAttribution && (
             <span className="absolute bottom-1.5 right-1.5 rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white/90">
               Foto di {course.coverAttribution.authorName} su{' '}

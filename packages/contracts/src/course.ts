@@ -44,6 +44,12 @@ export const Course = z.object({
   /** Chiave/URL dell'immagine di copertina del corso, se generata. */
   coverImageKey: z.string().optional(),
   /**
+   * Punto focale VERTICALE della copertina (0-100, centro=50): applicato come
+   * `object-position: 50% <N>%` identico in anteprima web e player SCORM, così
+   * l'autore può centrare la copertina ed evitare tagli indesiderati.
+   */
+  coverPosition: z.number().int().min(0).max(100).default(50),
+  /**
    * Stile delle micro-interazioni (flashcard, quiz, accordion, hotspot) del
    * corso. 'sober' = transizioni morbide e sobrie (default enterprise);
    * 'lively' = animazioni più espressive (bounce, pulse, celebrazione quiz).

@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /** DTO semplici validati dal ValidationPipe globale (class-validator). */
@@ -39,6 +39,12 @@ export class UpdateCourseSettingsDto {
   @IsOptional()
   @IsIn(['side', 'top'])
   navPosition?: 'side' | 'top';
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  coverPosition?: number;
 
   @IsOptional()
   @IsString()

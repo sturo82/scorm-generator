@@ -228,11 +228,12 @@ export class MockApiClient implements ApiClient {
     c.brief = { ...(c.brief ?? {}), ...draft };
     return c;
   }
-  async updateCourseSettings(courseId: string, settings: { interactionStyle?: 'sober' | 'lively'; navPosition?: 'side' | 'top'; primaryBrandId?: string; instructor?: { name?: string; role?: string; avatarKey?: string } }) {
+  async updateCourseSettings(courseId: string, settings: { interactionStyle?: 'sober' | 'lively'; navPosition?: 'side' | 'top'; coverPosition?: number; primaryBrandId?: string; instructor?: { name?: string; role?: string; avatarKey?: string } }) {
     await delay();
     const c = await this.getCourse(courseId);
     if (settings.interactionStyle) c.interactionStyle = settings.interactionStyle;
     if (settings.navPosition) c.navPosition = settings.navPosition;
+    if (settings.coverPosition !== undefined) c.coverPosition = settings.coverPosition;
     if (settings.primaryBrandId !== undefined) c.primaryBrandId = settings.primaryBrandId;
     if (settings.instructor !== undefined) {
       const name = settings.instructor?.name?.trim();

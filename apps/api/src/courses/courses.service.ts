@@ -29,6 +29,8 @@ export interface CourseView {
   coverImageUrl?: string;
   /** Attribuzione della copertina se da libreria stock (credito autore). */
   coverAttribution?: { provider: string; authorName: string; authorUrl?: string; sourceUrl?: string };
+  /** Punto focale verticale della copertina (0-100, centro=50). */
+  coverPosition: number;
   /** Stile delle micro-interazioni del corso. */
   interactionStyle: InteractionStyle;
   /** Posizione del menu di navigazione: 'side' (default) | 'top'. */
@@ -125,6 +127,7 @@ export class CoursesService {
     settings: {
       interactionStyle?: InteractionStyle;
       navPosition?: 'side' | 'top';
+      coverPosition?: number;
       primaryBrandId?: string | null;
       instructor?: { name?: string | null; role?: string | null; avatarKey?: string | null } | null;
     },
@@ -133,6 +136,7 @@ export class CoursesService {
     const data: {
       interactionStyle?: string;
       navPosition?: string;
+      coverPosition?: number;
       primaryBrandId?: string | null;
       instructorName?: string | null;
       instructorRole?: string | null;
@@ -140,6 +144,7 @@ export class CoursesService {
     } = {};
     if (settings.interactionStyle) data.interactionStyle = settings.interactionStyle;
     if (settings.navPosition) data.navPosition = settings.navPosition;
+    if (settings.coverPosition !== undefined) data.coverPosition = clampPosition(settings.coverPosition);
     if (settings.primaryBrandId !== undefined) {
       // Verifica che il brand appartenga al tenant (o azzera con null).
       if (settings.primaryBrandId) {
@@ -262,6 +267,7 @@ export class CoursesService {
     brief: unknown;
     coverImageKey?: string | null;
     coverAttribution?: unknown;
+    coverPosition?: number | null;
     interactionStyle?: string | null;
     navPosition?: string | null;
     primaryBrandId?: string | null;
@@ -309,6 +315,7 @@ export class CoursesService {
       brief: briefResult && briefResult.success ? briefResult.data : null,
       coverImageUrl,
       coverAttribution: parseCoverAttribution(course.coverAttribution),
+      coverPosition: clampPosition(course.coverPosition),
       interactionStyle: course.interactionStyle === 'lively' ? 'lively' : 'sober',
       navPosition: course.navPosition === 'top' ? 'top' : 'side',
       primaryBrandId: course.primaryBrandId ?? undefined,
@@ -331,6 +338,12 @@ export class CoursesService {
     });
     return this.toView(updated);
   }
+}
+
+/** Normalizza il punto focale della copertina a un intero 0-100 (default 50). */
+function clampPosition(raw: number | null | undefined): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return 50;
+  return Math.max(0, Math.min(100, Math.round(raw)));
 }
 
 /** Legge l'attribuzione copertina (JSON) nel formato esposto dalla view. */

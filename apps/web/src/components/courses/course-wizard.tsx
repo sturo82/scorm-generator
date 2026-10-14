@@ -65,6 +65,12 @@ export function CourseWizard({ courseId }: { courseId: string }) {
   const toast = useToast();
   const [active, setActive] = React.useState<StepId>('brief');
   const [coverStockOpen, setCoverStockOpen] = React.useState(false);
+  // Punto focale verticale della copertina (0-100): stato locale per uno slider
+  // fluido; il salvataggio avviene al rilascio (onPointerUp/change).
+  const [coverPos, setCoverPos] = React.useState<number>(50);
+  React.useEffect(() => {
+    if (typeof course.data?.coverPosition === 'number') setCoverPos(course.data.coverPosition);
+  }, [course.data?.coverPosition]);
   // Evidenziazione temporanea della card test quando si arriva dal banner.
   const [highlightTests, setHighlightTests] = React.useState(false);
 
@@ -175,6 +181,14 @@ export function CourseWizard({ courseId }: { courseId: string }) {
       toast.show('Brand del corso aggiornato', 'success');
     } catch {
       toast.show('Brand non salvato', 'error');
+    }
+  }
+
+  async function handleSetCoverPosition(pos: number) {
+    try {
+      await updateSettings.mutateAsync({ coverPosition: pos });
+    } catch {
+      toast.show('Posizione copertina non salvata', 'error');
     }
   }
 
@@ -353,10 +367,34 @@ export function CourseWizard({ courseId }: { courseId: string }) {
                 src={course.data.coverImageUrl}
                 alt={`Copertina: ${course.data.title}`}
                 className="aspect-[21/9] w-full object-cover"
+                style={{ objectPosition: `50% ${coverPos}%` }}
               />
             ) : (
               <div className="flex aspect-[21/9] w-full flex-col items-center justify-center gap-3 bg-muted/40 text-center">
                 <p className="text-sm text-muted-foreground">Nessuna copertina generata</p>
+              </div>
+            )}
+            {/* Regolazione del punto focale verticale: utile quando la copertina
+                (spesso più alta del riquadro 21:9) viene tagliata male in alto. */}
+            {course.data?.coverImageUrl && (
+              <div className="flex items-center gap-3 border-t px-3 py-2.5">
+                <label htmlFor="cover-pos" className="shrink-0 text-xs font-medium text-muted-foreground">
+                  Inquadratura verticale
+                </label>
+                <input
+                  id="cover-pos"
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={coverPos}
+                  aria-label="Posizione verticale della copertina"
+                  className="h-2 flex-1 cursor-pointer accent-primary"
+                  onChange={(e) => setCoverPos(Number(e.target.value))}
+                  onPointerUp={() => handleSetCoverPosition(coverPos)}
+                  onKeyUp={() => handleSetCoverPosition(coverPos)}
+                />
+                <span className="w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{coverPos}%</span>
               </div>
             )}
             <div className="flex justify-end gap-2 p-2">

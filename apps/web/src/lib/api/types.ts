@@ -46,6 +46,8 @@ export interface CourseView {
   coverImageUrl?: string;
   /** Attribuzione della copertina se da libreria stock (credito autore). */
   coverAttribution?: { provider: string; authorName: string; authorUrl?: string; sourceUrl?: string };
+  /** Punto focale verticale della copertina (0-100, centro=50). */
+  coverPosition?: number;
   /** Stile delle micro-interazioni del corso: 'sober' (default) | 'lively'. */
   interactionStyle?: 'sober' | 'lively';
   /** Posizione del menu di navigazione: 'side' (default) | 'top'. */
@@ -241,6 +243,7 @@ export interface ApiClient {
     settings: {
       interactionStyle?: 'sober' | 'lively';
       navPosition?: 'side' | 'top';
+      coverPosition?: number;
       primaryBrandId?: string;
       instructor?: { name?: string; role?: string; avatarKey?: string };
     },

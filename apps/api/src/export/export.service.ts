@@ -190,6 +190,7 @@ export class ExportService {
       description: row.description,
       language: row.language,
       coverImageKey: row.coverImageKey ?? undefined,
+      coverPosition: typeof row.coverPosition === 'number' ? row.coverPosition : 50,
       interactionStyle: row.interactionStyle === 'lively' ? 'lively' : 'sober',
       navPosition: row.navPosition === 'top' ? 'top' : 'side',
       primaryBrandId: row.primaryBrandId ?? undefined,
