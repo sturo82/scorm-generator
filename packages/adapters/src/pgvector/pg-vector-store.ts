@@ -36,7 +36,18 @@ export class PgVectorStore implements VectorStore {
     if (opts.pool) {
       this.pool = opts.pool;
     } else if (opts.connectionString) {
-      this.pool = new Pool({ connectionString: opts.connectionString });
+      // Con `sslmode=require` nella URL (es. RDS) il driver `pg` valida la catena
+      // TLS contro la trust store di Node, che NON include la CA di AWS RDS →
+      // "self-signed certificate in certificate chain". Allineiamo il
+      // comportamento a `require` di libpq/Prisma (già usato con la stessa URL):
+      // TLS attivo ma senza verifica della CA. `sslmode=verify-full` disattiva
+      // esplicitamente questo rilassamento se si fornisce una CA.
+      const requiresSsl = /sslmode=(require|prefer)/.test(opts.connectionString);
+      const verifyFull = /sslmode=verify-(ca|full)/.test(opts.connectionString);
+      this.pool = new Pool({
+        connectionString: opts.connectionString,
+        ...(requiresSsl && !verifyFull ? { ssl: { rejectUnauthorized: false } } : {}),
+      });
     } else {
       throw new Error('PgVectorStore richiede pool o connectionString');
     }
