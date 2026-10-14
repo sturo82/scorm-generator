@@ -1,6 +1,6 @@
 import { testing } from '@scorm/adapters';
 import type { JobQueue, RequestContext } from '@scorm/domain';
-import { GenerationService, coerceBlocksArray } from './generation.service.js';
+import { GenerationService, coerceBlocksArray, describeShape } from './generation.service.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { RetrievalService } from '../knowledge/retrieval.service.js';
 import type { ModulesService } from '../courses/modules.service.js';
@@ -162,5 +162,24 @@ describe('coerceBlocksArray', () => {
     expect(coerceBlocksArray({ blocks: 42 })).toEqual([]);
     expect(coerceBlocksArray('non-json')).toEqual([]);
     expect(coerceBlocksArray(null)).toEqual([]);
+  });
+});
+
+describe('describeShape', () => {
+  it('descrive un oggetto con blocks array', () => {
+    expect(describeShape({ blocks: [{ type: 'rich_text' }] })).toBe(
+      'object{keys=[blocks],blocks=array(len=1)}',
+    );
+  });
+
+  it('segnala blocks come stringa', () => {
+    expect(describeShape({ blocks: '[]' })).toBe('object{keys=[blocks],blocks=string(len=2)}');
+  });
+
+  it('segnala blocks assente e array/stringa/null top-level', () => {
+    expect(describeShape({ foo: 1 })).toBe('object{keys=[foo],blocks=absent}');
+    expect(describeShape([1, 2])).toBe('array(len=2)');
+    expect(describeShape('abc')).toBe('string(len=3)');
+    expect(describeShape(null)).toBe('null');
   });
 });

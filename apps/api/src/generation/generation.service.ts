@@ -489,6 +489,12 @@ export class GenerationService {
     const rawBlocks = coerceBlocksArray(parsed);
     const blocks = BlockArray.parse(rawBlocks);
     if (blocks.length === 0) {
+      // Diagnostica (senza contenuti sensibili): registra la FORMA dell'output
+      // del modello per capire perché non si ricava un array di block. Serve a
+      // casi non deterministici in cui una singola lezione produce 0 block.
+      this.logger.warn(
+        `Lezione ${lessonId}: 0 block. shape=${describeShape(parsed)} finishReason=${result.finishReason} textLen=${result.text.length}`,
+      );
       throw new Error('Il modello non ha prodotto block validi.');
     }
     await this.recordUsage({
@@ -899,6 +905,29 @@ export class GenerationService {
  * Qualsiasi stringa viene ri-parsata una volta. Se non si ottiene un array,
  * ritorna [] (la validazione a valle produrrà un errore chiaro).
  */
+/**
+ * Descrive la FORMA di un valore per diagnostica (niente contenuti): tipo,
+ * chiavi di primo livello, tipo/lunghezza di `blocks`. Usato per capire perché
+ * una generazione non produce un array di block.
+ */
+export function describeShape(v: unknown): string {
+  if (v === null) return 'null';
+  if (Array.isArray(v)) return `array(len=${v.length})`;
+  const t = typeof v;
+  if (t !== 'object') return t === 'string' ? `string(len=${(v as string).length})` : t;
+  const obj = v as Record<string, unknown>;
+  const keys = Object.keys(obj).slice(0, 8);
+  const b = obj.blocks;
+  const bDesc = Array.isArray(b)
+    ? `array(len=${b.length})`
+    : b === undefined
+      ? 'absent'
+      : typeof b === 'string'
+        ? `string(len=${(b as string).length})`
+        : typeof b;
+  return `object{keys=[${keys.join(',')}],blocks=${bDesc}}`;
+}
+
 export function coerceBlocksArray(parsed: unknown): unknown {
   const reparse = (v: unknown): unknown => {
     if (typeof v !== 'string') return v;
