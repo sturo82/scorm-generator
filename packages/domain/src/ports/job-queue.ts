@@ -12,6 +12,7 @@ export type JobType =
   | 'course.generate_content'
   | 'course.generate_all_content'
   | 'course.generate_assessment'
+  | 'course.generate_all_assessments'
   | 'course.export';
 
 export type JobId = string;
