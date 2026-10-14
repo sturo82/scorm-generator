@@ -479,8 +479,15 @@ export class GenerationService {
     if (result.finishReason === 'max_tokens') {
       throw new Error('Generazione contenuti troncata (limite token): riprova.');
     }
-    const payload = JSON.parse(result.text) as { blocks?: unknown };
-    const blocks = BlockArray.parse(payload.blocks ?? []);
+    const parsed = JSON.parse(result.text) as unknown;
+    // Normalizzazione difensiva: il modello (output strutturato via tool-use)
+    // di norma ritorna { blocks: [...] }, ma occasionalmente — in modo non
+    // deterministico — avvolge l'array in una STRINGA JSON (es. blocks: "[...]")
+    // o restituisce direttamente l'array top-level. Senza questa gestione una
+    // singola lezione falliva con "Expected array, received string" mentre tutte
+    // le altre andavano a buon fine. Qui ricondurremo tutto a un array.
+    const rawBlocks = coerceBlocksArray(parsed);
+    const blocks = BlockArray.parse(rawBlocks);
     if (blocks.length === 0) {
       throw new Error('Il modello non ha prodotto block validi.');
     }
@@ -880,6 +887,33 @@ export class GenerationService {
     const parsed = def.voice ? BrandVoice.safeParse(def.voice) : null;
     return parsed && parsed.success ? parsed.data : undefined;
   }
+}
+
+/**
+ * Estrae l'array di block dall'output del modello, tollerando le varianti con
+ * cui occasionalmente la generazione strutturata lo confeziona:
+ *  - { blocks: [...] }               → forma attesa;
+ *  - { blocks: "[...]" }             → array avvolto in una stringa JSON;
+ *  - [...]                           → array restituito al top-level;
+ *  - "[...]"                         → stringa JSON di un array al top-level.
+ * Qualsiasi stringa viene ri-parsata una volta. Se non si ottiene un array,
+ * ritorna [] (la validazione a valle produrrà un errore chiaro).
+ */
+export function coerceBlocksArray(parsed: unknown): unknown {
+  const reparse = (v: unknown): unknown => {
+    if (typeof v !== 'string') return v;
+    try {
+      return JSON.parse(v);
+    } catch {
+      return v;
+    }
+  };
+
+  let candidate: unknown = reparse(parsed);
+  if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+    candidate = reparse((candidate as { blocks?: unknown }).blocks);
+  }
+  return Array.isArray(candidate) ? candidate : [];
 }
 
 /**

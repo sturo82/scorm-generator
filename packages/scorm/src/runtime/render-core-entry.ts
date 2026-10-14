@@ -307,12 +307,11 @@ const RenderCore = {
   groupConcepts,
 };
 
-// Espone il core sul global del browser dell'LMS (window) e supporta CommonJS
-// per eventuali test in ambiente Node/jsdom.
-declare const module: { exports: unknown } | undefined;
+// Espone il core sul global dell'ambiente di esecuzione: `window` nel browser
+// dell'LMS, `globalThis` sotto jsdom nei test. Il consumo avviene SEMPRE via
+// questo global (window.RenderCore) — vedi renderers.js, player.js e
+// render-core-dom.test.ts — quindi non serve alcun export CommonJS (che oltre a
+// essere inutilizzato generava un warning esbuild in un package "type":"module").
 const glob: Record<string, unknown> =
   typeof window !== 'undefined' ? (window as unknown as Record<string, unknown>) : (globalThis as Record<string, unknown>);
 glob.RenderCore = RenderCore;
-if (typeof module !== 'undefined' && module && module.exports) {
-  module.exports = RenderCore;
-}

@@ -35,6 +35,7 @@
     "deploy:trigger": "scripts/deploy.sh trigger",
     "deploy:status": "scripts/deploy.sh status",
     "deploy:watch": "scripts/deploy.sh watch",
+    "deploy:wait-api": "scripts/deploy.sh wait-api",
     "deploy:logs": "scripts/deploy.sh logs",
     "deploy:logs-failed": "scripts/deploy.sh logs-failed",
     "deploy:open": "scripts/deploy.sh open",

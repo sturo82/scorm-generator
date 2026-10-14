@@ -538,7 +538,7 @@ function AssessmentManager({
                   </div>
                   <div className="flex items-center gap-2">
                     {orphan && (
-                      <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                      <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-semibold text-amber-950 dark:bg-amber-400/20 dark:text-amber-200">
                         da sistemare
                       </span>
                     )}

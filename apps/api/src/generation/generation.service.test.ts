@@ -1,6 +1,6 @@
 import { testing } from '@scorm/adapters';
 import type { JobQueue, RequestContext } from '@scorm/domain';
-import { GenerationService } from './generation.service.js';
+import { GenerationService, coerceBlocksArray } from './generation.service.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { RetrievalService } from '../knowledge/retrieval.service.js';
 import type { ModulesService } from '../courses/modules.service.js';
@@ -136,5 +136,31 @@ describe('GenerationService (async)', () => {
     expect(where?.createdAt?.lt).toBeInstanceOf(Date);
     const data = jobUpdateMany.mock.calls[0]?.[0]?.data;
     expect(data?.status).toBe('FAILED');
+  });
+});
+
+describe('coerceBlocksArray', () => {
+  const arr = [{ type: 'rich_text' }];
+
+  it('estrae l\'array dalla forma attesa { blocks: [...] }', () => {
+    expect(coerceBlocksArray({ blocks: arr })).toEqual(arr);
+  });
+
+  it('ri-parsa blocks quando è una stringa JSON (il caso che faceva fallire la lezione)', () => {
+    expect(coerceBlocksArray({ blocks: JSON.stringify(arr) })).toEqual(arr);
+  });
+
+  it('accetta un array restituito al top-level', () => {
+    expect(coerceBlocksArray(arr)).toEqual(arr);
+  });
+
+  it('ri-parsa una stringa JSON di array al top-level', () => {
+    expect(coerceBlocksArray(JSON.stringify(arr))).toEqual(arr);
+  });
+
+  it('ritorna [] quando non c\'è un array interpretabile', () => {
+    expect(coerceBlocksArray({ blocks: 42 })).toEqual([]);
+    expect(coerceBlocksArray('non-json')).toEqual([]);
+    expect(coerceBlocksArray(null)).toEqual([]);
   });
 });

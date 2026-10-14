@@ -9,6 +9,8 @@ import { SidebarNav } from './sidebar';
 import { AppBrand } from './app-brand';
 import { getSession, logout, type DevSession } from '@/lib/auth';
 import { oidcLogoutUrl } from '@/lib/oidc';
+import { useBranding } from '@/lib/api/hooks';
+import { APP_NAME } from '@/lib/app-brand';
 
 /** Header responsive: menu hamburger + drawer su mobile, user menu, theme toggle. */
 export function AppHeader() {
@@ -16,6 +18,10 @@ export function AppHeader() {
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [session, setSession] = React.useState<DevSession | null>(null);
   React.useEffect(() => setSession(getSession()), []);
+  // Nome visibile del TENANT (sotto-brand): è il nome scelto in /settings/branding,
+  // non l'id tecnico del tenant che arriva nella sessione. Fallback al nome app.
+  const { data: branding } = useBranding();
+  const tenantLabel = branding?.appName?.trim() || APP_NAME;
 
   // Chiusura del drawer con Esc (accessibilità da tastiera).
   React.useEffect(() => {
@@ -70,7 +76,7 @@ export function AppHeader() {
               <div className="text-sm font-medium leading-tight text-white">
                 {session?.user.displayName ?? 'Utente'}
               </div>
-              <div className="text-xs leading-tight text-white/60">{session?.tenant.name}</div>
+              <div className="text-xs leading-tight text-white/60">{tenantLabel}</div>
             </div>
             <div className="grid size-8 place-items-center rounded-full bg-primary text-xs font-semibold text-primary-foreground shadow-sm">
               {initials}

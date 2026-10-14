@@ -217,18 +217,18 @@ export function CourseWizard({ courseId }: { courseId: string }) {
           stato. I test si basano sul contenuto delle lezioni, quindi i "pronti"
           sono solo quelli il cui modulo/corso ha già contenuti. */}
       {hasStructure && pendingTests.pendingCount > 0 && (
-        <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 shadow-card">
+        <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-amber-500/50 bg-amber-500/15 p-4 shadow-card dark:bg-amber-400/10">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-amber-500/20 text-amber-700">
+            <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-amber-500 text-amber-950 dark:bg-amber-400 dark:text-amber-950">
               <ClipboardCheck className="size-5" />
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-amber-900">
+              <p className="truncate text-sm font-semibold text-amber-950 dark:text-amber-100">
                 {pendingTests.pendingCount === 1
                   ? '1 test da generare'
                   : `${pendingTests.pendingCount} test da generare`}
               </p>
-              <p className="truncate text-xs text-amber-800/80">
+              <p className="truncate text-xs font-medium text-amber-900 dark:text-amber-200">
                 {pendingTests.running
                   ? 'Generazione in corso sul server…'
                   : pendingTests.readyCount > 0
