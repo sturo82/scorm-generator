@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { cn } from '@/lib/cn';
 import { useBranding } from '@/lib/api/hooks';
+import { APP_NAME } from '@/lib/app-brand';
 
 interface AppBrandProps {
   /** Nasconde testo/tagline (solo marchio), es. header mobile compatto. */
@@ -34,7 +35,9 @@ export function AppBrand({
   showEcosystem = true,
 }: AppBrandProps) {
   const { data } = useBranding();
-  const appName = data?.appName || 'K Scorm';
+  // Nome visibile del tenant se presente, altrimenti il nome fisso dell'app.
+  const tenantName = data?.appName?.trim() || null;
+  const appName = tenantName ?? APP_NAME;
   const logoUrl = data?.logoUrl ?? null;
 
   return (

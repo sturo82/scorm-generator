@@ -526,11 +526,10 @@ export function useUpdateBranding() {
   });
 }
 
-export function useUploadBrandingAsset() {
+export function useUploadBrandingLogo() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { kind: 'logo' | 'favicon'; file: File }) =>
-      api.uploadBrandingAsset(vars.kind, vars.file),
+    mutationFn: (file: File) => api.uploadBrandingLogo(file),
     onSuccess: (data) => qc.setQueryData(qk.branding, data),
   });
 }

@@ -285,14 +285,14 @@ export class HttpApiClient implements ApiClient {
   updateBranding(patch: UpdateAppBranding) {
     return this.request<AppBrandingView>('/tenant/branding', { method: 'PUT', body: JSON.stringify(patch) });
   }
-  async uploadBrandingAsset(kind: 'logo' | 'favicon', file: File) {
+  async uploadBrandingLogo(file: File) {
     const session = getSession();
     const form = new FormData();
     form.append('file', file);
     const headers = new Headers();
     if (session) headers.set('Authorization', `Bearer ${session.token}`);
-    const res = await fetch(`${this.baseUrl}/tenant/branding/${kind}`, { method: 'POST', headers, body: form });
-    if (!res.ok) throw new Error(`Upload ${kind} fallito: ${res.status}`);
+    const res = await fetch(`${this.baseUrl}/tenant/branding/logo`, { method: 'POST', headers, body: form });
+    if (!res.ok) throw new Error(`Upload logo fallito: ${res.status}`);
     return (await res.json()) as AppBrandingView;
   }
 

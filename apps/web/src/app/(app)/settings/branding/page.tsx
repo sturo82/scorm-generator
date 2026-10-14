@@ -6,312 +6,170 @@ import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input, Label } from '@/components/ui/input';
-import { ColorInput } from '@/components/ui/color-input';
 import { useToast } from '@/components/ui/toast';
-import {
-  useBranding,
-  useUpdateBranding,
-  useUploadBrandingAsset,
-} from '@/lib/api/hooks';
+import { useBranding, useUpdateBranding, useUploadBrandingLogo } from '@/lib/api/hooks';
+import { APP_NAME } from '@/lib/app-brand';
 
 /**
- * Impostazioni di branding white-label (per-tenant): nome dell'app, colore
- * primario, logo e favicon. Le modifiche si riflettono subito nella UI tramite
- * il BrandingProvider (titolo, favicon e tema). Richiede ruolo ADMIN/OWNER.
+ * Sotto-brand del tenant: nome visibile e logo che rendono il team
+ * riconoscibile nell'intestazione dell'app. NON cambia l'aspetto generale
+ * dell'applicazione (colori, tema, favicon restano quelli della piattaforma).
+ * Richiede ruolo ADMIN/OWNER.
  */
 export default function BrandingSettingsPage() {
   const toast = useToast();
   const { data, isLoading } = useBranding();
   const update = useUpdateBranding();
-  const uploadLogo = useUploadBrandingAsset();
-  const uploadFavicon = useUploadBrandingAsset();
+  const uploadLogo = useUploadBrandingLogo();
 
-  const [appName, setAppName] = React.useState('');
-  const [primaryColor, setPrimaryColor] = React.useState('#22B573');
-  const [accentColor, setAccentColor] = React.useState('');
-  const [headerColor, setHeaderColor] = React.useState('');
+  const [name, setName] = React.useState('');
   const logoInput = React.useRef<HTMLInputElement>(null);
-  const faviconInput = React.useRef<HTMLInputElement>(null);
 
-  // Sincronizza i campi quando arriva il branding dal server.
+  // Sincronizza il campo quando arriva il branding dal server.
   React.useEffect(() => {
     if (!data) return;
-    setAppName(data.appName);
-    setPrimaryColor(data.primaryColor);
-    setAccentColor(data.accentColor ?? '');
-    setHeaderColor(data.headerColor ?? '');
+    setName(data.appName ?? '');
   }, [data]);
 
-  const dirty =
-    !!data &&
-    (appName !== data.appName ||
-      primaryColor.toLowerCase() !== data.primaryColor.toLowerCase() ||
-      (accentColor || null) !== (data.accentColor ?? null) ||
-      (headerColor || null) !== (data.headerColor ?? null));
-  const colorValid = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(primaryColor);
-  const accentValid = !accentColor || /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(accentColor);
-  const headerValid = !headerColor || /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(headerColor);
-  const nameValid = appName.trim().length >= 1 && appName.trim().length <= 40;
+  const trimmed = name.trim();
+  const nameValid = trimmed.length === 0 || trimmed.length <= 40;
+  const dirty = !!data && (trimmed || null) !== (data.appName ?? null);
 
   async function handleSave() {
-    if (!nameValid || !colorValid || !accentValid || !headerValid) {
-      toast.show('Controlla nome e colori', 'error');
+    if (!nameValid) {
+      toast.show('Il nome può avere al massimo 40 caratteri', 'error');
       return;
     }
     try {
-      await update.mutateAsync({
-        appName: appName.trim(),
-        primaryColor,
-        accentColor: accentColor || null,
-        headerColor: headerColor || null,
-      });
-      toast.show('Branding aggiornato', 'success');
+      // Nome vuoto → null: ripiega sul nome dell'app di default.
+      await update.mutateAsync({ appName: trimmed || null });
+      toast.show('Nome aggiornato', 'success');
     } catch {
       toast.show('Salvataggio non riuscito', 'error');
     }
   }
 
-  async function handleUpload(kind: 'logo' | 'favicon', file: File | undefined) {
+  async function handleUpload(file: File | undefined) {
     if (!file) return;
-    const mut = kind === 'logo' ? uploadLogo : uploadFavicon;
     try {
-      await mut.mutateAsync({ kind, file });
-      toast.show(kind === 'logo' ? 'Logo caricato' : 'Favicon caricata', 'success');
+      await uploadLogo.mutateAsync(file);
+      toast.show('Logo caricato', 'success');
     } catch {
-      toast.show('Upload non riuscito (max 2MB, PNG/SVG/WebP/ICO)', 'error');
+      toast.show('Upload non riuscito (max 2MB, PNG/SVG/WebP/JPG)', 'error');
     }
   }
+
+  const displayName = trimmed || APP_NAME;
 
   return (
     <>
       <PageHeader
-        title="Branding"
-        description="Personalizza nome, colore, logo e favicon della piattaforma per il tuo team."
+        title="Brand del team"
+        description="Nome e logo del tuo team, mostrati nell’intestazione. Non modificano l’aspetto generale dell’app."
       />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="space-y-6">
-          {/* Identità */}
+          {/* Nome visibile del tenant */}
           <Card>
             <CardHeader>
-              <CardTitle>Identità</CardTitle>
+              <CardTitle>Nome del team</CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="space-y-1.5">
-                <Label htmlFor="appName">Nome dell&apos;applicazione</Label>
+                <Label htmlFor="appName">Nome visibile</Label>
                 <Input
                   id="appName"
-                  value={appName}
+                  value={name}
                   maxLength={40}
-                  placeholder="K Scorm"
-                  onChange={(e) => setAppName(e.target.value)}
+                  placeholder={APP_NAME}
+                  onChange={(e) => setName(e.target.value)}
                   disabled={isLoading}
                 />
-                {!nameValid && appName.length > 0 && (
-                  <p className="text-xs text-destructive">Da 1 a 40 caratteri.</p>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  Mostrato accanto al logo e nel titolo della scheda. Lascialo vuoto per usare
+                  il nome di default dell’applicazione.
+                </p>
+                {!nameValid && <p className="text-xs text-destructive">Massimo 40 caratteri.</p>}
               </div>
-              <ColorInput
-                id="primaryColor"
-                label="Colore primario"
-                value={primaryColor}
-                onChange={setPrimaryColor}
-              />
-              {!colorValid && (
-                <p className="text-xs text-destructive">Colore esadecimale non valido (es. #22B573).</p>
-              )}
-              <ColorInput
-                id="accentColor"
-                label="Colore accent / highlight"
-                value={accentColor}
-                onChange={setAccentColor}
-                placeholder="Opzionale — derivato dal primario"
-              />
-              {!accentValid && (
-                <p className="text-xs text-destructive">Colore esadecimale non valido (es. #FF6900).</p>
-              )}
-              <ColorInput
-                id="headerColor"
-                label="Colore header"
-                value={headerColor}
-                onChange={setHeaderColor}
-                placeholder="Opzionale — derivato dal primario"
-              />
-              {!headerValid && (
-                <p className="text-xs text-destructive">Colore esadecimale non valido (es. #192A3D).</p>
-              )}
               <div>
-                <Button onClick={handleSave} disabled={!dirty || update.isPending}>
-                  {update.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-                  Salva modifiche
+                <Button onClick={handleSave} disabled={!dirty || !nameValid || update.isPending}>
+                  {update.isPending ? 'Salvataggio…' : 'Salva'}
                 </Button>
               </div>
             </CardContent>
           </Card>
 
-          {/* Logo e favicon */}
+          {/* Logo del tenant */}
           <Card>
             <CardHeader>
-              <CardTitle>Logo e favicon</CardTitle>
+              <CardTitle>Logo</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-6 sm:grid-cols-2">
-              <AssetSlot
-                title="Logo"
-                hint="Mostrato in sidebar e header. PNG o SVG, max 2MB."
-                previewUrl={data?.logoUrl ?? null}
-                busy={uploadLogo.isPending}
-                onPick={() => logoInput.current?.click()}
-                variant="logo"
-              />
-              <AssetSlot
-                title="Favicon"
-                hint="Icona della scheda del browser. PNG/SVG/ICO, max 2MB."
-                previewUrl={data?.faviconUrl ?? null}
-                busy={uploadFavicon.isPending}
-                onPick={() => faviconInput.current?.click()}
-                variant="favicon"
-              />
-              <input
-                ref={logoInput}
-                type="file"
-                accept="image/png,image/svg+xml,image/webp,image/jpeg,image/x-icon"
-                className="hidden"
-                onChange={(e) => {
-                  void handleUpload('logo', e.target.files?.[0]);
-                  e.target.value = '';
-                }}
-              />
-              <input
-                ref={faviconInput}
-                type="file"
-                accept="image/png,image/svg+xml,image/webp,image/x-icon,image/vnd.microsoft.icon"
-                className="hidden"
-                onChange={(e) => {
-                  void handleUpload('favicon', e.target.files?.[0]);
-                  e.target.value = '';
-                }}
-              />
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="grid h-12 w-20 shrink-0 place-items-center overflow-hidden rounded-md border bg-muted">
+                  {data?.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={data.logoUrl} alt="Logo del team" className="max-h-full max-w-full object-contain" />
+                  ) : (
+                    <ImageIcon className="size-5 text-muted-foreground" aria-hidden />
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => logoInput.current?.click()}
+                  disabled={uploadLogo.isPending}
+                >
+                  {uploadLogo.isPending ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+                  Carica
+                </Button>
+                <input
+                  ref={logoInput}
+                  type="file"
+                  accept="image/png,image/svg+xml,image/webp,image/jpeg"
+                  className="hidden"
+                  onChange={(e) => {
+                    void handleUpload(e.target.files?.[0]);
+                    e.target.value = '';
+                  }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Mostrato nell’intestazione e nella sidebar. PNG, SVG, WebP o JPG, max 2MB.
+              </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Anteprima live */}
-        <div className="space-y-6">
+        {/* Anteprima dell'intestazione (non del tema) */}
+        <div>
           <Card className="sticky top-20 overflow-hidden">
             <CardHeader>
               <CardTitle>Anteprima</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Mini header brandizzato */}
-              <div
-                className="flex items-center gap-2.5 rounded-lg p-3 font-semibold text-white"
-                style={{
-                  background: (headerColor && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(headerColor))
-                    ? `linear-gradient(100deg, ${headerColor}, ${primaryColor})`
-                    : colorValid
-                      ? primaryColor
-                      : '#22B573',
-                }}
-              >
+              <div className="flex items-center gap-2.5 rounded-lg border bg-card p-3 font-semibold">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={data?.logoUrl ?? '/brand/kscorm-icon-white.png'}
                   alt=""
                   className="size-8 rounded-lg object-contain"
                 />
-                <span className="truncate">{appName || 'K Scorm'}</span>
-              </div>
-              {/* Swatch dei colori */}
-              <div className="flex gap-2">
-                <ColorSwatch color={primaryColor} label="Primario" valid={colorValid} />
-                <ColorSwatch color={accentColor} label="Accent" valid={accentValid} />
-                <ColorSwatch color={headerColor} label="Header" valid={headerValid} />
-              </div>
-              {/* Bottoni con colori brand */}
-              <div className="flex gap-2">
-                <Button
-                  className="flex-1"
-                  style={colorValid ? { background: primaryColor } : undefined}
-                >
-                  Primario
-                </Button>
-                <Button
-                  className="flex-1"
-                  style={(accentColor && accentValid)
-                    ? { background: accentColor, color: '#fff' }
-                    : colorValid
-                      ? { background: primaryColor, opacity: 0.7 }
-                      : undefined
-                  }
-                >
-                  Accent
-                </Button>
+                <span className="flex flex-col leading-tight">
+                  <span className="truncate">{displayName}</span>
+                  <span className="text-[10px] font-medium uppercase tracking-widest opacity-70">
+                    by Knowkube
+                  </span>
+                </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Le modifiche sono applicate all&apos;intera piattaforma per gli utenti del tuo tenant.
+                Il nome e il logo del team compaiono qui. Colori e tema dell’app restano invariati.
               </p>
             </CardContent>
           </Card>
         </div>
       </div>
     </>
-  );
-}
-
-/** Riquadro di un asset (logo/favicon) con anteprima e pulsante di upload. */
-function AssetSlot({
-  title,
-  hint,
-  previewUrl,
-  busy,
-  onPick,
-  variant,
-}: {
-  title: string;
-  hint: string;
-  previewUrl: string | null;
-  busy: boolean;
-  onPick: () => void;
-  variant: 'logo' | 'favicon';
-}) {
-  return (
-    <div className="space-y-2">
-      <Label>{title}</Label>
-      <div className="flex items-center gap-3">
-        <div
-          className={
-            variant === 'favicon'
-              ? 'grid size-12 shrink-0 place-items-center overflow-hidden rounded-md border bg-muted'
-              : 'grid h-12 w-20 shrink-0 place-items-center overflow-hidden rounded-md border bg-muted'
-          }
-        >
-          {previewUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={previewUrl} alt={`${title} corrente`} className="max-h-full max-w-full object-contain" />
-          ) : (
-            <ImageIcon className="size-5 text-muted-foreground" aria-hidden />
-          )}
-        </div>
-        <Button variant="outline" size="sm" onClick={onPick} disabled={busy}>
-          {busy ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
-          Carica
-        </Button>
-      </div>
-      <p className="text-xs text-muted-foreground">{hint}</p>
-    </div>
-  );
-}
-
-/** Swatch circolare di un colore con etichetta. */
-function ColorSwatch({ color, label, valid }: { color: string; label: string; valid: boolean }) {
-  const show = color && valid;
-  return (
-    <div className="flex flex-1 flex-col items-center gap-1">
-      <div
-        className="size-9 rounded-full border shadow-sm"
-        style={show ? { background: color } : undefined}
-      />
-      <span className="text-[10px] text-muted-foreground">{label}</span>
-    </div>
   );
 }

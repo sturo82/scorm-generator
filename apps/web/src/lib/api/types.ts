@@ -328,10 +328,10 @@ export interface ApiClient {
   deleteFolder(id: string): Promise<void>;
   moveCourse(courseId: string, folderId: string | null): Promise<void>;
 
-  // Branding white-label della web app (per-tenant)
+  // Sotto-brand del tenant (nome visibile + logo)
   getBranding(): Promise<AppBrandingView>;
   updateBranding(patch: UpdateAppBranding): Promise<AppBrandingView>;
-  uploadBrandingAsset(kind: 'logo' | 'favicon', file: File): Promise<AppBrandingView>;
+  uploadBrandingLogo(file: File): Promise<AppBrandingView>;
 
   // Gestione utenti del tenant (admin): elenco e invito
   listUsers(): Promise<AdminUserView[]>;

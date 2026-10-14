@@ -3,7 +3,6 @@ import {
   Body,
   Controller,
   Get,
-  Param,
   Post,
   Put,
   UploadedFile,
@@ -17,7 +16,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { BrandingService } from './branding.service.js';
 
 /**
- * Branding white-label della web app, per-tenant. Lettura consentita a tutti gli
+ * Sotto-brand del tenant (nome visibile + logo). Lettura consentita a tutti gli
  * utenti del tenant (serve a ogni pagina); modifica riservata ad ADMIN/OWNER.
  */
 @Controller('tenant/branding')
@@ -38,20 +37,16 @@ export class BrandingController {
     return this.branding.update(ctx.tenant.tenantId, dto);
   }
 
-  /** Upload del logo o della favicon (multipart, campo "file"). kind: logo|favicon. */
-  @Post(':kind')
+  /** Upload del logo del tenant (multipart, campo "file"). */
+  @Post('logo')
   @Roles('ADMIN')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
-  upload(
+  uploadLogo(
     @CurrentContext() ctx: AuthContext,
-    @Param('kind') kind: string,
     @UploadedFile() file: { mimetype: string; buffer: Buffer } | undefined,
   ) {
-    if (kind !== 'logo' && kind !== 'favicon') {
-      throw new BadRequestException('Tipo non valido (logo|favicon)');
-    }
     if (!file) throw new BadRequestException('Nessun file ricevuto (campo "file")');
-    return this.branding.uploadAsset(ctx.tenant.tenantId, kind, {
+    return this.branding.uploadAsset(ctx.tenant.tenantId, 'logo', {
       mimeType: file.mimetype,
       content: file.buffer,
     });

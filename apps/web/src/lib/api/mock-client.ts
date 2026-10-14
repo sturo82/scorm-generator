@@ -641,16 +641,11 @@ export class MockApiClient implements ApiClient {
     c.folderId = folderId;
   }
 
-  /** Branding white-label in-memory (default + patch dell'utente). */
+  /** Sotto-brand del tenant in-memory (nome visibile + logo). */
   private branding: AppBrandingView = {
-    appName: 'K Scorm',
-    primaryColor: '#22b573',
-    accentColor: null,
-    headerColor: null,
+    appName: null,
     logoKey: null,
-    faviconKey: null,
     logoUrl: null,
-    faviconUrl: null,
   };
   /** Utenti in-memory per il pannello admin (demo). */
   private users: AdminUserView[] = [
@@ -684,11 +679,10 @@ export class MockApiClient implements ApiClient {
     this.branding = { ...this.branding, ...patch };
     return { ...this.branding };
   }
-  async uploadBrandingAsset(kind: 'logo' | 'favicon', file: File): Promise<AppBrandingView> {
+  async uploadBrandingLogo(file: File): Promise<AppBrandingView> {
     await delay();
     const url = URL.createObjectURL(file);
-    if (kind === 'logo') this.branding = { ...this.branding, logoKey: `mock/logo`, logoUrl: url };
-    else this.branding = { ...this.branding, faviconKey: `mock/favicon`, faviconUrl: url };
+    this.branding = { ...this.branding, logoKey: `mock/logo`, logoUrl: url };
     return { ...this.branding };
   }
 
