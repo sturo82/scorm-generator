@@ -16,7 +16,10 @@ export function AppVersion() {
   if (buildTime) {
     const d = new Date(buildTime);
     if (!Number.isNaN(d.getTime())) {
+      // Forziamo il fuso italiano: BUILD_TIME è in UTC (date -u). Senza timeZone
+      // l'orario dipenderebbe dal fuso del browser (mostrava 08:33 invece di 10:33).
       dateLabel = d.toLocaleString('it-IT', {
+        timeZone: 'Europe/Rome',
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
