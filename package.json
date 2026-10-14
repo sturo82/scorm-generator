@@ -32,6 +32,12 @@
     "db:reset": "scripts/db.sh reset",
     "db:psql": "scripts/db.sh psql",
     "db:studio": "scripts/db.sh studio",
+    "deploy:trigger": "scripts/deploy.sh trigger",
+    "deploy:status": "scripts/deploy.sh status",
+    "deploy:watch": "scripts/deploy.sh watch",
+    "deploy:logs": "scripts/deploy.sh logs",
+    "deploy:logs-failed": "scripts/deploy.sh logs-failed",
+    "deploy:open": "scripts/deploy.sh open",
     "ci": "scripts/in-container.sh"
   },
   "devDependencies": {
