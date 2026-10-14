@@ -422,6 +422,14 @@ function AssessmentManager({
   );
   const hasFinal = list.some((a) => a.scope === 'final');
 
+  // I test si basano sul contenuto delle lezioni (RAG): un modulo è "pronto"
+  // solo se ha almeno una lezione con contenuti; il finale solo se tutte le
+  // lezioni del corso hanno contenuti.
+  const moduleHasContent = (m: ModuleView) => m.lessons.some((l) => l.blocks.length > 0);
+  const allLessonsOfCourse = modules.flatMap((m) => m.lessons);
+  const finalReady =
+    allLessonsOfCourse.length > 0 && allLessonsOfCourse.every((l) => l.blocks.length > 0);
+
   async function handleGenerate(scope: 'intermediate' | 'final', moduleId?: string) {
     try {
       const { jobId: id } = await gen.mutateAsync({ scope, moduleId });
@@ -435,13 +443,18 @@ function AssessmentManager({
   async function handleGenerateAllPending() {
     try {
       const n = await pendingAssessments.generateAllPending();
-      toast.show(n > 0 ? `Generati ${n} test` : 'Nessun test da generare', n > 0 ? 'success' : 'info');
+      toast.show(
+        n > 0 ? `Generati ${n} test` : 'Genera prima i contenuti delle lezioni',
+        n > 0 ? 'success' : 'info',
+      );
     } catch {
       toast.show('Generazione dei test non completata', 'error');
     }
   }
 
   const pendingCount = pendingAssessments.pendingCount;
+  const readyCount = pendingAssessments.readyCount;
+  const blockedCount = pendingAssessments.blockedCount;
   const batchRunning = pendingAssessments.running;
 
   async function handleDelete(assessmentId: string) {
@@ -462,11 +475,14 @@ function AssessmentManager({
         <div className="min-w-0">
           <CardTitle className="text-base">Test del corso</CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {pendingCount > 0
-              ? `${pendingCount} ${pendingCount === 1 ? 'test da generare' : 'test da generare'}`
-              : modules.length === 0
+            {pendingCount === 0
+              ? modules.length === 0
                 ? 'Genera prima la struttura del corso'
-                : 'Tutti i test sono stati generati'}
+                : 'Tutti i test sono stati generati'
+              : readyCount > 0
+                ? `${pendingCount} da generare · ${readyCount} pronti` +
+                  (blockedCount > 0 ? ` · ${blockedCount} in attesa dei contenuti` : '')
+                : `${pendingCount} da generare · genera prima i contenuti delle lezioni`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -476,17 +492,19 @@ function AssessmentManager({
               {repair.isPending ? 'Riparazione…' : `Correggi test orfani (${orphanCount})`}
             </Button>
           )}
-          <Button
-            size="sm"
-            onClick={handleGenerateAllPending}
-            disabled={pendingCount === 0 || batchRunning || generating}
-            title={pendingCount === 0 ? 'Nessun test da generare' : 'Genera in sequenza tutti i test mancanti'}
-          >
-            <Wand2 className="size-4" />
-            {batchRunning
-              ? `Generazione… (${pendingAssessments.progress.done}/${pendingAssessments.progress.total})`
-              : `Genera tutti i test pendenti (${pendingCount})`}
-          </Button>
+          {readyCount > 0 && (
+            <Button
+              size="sm"
+              onClick={handleGenerateAllPending}
+              disabled={batchRunning || generating}
+              title="Genera in sequenza i test pronti (il cui contenuto esiste già)"
+            >
+              <Wand2 className="size-4" />
+              {batchRunning
+                ? `Generazione… (${pendingAssessments.progress.done}/${pendingAssessments.progress.total})`
+                : `Genera ${readyCount} pronti`}
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -547,24 +565,40 @@ function AssessmentManager({
             Genera un test
           </p>
           <div className="flex flex-wrap gap-2">
-            {modules.map((m) => (
-              <Button
-                key={m.id}
-                size="sm"
-                variant="outline"
-                disabled={generating || modulesWithIntermediate.has(m.id)}
-                onClick={() => handleGenerate('intermediate', m.id)}
-                title={modulesWithIntermediate.has(m.id) ? 'Questo modulo ha già un test intermedio' : `Genera il test intermedio di "${m.title}"`}
-              >
-                <Wand2 className="size-4" />
-                {`Intermedio: ${m.title.length > 24 ? m.title.slice(0, 24) + '…' : m.title}`}
-              </Button>
-            ))}
+            {modules.map((m) => {
+              const exists = modulesWithIntermediate.has(m.id);
+              const noContent = !moduleHasContent(m);
+              const disabled = generating || exists || noContent;
+              const title = exists
+                ? 'Questo modulo ha già un test intermedio'
+                : noContent
+                  ? 'Genera prima i contenuti delle lezioni di questo modulo'
+                  : `Genera il test intermedio di "${m.title}"`;
+              return (
+                <Button
+                  key={m.id}
+                  size="sm"
+                  variant="outline"
+                  disabled={disabled}
+                  onClick={() => handleGenerate('intermediate', m.id)}
+                  title={title}
+                >
+                  <Wand2 className="size-4" />
+                  {`Intermedio: ${m.title.length > 24 ? m.title.slice(0, 24) + '…' : m.title}`}
+                </Button>
+              );
+            })}
             <Button
               size="sm"
-              disabled={generating || hasFinal}
+              disabled={generating || hasFinal || !finalReady}
               onClick={() => handleGenerate('final')}
-              title={hasFinal ? 'Esiste già un test finale' : 'Genera il test finale del corso'}
+              title={
+                hasFinal
+                  ? 'Esiste già un test finale'
+                  : !finalReady
+                    ? 'Genera prima i contenuti di tutte le lezioni del corso'
+                    : 'Genera il test finale del corso'
+              }
             >
               <Wand2 className="size-4" />
               {generating ? 'Generazione…' : 'Test finale'}

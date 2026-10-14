@@ -83,7 +83,10 @@ export function CourseWizard({ courseId }: { courseId: string }) {
   async function handleGenerateAllTests() {
     try {
       const n = await pendingTests.generateAllPending();
-      toast.show(n > 0 ? `Generati ${n} test` : 'Nessun test da generare', n > 0 ? 'success' : 'info');
+      toast.show(
+        n > 0 ? `Generati ${n} test` : 'Genera prima i contenuti delle lezioni',
+        n > 0 ? 'success' : 'info',
+      );
     } catch {
       toast.show('Generazione dei test non completata', 'error');
     }
@@ -207,34 +210,46 @@ export function CourseWizard({ courseId }: { courseId: string }) {
       )}
 
       {/* Banner sempre visibile: test ancora DA GENERARE. Indipendente dai job,
-          così l'utente non li perde (prima erano in fondo allo step Contenuti). */}
+          così l'utente non li perde (prima erano in fondo allo step Contenuti).
+          Compatto: niente elenco esteso (andava in overflow), solo conteggio e
+          stato. I test si basano sul contenuto delle lezioni, quindi i "pronti"
+          sono solo quelli il cui modulo/corso ha già contenuti. */}
       {hasStructure && pendingTests.pendingCount > 0 && (
-        <div className="flex flex-col gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 shadow-card sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-amber-500/20 text-amber-700">
+        <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 shadow-card">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-amber-500/20 text-amber-700">
               <ClipboardCheck className="size-5" />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-medium text-amber-900">
+              <p className="truncate text-sm font-medium text-amber-900">
                 {pendingTests.pendingCount === 1
-                  ? 'C’è 1 test da generare'
-                  : `Ci sono ${pendingTests.pendingCount} test da generare`}
+                  ? '1 test da generare'
+                  : `${pendingTests.pendingCount} test da generare`}
               </p>
               <p className="truncate text-xs text-amber-800/80">
-                {pendingTests.pending.map((p) => (p.scope === 'final' ? 'Test finale' : p.label)).join(' · ')}
+                {pendingTests.readyCount > 0
+                  ? pendingTests.running
+                    ? `Generazione… ${pendingTests.progress.done}/${pendingTests.progress.total}`
+                    : `${pendingTests.readyCount} pronti` +
+                      (pendingTests.blockedCount > 0
+                        ? ` · ${pendingTests.blockedCount} in attesa dei contenuti`
+                        : '')
+                  : 'Genera prima i contenuti delle lezioni'}
               </p>
             </div>
           </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <Button variant="outline" size="sm" onClick={goToTests} disabled={pendingTests.running}>
               Vedi i test
             </Button>
-            <Button size="sm" onClick={handleGenerateAllTests} disabled={pendingTests.running}>
-              <Wand2 className="size-4" />
-              {pendingTests.running
-                ? `Generazione… (${pendingTests.progress.done}/${pendingTests.progress.total})`
-                : `Genera tutti (${pendingTests.pendingCount})`}
-            </Button>
+            {pendingTests.readyCount > 0 && (
+              <Button size="sm" onClick={handleGenerateAllTests} disabled={pendingTests.running}>
+                <Wand2 className="size-4" />
+                {pendingTests.running
+                  ? `${pendingTests.progress.done}/${pendingTests.progress.total}`
+                  : `Genera ${pendingTests.readyCount} pronti`}
+              </Button>
+            )}
           </div>
         </div>
       )}

@@ -15,6 +15,15 @@ export interface PendingAssessment {
   moduleId?: string;
   /** Etichetta leggibile (titolo modulo per gli intermedi, "Test finale" per il finale). */
   label: string;
+  /**
+   * True se il contenuto necessario a generare un buon test esiste già:
+   *  - intermedio → il modulo ha almeno una lezione con contenuti;
+   *  - finale → tutte le lezioni del corso hanno contenuti.
+   * I test si basano sul RAG del contenuto delle lezioni: generarli prima dei
+   * contenuti produce domande di scarsa qualità, quindi i non-pronti sono
+   * "bloccati" (vanno generati i contenuti prima).
+   */
+  ready: boolean;
 }
 
 /** Attende il completamento di un job di generazione (polling imperativo). */
@@ -51,15 +60,26 @@ export function usePendingAssessments(courseId: string, modules: ModuleView[]) {
       list.filter((a) => a.scope === 'intermediate' && a.moduleId).map((a) => a.moduleId),
     );
     const hasFinal = list.some((a) => a.scope === 'final');
+
+    const moduleHasContent = (m: ModuleView) => m.lessons.some((l) => l.blocks.length > 0);
+    // Finale pronto solo se OGNI lezione del corso ha contenuti (il test finale
+    // copre l'intero corso). Serve almeno una lezione in totale.
+    const allLessons = modules.flatMap((m) => m.lessons);
+    const finalReady = allLessons.length > 0 && allLessons.every((l) => l.blocks.length > 0);
+
     const out: PendingAssessment[] = [];
     for (const m of modules) {
       if (!modulesWithIntermediate.has(m.id)) {
-        out.push({ scope: 'intermediate', moduleId: m.id, label: m.title });
+        out.push({ scope: 'intermediate', moduleId: m.id, label: m.title, ready: moduleHasContent(m) });
       }
     }
-    if (!hasFinal) out.push({ scope: 'final', label: 'Test finale' });
+    if (!hasFinal) out.push({ scope: 'final', label: 'Test finale', ready: finalReady });
     return out;
   }, [modules, list]);
+
+  // Separa i pendenti pronti (contenuti presenti) da quelli bloccati.
+  const readyPending = React.useMemo(() => pending.filter((p) => p.ready), [pending]);
+  const blockedPending = React.useMemo(() => pending.filter((p) => !p.ready), [pending]);
 
   // Stato della generazione in blocco (una sequenza alla volta per corso).
   const [running, setRunning] = React.useState(false);
@@ -73,12 +93,13 @@ export function usePendingAssessments(courseId: string, modules: ModuleView[]) {
   }, []);
 
   /**
-   * Genera in sequenza tutti i test pendenti. Ritorna il numero di test
-   * effettivamente avviati. Rilancia l'eventuale errore dell'ultima chiamata.
+   * Genera in sequenza i test pendenti PRONTI (quelli il cui contenuto esiste).
+   * I bloccati vengono ignorati: prima vanno generati i contenuti. Ritorna il
+   * numero di test avviati.
    */
   const generateAllPending = React.useCallback(async (): Promise<number> => {
     if (running) return 0;
-    const items = pending;
+    const items = readyPending;
     if (items.length === 0) return 0;
     const signal = { cancelled: false };
     cancelRef.current = signal;
@@ -103,18 +124,26 @@ export function usePendingAssessments(courseId: string, modules: ModuleView[]) {
       qc.invalidateQueries({ queryKey: ['courses', courseId, 'assessments'] });
       qc.invalidateQueries({ queryKey: qk.jobs(courseId) });
     }
-  }, [running, pending, courseId, qc]);
+  }, [running, readyPending, courseId, qc]);
 
   return {
-    /** Test ancora da generare (vuoto se nessuno o nessuna struttura). */
+    /** Tutti i test ancora da generare (pronti + bloccati). */
     pending,
-    /** Conteggio dei test pendenti. */
+    /** Conteggio totale dei test pendenti. */
     pendingCount: pending.length,
+    /** Test pendenti il cui contenuto esiste già (generabili subito). */
+    readyPending,
+    /** Quanti test sono pronti da generare. */
+    readyCount: readyPending.length,
+    /** Test pendenti bloccati: manca il contenuto delle lezioni. */
+    blockedPending,
+    /** Quanti test sono bloccati (contenuti mancanti). */
+    blockedCount: blockedPending.length,
     /** True mentre la generazione in blocco è in corso. */
     running,
     /** Avanzamento della generazione in blocco. */
     progress,
-    /** Avvia la generazione in sequenza di tutti i test pendenti. */
+    /** Genera in sequenza i soli test pronti. */
     generateAllPending,
     /** True finché la lista dei test non è pronta. */
     loading: assessments.isLoading,
