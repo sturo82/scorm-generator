@@ -58,9 +58,11 @@ export class IngestionService {
       }
 
       // 1. Scarica il file sorgente.
+      this.logger.log(`[ingest ${doc.id}] step=storage.getObject key=${doc.storageKey}`);
       const content = await this.storage.getObject(doc.storageKey);
 
       // 2. Estrai testo e sezioni.
+      this.logger.log(`[ingest ${doc.id}] step=extract bytes=${content.byteLength}`);
       const extracted = await this.registry.extract({
         filename: doc.filename,
         mimeType: doc.mimeType,
@@ -69,13 +71,16 @@ export class IngestionService {
 
       // 3. Chunking semantico con overlap.
       const chunks = chunkSections(extracted.sections);
+      this.logger.log(`[ingest ${doc.id}] step=chunk count=${chunks.length}`);
       if (chunks.length === 0) {
         await this.markReady(doc.id, 0);
         return;
       }
 
       // 4. Embeddings (batch).
+      this.logger.log(`[ingest ${doc.id}] step=embeddings n=${chunks.length}`);
       const vectors = await this.embeddings.embed(chunks.map((c) => c.text));
+      this.logger.log(`[ingest ${doc.id}] step=embeddings OK`);
 
       // 5. Rimpiazza eventuali embeddings pregressi e inserisce i nuovi.
       await this.vectors.deleteByDocument({ tenantId }, doc.id);
@@ -96,11 +101,18 @@ export class IngestionService {
       this.logger.log(`Ingestion completata per ${doc.id}: ${items.length} chunk`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Errore sconosciuto';
+      const name = err instanceof Error ? err.name : 'Unknown';
+      const cause =
+        err && typeof err === 'object' && 'cause' in err
+          ? String((err as { cause?: unknown }).cause)
+          : '';
       await this.prisma.knowledgeDoc.update({
         where: { id: doc.id },
         data: { status: 'FAILED', error: message },
       });
-      this.logger.error(`Ingestion fallita per ${doc.id}: ${message}`);
+      this.logger.error(
+        `Ingestion fallita per ${doc.id}: name=${name} message=${message} cause=${cause}`,
+      );
       throw err;
     }
   }
