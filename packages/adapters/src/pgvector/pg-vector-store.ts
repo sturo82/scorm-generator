@@ -38,15 +38,16 @@ export class PgVectorStore implements VectorStore {
     } else if (opts.connectionString) {
       // Con `sslmode=require` nella URL (es. RDS) il driver `pg` valida la catena
       // TLS contro la trust store di Node, che NON include la CA di AWS RDS →
-      // "self-signed certificate in certificate chain". Allineiamo il
-      // comportamento a `require` di libpq/Prisma (già usato con la stessa URL):
-      // TLS attivo ma senza verifica della CA. `sslmode=verify-full` disattiva
-      // esplicitamente questo rilassamento se si fornisce una CA.
-      const requiresSsl = /sslmode=(require|prefer)/.test(opts.connectionString);
-      const verifyFull = /sslmode=verify-(ca|full)/.test(opts.connectionString);
+      // "self-signed certificate in certificate chain". NON basta passare un
+      // oggetto `ssl`: se `sslmode` resta nella connectionString, `pg` ne deriva
+      // la propria config SSL con verifica. Perciò RIMUOVIAMO `sslmode` dalla URL
+      // e gestiamo l'SSL esplicitamente via l'oggetto `ssl` (TLS attivo, senza
+      // verifica della CA — stesso livello di `require` di libpq/Prisma).
+      // `verify-ca`/`verify-full` mantengono invece la verifica (nessun oggetto ssl).
+      const { connectionString, relaxSsl } = stripSslmode(opts.connectionString);
       this.pool = new Pool({
-        connectionString: opts.connectionString,
-        ...(requiresSsl && !verifyFull ? { ssl: { rejectUnauthorized: false } } : {}),
+        connectionString,
+        ...(relaxSsl ? { ssl: { rejectUnauthorized: false } } : {}),
       });
     } else {
       throw new Error('PgVectorStore richiede pool o connectionString');
@@ -217,4 +218,24 @@ export class PgVectorStore implements VectorStore {
 /** Formatta un array di numeri come literal pgvector: "[1,2,3]". */
 export function toVectorLiteral(vector: number[]): string {
   return `[${vector.join(',')}]`;
+}
+
+/**
+ * Rimuove il parametro `sslmode` dalla connectionString e indica se l'SSL va
+ * attivato in modalità rilassata (TLS senza verifica CA). Serve perché il driver
+ * `pg`, se trova `sslmode` nella URL, ne deriva una config SSL che VERIFICA la
+ * catena (fallendo con la CA di RDS, "self-signed certificate in certificate
+ * chain") e ignora l'oggetto `ssl` passato a parte. Gestendo l'SSL solo via
+ * oggetto `ssl` otteniamo lo stesso comportamento di libpq/Prisma con
+ * `sslmode=require`. `verify-ca`/`verify-full` NON vengono rilassati.
+ */
+export function stripSslmode(conn: string): { connectionString: string; relaxSsl: boolean } {
+  const match = /[?&]sslmode=([^&]*)/.exec(conn);
+  if (!match) return { connectionString: conn, relaxSsl: false };
+  const mode = decodeURIComponent(match[1] ?? '').toLowerCase();
+  const relaxSsl = mode !== 'disable' && mode !== 'verify-ca' && mode !== 'verify-full';
+  // Rimuove "sslmode=..." preservando la struttura dei query param.
+  let cleaned = conn.replace(/([?&])sslmode=[^&]*/, '$1').replace(/[?&]&/, (m) => m[0] ?? '');
+  cleaned = cleaned.replace(/[?&]$/, '');
+  return { connectionString: cleaned, relaxSsl };
 }
