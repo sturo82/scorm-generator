@@ -37,6 +37,15 @@ jobs:
     container: node:20.11.0-bookworm
     steps:
       - uses: actions/checkout@v4
+      # Cache della cache di npm (~/.npm): npm ci la riusa, evitando di riscaricare
+      # i pacchetti a ogni run. Invalidata quando cambia package-lock.json.
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
       - run: npm ci
       - run: npx prisma generate --schema apps/api/prisma/schema.prisma
       - run: npm run build
@@ -49,6 +58,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Rileva se il push tocca le migrazioni Prisma: se NO, saltiamo CodeBuild
+      # (le migrazioni sono idempotenti ma inutili senza nuove migrazioni, ~1min).
+      - name: Rileva cambi migrazioni
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            migrations:
+              - 'apps/api/prisma/migrations/**'
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -59,19 +78,39 @@ jobs:
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      # Buildx abilita la cache dei layer Docker su GitHub Actions (type=gha):
+      # i layer non cambiati (incluso `npm ci` dell'immagine) vengono riusati tra
+      # run finché cambiano solo i sorgenti. Invalidata quando cambia il contesto
+      # del layer (es. package-lock.json per lo stage deps).
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build & push API image
         env:
           ECR_API: ${{ vars.ECR_API }}
           TAG: ${{ github.sha }}
         run: |
-          docker build -t "$ECR_API:$TAG" -t "$ECR_API:latest" --target runtime .
-          docker build -t "$ECR_API:migrate" --target migrate .
-          docker push "$ECR_API:$TAG"
-          docker push "$ECR_API:latest"
-          docker push "$ECR_API:migrate"
+          # Stage runtime (immagine servita da App Runner): tag sha + latest.
+          docker buildx build \
+            --target runtime \
+            --cache-from type=gha,scope=api-runtime \
+            --cache-to type=gha,scope=api-runtime,mode=max \
+            -t "$ECR_API:$TAG" -t "$ECR_API:latest" \
+            --push .
+          # Stage migrate (task one-off migrazioni). Condivide i layer col runtime.
+          docker buildx build \
+            --target migrate \
+            --cache-from type=gha,scope=api-runtime \
+            --cache-from type=gha,scope=api-migrate \
+            --cache-to type=gha,scope=api-migrate,mode=max \
+            -t "$ECR_API:migrate" \
+            --push .
 
-      # --- Migrazioni DB (CodeBuild) ------------------------------------------
+      # --- Migrazioni DB (CodeBuild) — solo se sono cambiate le migrazioni ----
+      # Via di fuga: un run manuale (workflow_dispatch) esegue SEMPRE le
+      # migrazioni, utile se il filtro non le rilevasse o per forzarle.
       - name: Run DB migrations
+        if: steps.changes.outputs.migrations == 'true' || github.event_name == 'workflow_dispatch'
         env:
           PROJECT: ${{ vars.MIGRATE_PROJECT }}
         run: |
@@ -97,6 +136,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.11.0'
+          cache: 'npm' # riusa la cache npm tra run (npm ci più veloce)
 
       - name: Build web (static export)
         env:
