@@ -8,7 +8,13 @@ import { z } from 'zod';
  */
 
 /** Provider/servizio a pagamento misurato. */
-export const MeterProvider = z.enum(['BEDROCK_LLM', 'BEDROCK_IMAGE', 'POLLY', 'TRANSCRIBE']);
+export const MeterProvider = z.enum([
+  'BEDROCK_LLM',
+  'BEDROCK_EMBEDDINGS',
+  'BEDROCK_IMAGE',
+  'POLLY',
+  'TRANSCRIBE',
+]);
 export type MeterProvider = z.infer<typeof MeterProvider>;
 
 /** Unità di consumo misurata. */

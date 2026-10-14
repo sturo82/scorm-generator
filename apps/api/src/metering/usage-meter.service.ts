@@ -50,7 +50,9 @@ export class UsageMeterService {
 
   /** Regione di default per il lookup prezzi, in base al provider. */
   private defaultRegion(provider: MeterProvider): string {
-    if (provider === 'BEDROCK_LLM') return this.config.get('bedrock', { infer: true }).region;
+    if (provider === 'BEDROCK_LLM' || provider === 'BEDROCK_EMBEDDINGS') {
+      return this.config.get('bedrock', { infer: true }).region;
+    }
     if (provider === 'TRANSCRIBE') return this.config.get('transcribe', { infer: true }).region;
     return this.config.get('media', { infer: true }).region;
   }

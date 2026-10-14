@@ -36,7 +36,11 @@ function makeService(opts: {
     },
   } as unknown as VectorStore;
 
-  return { service: new RetrievalService(embeddings, vectors), queryCalls };
+  const meter = { record: vi.fn(async () => 0) } as unknown as import('../metering/usage-meter.service.js').UsageMeterService;
+  const config = {
+    get: () => ({ embeddingsModelId: 'amazon.titan-embed-text-v2:0' }),
+  } as unknown as import('@nestjs/config').ConfigService;
+  return { service: new RetrievalService(embeddings, vectors, meter, config), queryCalls };
 }
 
 describe('RetrievalService', () => {

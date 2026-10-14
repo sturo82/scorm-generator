@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type {
   DocumentExtractor,
   EmbeddingsProvider,
@@ -11,6 +12,9 @@ import type {
 import { UnsupportedFormatError } from '@scorm/domain';
 import { DocumentExtractorRegistry } from '@scorm/adapters/extractors';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { UsageMeterService } from '../metering/usage-meter.service.js';
+import type { AppConfig } from '../config/configuration.js';
+import { estimateTokensFromText } from '../metering/token-estimate.js';
 import {
   DOCUMENT_EXTRACTORS,
   EMBEDDINGS_PROVIDER,
@@ -36,6 +40,8 @@ export class IngestionService {
     @Inject(EMBEDDINGS_PROVIDER) private readonly embeddings: EmbeddingsProvider,
     @Inject(VECTOR_STORE) private readonly vectors: VectorStore,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
+    private readonly meter: UsageMeterService,
+    private readonly config: ConfigService<AppConfig, true>,
   ) {
     this.registry = new DocumentExtractorRegistry(extractors);
   }
@@ -79,8 +85,22 @@ export class IngestionService {
 
       // 4. Embeddings (batch).
       this.logger.log(`[ingest ${doc.id}] step=embeddings n=${chunks.length}`);
-      const vectors = await this.embeddings.embed(chunks.map((c) => c.text));
+      const chunkTexts = chunks.map((c) => c.text);
+      const vectors = await this.embeddings.embed(chunkTexts);
       this.logger.log(`[ingest ${doc.id}] step=embeddings OK`);
+
+      // Metering del consumo embeddings (Titan). Attribuzione: al CORSO se il
+      // documento è course-scoped, altrimenti solo al tenant (knowledge globale
+      // condivisa da più corsi: non attribuibile a uno singolo). Best-effort.
+      void this.meter.record({
+        tenantId,
+        courseId: doc.courseId ?? null,
+        provider: 'BEDROCK_EMBEDDINGS',
+        model: this.config.get('bedrock', { infer: true }).embeddingsModelId,
+        unit: 'INPUT_TOKENS',
+        quantity: estimateTokensFromText(chunkTexts),
+        source: 'knowledge_ingest',
+      });
 
       // 5. Rimpiazza eventuali embeddings pregressi e inserisce i nuovi.
       await this.vectors.deleteByDocument({ tenantId }, doc.id);

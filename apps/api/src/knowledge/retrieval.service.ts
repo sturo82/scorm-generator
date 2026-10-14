@@ -1,7 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { EmbeddingsProvider, VectorMatch, VectorStore } from '@scorm/domain';
 import type { SourceCitation } from '@scorm/contracts';
 import { EMBEDDINGS_PROVIDER, VECTOR_STORE } from '../providers/provider.constants.js';
+import { UsageMeterService } from '../metering/usage-meter.service.js';
+import type { AppConfig } from '../config/configuration.js';
+import { estimateTokensFromText } from '../metering/token-estimate.js';
 
 export interface RetrievalQuery {
   tenantId: string;
@@ -46,6 +50,8 @@ export class RetrievalService {
   constructor(
     @Inject(EMBEDDINGS_PROVIDER) private readonly embeddings: EmbeddingsProvider,
     @Inject(VECTOR_STORE) private readonly vectors: VectorStore,
+    private readonly meter: UsageMeterService,
+    private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
   async retrieve(query: RetrievalQuery): Promise<RetrievalResult> {
@@ -54,6 +60,17 @@ export class RetrievalService {
     const scope = { tenantId: query.tenantId };
 
     const [embedding] = await this.embeddings.embed([query.text]);
+    // Metering del consumo embeddings della query RAG, attribuito al corso in
+    // generazione. Best-effort: non blocca il retrieval.
+    void this.meter.record({
+      tenantId: query.tenantId,
+      courseId: query.courseId ?? null,
+      provider: 'BEDROCK_EMBEDDINGS',
+      model: this.config.get('bedrock', { infer: true }).embeddingsModelId,
+      unit: 'INPUT_TOKENS',
+      quantity: estimateTokensFromText([query.text]),
+      source: 'rag_query',
+    });
     if (!embedding) return { chunks: [], citations: [] };
 
     // Whitelist di documenti selezionati (se presente): limita il RAG a questi.

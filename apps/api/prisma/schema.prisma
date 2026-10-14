@@ -81,6 +81,7 @@ enum PackageStatus {
 // Servizio/provider a pagamento misurato dal metering costi.
 enum MeterProvider {
   BEDROCK_LLM
+  BEDROCK_EMBEDDINGS
   BEDROCK_IMAGE
   POLLY
   TRANSCRIBE
