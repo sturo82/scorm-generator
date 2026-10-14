@@ -74,6 +74,16 @@ export interface RenderContext {
    * Ritorna null se il media non è materializzato (placeholder).
    */
   resolveMedia: (ref: MediaRef) => string | null;
+  /**
+   * Hook OPZIONALE per rendere VISIBILE un placeholder immagine non ancora
+   * riempito (MediaRef con placeholderPrompt ma senza storageKey). Serve SOLO al
+   * contesto AUTORE (anteprima nell'editor): mostra uno slot "immagine da
+   * inserire" con la descrizione suggerita, così l'autore sa dove e cosa
+   * inserire e può aprire il selettore stock/upload. Nell'EXPORT SCORM NON è
+   * fornito, quindi i placeholder non riempiti restano invisibili (pacchetto
+   * pulito). Se assente, il comportamento è identico a prima.
+   */
+  renderPlaceholder?: (ref: MediaRef) => VNode | null;
 }
 
 /** Costruttore di un VNode con figli. */

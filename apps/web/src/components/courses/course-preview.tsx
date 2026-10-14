@@ -532,7 +532,11 @@ function questionPrompt(q: Assessment['questions'][number]): string {
 
 /** Rende il corpo di una domanda in base al tipo, evidenziando la risposta corretta. */
 function QuestionBody({ question: q }: { question: Assessment['questions'][number] }) {
-  const correct = 'rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-emerald-800 dark:text-emerald-300';
+  // Risposta corretta: sfondo verde PIENO (non semi-trasparente, che su
+  // superfici del brand tinte/scure diventava illeggibile) + testo verde scuro
+  // → contrasto WCAG AA garantito a prescindere dalla superficie del corso.
+  const correct =
+    'rounded-md border border-emerald-600 bg-emerald-50 px-2 py-1 font-medium text-emerald-900';
   const normal = 'rounded-md border px-2 py-1';
   switch (q.type) {
     case 'single_choice':

@@ -186,8 +186,11 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 }
 .assessment-submit:disabled { opacity: 0.5; cursor: default; }
 .assessment-feedback { margin-top: 1.25rem; padding: 0.9rem 1.1rem; border-radius: 12px; font-weight: 600; }
-.assessment-feedback.is-pass { background: color-mix(in srgb, #16a34a 14%, transparent); color: #15803d; }
-.assessment-feedback.is-fail { background: color-mix(in srgb, #dc2626 12%, transparent); color: #b91c1c; }
+/* Esito test: sfondo PIENO (verde/rosso miscelato su BIANCO, non su transparent:
+   così non dipende dalla superficie del brand, che se tinta/scura rendeva il
+   testo illeggibile) + testo scuro → contrasto WCAG AA garantito. */
+.assessment-feedback.is-pass { background: color-mix(in srgb, #16a34a 16%, #ffffff); color: #14532d; border: 1px solid #16a34a; }
+.assessment-feedback.is-fail { background: color-mix(in srgb, #dc2626 14%, #ffffff); color: #7f1d1d; border: 1px solid #dc2626; }
 .course-done { text-align: center; padding: 3.5rem 1rem; }
 
 /* Block generici */
@@ -326,8 +329,8 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 .sorting-bucket-title { font-weight: 700; margin: 0 0 0.5rem; }
 .sorting-zone { display: flex; flex-wrap: wrap; gap: 0.5rem; min-height: 2.25rem; }
 .dnd-chip.is-placed { cursor: pointer; }
-.dnd-chip.is-correct { border-color: #16a34a; background: color-mix(in srgb, #16a34a 14%, transparent); color: #15803d; }
-.dnd-chip.is-wrong { border-color: #dc2626; background: color-mix(in srgb, #dc2626 12%, transparent); color: #b91c1c; }
+.dnd-chip.is-correct { border-color: #16a34a; background: color-mix(in srgb, #16a34a 16%, #ffffff); color: #14532d; }
+.dnd-chip.is-wrong { border-color: #dc2626; background: color-mix(in srgb, #dc2626 14%, #ffffff); color: #7f1d1d; }
 
 /* ====== Indice del corso (sommario navigabile) ====== */
 /* Layout del corpo: 'top' = colonna singola (indice espandibile sopra); 'side'

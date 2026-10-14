@@ -9,6 +9,7 @@ export * from './vnode.js';
 export * from './video.js';
 export * from './registry.js';
 export { renderRichText } from './blocks/rich-text.js';
+export { mediaImage, imagePlaceholderSlot } from './blocks/media.js';
 export { renderTimeline } from './blocks/timeline.js';
 export { renderImageHotspot } from './blocks/image-hotspot.js';
 export { renderAccordionTabs } from './blocks/accordion-tabs.js';

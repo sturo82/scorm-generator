@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { renderBlock, isHandledByCore } from './registry.js';
+import { imagePlaceholderSlot } from './blocks/media.js';
 import { videoEmbedUrl, fmtTime, sortCues } from './video.js';
 import { initialState, reduce, renderStateful } from './stateful.js';
 import { buildCourseSteps, groupConcepts } from './course-structure.js';
@@ -51,6 +52,32 @@ describe('render-core registry', () => {
     );
     // Solo il contenuto rich, nessuna immagine.
     expect((vnode.children ?? []).filter((c) => typeof c === 'object' && c && (c as { tag?: string }).tag === 'img')).toHaveLength(0);
+  });
+
+  it('in contesto AUTORE (renderPlaceholder) rende visibile il placeholder immagine con il prompt', () => {
+    const authorCtx: RenderContext = {
+      resolveMedia: (m) => m.storageKey ?? null,
+      renderPlaceholder: (m) => imagePlaceholderSlot(m),
+    };
+    const vnode = renderBlock(
+      {
+        type: 'rich_text',
+        payload: {
+          content: { format: 'html', html: '<p>x</p>' },
+          media: [media({ placeholderPrompt: 'una scena da illustrare', alt: 'descrizione' })],
+        },
+      },
+      authorCtx,
+    );
+    const slot = (vnode.children ?? []).find(
+      (c): c is NonNullable<typeof c> & { attrs?: Record<string, unknown> } =>
+        typeof c === 'object' && c !== null && (c as { attrs?: Record<string, unknown> }).attrs?.['data-image-placeholder'] === 'true',
+    );
+    expect(slot).toBeTruthy();
+    // Il prompt suggerito compare nello slot.
+    const flat = JSON.stringify(slot);
+    expect(flat).toContain('una scena da illustrare');
+    expect(flat).toContain('Immagine da inserire');
   });
 
   it('un tipo non gestito produce il segnaposto esplicito', () => {

@@ -8,7 +8,52 @@
  */
 
 import type { MediaRef, MediaAttribution } from '../../primitives.js';
-import { h, type VNode, type VChild, type RenderContext } from '../vnode.js';
+import { h, hHtml, type VNode, type VChild, type RenderContext } from '../vnode.js';
+
+/**
+ * Costruisce lo slot VISIBILE per un placeholder immagine non riempito (solo
+ * contesto AUTORE/anteprima). Mostra un riquadro tratteggiato con un'icona,
+ * l'etichetta "Immagine da inserire", la descrizione suggerita dal generatore
+ * (placeholderPrompt) e, se presente, il testo alternativo. Non è interattivo:
+ * l'inserimento vero avviene nella scheda "Struttura e contenuti". È pensato per
+ * essere passato come RenderContext.renderPlaceholder dall'anteprima web.
+ */
+export function imagePlaceholderSlot(m: MediaRef): VNode {
+  const prompt = (m.placeholderPrompt || '').trim();
+  const alt = (m.alt || '').trim();
+  const children: VChild[] = [
+    h('div', { class: 'block-media-ph-head' }, [
+      h('span', { class: 'block-media-ph-ico', 'aria-hidden': 'true' }, ['🖼']),
+      h('span', { class: 'block-media-ph-badge' }, ['Immagine da inserire']),
+    ]),
+  ];
+  if (prompt) {
+    children.push(h('p', { class: 'block-media-ph-prompt' }, [prompt]));
+  }
+  if (alt) {
+    children.push(
+      hHtml('p', { class: 'block-media-ph-alt' }, `<strong>Alt:</strong> ${escapeText(alt)}`),
+    );
+  }
+  children.push(
+    h('p', { class: 'block-media-ph-hint' }, [
+      'Inseriscila da “Struttura e contenuti” (immagine stock, upload o generazione AI).',
+    ]),
+  );
+  return h(
+    'figure',
+    { class: 'block-media-placeholder', 'data-image-placeholder': 'true', role: 'img', 'aria-label': alt || prompt || 'Immagine da inserire' },
+    children,
+  );
+}
+
+/** Escape minimale per iniettare testo in un frammento HTML fidato. */
+function escapeText(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 
 /** Etichetta leggibile del provider (es. 'unsplash' → 'Unsplash'). */
 function providerLabel(provider: string): string {
@@ -47,7 +92,11 @@ export function mediaImage(
   if (!m) return null;
   if (m.kind && m.kind !== 'image') return null;
   const src = ctx.resolveMedia(m);
-  if (!src) return null;
+  if (!src) {
+    // Placeholder non ancora riempito: in anteprima (autore) lo rendiamo visibile
+    // tramite l'hook del contesto; nell'export resta invisibile (hook assente).
+    return ctx.renderPlaceholder ? ctx.renderPlaceholder(m) : null;
+  }
   const img = h('img', { class: imgClass, src, alt: m.alt || '', loading: 'lazy' });
   if (!m.attribution) return img;
   return h('figure', { class: 'block-media-figure' }, [img, creditCaption(m.attribution)]);
