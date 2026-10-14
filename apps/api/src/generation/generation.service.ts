@@ -15,8 +15,8 @@ import {
   type Assessment as AssessmentType,
   type BrandVoice as BrandVoiceType,
 } from '@scorm/contracts';
-import { z } from 'zod';
-import type { JobQueue, LLMProvider, RequestContext } from '@scorm/domain';
+import { z, ZodError } from 'zod';
+import type { JobQueue, LLMProvider, LLMResult, RequestContext } from '@scorm/domain';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { JOB_QUEUE, LLM_PROVIDER } from '../providers/provider.constants.js';
 import { ModulesService } from '../courses/modules.service.js';
@@ -449,54 +449,78 @@ export class GenerationService {
       documentIds: brief?.success ? brief.data.knowledgeDocIds : undefined,
     });
 
-    const result = await this.llm.generate({
-      system: systemPrompt(voice),
-      messages: [
-        {
-          role: 'user',
-          content: lessonContentPrompt({
-            courseTitle: course.title,
-            moduleTitle: lesson.module.title,
-            lessonTitle: lesson.title,
-            objectives,
-            language: course.language,
-            context: formatContext(retrieved.chunks),
-            toneInstruction,
-            videoFirst,
-          }),
-        },
-      ],
-      // Lo schema di un singolo Block guida il modello; ne richiediamo un array
-      // avvolgendolo in un oggetto per la generazione strutturata.
-      schema: wrapArraySchema(blockJsonSchema, 'blocks'),
-      temperature: 0.6,
-      // Contenuti didattici approfonditi: ampio spazio di output per evitare
-      // troncamenti del JSON tool-use (Claude Sonnet 4.5 supporta output grandi).
-      maxTokens: 16000,
-    });
-    // Un output troncato (limite token) produce JSON tool-use incompleto:
-    // meglio fallire il job che salvare contenuti vuoti/corrotti.
-    if (result.finishReason === 'max_tokens') {
-      throw new Error('Generazione contenuti troncata (limite token): riprova.');
+    // Un singolo tentativo di generazione: chiama il modello, normalizza e
+    // valida l'output in un array di block non vuoto. La chiamata LLM è
+    // NON DETERMINISTICA: occasionalmente il modello produce output malformato
+    // (JSON non parsabile, blocchi avvolti in stringa, 0 block, troncamento).
+    // Questi errori sono RECUPERABILI: un nuovo tentativo quasi sempre riesce.
+    const attempt = async (temperature: number): Promise<{ blocks: BlockType[]; result: LLMResult }> => {
+      const result = await this.llm.generate({
+        system: systemPrompt(voice),
+        messages: [
+          {
+            role: 'user',
+            content: lessonContentPrompt({
+              courseTitle: course.title,
+              moduleTitle: lesson.module.title,
+              lessonTitle: lesson.title,
+              objectives,
+              language: course.language,
+              context: formatContext(retrieved.chunks),
+              toneInstruction,
+              videoFirst,
+            }),
+          },
+        ],
+        // Lo schema di un singolo Block guida il modello; ne richiediamo un array
+        // avvolgendolo in un oggetto per la generazione strutturata.
+        schema: wrapArraySchema(blockJsonSchema, 'blocks'),
+        temperature,
+        // Contenuti didattici approfonditi: ampio spazio di output per evitare
+        // troncamenti del JSON tool-use (Claude Sonnet 4.5 supporta output grandi).
+        maxTokens: 16000,
+      });
+      if (result.finishReason === 'max_tokens') {
+        throw new Error('Generazione contenuti troncata (limite token)');
+      }
+      const parsed = JSON.parse(result.text) as unknown;
+      const rawBlocks = coerceBlocksArray(parsed);
+      const blocks = BlockArray.parse(rawBlocks);
+      if (blocks.length === 0) {
+        this.logger.warn(
+          `Lezione ${lessonId}: 0 block. shape=${describeShape(parsed)} finishReason=${result.finishReason} textLen=${result.text.length}`,
+        );
+        throw new Error('Il modello non ha prodotto block validi');
+      }
+      return { blocks, result };
+    };
+
+    // Retry automatico sugli errori recuperabili dell'LLM (fino a 3 tentativi
+    // totali). L'utente non deve ritentare a mano: la variabilità del modello
+    // viene assorbita qui, lato server. Al retry abbassiamo la temperatura per
+    // un output più aderente allo schema. Gli errori NON recuperabili (es.
+    // provider non disponibile) vengono rilanciati subito senza ritentare.
+    const MAX_ATTEMPTS = 3;
+    let success: { blocks: BlockType[]; result: LLMResult } | undefined;
+    let lastErr: unknown;
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      try {
+        success = await attempt(i === 0 ? 0.6 : 0.3);
+        if (i > 0) {
+          this.logger.log(`Lezione ${lessonId}: generata al tentativo ${i + 1}/${MAX_ATTEMPTS}`);
+        }
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (!isRecoverableGenerationError(err) || i === MAX_ATTEMPTS - 1) break;
+        this.logger.warn(
+          `Lezione ${lessonId}: tentativo ${i + 1}/${MAX_ATTEMPTS} fallito (${err instanceof Error ? err.message : 'errore'}), ritento…`,
+        );
+      }
     }
-    const parsed = JSON.parse(result.text) as unknown;
-    // Normalizzazione difensiva: il modello (output strutturato via tool-use)
-    // di norma ritorna { blocks: [...] }, ma occasionalmente — in modo non
-    // deterministico — avvolge l'array in una STRINGA JSON (es. blocks: "[...]")
-    // o restituisce direttamente l'array top-level. Senza questa gestione una
-    // singola lezione falliva con "Expected array, received string" mentre tutte
-    // le altre andavano a buon fine. Qui ricondurremo tutto a un array.
-    const rawBlocks = coerceBlocksArray(parsed);
-    const blocks = BlockArray.parse(rawBlocks);
-    if (blocks.length === 0) {
-      // Diagnostica (senza contenuti sensibili): registra la FORMA dell'output
-      // del modello per capire perché non si ricava un array di block. Serve a
-      // casi non deterministici in cui una singola lezione produce 0 block.
-      this.logger.warn(
-        `Lezione ${lessonId}: 0 block. shape=${describeShape(parsed)} finishReason=${result.finishReason} textLen=${result.text.length}`,
-      );
-      throw new Error('Il modello non ha prodotto block validi.');
-    }
+    if (!success) throw lastErr ?? new Error('Generazione contenuti non riuscita');
+    const { blocks, result } = success;
+
     await this.recordUsage({
       tenantId: ctx.tenant.tenantId,
       courseId,
@@ -905,6 +929,28 @@ export class GenerationService {
  * Qualsiasi stringa viene ri-parsata una volta. Se non si ottiene un array,
  * ritorna [] (la validazione a valle produrrà un errore chiaro).
  */
+/**
+ * Stabilisce se un errore di generazione è RECUPERABILE con un nuovo tentativo.
+ * Sono recuperabili le anomalie non deterministiche dell'output del modello
+ * (JSON non parsabile, output malformato/vuoto, troncamento per token): un
+ * retry quasi sempre riesce. NON sono recuperabili gli errori strutturali o di
+ * provider (es. "Provider non disponibile", not found), per cui ritentare
+ * subito è inutile.
+ */
+export function isRecoverableGenerationError(err: unknown): boolean {
+  // Errore di parsing JSON dell'output del modello.
+  if (err instanceof SyntaxError) return true;
+  // Errore di validazione dello schema (zod) dei block.
+  if (err instanceof ZodError) return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  // Messaggi noti prodotti da attempt() per output malformato/vuoto/troncato.
+  if (/non ha prodotto block validi/i.test(msg)) return true;
+  if (/troncat/i.test(msg)) return true;
+  if (/Expected array, received string/i.test(msg)) return true;
+  // Provider non disponibile e simili: NON ritentare qui.
+  return false;
+}
+
 /**
  * Descrive la FORMA di un valore per diagnostica (niente contenuti): tipo,
  * chiavi di primo livello, tipo/lunghezza di `blocks`. Usato per capire perché

@@ -1,6 +1,12 @@
 import { testing } from '@scorm/adapters';
 import type { JobQueue, RequestContext } from '@scorm/domain';
-import { GenerationService, coerceBlocksArray, describeShape } from './generation.service.js';
+import { ZodError } from 'zod';
+import {
+  GenerationService,
+  coerceBlocksArray,
+  describeShape,
+  isRecoverableGenerationError,
+} from './generation.service.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { RetrievalService } from '../knowledge/retrieval.service.js';
 import type { ModulesService } from '../courses/modules.service.js';
@@ -181,5 +187,21 @@ describe('describeShape', () => {
     expect(describeShape([1, 2])).toBe('array(len=2)');
     expect(describeShape('abc')).toBe('string(len=3)');
     expect(describeShape(null)).toBe('null');
+  });
+});
+
+describe('isRecoverableGenerationError', () => {
+  it('considera recuperabili gli errori di output malformato del modello', () => {
+    expect(isRecoverableGenerationError(new SyntaxError('Unexpected token'))).toBe(true);
+    expect(isRecoverableGenerationError(new ZodError([]))).toBe(true);
+    expect(isRecoverableGenerationError(new Error('Il modello non ha prodotto block validi'))).toBe(true);
+    expect(isRecoverableGenerationError(new Error('Generazione contenuti troncata (limite token)'))).toBe(true);
+    expect(isRecoverableGenerationError(new Error('Expected array, received string'))).toBe(true);
+  });
+
+  it('NON considera recuperabili gli errori di provider/strutturali', () => {
+    expect(isRecoverableGenerationError(new Error('Provider non disponibile: bedrock'))).toBe(false);
+    expect(isRecoverableGenerationError(new Error('Lezione non trovata'))).toBe(false);
+    expect(isRecoverableGenerationError('errore generico')).toBe(false);
   });
 });
