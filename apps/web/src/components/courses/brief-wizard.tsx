@@ -10,7 +10,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input, Label } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useBrands, useKnowledge } from '@/lib/api/hooks';
+import { Dropzone } from '@/components/knowledge/dropzone';
+import { useToast } from '@/components/ui/toast';
+import { useBrands, useKnowledge, useUploadKnowledge } from '@/lib/api/hooks';
 
 interface BriefWizardProps {
   courseId?: string;
@@ -23,6 +25,10 @@ interface BriefWizardProps {
 
 const STEPS = ['Informazioni', 'Obiettivi', 'Test e brand'] as const;
 
+/** Formati accettati per l'upload knowledge inline (coerente con /knowledge). */
+const KNOWLEDGE_ACCEPT =
+  '.pdf,.docx,.pptx,.xlsx,.txt,.md,.html,.csv,application/pdf,text/plain,text/markdown,text/html,text/csv';
+
 /**
  * Wizard del brief in 3 step, validato con lo schema Brief dei contracts
  * (fonte di verità unica col backend). Mobile-first.
@@ -32,7 +38,13 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
   // Documenti selezionabili: knowledge globale del tenant + knowledge del corso.
   const globalDocs = useKnowledge('GLOBAL');
   const courseDocs = useKnowledge('COURSE', courseId);
+  const uploadKnowledge = useUploadKnowledge();
+  const toast = useToast();
   const [step, setStep] = React.useState(0);
+  // Id dei documenti caricati inline dal wizard: appena diventano READY vengono
+  // auto-selezionati (aggiunti a knowledgeDocIds). Il polling di useKnowledge li
+  // porta da PENDING/PROCESSING a READY senza refresh manuale.
+  const [pendingAutoSelect, setPendingAutoSelect] = React.useState<string[]>([]);
 
   const form = useForm<BriefType>({
     resolver: zodResolver(Brief),
@@ -67,6 +79,33 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
     const seen = new Set<string>();
     return all.filter((d) => (seen.has(d.id) ? false : (seen.add(d.id), true)));
   }, [globalDocs.data, courseDocs.data]);
+
+  // Auto-selezione: quando un doc caricato inline diventa READY, lo aggiunge a
+  // knowledgeDocIds e lo toglie dalla lista in attesa.
+  React.useEffect(() => {
+    if (pendingAutoSelect.length === 0) return;
+    const readyIds = new Set(availableDocs.filter((d) => d.status === 'READY').map((d) => d.id));
+    const nowReady = pendingAutoSelect.filter((id) => readyIds.has(id));
+    if (nowReady.length === 0) return;
+    const current = watch('knowledgeDocIds') ?? [];
+    setValue('knowledgeDocIds', [...new Set([...current, ...nowReady])]);
+    setPendingAutoSelect((prev) => prev.filter((id) => !readyIds.has(id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableDocs]);
+
+  async function handleUploadFiles(files: File[]) {
+    if (!courseId) return;
+    for (const file of files) {
+      try {
+        const doc = await uploadKnowledge.mutateAsync({ file, scope: 'COURSE', courseId });
+        // Memorizza l'id: verrà auto-selezionato appena l'ingestion è READY.
+        setPendingAutoSelect((prev) => [...new Set([...prev, doc.id])]);
+        toast.show(`"${file.name}" caricato, elaborazione in corso…`, 'success');
+      } catch (err) {
+        toast.show(err instanceof Error ? err.message : 'Upload non riuscito', 'error');
+      }
+    }
+  }
 
   async function next() {
     // Valida solo i campi dello step corrente prima di avanzare.
@@ -209,20 +248,48 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
                   Scegli quali documenti usare come fonte. Se non selezioni nulla, la generazione
                   usa automaticamente tutta la knowledge pertinente.
                 </p>
+
                 {availableDocs.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    Nessun documento disponibile. Caricali nella sezione «Knowledge».
+                    Nessun documento ancora. Caricane uno qui sotto, oppure dalla sezione «Knowledge».
                   </p>
                 ) : (
                   <div className="flex max-h-48 flex-col gap-2 overflow-auto rounded-lg border p-2">
-                    {availableDocs.map((d) => (
-                      <Checkbox
-                        key={d.id}
-                        checked={(knowledgeDocIds ?? []).includes(d.id)}
-                        onChange={(c) => setValue('knowledgeDocIds', toggle(knowledgeDocIds ?? [], d.id, c))}
-                        label={`${d.filename}${d.scope === 'COURSE' ? ' (corso)' : ''}`}
-                      />
-                    ))}
+                    {availableDocs.map((d) => {
+                      const busy = d.status === 'PENDING' || d.status === 'PROCESSING';
+                      const failed = d.status === 'FAILED';
+                      return (
+                        <div key={d.id} className="flex items-center gap-2">
+                          <Checkbox
+                            checked={(knowledgeDocIds ?? []).includes(d.id)}
+                            onChange={(c) =>
+                              setValue('knowledgeDocIds', toggle(knowledgeDocIds ?? [], d.id, c))
+                            }
+                            disabled={busy || failed}
+                            label={`${d.filename}${d.scope === 'COURSE' ? ' (corso)' : ''}`}
+                          />
+                          {busy && (
+                            <span className="text-xs text-muted-foreground">elaborazione…</span>
+                          )}
+                          {failed && <span className="text-xs text-destructive">errore</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Upload inline: disponibile solo con un corso già creato (scope COURSE). */}
+                {courseId && (
+                  <div className="space-y-1">
+                    <Dropzone
+                      onFiles={handleUploadFiles}
+                      accept={KNOWLEDGE_ACCEPT}
+                      disabled={uploadKnowledge.isPending}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      I documenti caricati qui vengono associati al corso e, appena pronti, sono
+                      selezionati automaticamente come fonte.
+                    </p>
                   </div>
                 )}
               </div>

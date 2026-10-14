@@ -7,6 +7,38 @@ import type { RetrievedChunk } from '../knowledge/retrieval.service.js';
  * Il tono di brand ha precedenza sul tono del brief (Requisito 7.4).
  */
 
+/** Nome leggibile della lingua da un codice ISO (per istruzioni ai prompt). */
+const LANGUAGE_NAMES: Record<string, string> = {
+  it: 'italiano',
+  en: 'inglese',
+  es: 'spagnolo',
+  fr: 'francese',
+  de: 'tedesco',
+};
+
+export function languageName(code: string): string {
+  const key = (code || '').slice(0, 2).toLowerCase();
+  return LANGUAGE_NAMES[key] ?? code;
+}
+
+/**
+ * Istruzione imperativa sulla lingua di output, da anteporre a OGNI prompt di
+ * generazione. Forza la lingua del corso a prescindere dalla lingua del brief,
+ * delle fonti (knowledge) o degli input dell'utente: titoli, testi, descrizioni
+ * dei media (alt/placeholderPrompt) e qualsiasi contenuto DEVONO essere in questa
+ * lingua.
+ */
+export function languageDirective(code: string): string {
+  const name = languageName(code);
+  return (
+    `LINGUA DI OUTPUT OBBLIGATORIA: ${name} (${code}). ` +
+    `Genera TUTTO il contenuto esclusivamente in ${name}: titoli, testi, elenchi, feedback, ` +
+    `e anche le descrizioni dei media (alt e placeholderPrompt). Questo vale ANCHE se il brief, ` +
+    `gli obiettivi o le fonti di riferimento sono in un'altra lingua: traduci/adatta in ${name}. ` +
+    `Non mischiare lingue.`
+  );
+}
+
 const SYSTEM_BASE =
   'Sei un instructional designer esperto e un divulgatore. Il tuo compito è INSEGNARE in ' +
   'profondità, non elencare obiettivi. Principi didattici da rispettare sempre: ' +
@@ -45,6 +77,7 @@ export function formatContext(chunks: RetrievedChunk[]): string {
 /** Prompt per generare l'outline del corso dal brief (fase 1, Requisito 4.1). */
 export function outlinePrompt(brief: Brief, context: string): string {
   const parts = [
+    languageDirective(brief.language),
     'Genera la struttura (outline) di un corso e-learning basato sul brief seguente.',
     `Titolo: ${brief.title}`,
     `Obiettivi di apprendimento: ${brief.learningObjectives.join('; ')}`,
@@ -91,7 +124,8 @@ export function lessonVideoFirstPrompt(input: {
   toneInstruction?: string;
 }): string {
   const parts = [
-    `Genera i contenuti di una lezione VIDEO-FIRST (incentrata su un video), in lingua ${input.language}.`,
+    languageDirective(input.language),
+    `Genera i contenuti di una lezione VIDEO-FIRST (incentrata su un video), in ${languageName(input.language)}.`,
     `Corso: ${input.courseTitle}`,
     `Modulo: ${input.moduleTitle}`,
     `Lezione: ${input.lessonTitle}`,
@@ -100,7 +134,7 @@ export function lessonVideoFirstPrompt(input: {
     '',
     'La lezione ruota attorno a UN video dimostrativo. Produci i block in questo ordine:',
     '1) UN block "video_checkpoint" come PRIMO block: payload { video: { kind: "video", ' +
-      'alt: "<descrizione del video in italiano>", placeholderPrompt: "<cosa mostra il video>" }, ' +
+      `alt: "<descrizione del video in ${languageName(input.language)}>", placeholderPrompt: "<cosa mostra il video>" }, ` +
       'checkpoints: [], transcript: [], transcriptStatus: "none", ' +
       'sections: [ { id: "<slug>", title: "<titolo tab>", content: { format: "html", html: "<p>…</p>" } }, … ] }. ' +
       'NON inventare storageKey/URL: il video è un segnaposto vuoto che l\'autore riempirà. ' +
@@ -118,7 +152,7 @@ export function lessonVideoFirstPrompt(input: {
       '("dragdrop_match", "dragdrop_order", "sorting_categories" o "branching_scenario"). ' +
       'Verificano quanto mostrato nel video; non introdurre concetti nuovi.',
     '',
-    'Regole media: le immagini eventuali sono placeholder (alt + placeholderPrompt in italiano), ' +
+    `Regole media: le immagini eventuali sono placeholder (alt + placeholderPrompt in ${languageName(input.language)}), ` +
       'MAI URL reali. Il testo resta comprensibile anche senza il video, ma è pensato per accompagnarlo.',
     input.context,
   ];
@@ -140,7 +174,8 @@ export function lessonContentPrompt(input: {
 }): string {
   if (input.videoFirst) return lessonVideoFirstPrompt(input);
   const parts = [
-    `Genera i contenuti didattici completi per la lezione seguente, in lingua ${input.language}.`,
+    languageDirective(input.language),
+    `Genera i contenuti didattici completi per la lezione seguente, in ${languageName(input.language)}.`,
     `Corso: ${input.courseTitle}`,
     `Modulo: ${input.moduleTitle}`,
     `Lezione: ${input.lessonTitle}`,
@@ -156,7 +191,7 @@ export function lessonContentPrompt(input: {
     '1) SPIEGAZIONE a CONCETTI: alterna block "rich_text" BREVI (un concetto ciascuno) a ' +
       'elementi visivi. OGNI concetto deve avere un supporto grafico: aggiungi al rich_text ' +
       'un media immagine (campo media: [{ kind: "image", alt, placeholderPrompt }]) con un ' +
-      'placeholderPrompt descrittivo in italiano della scena da illustrare (senza testo nell\'immagine). ' +
+      `placeholderPrompt descrittivo in ${languageName(input.language)} della scena da illustrare (senza testo nell'immagine). ` +
       'Il testo spiega il "perché" e i meccanismi; l\'immagine aiuta a capire. Il lettore impara ' +
       'da testo + immagine insieme, non da paragrafi lunghissimi.',
     '2) ALMENO UN block "carousel_steps" usato come SEQUENZA DI SLIDE: 3-5 step, ognuno con ' +
@@ -167,7 +202,7 @@ export function lessonContentPrompt(input: {
     '3b) VIDEO (placeholder, opzionale ma consigliato quando la lezione beneficia di una ' +
       'DIMOSTRAZIONE pratica, una procedura da mostrare, un\'intervista o un caso reale): ' +
       'inserisci UN block "video_checkpoint" con un video placeholder VUOTO — ' +
-      'payload: { video: { kind: "video", alt: "<descrizione del video in italiano>", ' +
+      `payload: { video: { kind: "video", alt: "<descrizione del video in ${languageName(input.language)}>", ` +
       'placeholderPrompt: "<cosa dovrebbe mostrare il video>" }, checkpoints: [] }. ' +
       'NON inventare uno storageKey/URL: il video resta un placeholder che l\'autore riempirà ' +
       'caricando un proprio file. Inseriscilo al massimo una volta per lezione e solo se ha ' +
@@ -177,8 +212,8 @@ export function lessonContentPrompt(input: {
       'classificare in categorie, branching_scenario a scelte) che mettono alla prova quanto ' +
       'spiegato. Non introdurre concetti nuovi qui.',
     '',
-    'Regole sui media: i media sono SEMPRE placeholder descrittivi (alt + placeholderPrompt in ' +
-      'italiano), MAI URL reali. Le immagini sono illustrative: il contenuto informativo deve ' +
+    `Regole sui media: i media sono SEMPRE placeholder descrittivi (alt + placeholderPrompt in ` +
+      `${languageName(input.language)}), MAI URL reali. Le immagini sono illustrative: il contenuto informativo deve ` +
       'restare comprensibile anche senza di esse. Punta ad avere più immagini distribuite nella ' +
       'lezione (indicativamente una per concetto) oltre alle slide del carousel.',
     input.context,
@@ -196,7 +231,8 @@ export function assessmentPrompt(input: {
 }): string {
   const scopeLabel = input.scope === 'final' ? 'finale di corso' : 'intermedio di modulo';
   const parts = [
-    `Genera un test ${scopeLabel} per il corso "${input.courseTitle}", in lingua ${input.language}.`,
+    languageDirective(input.language),
+    `Genera un test ${scopeLabel} per il corso "${input.courseTitle}", in ${languageName(input.language)}.`,
     `Argomenti su cui valutare: ${input.focus}`,
     '',
     'Includi domande di tipologie diverse (scelta singola/multipla, vero/falso, abbinamento, ' +

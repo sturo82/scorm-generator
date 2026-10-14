@@ -29,6 +29,24 @@ interface MeterCtx {
 /** Durata dell'URL firmato per l'anteprima dei media. */
 const MEDIA_URL_TTL_SEC = 6 * 3600;
 
+/**
+ * Mappa il codice lingua del corso (it/en/…) al locale BCP-47 per il TTS.
+ * NB: non basta `${lang}-${LANG}` (produrrebbe "en-EN", locale inesistente).
+ * Le voci Polly sono scelte dall'adapter in base al locale.
+ */
+const TTS_LOCALE: Record<string, string> = {
+  it: 'it-IT',
+  en: 'en-US',
+  es: 'es-ES',
+  fr: 'fr-FR',
+  de: 'de-DE',
+};
+
+export function ttsLocale(code?: string | null): string {
+  const key = (code ?? '').slice(0, 2).toLowerCase();
+  return TTS_LOCALE[key] ?? 'it-IT';
+}
+
 /** Timeout e intervallo del polling dei job di trascrizione (lato servizio). */
 const TRANSCRIPTION_POLL_TIMEOUT_MS = 15 * 60_000;
 const TRANSCRIPTION_POLL_INTERVAL_MS = 5_000;
@@ -316,7 +334,7 @@ export class MediaService implements OnModuleInit {
 
     const result = await this.speech.synthesize({
       text,
-      language: course?.language ? `${course.language}-${course.language.toUpperCase()}` : 'it-IT',
+      language: ttsLocale(course?.language),
     });
     const key = `media/${tenantId}/${courseId}/audio/${lessonId}.mp3`;
     await this.storage.putObject(key, Buffer.from(result.bytes), {
