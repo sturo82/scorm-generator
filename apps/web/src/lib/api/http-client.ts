@@ -239,6 +239,16 @@ export class HttpApiClient implements ApiClient {
     return this.request<BrandView>(`/brands/${id}`, { method: 'PUT', body: JSON.stringify(def) });
   }
   async deleteBrand(id: string) { await this.request(`/brands/${id}`, { method: 'DELETE' }); }
+  async uploadBrandLogo(id: string, file: File) {
+    const session = getSession();
+    const form = new FormData();
+    form.append('file', file);
+    const headers = new Headers();
+    if (session) headers.set('Authorization', `Bearer ${session.token}`);
+    const res = await fetch(`${this.baseUrl}/brands/${id}/logo`, { method: 'POST', headers, body: form });
+    if (!res.ok) throw new Error(`Upload logo fallito: ${res.status}`);
+    return (await res.json()) as BrandView;
+  }
   exportCourse(courseId: string, brandId: string, profile: ScormProfile, allowUnapproved?: boolean, includeSemanticSearch?: boolean) {
     return this.request<ExportResultView>(`/courses/${courseId}/export`, {
       method: 'POST',

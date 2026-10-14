@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { Image as ImageIcon, Loader2, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input, Label } from '@/components/ui/input';
@@ -8,6 +9,10 @@ import { ColorInput } from '@/components/ui/color-input';
 import type { BrandView } from '@/lib/api/types';
 
 export type BrandDraft = Omit<BrandView, 'id' | 'tenantId'>;
+
+/** Prefisso che marca un logo come file caricato (chiave di storage) vs URL. */
+const STORAGE_PREFIX = 'storage:';
+const isUploadedLogo = (logo: string | undefined) => !!logo && logo.startsWith(STORAGE_PREFIX);
 
 const EMPTY: BrandDraft = {
   name: '',
@@ -41,6 +46,12 @@ interface BrandEditorProps {
   initial?: BrandView;
   onSubmit: (draft: BrandDraft) => Promise<void> | void;
   saving?: boolean;
+  /**
+   * Carica un file immagine come logo (disponibile solo per brand già salvati:
+   * l'endpoint richiede un id). Ritorna il brand aggiornato (con logoDisplayUrl).
+   */
+  onUploadLogo?: (file: File) => Promise<BrandView>;
+  uploadingLogo?: boolean;
 }
 
 /**
@@ -49,10 +60,36 @@ interface BrandEditorProps {
  * esportato (Requisito 7). Form + preview affiancati su desktop, impilati su
  * mobile.
  */
-export function BrandEditor({ initial, onSubmit, saving }: BrandEditorProps) {
+export function BrandEditor({ initial, onSubmit, saving, onUploadLogo, uploadingLogo }: BrandEditorProps) {
   const [draft, setDraft] = React.useState<BrandDraft>(() =>
     initial ? stripIdentity(initial) : structuredClone(EMPTY),
   );
+  // URL firmato per l'anteprima del logo caricato (dal server). Aggiornato dopo
+  // ogni upload riuscito; l'URL esterno usa invece direttamente il campo testo.
+  const [logoDisplayUrl, setLogoDisplayUrl] = React.useState<string | null>(
+    initial?.logoDisplayUrl ?? null,
+  );
+  const logoInput = React.useRef<HTMLInputElement>(null);
+
+  const logoVal = draft.assets.logoPrimaryUrl;
+  const uploaded = isUploadedLogo(logoVal);
+  // Anteprima: logo caricato → URL firmato; URL esterno → il valore stesso.
+  const logoPreview = uploaded ? logoDisplayUrl : logoVal || null;
+
+  async function handleLogoFile(file: File | undefined) {
+    if (!file || !onUploadLogo) return;
+    const updated = await onUploadLogo(file);
+    setDraft((d) => ({
+      ...d,
+      assets: { ...d.assets, logoPrimaryUrl: updated.assets.logoPrimaryUrl },
+    }));
+    setLogoDisplayUrl(updated.logoDisplayUrl ?? null);
+  }
+
+  function clearLogo() {
+    setDraft((d) => ({ ...d, assets: { ...d.assets, logoPrimaryUrl: '' } }));
+    setLogoDisplayUrl(null);
+  }
 
   const setColor = (key: keyof BrandDraft['colors'], value: string) =>
     setDraft((d) => ({ ...d, colors: { ...d.colors, [key]: value } }));
@@ -90,13 +127,71 @@ export function BrandEditor({ initial, onSubmit, saving }: BrandEditorProps) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="brand-logo">URL logo</Label>
-              <Input
-                id="brand-logo"
-                value={draft.assets.logoPrimaryUrl}
-                onChange={(e) => setDraft((d) => ({ ...d, assets: { ...d.assets, logoPrimaryUrl: e.target.value } }))}
-                placeholder="https://…/logo.svg"
-              />
+              <Label>Logo</Label>
+              <div className="flex items-start gap-3">
+                {/* Anteprima del logo (caricato o da URL) */}
+                <div className="grid h-14 w-20 shrink-0 place-items-center overflow-hidden rounded-md border bg-muted">
+                  {logoPreview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={logoPreview} alt="Logo del brand" className="max-h-full max-w-full object-contain" />
+                  ) : (
+                    <ImageIcon className="size-5 text-muted-foreground" aria-hidden />
+                  )}
+                </div>
+                <div className="flex-1 space-y-2">
+                  {uploaded ? (
+                    // Logo caricato: mostra lo stato + rimozione, non la chiave tecnica.
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">Immagine caricata</span>
+                      <Button type="button" variant="ghost" size="sm" onClick={clearLogo}>
+                        <X className="size-4" /> Rimuovi
+                      </Button>
+                    </div>
+                  ) : (
+                    <Input
+                      id="brand-logo"
+                      value={logoVal}
+                      onChange={(e) =>
+                        setDraft((d) => ({ ...d, assets: { ...d.assets, logoPrimaryUrl: e.target.value } }))
+                      }
+                      placeholder="https://…/logo.svg"
+                      aria-label="URL del logo"
+                    />
+                  )}
+                  <div className="flex items-center gap-2">
+                    {onUploadLogo ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => logoInput.current?.click()}
+                          disabled={uploadingLogo}
+                        >
+                          {uploadingLogo ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+                          {uploaded ? 'Sostituisci' : 'Carica immagine'}
+                        </Button>
+                        <input
+                          ref={logoInput}
+                          type="file"
+                          accept="image/png,image/svg+xml,image/webp,image/jpeg"
+                          className="hidden"
+                          onChange={(e) => {
+                            void handleLogoFile(e.target.files?.[0]);
+                            e.target.value = '';
+                          }}
+                        />
+                        {!uploaded && <span className="text-xs text-muted-foreground">oppure incolla un URL</span>}
+                      </>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        Salva il brand per poter caricare un&apos;immagine, oppure incolla un URL.
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">PNG, SVG, WebP o JPG. Max 2MB.</p>
+                </div>
+              </div>
             </div>
 
             <div>
@@ -211,6 +306,8 @@ export function BrandEditor({ initial, onSubmit, saving }: BrandEditorProps) {
 }
 
 function stripIdentity(b: BrandView): BrandDraft {
-  const { id: _id, tenantId: _t, ...rest } = b;
+  // logoDisplayUrl è view-only (URL firmato risolto dal server): non fa parte
+  // del draft modificabile né del payload di salvataggio.
+  const { id: _id, tenantId: _t, logoDisplayUrl: _l, ...rest } = b;
   return structuredClone(rest);
 }

@@ -1,4 +1,17 @@
-import { Body, Controller, Delete, Get, Header, Param, Post, Put } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Header,
+  Param,
+  Post,
+  Put,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Brand } from '@scorm/contracts';
 import { CurrentContext, type AuthContext } from '../auth/auth-context.js';
 import { Roles } from '../auth/roles.decorator.js';
@@ -43,6 +56,22 @@ export class BrandsController {
     @Body(new ZodValidationPipe(BrandDefinitionSchema)) def: BrandDefinition,
   ) {
     return this.brands.update(ctx.tenant.tenantId, id, def);
+  }
+
+  /** Upload del logo primario del brand (multipart, campo "file"). */
+  @Post(':id/logo')
+  @Roles('ADMIN')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
+  uploadLogo(
+    @CurrentContext() ctx: AuthContext,
+    @Param('id') id: string,
+    @UploadedFile() file: { mimetype: string; buffer: Buffer } | undefined,
+  ) {
+    if (!file) throw new BadRequestException('Nessun file ricevuto (campo "file")');
+    return this.brands.uploadLogo(ctx.tenant.tenantId, id, {
+      mimeType: file.mimetype,
+      content: file.buffer,
+    });
   }
 
   @Delete(':id')

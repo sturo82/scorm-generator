@@ -539,6 +539,19 @@ export class MockApiClient implements ApiClient {
     await delay();
     this.brands = this.brands.filter((b) => b.id !== brandId);
   }
+  async uploadBrandLogo(brandId: string, file: File): Promise<BrandView> {
+    await delay();
+    const idx = this.brands.findIndex((x) => x.id === brandId);
+    if (idx < 0) throw new Error('Brand non trovato');
+    const url = URL.createObjectURL(file);
+    const b = this.brands[idx]!;
+    this.brands[idx] = {
+      ...b,
+      assets: { ...b.assets, logoPrimaryUrl: `storage:mock/${brandId}` },
+      logoDisplayUrl: url,
+    };
+    return this.brands[idx]!;
+  }
   async exportCourse(courseId: string, brandId: string, profile: ScormProfile, _allowUnapproved?: boolean, _includeSemanticSearch?: boolean): Promise<ExportResultView> {
     await delay(1200);
     this.pushAudit('course.export', 'course', courseId);

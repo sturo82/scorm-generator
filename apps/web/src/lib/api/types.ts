@@ -131,6 +131,12 @@ export interface BrandView {
   colors: Record<string, string>;
   typography: { fontFamilyHeading: string; fontFamilyBody: string; webFontUrls?: string[] };
   voice?: { tone: string; dosAndDonts?: string[] };
+  /**
+   * URL del logo risolto per la sola visualizzazione: quando il logo è stato
+   * caricato (assets.logoPrimaryUrl inizia con "storage:") il server fornisce
+   * qui un URL firmato temporaneo. Null se non c'è logo o non risolvibile.
+   */
+  logoDisplayUrl?: string | null;
 }
 
 export interface QuotaStatus {
@@ -301,6 +307,8 @@ export interface ApiClient {
   createBrand(def: Omit<BrandView, 'id' | 'tenantId'>): Promise<BrandView>;
   updateBrand(id: string, def: Omit<BrandView, 'id' | 'tenantId'>): Promise<BrandView>;
   deleteBrand(id: string): Promise<void>;
+  /** Carica un file immagine come logo del brand; ritorna il brand aggiornato. */
+  uploadBrandLogo(id: string, file: File): Promise<BrandView>;
 
   // Export
   exportCourse(courseId: string, brandId: string, profile: ScormProfile, allowUnapproved?: boolean, includeSemanticSearch?: boolean): Promise<ExportResultView>;

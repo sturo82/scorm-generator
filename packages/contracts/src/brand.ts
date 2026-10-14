@@ -60,3 +60,19 @@ export const Brand = z.object({
   legal: BrandLegal.optional(),
 });
 export type Brand = z.infer<typeof Brand>;
+
+/**
+ * Vista del brand per il client. Aggiunge l'URL del logo risolto per la sola
+ * visualizzazione: quando `assets.logoPrimaryUrl` è una chiave di storage
+ * (prefisso "storage:", logo caricato dall'utente), il server la trasforma in
+ * un URL firmato temporaneo; quando è un URL esterno, viene riportato invariato.
+ * Il valore canonico resta in `assets.logoPrimaryUrl` ed è quello che il client
+ * rimanda al salvataggio (mai l'URL firmato, che scadrebbe).
+ */
+export const BrandView = Brand.extend({
+  logoDisplayUrl: z.string().nullable().default(null),
+});
+export type BrandView = z.infer<typeof BrandView>;
+
+/** Prefisso che marca un logo come chiave di object storage (upload utente). */
+export const BRAND_STORAGE_PREFIX = 'storage:';

@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { BrandEditor, type BrandDraft } from '@/components/brands/brand-editor';
 import { useToast } from '@/components/ui/toast';
 import { useDynamicRouteId } from '@/lib/use-dynamic-route-id';
-import { useBrand, useSaveBrand } from '@/lib/api/hooks';
+import { useBrand, useSaveBrand, useUploadBrandLogo } from '@/lib/api/hooks';
 
 /** Editor di dettaglio brand: shell client, dati risolti a runtime via API. */
 export function BrandDetailClient() {
@@ -16,6 +16,7 @@ export function BrandDetailClient() {
   const toast = useToast();
   const brand = useBrand(brandId);
   const save = useSaveBrand();
+  const uploadLogo = useUploadBrandLogo();
 
   async function handleSubmit(draft: BrandDraft) {
     try {
@@ -40,7 +41,13 @@ export function BrandDetailClient() {
   return (
     <>
       <PageHeader title={`Modifica: ${brand.data.name}`} description="Aggiorna l'identità visiva del brand." />
-      <BrandEditor initial={brand.data} onSubmit={handleSubmit} saving={save.isPending} />
+      <BrandEditor
+        initial={brand.data}
+        onSubmit={handleSubmit}
+        saving={save.isPending}
+        onUploadLogo={(file) => uploadLogo.mutateAsync({ id: brandId, file })}
+        uploadingLogo={uploadLogo.isPending}
+      />
     </>
   );
 }

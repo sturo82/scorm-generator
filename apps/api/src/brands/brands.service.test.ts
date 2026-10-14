@@ -42,7 +42,10 @@ function makeService(opts?: {
   const quota = {
     assertWithinLimit: opts?.assertWithinLimit ?? (async () => undefined),
   } as unknown as QuotaService;
-  return { service: new BrandsService(prisma, quota), create, update };
+  const putObject = vi.fn(async () => undefined);
+  const getSignedUrl = vi.fn(async (key: string) => `https://signed.example/${key}?sig=abc`);
+  const storage = { putObject, getSignedUrl } as unknown as import('@scorm/domain').ObjectStorage;
+  return { service: new BrandsService(prisma, quota, storage), create, update, putObject, getSignedUrl };
 }
 
 describe('BrandsService', () => {
@@ -82,5 +85,37 @@ describe('BrandsService', () => {
     const { service } = makeService();
     const theme = await service.compileTheme('t1', 'brand_1');
     expect(theme.css).toContain('--brand-primary: #0055FF;');
+  });
+
+  it('restituisce verbatim un logo URL esterno in logoDisplayUrl', async () => {
+    const { service } = makeService();
+    const view = await service.get('t1', 'brand_1');
+    expect(view.assets.logoPrimaryUrl).toBe('https://cdn/logo.svg');
+    expect(view.logoDisplayUrl).toBe('https://cdn/logo.svg');
+  });
+
+  it('carica il logo come chiave di storage e risolve un URL firmato', async () => {
+    const { service, update, putObject, getSignedUrl } = makeService();
+    const view = await service.uploadLogo('t1', 'brand_1', {
+      mimeType: 'image/png',
+      content: Buffer.from('x'),
+    });
+    expect(putObject).toHaveBeenCalledOnce();
+    // Il valore persistito è una chiave di storage (prefisso "storage:"), non un URL firmato.
+    const saved = update.mock.calls[0]?.[0]?.data?.definition as {
+      assets: { logoPrimaryUrl: string };
+    };
+    expect(saved.assets.logoPrimaryUrl).toMatch(/^storage:brands\/t1\/brand_1\/logo-/);
+    // La vista espone l'URL firmato risolto per l'anteprima.
+    expect(getSignedUrl).toHaveBeenCalled();
+    expect(view.logoDisplayUrl).toContain('https://signed.example/');
+    expect(view.assets.logoPrimaryUrl.startsWith('storage:')).toBe(true);
+  });
+
+  it('rifiuta un MIME non immagine per il logo', async () => {
+    const { service } = makeService();
+    await expect(
+      service.uploadLogo('t1', 'brand_1', { mimeType: 'application/pdf', content: Buffer.from('x') }),
+    ).rejects.toThrow(/Formato non supportato/);
   });
 });

@@ -456,6 +456,17 @@ export function useDeleteBrand() {
   });
 }
 
+export function useUploadBrandLogo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; file: File }) => api.uploadBrandLogo(vars.id, vars.file),
+    onSuccess: (brand) => {
+      qc.invalidateQueries({ queryKey: qk.brands });
+      qc.invalidateQueries({ queryKey: qk.brand(brand.id) });
+    },
+  });
+}
+
 // --- Export / usage / audit -------------------------------------------------
 
 export function useExportCourse(courseId: string) {
