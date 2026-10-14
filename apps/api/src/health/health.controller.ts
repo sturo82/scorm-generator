@@ -2,15 +2,21 @@ import { Controller, Get } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Public } from '../auth/public.decorator.js';
 
-/** Endpoint di health check: liveness e readiness (connessione DB). */
+/** Versione dell'immagine API, iniettata dal CI come env del container. */
+const API_VERSION = process.env.APP_VERSION || 'dev';
+const API_BUILD_TIME = process.env.BUILD_TIME || '';
+
+/** Endpoint di health check: liveness, readiness (DB) e versione dell'API. */
 @Public()
 @Controller('health')
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get()
-  live(): { status: 'ok' } {
-    return { status: 'ok' };
+  live(): { status: 'ok'; version: string; buildTime: string } {
+    // Espone la versione così che il web (footer) possa rilevare quando l'API
+    // è stata aggiornata o sta ripartendo durante un deploy.
+    return { status: 'ok', version: API_VERSION, buildTime: API_BUILD_TIME };
   }
 
   @Get('ready')

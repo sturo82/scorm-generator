@@ -45,6 +45,13 @@ RUN npm run build --workspace @scorm/contracts \
 # ---- Runtime (solo dipendenze di produzione) ----
 FROM base AS runtime
 ENV NODE_ENV=production
+# Versione dell'immagine (sha commit + istante build), passata dal CI come
+# build-arg e persistita come env: l'API la espone in /health, così il web
+# (footer) rileva quando l'API è stata aggiornata o sta ripartendo.
+ARG APP_VERSION=dev
+ARG BUILD_TIME=""
+ENV APP_VERSION=$APP_VERSION
+ENV BUILD_TIME=$BUILD_TIME
 # Prisma richiede OpenSSL a runtime.
 RUN apt-get update && apt-get install -y --no-install-recommends openssl \
   && rm -rf /var/lib/apt/lists/*
