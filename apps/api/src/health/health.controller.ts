@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { Public } from '../auth/public.decorator.js';
 
@@ -6,7 +7,13 @@ import { Public } from '../auth/public.decorator.js';
 const API_VERSION = process.env.APP_VERSION || 'dev';
 const API_BUILD_TIME = process.env.BUILD_TIME || '';
 
-/** Endpoint di health check: liveness, readiness (DB) e versione dell'API. */
+/**
+ * Endpoint di health check: liveness, readiness (DB) e versione dell'API.
+ * Escluso dal rate limiting: è interrogato in polling dal frontend (indicatore
+ * di stato) e dagli health check di infrastruttura; non deve mai essere
+ * throttlato.
+ */
+@SkipThrottle()
 @Public()
 @Controller('health')
 export class HealthController {
