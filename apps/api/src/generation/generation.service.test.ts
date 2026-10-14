@@ -203,13 +203,14 @@ describe('isRecoverableGenerationError', () => {
     expect(isRecoverableGenerationError(new SyntaxError('Unexpected token'))).toBe(true);
     expect(isRecoverableGenerationError(new ZodError([]))).toBe(true);
     expect(isRecoverableGenerationError(new Error('Il modello non ha prodotto block validi'))).toBe(true);
-    expect(isRecoverableGenerationError(new Error('Generazione contenuti troncata (limite token)'))).toBe(true);
     expect(isRecoverableGenerationError(new Error('Expected array, received string'))).toBe(true);
   });
 
-  it('NON considera recuperabili gli errori di provider/strutturali', () => {
+  it('NON considera recuperabili provider/strutturali né il troncamento (deterministico)', () => {
     expect(isRecoverableGenerationError(new Error('Provider non disponibile: bedrock'))).toBe(false);
     expect(isRecoverableGenerationError(new Error('Lezione non trovata'))).toBe(false);
+    // Il troncamento si risolve alzando maxTokens, non ritentando.
+    expect(isRecoverableGenerationError(new Error('Generazione test troncata (limite token)'))).toBe(false);
     expect(isRecoverableGenerationError('errore generico')).toBe(false);
   });
 });

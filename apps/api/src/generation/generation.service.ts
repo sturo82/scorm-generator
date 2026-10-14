@@ -878,8 +878,11 @@ export class GenerationService {
         ],
         schema: assessmentJsonSchema as Record<string, unknown>,
         temperature,
-        // Margine ampio per evitare troncamenti del JSON tool-use con Sonnet 4.6.
-        maxTokens: 8000,
+        // Il test FINALE copre l'intero corso ed è il più lungo: con 8000 token
+        // il JSON tool-use veniva troncato (finishReason=max_tokens) e scartato.
+        // 16000 (come i contenuti lezione) dà margine sufficiente; gli intermedi
+        // restano ben sotto il limite.
+        maxTokens: 16000,
       });
       if (result.finishReason === 'max_tokens') {
         throw new Error('Generazione test troncata (limite token)');
@@ -1007,10 +1010,11 @@ export function isRecoverableGenerationError(err: unknown): boolean {
   // Errore di validazione dello schema (zod) dei block.
   if (err instanceof ZodError) return true;
   const msg = err instanceof Error ? err.message : String(err);
-  // Messaggi noti prodotti da attempt() per output malformato/vuoto/troncato.
+  // Messaggi noti prodotti da attempt() per output malformato/vuoto.
   if (/non ha prodotto block validi/i.test(msg)) return true;
-  if (/troncat/i.test(msg)) return true;
   if (/Expected array, received string/i.test(msg)) return true;
+  // Troncamento (max_tokens) NON è recuperabile a parità di limite: ritentare
+  // darebbe lo stesso esito. Si risolve alzando maxTokens, non col retry.
   // Provider non disponibile e simili: NON ritentare qui.
   return false;
 }
