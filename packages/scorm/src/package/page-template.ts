@@ -363,8 +363,13 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 .course-index .ci-lesson.is-current .ci-badge { background: rgba(255,255,255,0.25); }
 
 /* ====== Widget "Chiedi al corso" (RAG offline) ====== */
+/* La barra di navigazione (Avanti/Precedente) è fissa in basso: il widget chat
+   deve stare SOPRA di essa, non coprirla. --rag-bottom tiene conto dell'altezza
+   della nav bar + un margine, così FAB e pannello galleggiano al di sopra del
+   pulsante Avanti. */
+.rag-fab, .rag-panel { --rag-bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px)); }
 .rag-fab {
-  position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 50;
+  position: fixed; right: 1.25rem; bottom: var(--rag-bottom); z-index: 50;
   display: inline-flex; align-items: center; gap: 0.5rem;
   background: var(--pl-primary); color: var(--pl-on-primary); border: 0;
   border-radius: 999px; padding: 0.75rem 1.15rem; font-weight: 700; font-size: 0.9rem;
@@ -375,8 +380,8 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 .rag-panel[hidden] { display: none !important; }
 .rag-fab[hidden] { display: none !important; }
 .rag-panel {
-  position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 51;
-  width: min(380px, calc(100vw - 2.5rem)); max-height: min(560px, calc(100vh - 2.5rem));
+  position: fixed; right: 1.25rem; bottom: var(--rag-bottom); z-index: 51;
+  width: min(380px, calc(100vw - 2.5rem)); max-height: min(560px, calc(100vh - var(--rag-bottom) - 1.25rem));
   display: flex; flex-direction: column;
   background: var(--pl-surface); color: var(--pl-on-surface);
   border: 1px solid var(--pl-border); border-radius: 16px; box-shadow: var(--pl-shadow-md);

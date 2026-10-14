@@ -1024,8 +1024,10 @@
     if (this.scorm && this.scorm.saveBookmark) {
       this.scorm.saveBookmark(String(index), JSON.stringify({ index: index }));
     }
-    if (global.scrollTo) global.scrollTo(0, 0);
     this.render();
+    // Riporta in cima DOPO il render del nuovo step (il contenuto è più alto/
+    // diverso), su TUTTI i possibili contenitori scrollabili dell'LMS.
+    this.scrollToTop();
   };
 
   /**
@@ -1053,8 +1055,42 @@
     if (this.scorm && this.scorm.saveBookmark) {
       this.scorm.saveBookmark(String(dest), JSON.stringify({ index: dest }));
     }
-    if (global.scrollTo) global.scrollTo(0, 0);
     this.render();
+    this.scrollToTop();
+  };
+
+  /**
+   * Riporta la vista in cima al cambio di step. Dentro un LMS il contenuto è in
+   * un iframe e il contenitore scrollabile può essere window, documentElement,
+   * body o #root (non sempre window): azzeriamo lo scroll su TUTTI, e per
+   * sicurezza portiamo in vista l'inizio del contenuto. Doppio rAF per agire
+   * dopo che il browser ha completato il layout del nuovo step.
+   */
+  Player.prototype.scrollToTop = function () {
+    var root = this.root;
+    function reset() {
+      try { if (global.scrollTo) global.scrollTo(0, 0); } catch (e) { /* no-op */ }
+      try {
+        var doc = global.document;
+        if (doc) {
+          if (doc.scrollingElement) doc.scrollingElement.scrollTop = 0;
+          if (doc.documentElement) doc.documentElement.scrollTop = 0;
+          if (doc.body) doc.body.scrollTop = 0;
+        }
+      } catch (e) { /* no-op */ }
+      // Fallback: porta in vista l'inizio del contenuto renderizzato.
+      try {
+        if (root && root.firstElementChild && root.firstElementChild.scrollIntoView) {
+          root.firstElementChild.scrollIntoView({ block: 'start' });
+        }
+      } catch (e) { /* no-op */ }
+    }
+    reset();
+    if (global.requestAnimationFrame) {
+      global.requestAnimationFrame(function () {
+        global.requestAnimationFrame(reset);
+      });
+    }
   };
 
   /**
