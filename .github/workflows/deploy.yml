@@ -150,7 +150,11 @@ jobs:
           NEXT_PUBLIC_OIDC_SCOPE: openid email profile
           NEXT_PUBLIC_OIDC_AUDIENCE: ${{ vars.COGNITO_CLIENT_ID }}
           NEXT_PUBLIC_OIDC_AUTH_DOMAIN: ${{ vars.AUTH_DOMAIN }}
+          # Versione mostrata in UI (footer): sha corto + istante del build.
+          NEXT_PUBLIC_APP_VERSION: ${{ github.sha }}
         run: |
+          # Istante del build in ISO UTC (affidabile, calcolato ora).
+          export NEXT_PUBLIC_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           # NODE_ENV=production farebbe saltare le devDependencies (tsc, next):
           # forziamo l'install completo per avere i tool di build.
           npm ci --include=dev

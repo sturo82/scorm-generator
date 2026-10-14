@@ -2,6 +2,7 @@ import { AuthGuard } from '@/components/app/auth-guard';
 import { BrandingProvider } from '@/components/app/branding-provider';
 import { DesktopSidebar } from '@/components/app/sidebar';
 import { AppHeader } from '@/components/app/app-header';
+import { AppVersion } from '@/components/app/app-version';
 
 /** Layout dell'area applicativa autenticata: sidebar desktop + header + contenuto. */
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -31,6 +32,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   internamente. */}
               <div className="mx-auto w-full max-w-[1760px]">{children}</div>
             </main>
+            <AppVersion />
           </div>
         </div>
       </BrandingProvider>
