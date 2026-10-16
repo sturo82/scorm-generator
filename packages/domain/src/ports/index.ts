@@ -9,3 +9,4 @@ export * from './vector-store.js';
 export * from './object-storage.js';
 export * from './job-queue.js';
 export * from './document-extractor.js';
+export * from './feed-provider.js';

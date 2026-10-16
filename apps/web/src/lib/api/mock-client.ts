@@ -10,6 +10,8 @@ import type {
   CourseOutlineView,
   CourseQuoteView,
   CourseView,
+  CreateCourseFromRssResult,
+  TenantFeedView,
   CreateFolder,
   EditorialStatus,
   ExportResultView,
@@ -214,6 +216,38 @@ export class MockApiClient implements ApiClient {
     this.modules[course.id] = [];
     this.pushAudit('course.create', 'course', course.id);
     return course;
+  }
+  async createCourseFromRss(input: { topic: string; title?: string; language: string; source: 'everywhere' | 'mine'; category?: string; maxArticles: number }): Promise<CreateCourseFromRssResult> {
+    await delay(900);
+    const course = await this.createCourse({
+      title: input.title?.trim() || (input.topic.charAt(0).toUpperCase() + input.topic.slice(1)),
+      language: input.language,
+      description: `Corso sull'argomento "${input.topic}" (demo).`,
+    });
+    const importedCount = Math.min(input.maxArticles, 12);
+    this.pushAudit('course.create_from_rss', 'course', course.id);
+    return { courseId: course.id, importedCount, candidatesExamined: importedCount * 3, failedFeeds: [], briefDrafted: true };
+  }
+  private tenantFeeds: TenantFeedView[] = [];
+  async listTenantFeeds(): Promise<TenantFeedView[]> {
+    await delay(150);
+    return [...this.tenantFeeds];
+  }
+  async addTenantFeed(input: { url: string; name?: string }): Promise<TenantFeedView> {
+    await delay(250);
+    if (this.tenantFeeds.some((f) => f.url === input.url)) throw new Error('Questo feed è già salvato');
+    const feed: TenantFeedView = {
+      id: id('feed'),
+      url: input.url,
+      name: input.name?.trim() || (() => { try { return new URL(input.url).hostname; } catch { return input.url; } })(),
+      createdAt: new Date().toISOString(),
+    };
+    this.tenantFeeds = [feed, ...this.tenantFeeds];
+    return feed;
+  }
+  async removeTenantFeed(fid: string): Promise<void> {
+    await delay(150);
+    this.tenantFeeds = this.tenantFeeds.filter((f) => f.id !== fid);
   }
   async deleteCourse(id: string) {
     await delay();

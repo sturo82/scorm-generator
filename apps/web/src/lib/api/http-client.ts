@@ -1,4 +1,4 @@
-import type { Assessment, Block, Brief, BriefDraft } from '@scorm/contracts';
+import type { Assessment, Block, Brief, BriefDraft, FeedCategory } from '@scorm/contracts';
 import { getSession, handleSessionExpired } from '../auth';
 import type {
   AdminUserView,
@@ -11,6 +11,8 @@ import type {
   EditorialStatus,
   ExportResultView,
   JobRef,
+  CreateCourseFromRssResult,
+  TenantFeedView,
   JobView,
   KnowledgeDocView,
   KnowledgeScope,
@@ -79,6 +81,18 @@ export class HttpApiClient implements ApiClient {
   getCourse(id: string) { return this.request<CourseView>(`/courses/${id}`); }
   createCourse(input: { title: string; description?: string; language: string }) {
     return this.request<CourseView>('/courses', { method: 'POST', body: JSON.stringify(input) });
+  }
+  createCourseFromRss(input: { topic: string; title?: string; language: string; source: 'everywhere' | 'mine'; category?: FeedCategory; maxArticles: number }) {
+    return this.request<CreateCourseFromRssResult>('/courses/from-rss', { method: 'POST', body: JSON.stringify(input) });
+  }
+  listTenantFeeds() {
+    return this.request<TenantFeedView[]>('/tenant/feeds');
+  }
+  addTenantFeed(input: { url: string; name?: string }) {
+    return this.request<TenantFeedView>('/tenant/feeds', { method: 'POST', body: JSON.stringify(input) });
+  }
+  async removeTenantFeed(id: string) {
+    await this.request<{ deleted: boolean }>(`/tenant/feeds/${id}`, { method: 'DELETE' });
   }
   async deleteCourse(id: string) { await this.request(`/courses/${id}`, { method: 'DELETE' }); }
   saveBrief(courseId: string, brief: Brief) {

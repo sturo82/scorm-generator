@@ -45,6 +45,10 @@
     "./heygen": {
       "types": "./dist/heygen/index.d.ts",
       "default": "./dist/heygen/index.js"
+    },
+    "./rss": {
+      "types": "./dist/rss/index.d.ts",
+      "default": "./dist/rss/index.js"
     }
   },
   "scripts": {
@@ -65,10 +69,14 @@
     "mammoth": "1.7.1",
     "xlsx": "0.18.5",
     "jszip": "3.10.1",
-    "node-html-parser": "6.1.13"
+    "node-html-parser": "6.1.13",
+    "rss-parser": "3.13.0",
+    "@mozilla/readability": "0.5.0",
+    "jsdom": "24.1.0"
   },
   "devDependencies": {
     "@types/pg": "8.11.5",
-    "@types/pdf-parse": "1.1.4"
+    "@types/pdf-parse": "1.1.4",
+    "@types/jsdom": "21.1.7"
   }
 }

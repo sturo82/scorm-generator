@@ -15,3 +15,5 @@ export const COGNITO_CLIENT = 'COGNITO_CLIENT';
 export const STOCK_IMAGE_PROVIDER = 'STOCK_IMAGE_PROVIDER';
 /** Provider di generazione video avatar (HeyGen); null se non configurato. */
 export const VIDEO_GEN_PROVIDER = 'VIDEO_GEN_PROVIDER';
+/** Provider di recupero feed RSS/Atom (per creare corsi dalle notizie). */
+export const FEED_PROVIDER = 'FEED_PROVIDER';

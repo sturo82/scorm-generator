@@ -2,6 +2,7 @@ import { createToken } from './container.js';
 import type {
   DocumentExtractor,
   EmbeddingsProvider,
+  FeedProvider,
   ImageProvider,
   JobQueue,
   LLMProvider,
@@ -24,6 +25,7 @@ export const TOKENS = {
   SpeechProvider: createToken<SpeechProvider>('SpeechProvider'),
   TranscriptionProvider: createToken<TranscriptionProvider>('TranscriptionProvider'),
   VideoGenerationProvider: createToken<VideoGenerationProvider>('VideoGenerationProvider'),
+  FeedProvider: createToken<FeedProvider>('FeedProvider'),
   VectorStore: createToken<VectorStore>('VectorStore'),
   ObjectStorage: createToken<ObjectStorage>('ObjectStorage'),
   JobQueue: createToken<JobQueue>('JobQueue'),

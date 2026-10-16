@@ -1,7 +1,7 @@
 'use client';
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Block, Brief, PricingQuoteInput } from '@scorm/contracts';
+import type { Block, Brief, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
 import { getApiClient } from './client';
 import type { BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole, AttachStockImageInput, AttachStockCoverInput } from './types';
 
@@ -27,6 +27,7 @@ export const qk = {
   users: ['users'] as const,
   stockImages: (courseId: string, q: string) => ['courses', courseId, 'stock-images', q] as const,
   avatars: (q?: string) => ['tenant', 'avatars', q ?? ''] as const,
+  tenantFeeds: ['tenant', 'feeds'] as const,
 };
 
 // --- Corsi ------------------------------------------------------------------
@@ -44,6 +45,45 @@ export function useCreateCourse() {
   return useMutation({
     mutationFn: (input: { title: string; description?: string; language: string }) => api.createCourse(input),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.courses }),
+  });
+}
+
+/** Crea un corso da un ARGOMENTO cercato sui feed (semantico + dedup + brief). */
+export function useCreateCourseFromRss() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      topic: string;
+      title?: string;
+      language: string;
+      source: 'everywhere' | 'mine';
+      category?: FeedCategory;
+      maxArticles: number;
+    }) => api.createCourseFromRss(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.courses }),
+  });
+}
+
+/** Feed RSS personalizzati del tenant (lista). */
+export function useTenantFeeds() {
+  return useQuery({ queryKey: qk.tenantFeeds, queryFn: () => api.listTenantFeeds() });
+}
+
+/** Aggiunge un feed personalizzato del tenant. */
+export function useAddTenantFeed() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { url: string; name?: string }) => api.addTenantFeed(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.tenantFeeds }),
+  });
+}
+
+/** Rimuove un feed personalizzato del tenant. */
+export function useRemoveTenantFeed() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.removeTenantFeed(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.tenantFeeds }),
   });
 }
 

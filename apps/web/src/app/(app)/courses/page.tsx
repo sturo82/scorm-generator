@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { FolderPlus, Plus, Search, Trash2, FolderInput, X, ChevronRight, FolderOpen, BookOpen } from 'lucide-react';
+import { FolderPlus, Plus, Search, Trash2, FolderInput, X, ChevronRight, FolderOpen, BookOpen, Sparkles } from 'lucide-react';
 import type { FolderView } from '@scorm/contracts';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
@@ -140,6 +140,11 @@ export default function CoursesPage() {
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => setFolderDialog({ mode: 'create', parentId: currentFolderId(selected) })}>
               <FolderPlus className="size-4" /> Nuova cartella
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/courses/new/rss">
+                <Sparkles className="size-4" /> Crea da argomento
+              </Link>
             </Button>
             <Button asChild>
               <Link href="/courses/new">

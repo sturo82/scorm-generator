@@ -22,6 +22,7 @@ import type {
   StockImageSearchResponse,
   AttachStockImageInput,
   AttachStockCoverInput,
+  FeedCategory,
 } from '@scorm/contracts';
 
 /**
@@ -189,6 +190,27 @@ export interface JobRef {
   jobId: string;
 }
 
+/** Esito della creazione di un corso da argomento via feed RSS. */
+export interface CreateCourseFromRssResult {
+  courseId: string;
+  /** Articoli (storie distinte) importati come knowledge. */
+  importedCount: number;
+  /** Candidati esaminati prima di filtro e dedup. */
+  candidatesExamined: number;
+  /** Feed non recuperati, con motivo. */
+  failedFeeds: Array<{ url: string; reason: string }>;
+  /** True se è stata generata una bozza di brief dalla knowledge. */
+  briefDrafted: boolean;
+}
+
+/** Feed RSS personalizzato salvato dal tenant. */
+export interface TenantFeedView {
+  id: string;
+  url: string;
+  name: string;
+  createdAt: string;
+}
+
 /** Un avatar HeyGen selezionabile per la generazione video. */
 export interface AvatarOption {
   id: string;
@@ -296,7 +318,25 @@ export interface ApiClient {
   listCourses(filter?: { folderId?: string | 'root'; q?: string }): Promise<CourseView[]>;
   getCourse(id: string): Promise<CourseView>;
   createCourse(input: { title: string; description?: string; language: string }): Promise<CourseView>;
+  /**
+   * Crea un corso da un ARGOMENTO: cerca notizie pertinenti sui feed (predefiniti
+   * e/o del tenant), seleziona semanticamente gli articoli, ingerisce come
+   * knowledge e autocompila il brief.
+   */
+  createCourseFromRss(input: {
+    topic: string;
+    title?: string;
+    language: string;
+    source: 'everywhere' | 'mine';
+    category?: FeedCategory;
+    maxArticles: number;
+  }): Promise<CreateCourseFromRssResult>;
   deleteCourse(id: string): Promise<void>;
+
+  // Feed RSS personalizzati del tenant (per la creazione corsi da argomento).
+  listTenantFeeds(): Promise<TenantFeedView[]>;
+  addTenantFeed(input: { url: string; name?: string }): Promise<TenantFeedView>;
+  removeTenantFeed(id: string): Promise<void>;
   saveBrief(courseId: string, brief: Brief): Promise<CourseView>;
   saveBriefDraft(courseId: string, draft: BriefDraft): Promise<CourseView>;
   updateCourseSettings(
