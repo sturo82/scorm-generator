@@ -18,9 +18,27 @@ describe('groupBlocksIntoConcepts', () => {
     expect(concepts[1]!.blocks).toHaveLength(2);
   });
 
-  it('deriva il titolo dal primo heading del rich_text', () => {
+  it('deriva il titolo dal primo heading del rich_text e lo RIMUOVE dal corpo', () => {
     const concepts = groupBlocksIntoConcepts([rt('<h2>Che cos\u2019è Git</h2><p>testo</p>')]);
     expect(concepts[0]!.title).toBe('Che cos\u2019è Git');
+    // Il blocco di apertura non deve più contenere l'heading (niente doppio titolo).
+    const html = (concepts[0]!.blocks[0] as { payload: { content: { html: string } } }).payload.content.html;
+    expect(html).not.toContain('<h2>');
+    expect(html).toContain('<p>testo</p>');
+  });
+
+  it('non altera il blocco originale (copia difensiva)', () => {
+    const original = rt('<h2>Titolo</h2><p>x</p>');
+    groupBlocksIntoConcepts([original]);
+    // L'HTML originale resta intatto.
+    expect(original.payload.content.html).toBe('<h2>Titolo</h2><p>x</p>');
+  });
+
+  it('se il titolo deriva dalla prima riga (nessun heading) NON rimuove nulla', () => {
+    const concepts = groupBlocksIntoConcepts([rt('<p>Solo un paragrafo</p>')]);
+    expect(concepts[0]!.title).toBe('Solo un paragrafo');
+    const html = (concepts[0]!.blocks[0] as { payload: { content: { html: string } } }).payload.content.html;
+    expect(html).toBe('<p>Solo un paragrafo</p>');
   });
 
   it('apre un concetto implicito se la lezione inizia senza rich_text', () => {

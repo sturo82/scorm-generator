@@ -18,6 +18,8 @@ const SOURCE_LABEL: Record<string, string> = {
   cover: 'Copertina',
   narration: 'Narrazione audio',
   video_transcript: 'Trascrizione video',
+  video_script: 'Copione video',
+  concept_video: 'Video avatar (HeyGen)',
 };
 
 const UNIT_LABEL: Record<MeterUnit, string> = {

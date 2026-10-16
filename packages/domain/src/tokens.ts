@@ -9,6 +9,7 @@ import type {
   SpeechProvider,
   TranscriptionProvider,
   VectorStore,
+  VideoGenerationProvider,
 } from './ports/index.js';
 
 /**
@@ -22,6 +23,7 @@ export const TOKENS = {
   ImageProvider: createToken<ImageProvider>('ImageProvider'),
   SpeechProvider: createToken<SpeechProvider>('SpeechProvider'),
   TranscriptionProvider: createToken<TranscriptionProvider>('TranscriptionProvider'),
+  VideoGenerationProvider: createToken<VideoGenerationProvider>('VideoGenerationProvider'),
   VectorStore: createToken<VectorStore>('VectorStore'),
   ObjectStorage: createToken<ObjectStorage>('ObjectStorage'),
   JobQueue: createToken<JobQueue>('JobQueue'),

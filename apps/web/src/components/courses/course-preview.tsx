@@ -11,10 +11,16 @@ import {
   type Block,
   type Assessment,
 } from '@scorm/contracts';
-import { buildCourseSteps } from '@scorm/contracts/render-core';
+import {
+  buildCourseSteps,
+  renderVideoFirstLesson,
+  imagePlaceholderSlot,
+  type RenderContext,
+} from '@scorm/contracts/render-core';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EditorialStatusBadge } from '@/components/status-badge';
 import { BlockRenderer } from '@/components/courses/block-renderer';
+import { VNodeView } from '@/components/courses/render/vnode-to-react';
 import { useCourse, useModules, useBrand, useAssessments, useAssessment } from '@/lib/api/hooks';
 import { cn } from '@/lib/cn';
 import type { AssessmentIndexView, BrandView, CourseView, LessonView, ModuleView } from '@/lib/api/types';
@@ -860,8 +866,18 @@ function LessonPreview({
   // sotto, l'eventuale intro e gli elementi dinamici/quiz. Fedele al player SCORM.
   if (lesson.videoFirst) {
     const blocks = lesson.blocks as Block[];
-    const videoBlock = blocks.find((b) => b.type === 'video_checkpoint');
-    const rest = blocks.filter((b) => b.id !== videoBlock?.id);
+    // Layout video-first a DUE COLONNE dal renderer CONDIVISO (stesso del player
+    // SCORM): video grande a sinistra + barra tab verticale a destra con
+    // Contenuto / Attività (interazioni) / Trascrizione (karaoke).
+    const ctx: RenderContext = {
+      resolveMedia: (m) => m.storageKey ?? null,
+      renderPlaceholder: (m) => imagePlaceholderSlot(m, labels),
+      labels,
+    };
+    const vnode = renderVideoFirstLesson(
+      blocks.map((b) => ({ id: b.id, type: b.type, payload: b.payload as Record<string, unknown> })),
+      ctx,
+    );
     return (
       <article className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <header className="border-b p-5">
@@ -873,15 +889,8 @@ function LessonPreview({
             <EditorialStatusBadge status={lesson.status} />
           </div>
         </header>
-        <div className="space-y-5 p-5">
-          {/* Video + trascrizione/tab a tutta larghezza */}
-          {videoBlock && <BlockRenderer block={videoBlock} language={language} />}
-          {/* Attività e approfondimenti sotto, in griglia responsive */}
-          {rest.length > 0 && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {rest.map((b) => <BlockRenderer key={b.id} block={b} language={language} />)}
-            </div>
-          )}
+        <div className="brand-scope p-5" data-motion="sober">
+          <VNodeView node={vnode} labels={labels} />
         </div>
       </article>
     );

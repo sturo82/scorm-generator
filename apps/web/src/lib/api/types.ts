@@ -189,6 +189,67 @@ export interface JobRef {
   jobId: string;
 }
 
+/** Un avatar HeyGen selezionabile per la generazione video. */
+export interface AvatarOption {
+  id: string;
+  name: string;
+  previewUrl?: string;
+  gender?: string;
+  /** 'mine' = avatar dell'account; 'stock' = catalogo HeyGen. */
+  source?: 'mine' | 'stock';
+  /** Tipologia dell'avatar (es. "PHOTO", "PUBLIC"), per raggruppare. */
+  groupType?: string;
+  /** Nome del gruppo/personaggio di appartenenza. */
+  group?: string;
+}
+
+/** Una voce HeyGen selezionabile per la generazione video. */
+export interface VoiceOption {
+  id: string;
+  name: string;
+  language?: string;
+  gender?: string;
+  /** URL anteprima audio della voce, se disponibile. */
+  previewUrl?: string;
+}
+
+/** Una pagina di risultati con cursore per la pagina successiva. */
+export interface Page<T> {
+  items: T[];
+  nextToken?: string;
+}
+
+/** Esito della creazione di un avatar (asincrona: look in 'processing'). */
+export interface CreateAvatarResult {
+  /** Id del look (= avatar da usare nella generazione video). */
+  avatarId: string;
+  /** Id del gruppo (per l'eliminazione). */
+  groupId: string;
+  name: string;
+  /** 'processing' | 'completed' | 'failed'. */
+  status: string;
+  previewUrl?: string;
+  /** Engine supportati dal look (es. ['avatar_iii','avatar_iv','avatar_v']). */
+  supportedEngines?: string[];
+}
+
+/** Stato di un look avatar durante/dopo la creazione (polling). */
+export interface AvatarLookStatus {
+  status: 'processing' | 'completed' | 'failed';
+  previewUrl?: string;
+  supportedEngines?: string[];
+  reason?: string;
+}
+
+/** Esito dell'avvio della generazione video avatar (asincrona, poi polling). */
+export interface GenerateVideoRef {
+  status: 'processing';
+  blockId: string;
+  jobRef: string;
+  /** Video ancora disponibili nella quota mensile dopo questa richiesta. */
+  remainingThisMonth: number;
+}
+
 export type JobStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED';
 
 /** Stato di un job di generazione AI (polling). */
@@ -361,6 +422,49 @@ export interface ApiClient {
     blockId: string,
     transcript: TranscriptCue[],
   ): Promise<void>;
+  /**
+   * (Ri)avvia la trascrizione AUTOMATICA del video già presente nel block, senza
+   * rigenerarlo. Asincrono: ritorna { status:'processing' }; l'esito arriva nel
+   * payload del block (transcriptStatus) via refetch dei moduli.
+   */
+  retranscribeVideo(courseId: string, lessonId: string, blockId: string): Promise<{ status: 'processing' }>;
+
+  // Generazione video con avatar parlante (HeyGen) — paginati (prima pagina
+  // veloce, poi 'Carica altri' col token; ricerca via query q).
+  /** Elenca una PAGINA di avatar (no quota). source: 'mine'|'stock'; token: cursore; q: ricerca. */
+  listVideoAvatars(
+    courseId: string,
+    opts?: { source?: 'mine' | 'stock'; token?: string; q?: string },
+  ): Promise<Page<AvatarOption>>;
+  /** Elenca una PAGINA di voci (no quota), filtrate per lingua. token: cursore; q: ricerca. */
+  listVideoVoices(
+    courseId: string,
+    opts?: { language?: string; token?: string; q?: string },
+  ): Promise<Page<VoiceOption>>;
+  /**
+   * Avvia (asincrono) la generazione di un video avatar per un concetto della
+   * lezione, in alternativa al testo. Il rendering prosegue lato server: lo
+   * stato è nel payload del block (videoGenStatus), da seguire via refetch.
+   */
+  generateConceptVideo(
+    courseId: string,
+    lessonId: string,
+    blockId: string,
+    input?: { avatarId?: string; voiceId?: string; script?: string },
+  ): Promise<GenerateVideoRef>;
+
+  // Gestione avatar HeyGen del tenant (Impostazioni → Avatar). Creazione a
+  // pagamento una tantum; lettura della lista senza quota.
+  /** Elenca gli avatar dell'account (i "miei"). `q` cerca per nome. */
+  listMyAvatars(q?: string): Promise<Page<AvatarOption>>;
+  /** Crea un avatar da FOTO (upload immagine). Asincrono: look in 'processing'. */
+  createPhotoAvatar(name: string, file: File): Promise<CreateAvatarResult>;
+  /** Crea un avatar da PROMPT testuale. Asincrono: look in 'processing'. */
+  createPromptAvatar(name: string, prompt: string): Promise<CreateAvatarResult>;
+  /** Stato di un look avatar in creazione (polling fino a 'completed'/'failed'). */
+  getAvatarLook(lookId: string): Promise<AvatarLookStatus>;
+  /** Elimina un avatar del tenant (per groupId). Non rimborsa il costo. */
+  deleteAvatar(groupId: string): Promise<void>;
 
   // Immagini stock royalty-free (Pexels/Unsplash astratti)
   /** Cerca immagini stock per query testuale (provider configurato lato server). */

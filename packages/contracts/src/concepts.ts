@@ -36,22 +36,58 @@ function opensConcept(block: ConceptBlock): boolean {
   return block.type === 'rich_text';
 }
 
-/** Estrae un titolo breve dall'HTML di un rich_text (heading o prima riga). */
-function conceptTitleFromRichText(block: ConceptBlock): string | undefined {
-  const payload = block.payload as { content?: { html?: string } } | undefined;
-  const html = payload?.content?.html;
-  if (!html || typeof html !== 'string') return undefined;
-  // Preferisci un heading esplicito.
-  const heading = html.match(/<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/i);
-  const raw = (heading && heading[1]) ? heading[1] : html;
-  const text = raw
-    .replace(/<[^>]+>/g, ' ') // via i tag
-    .replace(/&[a-z]+;/gi, ' ') // entità comuni
+/** Normalizza il testo visibile di un frammento HTML (via tag/entità/spazi). */
+function plainText(raw: string): string {
+  return raw
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  if (!text) return undefined;
-  // Un titolo è breve: tronca a ~80 caratteri senza spezzare brutalmente.
+}
+
+/** Tronca un titolo a ~80 caratteri senza spezzare brutalmente. */
+function shortTitle(text: string): string {
   return text.length > 80 ? text.slice(0, 77).trimEnd() + '…' : text;
+}
+
+/**
+ * Analizza l'HTML di apertura di un rich_text per derivarne il titolo del
+ * concetto. Se il titolo proviene da un heading INIZIALE (h1-h4), ritorna anche
+ * l'HTML con quel heading RIMOSSO: così il player/anteprima può mostrare il
+ * titolo del concetto senza che lo stesso heading compaia di nuovo nel corpo
+ * del blocco (altrimenti si vedrebbe due volte).
+ */
+function analyzeOpeningRichText(block: ConceptBlock): { title?: string; strippedHtml?: string } {
+  const payload = block.payload as { content?: { html?: string } } | undefined;
+  const html = payload?.content?.html;
+  if (!html || typeof html !== 'string') return {};
+  // Heading in TESTA al contenuto (eventuale whitespace iniziale): è quello che
+  // il player promuove a titolo del concetto, quindi va tolto dal corpo.
+  const leading = html.match(/^\s*<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/i);
+  if (leading && leading[1]) {
+    const title = plainText(leading[1]);
+    if (title) {
+      return { title: shortTitle(title), strippedHtml: html.slice(leading[0].length) };
+    }
+  }
+  // Nessun heading iniziale: deriva un titolo dalla prima riga, SENZA rimuovere
+  // nulla dal corpo (non è un heading duplicato).
+  const text = plainText(html);
+  return text ? { title: shortTitle(text) } : {};
+}
+
+/**
+ * Ritorna una COPIA superficiale del blocco rich_text con l'HTML del contenuto
+ * sostituito (payload.content.html). Usata per rimuovere l'heading iniziale già
+ * promosso a titolo del concetto, senza alterare il blocco originale.
+ */
+function withStrippedHtml(block: ConceptBlock, html: string): ConceptBlock {
+  const payload = (block.payload ?? {}) as { content?: { html?: string } };
+  const content = (payload.content ?? {}) as { html?: string };
+  return {
+    ...block,
+    payload: { ...payload, content: { ...content, html } },
+  };
 }
 
 /**
@@ -67,10 +103,17 @@ export function groupBlocksIntoConcepts(blocks: ConceptBlock[] | undefined | nul
   for (const block of list) {
     if (opensConcept(block) || current === null) {
       // Nuovo concetto: su un rich_text, o all'inizio se partiamo da non-testo.
-      current = {
-        title: opensConcept(block) ? conceptTitleFromRichText(block) : undefined,
-        blocks: [block],
-      };
+      if (opensConcept(block)) {
+        const { title, strippedHtml } = analyzeOpeningRichText(block);
+        // Se il titolo proviene da un heading iniziale, usa una COPIA del blocco
+        // senza quel heading (così non appare due volte: titolo + corpo). Non
+        // mutiamo mai il blocco originale.
+        const openingBlock =
+          strippedHtml !== undefined ? withStrippedHtml(block, strippedHtml) : block;
+        current = { title, blocks: [openingBlock] };
+      } else {
+        current = { title: undefined, blocks: [block] };
+      }
       concepts.push(current);
     } else {
       current.blocks.push(block);

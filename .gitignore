@@ -50,6 +50,15 @@ crash.log
 # Zip di esempio Brain-Bites nella root (duplicato in examples/; artefatto)
 /Brain-Bites-Covid-19-and-Healthy-Workspaces.zip
 
+# Output degli strumenti di automazione browser (screenshot/snapshot/console)
+.playwright-mcp/
+
+# Video di test HeyGen scaricato in locale (artefatto, non versionato)
+/heygen-video.mp4
+
+# Piano Terraform salvato in locale (può contenere dettagli infra; artefatto)
+infra/tfplan.prod
+
 # Libreria sorgente dei loghi dell'ecosistema (input di design, non artefatto):
 # gli asset effettivamente usati sono copiati in apps/web/public/brand/ e infra/.
 /Prodotti Knowkube/

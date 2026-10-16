@@ -54,6 +54,8 @@ export class UsageMeterService {
       return this.config.get('bedrock', { infer: true }).region;
     }
     if (provider === 'TRANSCRIBE') return this.config.get('transcribe', { infer: true }).region;
+    // HeyGen è un'API SaaS non regionale: il listino usa la pseudo-region 'global'.
+    if (provider === 'HEYGEN') return 'global';
     return this.config.get('media', { infer: true }).region;
   }
 

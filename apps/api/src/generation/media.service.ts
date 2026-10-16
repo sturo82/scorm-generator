@@ -5,10 +5,25 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  NotImplementedException,
+  Optional,
   type OnModuleInit,
 } from '@nestjs/common';
-import type { ImageProvider, LLMProvider, ObjectStorage, SpeechProvider, TranscriptionProvider } from '@scorm/domain';
+import type {
+  AvatarLookStatus,
+  AvatarOption,
+  CreateAvatarResult,
+  ImageProvider,
+  LLMProvider,
+  ObjectStorage,
+  Page,
+  SpeechProvider,
+  TranscriptionProvider,
+  VideoGenerationProvider,
+  VoiceOption,
+} from '@scorm/domain';
 import { ConfigService } from '@nestjs/config';
+import { DEFAULT_HEYGEN_ENGINE, defaultEngineForAvatarType } from '@scorm/contracts';
 import type { AppConfig } from '../config/configuration.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
@@ -18,6 +33,7 @@ import {
   OBJECT_STORAGE,
   SPEECH_PROVIDER,
   TRANSCRIPTION_PROVIDER,
+  VIDEO_GEN_PROVIDER,
 } from '../providers/provider.constants.js';
 
 /** Contesto di attribuzione costi passato alle operazioni media. */
@@ -47,9 +63,51 @@ export function ttsLocale(code?: string | null): string {
   return TTS_LOCALE[key] ?? 'it-IT';
 }
 
+/**
+ * Mappa il codice lingua del corso (it/en/…) al LOCALE richiesto da Amazon
+ * Transcribe (es. "it-IT"). Se il codice è già un locale valido (contiene "-")
+ * lo passa invariato. Se la lingua è sconosciuta ritorna undefined, così
+ * l'adapter ricade sull'auto-detect (IdentifyLanguage) invece di forzare un
+ * locale errato e far fallire il job con un errore di validazione.
+ */
+const ASR_LOCALE: Record<string, string> = {
+  it: 'it-IT',
+  en: 'en-US',
+  es: 'es-ES',
+  fr: 'fr-FR',
+  de: 'de-DE',
+  pt: 'pt-PT',
+  nl: 'nl-NL',
+  ja: 'ja-JP',
+  ru: 'ru-RU',
+  pl: 'pl-PL',
+  tr: 'tr-TR',
+  ar: 'ar-SA',
+  hi: 'hi-IN',
+};
+
+export function asrLocale(code?: string | null): string | undefined {
+  const raw = (code ?? '').trim();
+  if (!raw) return undefined;
+  // Già un locale (es. "it-IT"): passalo invariato.
+  if (raw.includes('-')) return raw;
+  return ASR_LOCALE[raw.slice(0, 2).toLowerCase()];
+}
+
 /** Timeout e intervallo del polling dei job di trascrizione (lato servizio). */
 const TRANSCRIPTION_POLL_TIMEOUT_MS = 15 * 60_000;
 const TRANSCRIPTION_POLL_INTERVAL_MS = 5_000;
+
+/**
+ * Timeout e intervallo del polling dei job di generazione video (HeyGen). Il
+ * rendering può richiedere diversi minuti; teniamo un timeout ampio (20 min) e
+ * un intervallo di 10s per non martellare l'API.
+ */
+const VIDEOGEN_POLL_TIMEOUT_MS = 20 * 60_000;
+const VIDEOGEN_POLL_INTERVAL_MS = 10_000;
+
+/** Parole massime del copione per restare entro ~1 minuto di parlato (Free). */
+const VIDEO_SCRIPT_MAX_WORDS = 140;
 
 interface MediaRefLike {
   kind?: string;
@@ -75,6 +133,18 @@ export interface GenerateNarrationResult {
   voice: string;
 }
 
+/** Esito dell'avvio della generazione di un video avatar per un concetto. */
+export interface GenerateConceptVideoResult {
+  /** Stato iniziale: 'processing' (rendering in corso), seguito via polling. */
+  status: 'processing';
+  /** Id del block video_checkpoint che ospiterà il video. */
+  blockId: string;
+  /** Riferimento al job del provider (video_id HeyGen), per audit. */
+  jobRef: string;
+  /** Quanti video restano nella quota mensile dopo questa richiesta. */
+  remainingThisMonth: number;
+}
+
 /**
  * Generazione dei media (Requisito 4.2 / 5.5): sostituisce i placeholder delle
  * immagini nei block con immagini reali (ImageProvider) e produce la narrazione
@@ -94,6 +164,9 @@ export class MediaService implements OnModuleInit {
     @Inject(LLM_PROVIDER) private readonly llm: LLMProvider,
     @Inject(TRANSCRIPTION_PROVIDER) private readonly transcription: TranscriptionProvider,
     private readonly meter: UsageMeterService,
+    // Opzionale: null se PROVIDER_VIDEO non è configurato (o manca l'API key).
+    // In quel caso generateConceptVideo risponde 501, come lo stock image.
+    @Optional() @Inject(VIDEO_GEN_PROVIDER) private readonly videoGen: VideoGenerationProvider | null,
   ) {}
 
   /**
@@ -441,19 +514,40 @@ export class MediaService implements OnModuleInit {
    * lo stato bloccato su 'processing' per sempre. Best-effort e non bloccante.
    */
   async onModuleInit(): Promise<void> {
-    if (typeof this.transcription.fetchJob !== 'function') return;
-    try {
-      const pending = await this.findPendingTranscriptionJobs();
-      if (pending.length === 0) return;
-      this.logger.log(`Ripresa ${pending.length} trascrizione/i in sospeso dopo il riavvio`);
-      for (const job of pending) {
-        void this.pollTranscriptionJob(
-          { tenantId: job.tenantId, courseId: job.courseId, lessonId: job.lessonId, blockId: job.blockId },
-          job.jobRef,
-        );
+    // Riprende le trascrizioni ASR in sospeso (se il provider è asincrono).
+    if (typeof this.transcription.fetchJob === 'function') {
+      try {
+        const pending = await this.findPendingTranscriptionJobs();
+        if (pending.length > 0) {
+          this.logger.log(`Ripresa ${pending.length} trascrizione/i in sospeso dopo il riavvio`);
+          for (const job of pending) {
+            void this.pollTranscriptionJob(
+              { tenantId: job.tenantId, courseId: job.courseId, lessonId: job.lessonId, blockId: job.blockId },
+              job.jobRef,
+            );
+          }
+        }
+      } catch (err) {
+        this.logger.warn(`Ripresa trascrizioni non riuscita: ${err instanceof Error ? err.message : 'errore'}`);
       }
-    } catch (err) {
-      this.logger.warn(`Ripresa trascrizioni non riuscita: ${err instanceof Error ? err.message : 'errore'}`);
+    }
+
+    // Riprende le generazioni video (HeyGen) in sospeso dopo un riavvio.
+    if (this.videoGen) {
+      try {
+        const pendingVideos = await this.findPendingVideoGenJobs();
+        if (pendingVideos.length > 0) {
+          this.logger.log(`Ripresa ${pendingVideos.length} generazione/i video in sospeso dopo il riavvio`);
+          for (const job of pendingVideos) {
+            void this.pollVideoGenJob(
+              { tenantId: job.tenantId, courseId: job.courseId, lessonId: job.lessonId, blockId: job.blockId },
+              job.jobRef,
+            );
+          }
+        }
+      } catch (err) {
+        this.logger.warn(`Ripresa generazioni video non riuscita: ${err instanceof Error ? err.message : 'errore'}`);
+      }
     }
   }
 
@@ -620,6 +714,719 @@ export class MediaService implements OnModuleInit {
       data: { blocks: blocks as object, updatedAt: new Date() },
     });
     return { saved: true, count: sorted.length };
+  }
+
+  // === Generazione video avatar (HeyGen) ===================================
+
+  /**
+   * Elenca gli avatar UNA PAGINA alla volta (no quota). `source` separa gli
+   * avatar dell'account ('mine') dal catalogo HeyGen ('stock'). `token` è il
+   * cursore della pagina successiva; `query` cerca per nome. Ritorna gli item
+   * e l'eventuale cursore per continuare.
+   */
+  async listVideoAvatars(opts?: {
+    source?: 'mine' | 'stock';
+    token?: string;
+    query?: string;
+  }): Promise<Page<AvatarOption>> {
+    if (!this.videoGen) throw this.videoNotConfigured();
+    return this.videoGen.listAvatarsPage({
+      source: opts?.source,
+      token: opts?.token,
+      query: opts?.query,
+    });
+  }
+
+  /**
+   * Elenca le voci UNA PAGINA alla volta (no quota), filtrate per LINGUA DEL
+   * CORSO di default (così l'autore vede subito le voci della lingua giusta).
+   * `languageOverride='all'` mostra tutte le lingue; `token` pagina; `query` cerca.
+   */
+  async listVideoVoices(
+    tenantId: string,
+    courseId: string,
+    opts?: { languageOverride?: string; token?: string; query?: string },
+  ): Promise<Page<VoiceOption>> {
+    if (!this.videoGen) throw this.videoNotConfigured();
+    let language = opts?.languageOverride;
+    if (language === 'all') {
+      language = undefined;
+    } else if (!language) {
+      const course = await this.prisma.course.findFirst({
+        where: { id: courseId, tenantId },
+        select: { language: true },
+      });
+      language = course?.language ?? undefined;
+    }
+    return this.videoGen.listVoicesPage({ language, token: opts?.token, query: opts?.query });
+  }
+
+  // === Creazione / gestione avatar (HeyGen) ================================
+
+  /**
+   * Elenca gli avatar DELL'ACCOUNT ("mine"): quelli creati dal tenant (o
+   * caricati nell'account HeyGen). Non consuma quota. È la lista mostrata nella
+   * sezione Impostazioni → Avatar. Delega al provider (una chiamata, caching).
+   */
+  async listMyAvatars(query?: string): Promise<Page<AvatarOption>> {
+    if (!this.videoGen) throw this.videoNotConfigured();
+    return this.videoGen.listAvatarsPage({ source: 'mine', query });
+  }
+
+  /**
+   * Crea un nuovo avatar HeyGen (foto o prompt) per il tenant. Operazione A
+   * PAGAMENTO una tantum (HeyGen self-serve: ~$1.32 per photo avatar) e ASINCRONA: il
+   * look parte in stato 'processing' e va atteso con getAvatarLook. Registra il
+   * costo di creazione (metering, source 'avatar_creation', unità CALLS).
+   *
+   * `type='photo'` richiede l'immagine (bytes + contentType); `type='prompt'`
+   * richiede il testo descrittivo. Ritorna avatarId (= look id da usare nella
+   * generazione video) e groupId (per l'eliminazione).
+   */
+  async createAvatar(
+    tenantId: string,
+    input: { type: 'photo' | 'prompt'; name: string; image?: { bytes: Buffer; contentType: string }; prompt?: string },
+  ): Promise<CreateAvatarResult> {
+    if (!this.videoGen || typeof this.videoGen.createAvatar !== 'function') {
+      throw this.videoNotConfigured();
+    }
+    const name = input.name?.trim();
+    if (!name) throw new BadRequestException('Nome avatar mancante');
+    if (input.type === 'photo') {
+      if (!input.image) throw new BadRequestException('Immagine mancante per avatar foto (campo "file")');
+      const ext = extForImageMime(input.image.contentType);
+      if (!ext) throw new BadRequestException('Formato immagine non supportato (usa JPG o PNG).');
+      const MAX_BYTES = 32 * 1024 * 1024; // limite HeyGen per POST /v3/assets
+      if (input.image.bytes.byteLength > MAX_BYTES) {
+        throw new BadRequestException('Immagine troppo grande (max 32MB).');
+      }
+    } else if (input.type === 'prompt') {
+      if (!input.prompt?.trim()) throw new BadRequestException('Descrizione (prompt) mancante per avatar da prompt');
+    } else {
+      throw new BadRequestException('Tipo avatar non supportato (usa "photo" o "prompt")');
+    }
+
+    let result: CreateAvatarResult;
+    try {
+      result = await this.videoGen.createAvatar({
+        type: input.type,
+        name,
+        image: input.image ? { bytes: input.image.bytes, contentType: input.image.contentType } : undefined,
+        prompt: input.prompt?.trim(),
+      });
+    } catch (err) {
+      const detail = rawVideoGenError(err);
+      this.logger.warn(`Creazione avatar fallita (tenant ${tenantId}): ${detail}`);
+      throw new BadRequestException(`Creazione avatar non riuscita: ${describeVideoGenError(detail)}`);
+    }
+
+    // Metering: 1 chiamata di creazione avatar (costo una tantum). courseId
+    // null: è un'operazione a livello di tenant, non legata a un corso.
+    await this.meter.record({
+      tenantId,
+      courseId: null,
+      provider: 'HEYGEN',
+      model: 'heygen-avatar-creation',
+      unit: 'CALLS',
+      quantity: 1,
+      source: 'avatar_creation',
+      region: 'global',
+    });
+    this.logger.log(`Avatar creato (tenant ${tenantId}): ${result.name} [${result.avatarId}] status=${result.status}`);
+    return result;
+  }
+
+  /**
+   * Stato di un look avatar in creazione (polling dopo createAvatar): ritorna
+   * 'processing' | 'completed' | 'failed', con preview ed engine supportati
+   * quando pronto. Non consuma quota.
+   */
+  async getAvatarLook(lookId: string): Promise<AvatarLookStatus> {
+    if (!this.videoGen || typeof this.videoGen.getAvatarLook !== 'function') {
+      throw this.videoNotConfigured();
+    }
+    return this.videoGen.getAvatarLook(lookId);
+  }
+
+  /**
+   * Elimina un avatar del tenant (gruppo + look su HeyGen). Non rimborsa il
+   * costo di creazione (già sostenuto). Non tocca i corsi che lo referenziano:
+   * i video già generati restano, ma l'avatar non è più selezionabile.
+   */
+  async deleteAvatar(_tenantId: string, groupId: string): Promise<{ deleted: true }> {
+    if (!this.videoGen || typeof this.videoGen.deleteAvatar !== 'function') {
+      throw this.videoNotConfigured();
+    }
+    try {
+      await this.videoGen.deleteAvatar(groupId);
+    } catch (err) {
+      const detail = rawVideoGenError(err);
+      this.logger.warn(`Eliminazione avatar fallita (${groupId}): ${detail}`);
+      throw new BadRequestException(`Eliminazione avatar non riuscita: ${detail}`);
+    }
+    return { deleted: true };
+  }
+
+  /**
+   * Determina il TIPO di avatar ai fini del PREZZO di generazione video:
+   *  - 'photo'  → avatar custom del tenant (creati da piattaforma): tariffa
+   *               "Photo Avatar", più economica.
+   *  - 'studio' → avatar STOCK del catalogo HeyGen: tariffa "Studio Avatar",
+   *               più cara (soprattutto su Avatar IV).
+   * Verifica se l'avatarId è tra quelli dell'account (lista 'mine', cache 1h
+   * nell'adapter). Se non è determinabile (nessun avatar, provider senza lista)
+   * assume 'studio' per prudenza (non sottostima mai il costo).
+   */
+  private async resolveAvatarBillingType(avatarId?: string): Promise<'photo' | 'studio'> {
+    if (!avatarId || !this.videoGen) return 'studio';
+    try {
+      const mine = await this.videoGen.listAvatarsPage({ source: 'mine' });
+      return mine.items.some((a) => a.id === avatarId) ? 'photo' : 'studio';
+    } catch {
+      // In caso di errore nel lookup, non sottostimare: usa la tariffa più alta.
+      return 'studio';
+    }
+  }
+
+  /**
+   * Genera un video con avatar parlante per un singolo CONCETTO della lezione
+   * (approccio manuale: l'autore sceglie quale concetto trasformare in video).
+   *
+   * Flusso: verifica la quota mensile del tenant (piano Free: 3 video/mese) →
+   * individua/crea il block video_checkpoint target → costruisce un copione
+   * breve (~1 min) dal testo del concetto / placeholderPrompt via LLM → avvia
+   * il job HeyGen e persiste subito lo stato 'processing' con il jobRef nel
+   * payload del block (così è ripristinabile dopo un riavvio) → fa polling in
+   * background e, al termine, SCARICA l'MP4, lo salva su storage, imposta
+   * storageKey/source nel MediaRef e avvia la trascrizione ASR. Idempotente
+   * rispetto ai riavvii grazie a onModuleInit.
+   *
+   * Ritorna subito (202-style) con lo stato iniziale e la quota residua.
+   */
+  async generateConceptVideo(
+    tenantId: string,
+    courseId: string,
+    lessonId: string,
+    blockId: string,
+    opts?: { avatarId?: string; voiceId?: string; script?: string },
+  ): Promise<GenerateConceptVideoResult> {
+    if (!this.videoGen) throw this.videoNotConfigured();
+    const cfg = this.config.get('heygen', { infer: true });
+
+    // TIPO di avatar (per prezzo e scelta engine): custom='photo', stock='studio'.
+    // L'ENGINE non è scelto dall'utente: lo decide il server in base al tipo
+    // (default economico Avatar III per i photo avatar). Un override via env
+    // (HEYGEN_ENGINE) resta possibile per esigenze operative.
+    const avatarType = await this.resolveAvatarBillingType(opts?.avatarId ?? cfg.defaultAvatarId);
+    const engine = (cfg.engine || defaultEngineForAvatarType(avatarType)) as string;
+
+    // Quota mensile per tenant: conta i video già generati nel mese solare
+    // corrente (un UsageRecord VIDEOS per video). Blocca prima di chiamare
+    // HeyGen, così non sprechiamo UX con un 4° tentativo destinato a fallire.
+    const used = await this.countVideosThisMonth(tenantId);
+    if (used >= cfg.monthlyQuota) {
+      throw new BadRequestException(
+        `Hai esaurito i ${cfg.monthlyQuota} video/mese del piano HeyGen. ` +
+          'Attendi il mese prossimo oppure passa a un piano a pagamento.',
+      );
+    }
+
+    const lesson = await this.requireLesson(tenantId, courseId, lessonId);
+    const course = await this.prisma.course.findFirst({ where: { id: courseId, tenantId } });
+    const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as unknown[]) : [];
+
+    // Individua il block video_checkpoint target; se il block indicato è un
+    // concetto testuale (rich_text), lo converte in un video_checkpoint che ne
+    // conserva il testo come prima section ("Punti chiave").
+    const vcBlock = this.ensureVideoCheckpointBlock(blocks, blockId);
+
+    // Copione: usa quello fornito dall'autore, altrimenti sintetizza dal
+    // contenuto del concetto (testo del block + placeholderPrompt del video).
+    const script = (opts?.script?.trim())
+      ? this.clampScript(opts.script.trim())
+      : await this.buildVideoScript(vcBlock, course?.language ?? 'it', { tenantId, courseId });
+    if (!script) {
+      throw new BadRequestException(
+        'Impossibile costruire un copione per il video: il concetto non ha testo. ' +
+          'Aggiungi del contenuto al block oppure fornisci uno script.',
+      );
+    }
+
+    // Avvia il job sul provider PRIMA di persistere, così salviamo il jobRef.
+    let jobRef: string;
+    try {
+      const started = await this.videoGen.startJob({
+        script,
+        avatarId: opts?.avatarId ?? cfg.defaultAvatarId,
+        voiceId: opts?.voiceId ?? cfg.defaultVoiceId,
+        resolution: cfg.resolution,
+        language: course?.language,
+        // Engine scelto per questa generazione (non più fisso in config).
+        engine,
+        // Chiediamo i sottotitoli: ne ricaviamo la trascrizione karaoke gratis
+        // (già sincronizzata col parlato), evitando un ASR esterno a pagamento.
+        caption: true,
+      });
+      jobRef = started.jobRef;
+    } catch (err) {
+      const detail = rawVideoGenError(err);
+      this.logger.warn(`Avvio generazione video fallito (lezione ${lessonId}): ${detail}`);
+      throw new BadRequestException(`Generazione video non avviata: ${detail}`);
+    }
+
+    // Persiste lo stato 'processing' + jobRef nel payload del block. Il video
+    // resta un placeholder (nessuno storageKey) finché il rendering non finisce.
+    // Trasformare un concetto in video rende la lezione VIDEO-FIRST: il video
+    // diventa il fulcro, con gli altri elementi affiancati (requisito prodotto).
+    const payload = (vcBlock.payload ?? {}) as Record<string, unknown>;
+    payload.videoGenStatus = 'processing';
+    payload.videoGenJobRef = jobRef;
+    payload.videoGenAvatarType = avatarType;
+    // Persiste anche l'engine scelto: il metering a fine rendering (background,
+    // resiliente ai riavvii) applica la tariffa per-engine corretta.
+    payload.videoGenEngine = engine;
+    delete payload.videoGenError;
+    vcBlock.payload = payload;
+    await this.prisma.lesson.update({
+      where: { id: lessonId },
+      data: { blocks: blocks as object, videoFirst: true, updatedAt: new Date() },
+    });
+
+    // Polling in BACKGROUND: non blocca la risposta.
+    const ctx = { tenantId, courseId, lessonId, blockId: vcBlock.id as string };
+    void this.pollVideoGenJob(ctx, jobRef, course?.language ?? undefined);
+
+    return {
+      status: 'processing',
+      blockId: vcBlock.id as string,
+      jobRef,
+      remainingThisMonth: Math.max(0, cfg.monthlyQuota - used - 1),
+    };
+  }
+
+  /**
+   * (Ri)avvia la trascrizione automatica (ASR) del video già presente nel block
+   * video_checkpoint indicato, SENZA rigenerare il video. Utile quando l'ASR
+   * iniziale è fallita (es. locale lingua non valido) o per rigenerare la
+   * trascrizione. Richiede che il video abbia uno storageKey (file su storage,
+   * non un embed esterno) e un provider ASR asincrono configurato.
+   */
+  async retranscribeLessonVideo(
+    tenantId: string,
+    courseId: string,
+    lessonId: string,
+    blockId: string,
+  ): Promise<{ status: 'processing' }> {
+    if (typeof this.transcription.startJob !== 'function') {
+      throw new NotImplementedException(
+        'Trascrizione automatica non configurata (imposta PROVIDER_TRANSCRIPTION=transcribe).',
+      );
+    }
+    const course = await this.prisma.course.findFirst({
+      where: { id: courseId, tenantId },
+      select: { language: true },
+    });
+    const lesson = await this.requireLesson(tenantId, courseId, lessonId);
+    const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as unknown[]) : [];
+    const vcBlock = this.findVideoCheckpointBlock(blocks, blockId);
+    if (!vcBlock) throw new NotFoundException('Block video non trovato nella lezione');
+    const payload = (vcBlock.payload ?? {}) as Record<string, unknown>;
+    const video = (payload.video ?? {}) as { storageKey?: string; source?: string };
+    if (!video.storageKey) {
+      throw new BadRequestException(
+        'Nessun file video da trascrivere: il video è un embed esterno o non è ancora stato caricato.',
+      );
+    }
+
+    const asrLanguage = asrLocale(course?.language);
+    let jobRef: string;
+    try {
+      const started = await this.transcription.startJob({
+        storageKey: video.storageKey,
+        contentType: 'video/mp4',
+        language: asrLanguage,
+      });
+      jobRef = started.jobRef;
+    } catch (err) {
+      const reason = describeTranscriptionError(err);
+      this.logger.warn(`Riavvio trascrizione fallito (lezione ${lessonId}): ${rawTranscriptionError(err)}`);
+      await this.writeTranscript(tenantId, courseId, lessonId, vcBlock.id as string, [], 'failed', reason).catch(
+        () => undefined,
+      );
+      throw new BadRequestException(`Trascrizione non avviata: ${reason}`);
+    }
+
+    payload.transcriptStatus = 'processing';
+    payload.transcriptJobRef = jobRef;
+    delete payload.transcriptError;
+    vcBlock.payload = payload;
+    await this.prisma.lesson.update({
+      where: { id: lessonId },
+      data: { blocks: blocks as object, updatedAt: new Date() },
+    });
+
+    const ctx = { tenantId, courseId, lessonId, blockId: vcBlock.id as string };
+    void this.pollTranscriptionJob(ctx, jobRef);
+    return { status: 'processing' };
+  }
+
+  /**
+   * Conta i video HeyGen generati dal tenant nel mese solare corrente. Conta i
+   * record di consumo HEYGEN con source 'concept_video' (un record = un video),
+   * indipendentemente dall'unità (SECONDS): così la quota resta valida anche
+   * dopo il passaggio del metering da VIDEOS a SECONDS.
+   */
+  private async countVideosThisMonth(tenantId: string): Promise<number> {
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    return this.prisma.usageRecord.count({
+      where: {
+        tenantId,
+        provider: 'HEYGEN',
+        source: 'concept_video',
+        createdAt: { gte: monthStart },
+      },
+    });
+  }
+
+  /** NotImplemented coerente con lo stock image provider (risposta 501). */
+  private videoNotConfigured(): NotImplementedException {
+    return new NotImplementedException(
+      'Generazione video non configurata (imposta PROVIDER_VIDEO=heygen e HEYGEN_API_KEY)',
+    );
+  }
+
+  /**
+   * Restituisce il block video_checkpoint target. Se `blockId` punta a un
+   * concetto rich_text, lo CONVERTE in un video_checkpoint mantenendo il testo
+   * del concetto come prima section (così il contenuto non va perso e resta
+   * affiancato al video). Se esiste già un video_checkpoint lo riusa.
+   */
+  private ensureVideoCheckpointBlock(
+    blocks: unknown[],
+    blockId: string,
+  ): { id?: unknown; type?: string; payload?: unknown } {
+    const list = blocks as Array<{ id?: unknown; type?: string; payload?: unknown; editorial?: unknown }>;
+    const idx = list.findIndex((b) => b.id === blockId);
+    const target = idx >= 0 ? list[idx] : undefined;
+
+    // Già un video_checkpoint: riusa.
+    if (target && target.type === 'video_checkpoint') return target;
+
+    // Concetto rich_text: converti in video_checkpoint preservando il testo.
+    if (target && target.type === 'rich_text') {
+      const rtPayload = (target.payload ?? {}) as { content?: { html?: string } };
+      const html = rtPayload.content?.html ?? '';
+      const converted = {
+        id: target.id,
+        type: 'video_checkpoint',
+        editorial: target.editorial ?? {},
+        payload: {
+          video: { kind: 'video', alt: '', source: 'upload' },
+          checkpoints: [],
+          transcript: [],
+          transcriptStatus: 'none',
+          sections: html
+            ? [{ id: `${String(target.id)}-sec`, title: 'Punti chiave', content: { format: 'html', html } }]
+            : [],
+        } as Record<string, unknown>,
+      };
+      list[idx] = converted;
+      return converted;
+    }
+
+    // Fallback: primo video_checkpoint esistente nella lezione.
+    const existing = list.find((b) => b.type === 'video_checkpoint');
+    if (existing) return existing;
+
+    throw new NotFoundException(
+      'Nessun block video_checkpoint o concetto testuale trovato per questo id',
+    );
+  }
+
+  /**
+   * Costruisce un copione parlato BREVE (max ~1 min) per l'avatar, a partire dal
+   * testo del concetto (sections/rich_text del block) e dal placeholderPrompt
+   * del video. Usa l'LLM per produrre un parlato naturale in prima persona nella
+   * lingua del corso; in caso di errore ripiega sul testo grezzo troncato.
+   */
+  private async buildVideoScript(
+    vcBlock: { payload?: unknown },
+    language: string,
+    meterCtx: MeterCtx,
+  ): Promise<string> {
+    const payload = (vcBlock.payload ?? {}) as {
+      video?: { placeholderPrompt?: string; alt?: string };
+      sections?: Array<{ content?: { html?: string } }>;
+    };
+    const sectionsText = (payload.sections ?? [])
+      .map((s) => htmlToText(s.content?.html ?? ''))
+      .filter(Boolean)
+      .join('\n');
+    const hint = payload.video?.placeholderPrompt || payload.video?.alt || '';
+    const sourceText = [hint, sectionsText].filter(Boolean).join('\n').trim();
+    if (!sourceText) return '';
+
+    try {
+      const result = await this.llm.generate({
+        system:
+          'Sei uno sceneggiatore di micro-video didattici. Scrivi un copione PARLATO, ' +
+          'naturale e diretto, che un avatar pronuncerà. Vincoli: UNA SOLA voce narrante, ' +
+          'nessuna indicazione di scena, nessun markdown, nessun elenco puntato, solo frasi ' +
+          `da leggere ad alta voce. Lingua: ${language}. Durata target: 45-60 secondi ` +
+          `(massimo ${VIDEO_SCRIPT_MAX_WORDS} parole). Restituisci SOLO il copione.`,
+        messages: [{ role: 'user', content: `Concetto da spiegare nel video:\n${sourceText}` }],
+        temperature: 0.5,
+        maxTokens: 500,
+      });
+      await this.meter.record({
+        ...meterCtx,
+        provider: 'BEDROCK_LLM',
+        model: result.model,
+        unit: 'INPUT_TOKENS',
+        quantity: result.usage.inputTokens,
+        source: 'video_script',
+      });
+      await this.meter.record({
+        ...meterCtx,
+        provider: 'BEDROCK_LLM',
+        model: result.model,
+        unit: 'OUTPUT_TOKENS',
+        quantity: result.usage.outputTokens,
+        source: 'video_script',
+      });
+      const script = result.text.trim();
+      return this.clampScript(script.length > 0 ? script : sourceText);
+    } catch (err) {
+      this.logger.warn(`Copione video via LLM non riuscito, uso il testo grezzo: ${err instanceof Error ? err.message : 'errore'}`);
+      return this.clampScript(sourceText);
+    }
+  }
+
+  /** Tronca il copione a VIDEO_SCRIPT_MAX_WORDS parole (vincolo durata Free). */
+  private clampScript(text: string): string {
+    const words = text.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+    if (words.length <= VIDEO_SCRIPT_MAX_WORDS) return words.join(' ');
+    return words.slice(0, VIDEO_SCRIPT_MAX_WORDS).join(' ');
+  }
+
+  /**
+   * Esegue il polling di un job di generazione video già avviato e, al termine,
+   * scarica l'MP4, lo salva su storage e aggiorna il block. Resiliente a un
+   * riavvio del processo (fetchJob interroga il provider per jobRef). Best-effort.
+   */
+  private async pollVideoGenJob(
+    ctx: { tenantId: string; courseId: string; lessonId: string; blockId: string },
+    jobRef: string,
+    language?: string,
+  ): Promise<void> {
+    if (!this.videoGen) return;
+    const deadline = Date.now() + VIDEOGEN_POLL_TIMEOUT_MS;
+    try {
+      for (;;) {
+        if (Date.now() > deadline) {
+          await this.writeVideoGenError(
+            ctx,
+            'La generazione del video ha impiegato troppo tempo. Riprova più tardi.',
+          ).catch(() => undefined);
+          return;
+        }
+        await sleep(VIDEOGEN_POLL_INTERVAL_MS);
+        const r = await this.videoGen.fetchJob(jobRef);
+        if (r.status === 'processing') continue;
+        if (r.status === 'failed') {
+          this.logger.warn(`Generazione video fallita (lezione ${ctx.lessonId}): ${r.reason}`);
+          await this.writeVideoGenError(ctx, describeVideoGenError(r.reason)).catch(() => undefined);
+          return;
+        }
+        await this.applyVideoGenResult(ctx, r.videoUrl, r.durationSec, language, r.subtitleUrl);
+        return;
+      }
+    } catch (err) {
+      this.logger.warn(`Polling video fallito (lezione ${ctx.lessonId}): ${rawVideoGenError(err)}`);
+      await this.writeVideoGenError(ctx, describeVideoGenError(rawVideoGenError(err))).catch(() => undefined);
+    }
+  }
+
+  /**
+   * Scarica il video renderizzato (da URL presigned o data: URL del mock), lo
+   * salva su storage, imposta storageKey/source nel MediaRef del block, azzera
+   * lo stato di generazione, registra il metering (1 VIDEOS) e avvia l'ASR.
+   */
+  private async applyVideoGenResult(
+    ctx: { tenantId: string; courseId: string; lessonId: string; blockId: string },
+    videoUrl: string,
+    durationSec: number | undefined,
+    language?: string,
+    subtitleUrl?: string,
+  ): Promise<void> {
+    const { bytes, contentType } = await downloadVideo(videoUrl);
+    const key = `media/${ctx.tenantId}/${ctx.courseId}/video/${randomUUID()}.mp4`;
+    await this.storage.putObject(key, Buffer.from(bytes), { contentType });
+
+    // Prova a ricavare la trascrizione dai SOTTOTITOLI nativi del provider
+    // (gratis, già sincronizzati col parlato). Se presenti, NIENTE ASR esterno.
+    let subtitleCues: Array<{ id: string; start: number; end: number; text: string }> = [];
+    if (subtitleUrl) {
+      try {
+        const srt = await downloadText(subtitleUrl);
+        subtitleCues = parseSrtToCues(srt);
+      } catch (err) {
+        this.logger.warn(
+          `Download/parse sottotitoli HeyGen fallito (lezione ${ctx.lessonId}): ${err instanceof Error ? err.message : 'errore'}`,
+        );
+      }
+    }
+    const hasSubtitles = subtitleCues.length > 0;
+
+    const lesson = await this.requireLesson(ctx.tenantId, ctx.courseId, ctx.lessonId);
+    const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as unknown[]) : [];
+    const ref = this.findVideoRef(blocks, ctx.blockId);
+    const vcBlock = this.findVideoCheckpointBlock(blocks, ctx.blockId);
+    if (ref) {
+      ref.storageKey = key;
+      ref.source = 'upload';
+    }
+    // Tipo di avatar e engine persistiti all'avvio (per la tariffa): avatarType
+    // 'photo'=custom | 'studio'=stock; engine scelto dall'autore. Default
+    // prudenziali (studio = tariffa più alta; engine da config/default).
+    let avatarType: 'photo' | 'studio' = 'studio';
+    let engine = (this.config.get('heygen', { infer: true }).engine || DEFAULT_HEYGEN_ENGINE).toLowerCase();
+    if (vcBlock) {
+      const payload = (vcBlock.payload ?? {}) as Record<string, unknown>;
+      if (payload.videoGenAvatarType === 'photo') avatarType = 'photo';
+      if (typeof payload.videoGenEngine === 'string' && payload.videoGenEngine) {
+        engine = payload.videoGenEngine.toLowerCase();
+      }
+      payload.videoGenStatus = 'ready';
+      delete payload.videoGenError;
+      delete payload.videoGenJobRef;
+      delete payload.videoGenAvatarType;
+      delete payload.videoGenEngine;
+      if (hasSubtitles) {
+        // Trascrizione pronta dai sottotitoli del provider.
+        payload.transcript = subtitleCues;
+        payload.transcriptStatus = 'ready';
+        delete payload.transcriptError;
+        delete payload.transcriptJobRef;
+      } else {
+        // Nessun sottotitolo: ricadremo sull'ASR (sotto).
+        payload.transcriptStatus = 'processing';
+      }
+      vcBlock.payload = payload;
+    }
+    await this.prisma.lesson.update({
+      where: { id: ctx.lessonId },
+      data: { blocks: blocks as object, updatedAt: new Date() },
+    });
+
+    // Metering: HeyGen fattura per MINUTO/SECONDO di video, con prezzo diverso
+    // per ENGINE **e** per TIPO di avatar. A parità di engine un avatar "photo"
+    // custom costa meno di uno "studio" stock (es. Avatar IV: $2.31 vs $4.83/min).
+    // Prezzi self-serve (per minuto): III photo/studio $0.99; IV photo $2.31,
+    // IV studio $4.83; V $7.20. Registriamo i SECONDI con
+    // model = heygen-<engine>-<tipo>, così il listino applica la tariffa giusta.
+    // `engine` e `avatarType` sono quelli scelti all'avvio (letti dal payload).
+    const seconds = Math.max(1, Math.ceil(durationSec ?? 0));
+    await this.meter.record({
+      tenantId: ctx.tenantId,
+      courseId: ctx.courseId,
+      provider: 'HEYGEN',
+      model: `heygen-${engine}-${avatarType}`,
+      unit: 'SECONDS',
+      quantity: seconds,
+      source: 'concept_video',
+      region: 'global',
+    });
+
+    this.logger.log(
+      `Video avatar generato (lezione ${ctx.lessonId}, ${durationSec ?? '?'}s): ${key}` +
+        (hasSubtitles ? ` — trascrizione dai sottotitoli HeyGen (${subtitleCues.length} cue)` : ''),
+    );
+
+    // Se abbiamo già la trascrizione dai sottotitoli del provider, abbiamo
+    // finito: niente ASR esterno (nessun costo, già sincronizzata).
+    if (hasSubtitles) return;
+
+    // Fallback: nessun sottotitolo dal provider → trascrizione automatica ASR
+    // del video generato (come per gli upload manuali).
+    if (vcBlock) {
+      if (typeof this.transcription.startJob === 'function') {
+        try {
+          // Amazon Transcribe richiede il LOCALE completo (es. "it-IT"), non il
+          // codice corto ("it"): mappalo, altrimenti il job è rifiutato con un
+          // errore di validazione sull'enum languageCode.
+          const asrLanguage = asrLocale(language);
+          const started = await this.transcription.startJob({ storageKey: key, contentType: 'video/mp4', language: asrLanguage });
+          const payload = (vcBlock.payload ?? {}) as Record<string, unknown>;
+          payload.transcriptJobRef = started.jobRef;
+          vcBlock.payload = payload;
+          await this.prisma.lesson.update({
+            where: { id: ctx.lessonId },
+            data: { blocks: blocks as object, updatedAt: new Date() },
+          });
+          void this.pollTranscriptionJob(ctx, started.jobRef);
+        } catch (err) {
+          this.logger.warn(`Avvio trascrizione video generato fallito (lezione ${ctx.lessonId}): ${rawTranscriptionError(err)}`);
+          await this.writeTranscript(ctx.tenantId, ctx.courseId, ctx.lessonId, ctx.blockId, [], 'none').catch(() => undefined);
+        }
+      } else {
+        void this.transcribeVideoInBackground(ctx, key, 'video/mp4');
+      }
+    }
+  }
+
+  /** Scrive lo stato di errore della generazione video nel payload del block. */
+  private async writeVideoGenError(
+    ctx: { tenantId: string; courseId: string; lessonId: string; blockId: string },
+    reason: string,
+  ): Promise<void> {
+    const lesson = await this.requireLesson(ctx.tenantId, ctx.courseId, ctx.lessonId);
+    const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as unknown[]) : [];
+    const vcBlock = this.findVideoCheckpointBlock(blocks, ctx.blockId);
+    if (!vcBlock) return;
+    const payload = (vcBlock.payload ?? {}) as Record<string, unknown>;
+    payload.videoGenStatus = 'failed';
+    payload.videoGenError = reason;
+    delete payload.videoGenJobRef;
+    vcBlock.payload = payload;
+    await this.prisma.lesson.update({
+      where: { id: ctx.lessonId },
+      data: { blocks: blocks as object, updatedAt: new Date() },
+    });
+  }
+
+  /**
+   * Al boot riprende i job di generazione video lasciati in sospeso da un
+   * riavvio: block con videoGenStatus='processing' e un videoGenJobRef. Senza
+   * questo, un riavvio durante il rendering lascerebbe lo stato 'processing'
+   * per sempre. Best-effort e non bloccante.
+   */
+  private async findPendingVideoGenJobs(): Promise<
+    Array<{ tenantId: string; courseId: string; lessonId: string; blockId: string; jobRef: string }>
+  > {
+    const lessons = await this.prisma.lesson.findMany({
+      select: { id: true, blocks: true, module: { select: { course: { select: { id: true, tenantId: true } } } } },
+    });
+    const out: Array<{ tenantId: string; courseId: string; lessonId: string; blockId: string; jobRef: string }> = [];
+    for (const lesson of lessons) {
+      const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as Array<Record<string, unknown>>) : [];
+      for (const b of blocks) {
+        if (b?.type !== 'video_checkpoint') continue;
+        const payload = (b.payload ?? {}) as Record<string, unknown>;
+        if (payload.videoGenStatus !== 'processing') continue;
+        const jobRef = payload.videoGenJobRef;
+        if (typeof jobRef !== 'string' || !jobRef) continue;
+        out.push({
+          tenantId: lesson.module.course.tenantId,
+          courseId: lesson.module.course.id,
+          lessonId: lesson.id,
+          blockId: b.id as string,
+          jobRef,
+        });
+      }
+    }
+    return out;
   }
 
   /** Trova il block video_checkpoint per id (fallback: primo video_checkpoint). */
@@ -801,6 +1608,19 @@ function extForVideoMime(mime: string): string | null {
   }
 }
 
+/** Estensione file per i MIME immagine ammessi dalla creazione avatar (JPG/PNG). */
+function extForImageMime(mime: string): string | null {
+  switch (mime) {
+    case 'image/jpeg':
+    case 'image/jpg':
+      return 'jpg';
+    case 'image/png':
+      return 'png';
+    default:
+      return null;
+  }
+}
+
 /**
  * Estrae il messaggio grezzo dell'errore di trascrizione per i log: usa la
  * `cause` quando presente (gli adapter avvolgono l'errore del provider in
@@ -840,6 +1660,120 @@ function describeTranscriptionError(err: unknown): string {
 /** Attesa non bloccante usata dal polling dei job di trascrizione. */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Scarica i byte di un video dato un URL. Supporta sia gli URL http(s)
+ * presigned di HeyGen sia i `data:` URL del provider mock (sviluppo/test),
+ * così il percorso di download funziona anche offline.
+ */
+async function downloadVideo(url: string): Promise<{ bytes: Uint8Array; contentType: string }> {
+  if (url.startsWith('data:')) {
+    const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(url);
+    if (!match) throw new Error('data: URL non valido');
+    const contentType = match[1] || 'video/mp4';
+    const isBase64 = Boolean(match[2]);
+    const data = match[3] ?? '';
+    const bytes = isBase64
+      ? new Uint8Array(Buffer.from(data, 'base64'))
+      : new Uint8Array(Buffer.from(decodeURIComponent(data), 'utf8'));
+    return { bytes, contentType };
+  }
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Download video ${res.status}`);
+  const contentType = res.headers.get('content-type') ?? 'video/mp4';
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  return { bytes, contentType };
+}
+
+/** Scarica testo (es. un file SRT) da un URL http(s) o da un data: URL. */
+async function downloadText(url: string): Promise<string> {
+  if (url.startsWith('data:')) {
+    const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(url);
+    if (!match) throw new Error('data: URL non valido');
+    const isBase64 = Boolean(match[2]);
+    const data = match[3] ?? '';
+    return isBase64 ? Buffer.from(data, 'base64').toString('utf8') : decodeURIComponent(data);
+  }
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Download sottotitoli ${res.status}`);
+  return res.text();
+}
+
+/**
+ * Converte un file SRT (SubRip) in cue di trascrizione karaoke. Formato:
+ *   1
+ *   00:00:00,000 --> 00:00:02,000
+ *   Testo della riga (una o più righe)
+ *   <riga vuota>
+ * Robusto a CRLF, BOM e separatori decimali con virgola o punto. Ritorna cue
+ * ordinate per start con start/end in secondi.
+ */
+function parseSrtToCues(
+  srt: string,
+): Array<{ id: string; start: number; end: number; text: string }> {
+  const clean = srt.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const blocks = clean.split(/\n{2,}/);
+  const toSec = (t: string): number => {
+    const m = /(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})/.exec(t.trim());
+    if (!m) return NaN;
+    const h = Number(m[1]);
+    const min = Number(m[2]);
+    const s = Number(m[3]);
+    const ms = Number((m[4] ?? '0').padEnd(3, '0'));
+    return h * 3600 + min * 60 + s + ms / 1000;
+  };
+  const cues: Array<{ id: string; start: number; end: number; text: string }> = [];
+  let i = 0;
+  for (const block of blocks) {
+    const lines = block.split('\n').filter((l) => l.trim().length > 0);
+    if (lines.length === 0) continue;
+    // La prima riga può essere l'indice numerico: in tal caso la riga tempi è la seconda.
+    const timeIdx = lines.findIndex((l) => l.includes('-->'));
+    if (timeIdx === -1) continue;
+    const [startRaw, endRaw] = lines[timeIdx]!.split('-->');
+    const start = toSec(startRaw ?? '');
+    const end = toSec(endRaw ?? '');
+    const text = lines
+      .slice(timeIdx + 1)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!Number.isFinite(start) || !text) continue;
+    cues.push({ id: `cue-${i++}`, start, end: Number.isFinite(end) ? end : start, text });
+  }
+  return cues.sort((a, b) => a.start - b.start);
+}
+
+/** Messaggio grezzo dell'errore di generazione video (per i log). */
+function rawVideoGenError(err: unknown): string {
+  if (err instanceof Error) {
+    const cause = (err as { cause?: unknown }).cause;
+    if (cause instanceof Error && cause.message) return cause.message;
+    return err.message;
+  }
+  return typeof err === 'string' ? err : 'errore sconosciuto';
+}
+
+/** Traduce l'errore del provider video in un messaggio chiaro per l'autore. */
+function describeVideoGenError(raw: string): string {
+  const r = raw.toLowerCase();
+  if (r.includes('quota') || r.includes('limit') || r.includes('credit') || r.includes('insufficient')) {
+    return 'Quota HeyGen esaurita. Hai raggiunto il limite di video del tuo piano. Riprova il mese prossimo o passa a un piano a pagamento.';
+  }
+  if (r.includes('unauthorized') || r.includes('api key') || r.includes('401') || r.includes('403')) {
+    return 'Credenziali HeyGen non valide. Verifica HEYGEN_API_KEY.';
+  }
+  if (r.includes('avatar')) {
+    return 'Avatar non valido o non disponibile. Scegli un altro avatar.';
+  }
+  if (r.includes('voice')) {
+    return 'Voce non valida o non disponibile. Scegli un\'altra voce.';
+  }
+  if (r.includes('timeout')) {
+    return 'La generazione del video ha impiegato troppo tempo. Riprova più tardi.';
+  }
+  return `Generazione video non riuscita: ${raw}`;
 }
 
 /** Rimuove i tag HTML e normalizza gli spazi per ottenere testo narrabile. */

@@ -35,6 +35,12 @@ import type {
   AttachStockImageInput,
   AttachStockCoverInput,
   SsoRedeemResult,
+  AvatarOption,
+  VoiceOption,
+  GenerateVideoRef,
+  CreateAvatarResult,
+  AvatarLookStatus,
+  Page,
 } from './types';
 
 /** Ritardo simulato per rendere realistici gli stati di loading nella UI. */
@@ -794,6 +800,130 @@ export class MockApiClient implements ApiClient {
     payload.transcript = sorted;
     payload.transcriptStatus = sorted.length > 0 ? 'ready' : 'none';
     (block as { payload: unknown }).payload = payload;
+  }
+  async retranscribeVideo(courseId: string, lessonId: string, blockId: string): Promise<{ status: 'processing' }> {
+    await delay(300);
+    const lesson = this.findLesson(courseId, lessonId);
+    const block = lesson.blocks.find((b) => b.id === blockId);
+    if (block) {
+      const payload = (block.payload ?? {}) as Record<string, unknown>;
+      payload.transcriptStatus = 'processing';
+      (block as { payload: unknown }).payload = payload;
+      // Simula il completamento dell'ASR dopo un po'.
+      setTimeout(() => {
+        const p = (block.payload ?? {}) as Record<string, unknown>;
+        p.transcript = [
+          { id: 'cue-0', start: 0, end: 2, text: 'Trascrizione demo (mock).' },
+          { id: 'cue-1', start: 2, end: 5, text: 'Le righe si evidenziano come karaoke.' },
+        ];
+        p.transcriptStatus = 'ready';
+        (block as { payload: unknown }).payload = p;
+      }, 2500);
+    }
+    return { status: 'processing' };
+  }
+
+  // Generazione video con avatar parlante (HeyGen) — mock in-memory, paginato.
+  async listVideoAvatars(
+    _courseId: string,
+    opts?: { source?: 'mine' | 'stock'; token?: string; q?: string },
+  ): Promise<Page<AvatarOption>> {
+    await delay(200);
+    const q = (opts?.q ?? '').toLowerCase();
+    const all: AvatarOption[] =
+      opts?.source === 'mine'
+        ? [{ id: 'mock-mine-1', name: 'Il mio avatar (demo)', gender: 'male', source: 'mine', group: 'Jack', groupType: 'PHOTO' }]
+        : [
+            { id: 'mock-avatar-1', name: 'Avatar demo (donna)', gender: 'female', source: 'stock', groupType: 'PUBLIC' },
+            { id: 'mock-avatar-2', name: 'Avatar demo (uomo)', gender: 'male', source: 'stock', groupType: 'PUBLIC' },
+          ];
+    const items = q ? all.filter((a) => a.name.toLowerCase().includes(q)) : all;
+    return { items };
+  }
+  async listVideoVoices(
+    _courseId: string,
+    opts?: { language?: string; token?: string; q?: string },
+  ): Promise<Page<VoiceOption>> {
+    await delay(200);
+    const q = (opts?.q ?? '').toLowerCase();
+    const all: VoiceOption[] = [
+      { id: 'mock-voice-it', name: 'Voce demo IT', language: 'Italian', gender: 'female' },
+      { id: 'mock-voice-en', name: 'Voce demo EN', language: 'English', gender: 'male' },
+    ];
+    const items = q ? all.filter((v) => v.name.toLowerCase().includes(q)) : all;
+    return { items };
+  }
+  async generateConceptVideo(
+    courseId: string,
+    lessonId: string,
+    blockId: string,
+    _input?: { avatarId?: string; voiceId?: string; script?: string },
+  ): Promise<GenerateVideoRef> {
+    await delay(400);
+    const lesson = this.findLesson(courseId, lessonId);
+    // Trasformare un concetto in video rende la lezione video-first (come il server).
+    (lesson as { videoFirst?: boolean }).videoFirst = true;
+    const block = lesson.blocks.find((b) => b.id === blockId);
+    if (block) {
+      // Se il concetto è un rich_text, simula la conversione in video_checkpoint.
+      if (block.type === 'rich_text') (block as { type: string }).type = 'video_checkpoint';
+      const payload = (block.payload ?? {}) as Record<string, unknown>;
+      payload.videoGenStatus = 'processing';
+      if (!payload.video) payload.video = { kind: 'video', alt: '', source: 'upload' };
+      (block as { payload: unknown }).payload = payload;
+      // Dopo un po' simula il completamento del rendering (processing -> ready).
+      setTimeout(() => {
+        const p = (block.payload ?? {}) as Record<string, unknown>;
+        p.videoGenStatus = 'ready';
+        p.video = { kind: 'video', alt: 'Video avatar (demo)', source: 'upload', storageKey: '#mock-heygen-video' };
+        (block as { payload: unknown }).payload = p;
+      }, 3000);
+    }
+    this.pushAudit('course.generate_concept_video', 'lesson', lessonId);
+    return { status: 'processing', blockId, jobRef: `mock-heygen-${Date.now()}`, remainingThisMonth: 2 };
+  }
+
+  // Gestione avatar HeyGen del tenant (Impostazioni → Avatar) — mock in-memory.
+  private myAvatars: AvatarOption[] = [
+    { id: 'mock-mine-1', name: 'Il mio avatar (demo)', gender: 'male', source: 'mine', group: 'Il mio avatar (demo)', groupType: 'PHOTO' },
+  ];
+
+  async listMyAvatars(q?: string): Promise<Page<AvatarOption>> {
+    await delay(200);
+    const query = (q ?? '').toLowerCase();
+    const items = query ? this.myAvatars.filter((a) => a.name.toLowerCase().includes(query)) : [...this.myAvatars];
+    return { items };
+  }
+  async createPhotoAvatar(name: string, _file: File): Promise<CreateAvatarResult> {
+    await delay(500);
+    const groupId = `mock-group-${Date.now()}`;
+    const avatarId = `mock-look-${Date.now()}`;
+    this.myAvatars = [
+      ...this.myAvatars,
+      { id: groupId, name, source: 'mine', group: name, groupType: 'PHOTO' },
+    ];
+    this.pushAudit('tenant.create_avatar', 'avatar', avatarId);
+    return { avatarId, groupId, name, status: 'completed', supportedEngines: ['avatar_iii', 'avatar_iv', 'avatar_v'] };
+  }
+  async createPromptAvatar(name: string, _prompt: string): Promise<CreateAvatarResult> {
+    await delay(500);
+    const groupId = `mock-group-${Date.now()}`;
+    const avatarId = `mock-look-${Date.now()}`;
+    this.myAvatars = [
+      ...this.myAvatars,
+      { id: groupId, name, source: 'mine', group: name, groupType: 'PHOTO' },
+    ];
+    this.pushAudit('tenant.create_avatar', 'avatar', avatarId);
+    return { avatarId, groupId, name, status: 'completed', supportedEngines: ['avatar_iii', 'avatar_iv', 'avatar_v'] };
+  }
+  async getAvatarLook(_lookId: string): Promise<AvatarLookStatus> {
+    await delay(200);
+    return { status: 'completed', supportedEngines: ['avatar_iii', 'avatar_iv', 'avatar_v'] };
+  }
+  async deleteAvatar(groupId: string): Promise<void> {
+    await delay(300);
+    this.myAvatars = this.myAvatars.filter((a) => a.id !== groupId);
+    this.pushAudit('tenant.delete_avatar', 'avatar', groupId);
   }
 
   async searchStockImages(_courseId: string, q: string): Promise<StockImageSearchResponse> {

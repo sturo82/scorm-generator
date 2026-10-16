@@ -2,8 +2,13 @@
 
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus, Sparkles, Wand2, Trash2, Pencil, Image as ImageIcon, Volume2, Video, Captions, Search, Check, ChevronRight, Eye } from 'lucide-react';
+import { Plus, Sparkles, Wand2, Trash2, Pencil, Image as ImageIcon, Volume2, Video, Captions, Search, Check, ChevronRight, Eye, UserRound } from 'lucide-react';
 import type { Block } from '@scorm/contracts';
+import {
+  DEFAULT_HEYGEN_ENGINE,
+  heygenCustomerPricePerMinUsd,
+  heygenAvatarTypeLabel,
+} from '@scorm/contracts';
 import { cn } from '@/lib/cn';
 import type { ModuleView, LessonView } from '@/lib/api/types';
 import { Button } from '@/components/ui/button';
@@ -32,6 +37,10 @@ import {
   useUploadLessonVideo,
   useAttachVideoFromLibrary,
   useSetVideoTranscript,
+  useRetranscribeVideo,
+  useVideoAvatars,
+  useVideoVoices,
+  useGenerateConceptVideo,
   useAttachStockImage,
   useUploadBlockImage,
   useVideos,
@@ -766,6 +775,7 @@ function LessonCard({
   const attachStock = useAttachStockImage(courseId);
   const uploadImage = useUploadBlockImage(courseId);
   const setTranscript = useSetVideoTranscript(courseId);
+  const retranscribe = useRetranscribeVideo(courseId);
   const deleteLesson = useDeleteLesson(courseId);
   const editBlocks = useEditLessonBlocks(courseId);
   const setStatus = useSetStatus(courseId);
@@ -788,6 +798,9 @@ function LessonCard({
   const [imageTarget, setImageTarget] = React.useState<{ blockId: string; label: string; prompt?: string } | null>(null);
   // Dialog editor della trascrizione video.
   const [transcriptOpen, setTranscriptOpen] = React.useState(false);
+  // Dialog di generazione video avatar (HeyGen): block target su cui generare.
+  const [videoGenTargetBlock, setVideoGenTargetBlock] = React.useState<string | null>(null);
+  const genConceptVideo = useGenerateConceptVideo(courseId);
   // jobId locale per la generazione del singolo contenuto.
   const [localJobId, setLocalJobId] = React.useState<string | null>(null);
   const contentJob = useJobStatus(courseId, localJobId);
@@ -840,6 +853,22 @@ function LessonCard({
     const t = setInterval(() => qc.invalidateQueries({ queryKey: qk.modules(courseId) }), 4000);
     return () => clearInterval(t);
   }, [transcriptProcessing, courseId, qc]);
+
+  // Generazione video avatar (HeyGen) in background: finché un qualsiasi block
+  // video è 'processing', ricarichiamo i moduli così la UI passa da
+  // "in generazione" a "pronto"/"non riuscito" senza ricaricare la pagina.
+  const videoGenProcessing = React.useMemo(
+    () =>
+      lesson.blocks.some(
+        (b) => (b.payload as { videoGenStatus?: string } | undefined)?.videoGenStatus === 'processing',
+      ),
+    [lesson.blocks],
+  );
+  React.useEffect(() => {
+    if (!videoGenProcessing) return;
+    const t = setInterval(() => qc.invalidateQueries({ queryKey: qk.modules(courseId) }), 5000);
+    return () => clearInterval(t);
+  }, [videoGenProcessing, courseId, qc]);
 
   async function handleGenerate() {
     try {
@@ -1029,6 +1058,14 @@ function LessonCard({
             </span>
           </span>
         </button>
+        {lesson.videoFirst && (
+          <span
+            className="hidden items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary sm:inline-flex"
+            title="Lezione incentrata su un video (video-first)"
+          >
+            <UserRound className="size-3" /> Video-first
+          </span>
+        )}
         {blockCount > 0 && (
           <span className="hidden items-center gap-1 text-xs text-emerald-600 sm:flex" aria-hidden>
             <span className="inline-block size-1.5 rounded-full bg-emerald-500" /> pronta
@@ -1084,6 +1121,21 @@ function LessonCard({
                       </Button>
                     );
                   })()}
+                  {/* Trasforma un concetto testuale in un video con avatar AI:
+                      converte il block in video_checkpoint e rende la lezione
+                      video-first. Mostrato solo sui concetti rich_text. */}
+                  {b.type === 'rich_text' && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label="Trasforma in video avatar"
+                      title="Trasforma questo concetto in un video con avatar AI"
+                      disabled={genConceptVideo.isPending || videoGenProcessing}
+                      onClick={() => setVideoGenTargetBlock(b.id)}
+                    >
+                      <UserRound className="size-4 text-primary" />
+                    </Button>
+                  )}
                   <Button
                     size="icon"
                     variant="ghost"
@@ -1168,16 +1220,56 @@ function LessonCard({
                   <Video className="size-4" />
                   {attachVideo.isPending ? <AiWorkingInline label="Collego…" /> : 'Dalla libreria'}
                 </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setVideoGenTargetBlock(videoBlock.id)}
+                  disabled={genConceptVideo.isPending || videoGenProcessing}
+                >
+                  <UserRound className="size-4" />
+                  {genConceptVideo.isPending || videoGenProcessing ? (
+                    <AiWorkingInline label="Video avatar…" />
+                  ) : (
+                    'Genera video avatar'
+                  )}
+                </Button>
                 {videoInfo.hasVideo && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setTranscriptOpen(true)}
-                    disabled={setTranscript.isPending}
-                  >
-                    <Captions className="size-4" />
-                    {setTranscript.isPending ? <AiWorkingInline label="Salvo…" /> : 'Trascrizione'}
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        try {
+                          await retranscribe.mutateAsync({ lessonId: lesson.id, blockId: videoBlock!.id });
+                          toast.show('Trascrizione avviata…', 'success');
+                        } catch (err) {
+                          toast.show(
+                            err instanceof Error && /501|non configurat/i.test(err.message)
+                              ? 'Trascrizione automatica non configurata sul server'
+                              : 'Avvio trascrizione non riuscito',
+                            'error',
+                          );
+                        }
+                      }}
+                      disabled={retranscribe.isPending || transcriptProcessing}
+                    >
+                      <Captions className="size-4" />
+                      {retranscribe.isPending || transcriptProcessing ? (
+                        <AiWorkingInline label="Trascrivo…" />
+                      ) : (
+                        'Rigenera trascrizione'
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setTranscriptOpen(true)}
+                      disabled={setTranscript.isPending}
+                    >
+                      <Captions className="size-4" />
+                      {setTranscript.isPending ? <AiWorkingInline label="Salvo…" /> : 'Modifica trascrizione'}
+                    </Button>
+                  </>
                 )}
               </>
             )}
@@ -1233,6 +1325,40 @@ function LessonCard({
             setLibraryTargetBlock(null);
           } catch {
             toast.show('Collegamento non riuscito', 'error');
+          }
+        }}
+      />
+
+      <GenerateAvatarVideoDialog
+        key={videoGenTargetBlock ?? 'closed'}
+        open={!!videoGenTargetBlock}
+        courseId={courseId}
+        saving={genConceptVideo.isPending}
+        onClose={() => setVideoGenTargetBlock(null)}
+        onGenerate={async ({ avatarId, voiceId, script }) => {
+          if (!videoGenTargetBlock) return;
+          try {
+            const res = await genConceptVideo.mutateAsync({
+              lessonId: lesson.id,
+              blockId: videoGenTargetBlock,
+              avatarId,
+              voiceId,
+              script,
+            });
+            toast.show(
+              `Generazione avviata: la lezione diventa video-first. Video rimanenti questo mese: ${res.remainingThisMonth}.`,
+              'success',
+            );
+            setVideoGenTargetBlock(null);
+          } catch (err) {
+            toast.show(
+              err instanceof Error && /501|non configurat/i.test(err.message)
+                ? 'Generazione video non configurata sul server (HeyGen)'
+                : err instanceof Error && /quota|esaurit|3 video/i.test(err.message)
+                  ? 'Quota mensile HeyGen esaurita (3 video/mese)'
+                  : 'Avvio generazione video non riuscito',
+              'error',
+            );
           }
         }}
       />
@@ -1416,6 +1542,407 @@ function blockSummary(block: Block): string {
 }
 
 /** Dialog di selezione di un video dalla libreria del tenant. */
+/**
+ * Dialog per generare un video con avatar parlante (HeyGen) per un concetto.
+ * L'autore sceglie avatar e voce (caricati dal server; nel mock sono demo) e
+ * opzionalmente fornisce un copione; altrimenti il server lo sintetizza dal
+ * testo del concetto. Mostra l'avviso sui limiti del piano Free.
+ */
+function GenerateAvatarVideoDialog({
+  open,
+  courseId,
+  saving,
+  onClose,
+  onGenerate,
+}: {
+  open: boolean;
+  courseId: string;
+  saving: boolean;
+  onClose: () => void;
+  onGenerate: (input: { avatarId?: string; voiceId?: string; script?: string }) => void;
+}) {
+  // Sorgente avatar: 'mine' (account) o 'stock' (catalogo HeyGen). Ricerca
+  // avatar e voci con debounce (interrogano il server, paginato).
+  const [avatarSource, setAvatarSource] = React.useState<'mine' | 'stock'>('stock');
+  const [avatarQuery, setAvatarQuery] = React.useState('');
+  const avatarQ = useDebounced(avatarQuery, 350);
+  const avatars = useVideoAvatars(courseId, open, { source: avatarSource, q: avatarQ || undefined });
+
+  // Voci: filtrate per lingua del corso (default) o tutte; ricerca debounced.
+  const [allLangs, setAllLangs] = React.useState(false);
+  const [voiceQuery, setVoiceQuery] = React.useState('');
+  const voiceQ = useDebounced(voiceQuery, 350);
+  const voices = useVideoVoices(courseId, open, { language: allLangs ? 'all' : undefined, q: voiceQ || undefined });
+
+  const [avatarId, setAvatarId] = React.useState('');
+  const [voiceId, setVoiceId] = React.useState('');
+  const [script, setScript] = React.useState('');
+  // Anteprima audio voce: un solo <audio> riusato, con l'id in riproduzione.
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+  const [playingVoice, setPlayingVoice] = React.useState<string | null>(null);
+
+  // Appiattisce le pagine dell'infinite query.
+  const avatarItems = React.useMemo(
+    () => (avatars.data?.pages ?? []).flatMap((p) => p.items),
+    [avatars.data],
+  );
+  const voiceItems = React.useMemo(
+    () => (voices.data?.pages ?? []).flatMap((p) => p.items),
+    [voices.data],
+  );
+
+  // NB: il parent passa una `key` legata al block target, quindi questo dialog
+  // viene RIMONTATO da zero a ogni apertura: lo stato (avatar/voce/copione)
+  // riparte sempre pulito, senza ricordare la scelta precedente.
+
+  // Default avatar = primo disponibile; se cambia sorgente/ricerca e l'avatar
+  // selezionato non è più in lista, riparte sul primo.
+  React.useEffect(() => {
+    if (avatarItems.length === 0) return;
+    if (!avatarId || !avatarItems.some((a) => a.id === avatarId)) {
+      setAvatarId(avatarItems[0]!.id);
+    }
+  }, [avatarItems, avatarId]);
+
+  // Ferma l'audio alla chiusura del dialog.
+  React.useEffect(() => {
+    if (!open && audioRef.current) {
+      audioRef.current.pause();
+      setPlayingVoice(null);
+    }
+  }, [open]);
+
+  function playVoice(v: { id: string; previewUrl?: string }) {
+    if (!v.previewUrl) return;
+    const el = audioRef.current ?? new Audio();
+    audioRef.current = el;
+    if (playingVoice === v.id) {
+      el.pause();
+      setPlayingVoice(null);
+      return;
+    }
+    el.src = v.previewUrl;
+    el.onended = () => setPlayingVoice(null);
+    void el
+      .play()
+      .then(() => setPlayingVoice(v.id))
+      .catch(() => setPlayingVoice(null));
+  }
+
+  const notConfigured =
+    (avatars.isError && /501|non configurat/i.test(String(avatars.error))) ||
+    (voices.isError && /501|non configurat/i.test(String(voices.error)));
+  const avatarsLoading = avatars.isLoading || (avatars.isFetching && !avatars.isFetchingNextPage);
+  const voicesLoading = voices.isLoading || (voices.isFetching && !voices.isFetchingNextPage);
+
+  return (
+    <Dialog open={open} onClose={onClose} title="Genera video con avatar AI" size="lg">
+      {notConfigured ? (
+        <p className="text-sm text-muted-foreground">
+          La generazione video non è configurata sul server. Imposta
+          <code className="mx-1 rounded bg-muted px-1 py-0.5 text-xs">PROVIDER_VIDEO=heygen</code>
+          e la <code className="mx-1 rounded bg-muted px-1 py-0.5 text-xs">HEYGEN_API_KEY</code>.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          <div className="rounded-md border border-amber-300/60 bg-amber-50 p-2.5 text-xs text-amber-900">
+            Il piano HeyGen consuma crediti a consumo (per minuto di video) e il video sostituisce
+            il concetto testuale, incluso nel pacchetto SCORM.
+            <span className="mt-1 block text-amber-800">
+              {avatarSource === 'mine'
+                ? 'I tuoi avatar (photo) costano meno: Avatar III ≈ $0,99/min, Avatar IV ≈ $2,31/min.'
+                : 'Gli avatar HeyGen (stock) costano di più: Avatar III ≈ $0,99/min, Avatar IV ≈ $4,83/min. Usa un tuo avatar per risparmiare.'}
+            </span>
+          </div>
+
+          {/* --- Avatar: sorgente (miei/HeyGen) + ricerca + griglia paginata --- */}
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm font-medium">Avatar</span>
+              <div className="flex items-center gap-2">
+                {/* Toggle sorgente */}
+                <div className="inline-flex rounded-md border p-0.5 text-xs">
+                  {(['mine', 'stock'] as const).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setAvatarSource(s)}
+                      className={cn(
+                        'rounded px-2 py-1 font-semibold transition-colors',
+                        avatarSource === s ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+                      )}
+                      disabled={saving}
+                    >
+                      {s === 'mine' ? 'I miei' : 'HeyGen'}
+                    </button>
+                  ))}
+                </div>
+                <Input
+                  value={avatarQuery}
+                  onChange={(e) => setAvatarQuery(e.target.value)}
+                  placeholder="Cerca avatar…"
+                  className="h-8 max-w-[180px]"
+                  disabled={saving}
+                />
+              </div>
+            </div>
+            <div className="max-h-56 overflow-y-auto rounded-lg border p-2">
+              {avatarsLoading ? (
+                <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                  <Spinner /> Carico gli avatar…
+                </div>
+              ) : avatarItems.length === 0 ? (
+                <p className="p-2 text-xs text-muted-foreground">
+                  {avatarSource === 'mine'
+                    ? 'Nessun avatar personale. Creane uno su HeyGen o usa quelli HeyGen.'
+                    : 'Nessun avatar trovato.'}
+                </p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {avatarItems.map((a) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        disabled={saving}
+                        onClick={() => setAvatarId(a.id)}
+                        className={cn(
+                          'group flex flex-col overflow-hidden rounded-lg border text-left transition-colors',
+                          a.id === avatarId ? 'border-primary ring-2 ring-primary/40' : 'hover:border-primary/50',
+                        )}
+                        title={a.name}
+                      >
+                        <div className="relative aspect-square w-full bg-muted">
+                          {a.previewUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element -- URL esterno HeyGen, anteprima
+                            <img src={a.previewUrl} alt={a.name} className="size-full object-cover" loading="lazy" />
+                          ) : (
+                            <div className="grid size-full place-items-center text-muted-foreground">
+                              <UserRound className="size-6" />
+                            </div>
+                          )}
+                          {a.id === avatarId && (
+                            <span className="absolute right-1 top-1 grid size-5 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                              ✓
+                            </span>
+                          )}
+                        </div>
+                        <span className="truncate px-1.5 py-1 text-[11px] font-medium">{a.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {avatars.hasNextPage && (
+                    <div className="mt-2 flex justify-center">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void avatars.fetchNextPage()}
+                        disabled={avatars.isFetchingNextPage}
+                      >
+                        {avatars.isFetchingNextPage ? <AiWorkingInline label="Carico…" /> : 'Carica altri avatar'}
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* --- Voce: ricerca + elenco paginato con anteprima audio --- */}
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm font-medium">
+                Voce{' '}
+                <span className="font-normal text-muted-foreground">
+                  {allLangs ? '(tutte le lingue)' : '(lingua del corso)'}
+                </span>
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-primary hover:underline"
+                  onClick={() => {
+                    setAllLangs((v) => !v);
+                    setVoiceId('');
+                  }}
+                  disabled={saving}
+                >
+                  {allLangs ? 'Solo lingua corso' : 'Tutte le lingue'}
+                </button>
+                <Input
+                  value={voiceQuery}
+                  onChange={(e) => setVoiceQuery(e.target.value)}
+                  placeholder="Cerca voce…"
+                  className="h-8 max-w-[160px]"
+                  disabled={saving}
+                />
+              </div>
+            </div>
+            <div className="max-h-48 overflow-y-auto rounded-lg border p-1.5">
+              <label
+                className={cn(
+                  'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm',
+                  voiceId === '' ? 'bg-primary/10' : 'hover:bg-accent/40',
+                )}
+              >
+                <input
+                  type="radio"
+                  name="vf-voice"
+                  checked={voiceId === ''}
+                  onChange={() => setVoiceId('')}
+                  disabled={saving}
+                />
+                <span>Voce predefinita dell&apos;avatar</span>
+              </label>
+              {voicesLoading ? (
+                <div className="flex items-center justify-center gap-2 py-5 text-sm text-muted-foreground">
+                  <Spinner /> Carico le voci…
+                </div>
+              ) : (
+                <>
+                  {voiceItems.map((v) => (
+                    <div
+                      key={v.id}
+                      className={cn(
+                        'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm',
+                        v.id === voiceId ? 'bg-primary/10' : 'hover:bg-accent/40',
+                      )}
+                    >
+                      <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+                        <input
+                          type="radio"
+                          name="vf-voice"
+                          checked={v.id === voiceId}
+                          onChange={() => setVoiceId(v.id)}
+                          disabled={saving}
+                        />
+                        <span className="min-w-0 truncate">
+                          {v.name}
+                          {v.language ? <span className="text-muted-foreground"> · {v.language}</span> : ''}
+                          {v.gender ? <span className="text-muted-foreground"> · {v.gender}</span> : ''}
+                        </span>
+                      </label>
+                      {v.previewUrl && (
+                        <button
+                          type="button"
+                          onClick={() => playVoice(v)}
+                          className="shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold text-primary hover:bg-primary/10"
+                          title="Ascolta anteprima"
+                        >
+                          {playingVoice === v.id ? '◼ Stop' : '▶ Ascolta'}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {voiceItems.length === 0 && (
+                    <p className="p-2 text-xs text-muted-foreground">
+                      Nessuna voce trovata. Prova «Tutte le lingue» o cambia la ricerca.
+                    </p>
+                  )}
+                  {voices.hasNextPage && (
+                    <div className="mt-1 flex justify-center">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void voices.fetchNextPage()}
+                        disabled={voices.isFetchingNextPage}
+                      >
+                        {voices.isFetchingNextPage ? <AiWorkingInline label="Carico…" /> : 'Carica altre voci'}
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* --- Riepilogo tipo avatar scelto + prezzo/min (engine deciso dal
+                server). Niente scelta engine: mostriamo cosa stai usando. --- */}
+          {(() => {
+            const selectedAvatar = avatarItems.find((a) => a.id === avatarId);
+            // Tipo ai fini di prezzo/etichetta: dedotto da sorgente + groupType.
+            const typeLabel = heygenAvatarTypeLabel({
+              source: avatarSource,
+              groupType: selectedAvatar?.groupType,
+            });
+            const billingType = avatarSource === 'mine' ? 'photo' : 'studio';
+            const pricePerMin = heygenCustomerPricePerMinUsd(DEFAULT_HEYGEN_ENGINE, billingType);
+            return (
+              <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">
+                    Tipo avatar: <span className="text-primary">{typeLabel}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Il motore di rendering è ottimizzato automaticamente per questo tipo di avatar.
+                  </p>
+                </div>
+                <span className="shrink-0 rounded bg-primary/10 px-2 py-1 text-sm font-semibold text-primary">
+                  ${pricePerMin.toFixed(2)}/min
+                </span>
+              </div>
+            );
+          })()}
+
+          <label className="block space-y-1">
+            <span className="text-sm font-medium">
+              Copione <span className="font-normal text-muted-foreground">(opzionale)</span>
+            </span>
+            <textarea
+              value={script}
+              onChange={(e) => setScript(e.target.value)}
+              rows={3}
+              maxLength={1200}
+              disabled={saving}
+              placeholder="Lascia vuoto per generare automaticamente il copione dal testo del concetto. Max ~1 minuto di parlato."
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 disabled:opacity-50"
+            />
+          </label>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose} disabled={saving}>
+              Annulla
+            </Button>
+            <Button
+              onClick={() =>
+                onGenerate({
+                  avatarId: avatarId || undefined,
+                  voiceId: voiceId || undefined,
+                  script: script.trim() || undefined,
+                })
+              }
+              disabled={saving || avatarsLoading || !avatarId}
+            >
+              <UserRound className="size-4" />
+              {saving ? <AiWorkingInline label="Avvio…" /> : 'Genera video'}
+            </Button>
+          </div>
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
+/** Spinner animato leggero (cerchio rotante) per gli stati di caricamento. */
+function Spinner() {
+  return (
+    <span
+      className="inline-block size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary"
+      aria-hidden
+    />
+  );
+}
+
+/** Ritarda un valore (debounce) per non interrogare il server a ogni tasto. */
+function useDebounced<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = React.useState(value);
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
+
 function VideoLibraryDialog({
   open,
   saving,

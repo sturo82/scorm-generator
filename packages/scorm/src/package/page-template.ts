@@ -461,6 +461,20 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 .block.video .video-transcript-empty { margin: 0; font-size: 0.8rem; color: var(--pl-muted); }
 @media (max-width: 720px) { .block.video.video-withpanel { grid-template-columns: 1fr; } .block.video .video-panel { max-height: 300px; } }
 
+/* ====== Lezione VIDEO-FIRST a due colonne (video grande + barra tab laterale) ====== */
+/* Video più grande a sinistra, pannello tab verticale a destra alto quanto il
+   video. Le tab aggregano Contenuto, Attività (interazioni) e Trascrizione. */
+.block.video.lesson-videofirst-vnext { grid-template-columns: 2fr 1fr; gap: 1.25rem; }
+.block.video.lesson-videofirst-vnext .video-panel { max-height: none; align-self: stretch; }
+/* Barra tab: resta orizzontale in cima al pannello (scrollabile se tante tab),
+   mentre il corpo del pannello scorre verticalmente accanto al video. */
+.block.video.lesson-videofirst-vnext .vf-tabs-vertical { flex-wrap: nowrap; overflow-x: auto; }
+.block.video.lesson-videofirst-vnext .video-panel-body { flex: 1 1 auto; }
+.block.video .vf-section-title { margin: 0.75rem 0 0.25rem; font-size: 0.9rem; font-weight: 700; color: var(--pl-text); }
+.block.video .vf-section-body { font-size: 0.9rem; line-height: 1.55; }
+.block.video .vf-section-body:not(:last-child) { margin-bottom: 0.75rem; }
+@media (max-width: 860px) { .block.video.lesson-videofirst-vnext { grid-template-columns: 1fr; } }
+
 /* ====== Pagine riepilogative (overview) corso e modulo ====== */
 .overview-page { max-width: none; }
 .overview-hero { display: block; width: 100%; aspect-ratio: 16 / 6; object-fit: cover; border-radius: var(--pl-radius); margin-bottom: 1.5rem; box-shadow: var(--pl-shadow-md); }

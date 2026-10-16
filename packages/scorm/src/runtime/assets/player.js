@@ -620,31 +620,19 @@
   Player.prototype.renderVideoFirstLesson = function (step, main) {
     var lesson = step.lesson;
     var blocks = lesson.blocks || [];
-    var self = this;
 
-    // Trova il video (primo video_checkpoint); il resto sono le attività.
-    var videoBlock = null;
-    var rest = [];
-    blocks.forEach(function (block) {
-      if (!videoBlock && block.type === 'video_checkpoint') { videoBlock = block; return; }
-      rest.push(block);
-    });
-
-    var wrap = el('div', 'lesson-videofirst-v2');
-
-    // Video + trascrizione/tab a tutta larghezza in cima.
-    if (videoBlock) {
-      wrap.appendChild(self.renderers.renderBlock(videoBlock));
+    // Layout a DUE COLONNE dal renderer condiviso: video grande a sinistra +
+    // barra tab verticale a destra (Contenuto / Attività / Trascrizione).
+    // Stesso markup/behavior dell'anteprima: nessuna divergenza.
+    if (this.renderers.renderVideoFirstLesson) {
+      main.appendChild(this.renderers.renderVideoFirstLesson(blocks));
+    } else {
+      // Fallback legacy: impila video + attività.
+      var self = this;
+      var wrap = el('div', 'lesson-videofirst-v2');
+      blocks.forEach(function (block) { wrap.appendChild(self.renderers.renderBlock(block)); });
+      main.appendChild(wrap);
     }
-
-    // Attività e approfondimenti sotto, in griglia responsive.
-    if (rest.length > 0) {
-      var activities = el('div', 'vf-activities');
-      rest.forEach(function (block) { activities.appendChild(self.renderers.renderBlock(block)); });
-      wrap.appendChild(activities);
-    }
-
-    main.appendChild(wrap);
 
     // Completa alla visualizzazione (lezione senza gate di test).
     this.markComplete(step);

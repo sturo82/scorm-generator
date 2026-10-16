@@ -6,7 +6,7 @@ import { FolderPlus, Plus, Search, Trash2, FolderInput, X, ChevronRight, FolderO
 import type { FolderView } from '@scorm/contracts';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input, Label } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Dialog } from '@/components/ui/dialog';
@@ -231,13 +231,14 @@ export default function CoursesPage() {
           </div>
 
           {courses.isLoading && (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Card key={i}>
-                  <CardHeader>
-                    <Skeleton className="h-5 w-2/3" />
-                    <Skeleton className="h-4 w-1/2" />
-                  </CardHeader>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Card key={i} className="overflow-hidden">
+                  <Skeleton className="aspect-[3/1] w-full" />
+                  <div className="space-y-2 p-3">
+                    <Skeleton className="h-4 w-2/3" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
                 </Card>
               ))}
             </div>
@@ -255,83 +256,80 @@ export default function CoursesPage() {
             </Card>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {/* Card cartella inline: doppio click → entra nella cartella. */}
-            {subfolders.map((f) => (
-              <Card
-                key={`folder-${f.id}`}
-                className="group relative h-full cursor-pointer overflow-hidden border-dashed transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-elevate"
-                onDoubleClick={() => setSelected({ kind: 'folder', id: f.id })}
-                role="button"
-                tabIndex={0}
-                aria-label={`Cartella ${f.name} — doppio click per entrare`}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') setSelected({ kind: 'folder', id: f.id });
-                }}
-              >
-                {/* Banner gradiente brand */}
-                <div className="flex aspect-[16/9] items-center justify-center bg-gradient-to-br from-accent to-accent/40">
-                  <FolderOpen className="size-12 text-primary/40" />
-                </div>
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="flex items-center gap-2 line-clamp-2">
-                      <FolderOpen className="size-4 shrink-0 text-primary" />
-                      {f.name}
-                    </CardTitle>
-                    <span className="shrink-0 rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
+          {/* CARTELLE: righe compatte a forma di cartella, nettamente distinte
+              dai corsi (nessuna cover 16:9). Doppio click / Enter per entrare. */}
+          {subfolders.length > 0 && (
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {subfolders.map((f) => (
+                <button
+                  key={`folder-${f.id}`}
+                  type="button"
+                  onDoubleClick={() => setSelected({ kind: 'folder', id: f.id })}
+                  onClick={() => setSelected({ kind: 'folder', id: f.id })}
+                  aria-label={`Cartella ${f.name} — apri`}
+                  className="group flex items-center gap-3 rounded-lg border border-dashed bg-muted/30 px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-accent/40"
+                >
+                  <span className="grid size-10 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
+                    <FolderOpen className="size-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold">{f.name}</span>
+                    <span className="block text-xs text-muted-foreground">
                       {f.courseCount} {f.courseCount === 1 ? 'corso' : 'corsi'}
                     </span>
-                  </div>
-                </CardHeader>
-              </Card>
-            ))}
+                  </span>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                </button>
+              ))}
+            </div>
+          )}
 
-            {/* Card corsi */}
+          {/* CORSI: card compatte con cover piccola, titolo, stato e lingua. */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {courses.data?.map((c) => (
-              <Card key={c.id} className="group relative h-full overflow-hidden transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-elevate">
+              <Card key={c.id} className="group relative flex h-full flex-col overflow-hidden transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-elevate">
                 <Link href={`/courses/${c.id}`} className="block">
                   {c.coverImageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element -- URL firmato dinamico (no next/image)
                     <img
                       src={c.coverImageUrl}
                       alt={`Copertina: ${c.title}`}
-                      className="aspect-[16/9] w-full object-cover"
+                      className="aspect-[3/1] w-full object-cover"
                     />
                   ) : (
-                    /* Placeholder copertina: gradiente brand + icona, così la card
-                       ha sempre la stessa altezza e un aspetto curato. */
-                    <div className="flex aspect-[16/9] items-center justify-center bg-gradient-to-br from-primary/10 via-accent/60 to-primary/5">
-                      <BookOpen className="size-10 text-primary/30" />
+                    /* Placeholder copertina: banda bassa con icona libro (segnala
+                       chiaramente "corso" e tiene la card compatta). */
+                    <div className="flex aspect-[3/1] items-center justify-center bg-gradient-to-br from-primary/10 via-accent/60 to-primary/5">
+                      <BookOpen className="size-6 text-primary/40" />
                     </div>
                   )}
-                  <CardHeader>
+                  <div className="space-y-1.5 p-3">
                     <div className="flex items-start justify-between gap-2">
-                      <CardTitle className="line-clamp-2">{c.title}</CardTitle>
+                      <p className="line-clamp-2 text-sm font-semibold leading-snug">{c.title}</p>
                       <EditorialStatusBadge status={c.status} />
                     </div>
-                    {generatingIds.has(c.id) && <GeneratingBadge className="mt-1 w-fit" />}
-                    <CardDescription className="line-clamp-2">
+                    {generatingIds.has(c.id) && <GeneratingBadge className="w-fit" />}
+                    <p className="line-clamp-1 text-xs text-muted-foreground">
                       {c.description || 'Nessuna descrizione'}
-                    </CardDescription>
-                  </CardHeader>
+                    </p>
+                  </div>
                 </Link>
-                <CardContent className="flex items-center justify-between">
+                <div className="mt-auto flex items-center justify-between px-3 pb-2.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs uppercase tracking-wide text-muted-foreground">{c.language}</span>
+                    <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{c.language}</span>
                     {/* Quando si cerca, mostra dove si trova il corso. */}
                     {q && c.folderId && (
-                      <span className="rounded bg-accent px-1.5 py-0.5 text-xs text-muted-foreground">
+                      <span className="rounded bg-accent px-1.5 py-0.5 text-[11px] text-muted-foreground">
                         {folderName(c.folderId)}
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-0.5">
                     <Button
                       variant="ghost"
                       size="icon"
                       aria-label="Sposta in cartella"
-                      className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                      className="size-7 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
                       onClick={() => setMoveTarget({ id: c.id, title: c.title, folderId: c.folderId ?? null })}
                     >
                       <FolderInput className="size-4" />
@@ -340,13 +338,13 @@ export default function CoursesPage() {
                       variant="ghost"
                       size="icon"
                       aria-label="Elimina corso"
-                      className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                      className="size-7 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
                       onClick={() => handleDelete(c.id, c.title)}
                     >
                       <Trash2 className="size-4" />
                     </Button>
                   </div>
-                </CardContent>
+                </div>
               </Card>
             ))}
           </div>

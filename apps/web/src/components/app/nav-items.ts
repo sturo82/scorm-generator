@@ -1,4 +1,4 @@
-import { BookOpen, Database, LayoutDashboard, Palette, Gauge, ScrollText, Settings, Video, Users } from 'lucide-react';
+import { BookOpen, Database, LayoutDashboard, Palette, Gauge, ScrollText, Settings, Video } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AppUserRole } from '@/lib/api/types';
 
@@ -19,8 +19,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/brands', label: 'Brand', icon: Palette },
   { href: '/usage', label: 'Utilizzo', icon: Gauge },
   { href: '/audit', label: 'Audit', icon: ScrollText },
-  { href: '/settings/branding', label: 'Branding', icon: Settings },
-  { href: '/settings/users', label: 'Utenti', icon: Users, requiresRole: 'ADMIN' },
+  { href: '/settings', label: 'Impostazioni', icon: Settings },
 ];
 
 /** Gerarchia ruoli per il gating cosmetico della nav. */

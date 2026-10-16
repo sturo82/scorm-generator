@@ -34,6 +34,12 @@ import type {
   AttachStockImageInput,
   AttachStockCoverInput,
   SsoRedeemResult,
+  AvatarOption,
+  VoiceOption,
+  GenerateVideoRef,
+  CreateAvatarResult,
+  AvatarLookStatus,
+  Page,
 } from './types';
 
 /**
@@ -374,6 +380,71 @@ export class HttpApiClient implements ApiClient {
       `/courses/${courseId}/generate/lessons/${lessonId}/blocks/${blockId}/transcript`,
       { method: 'PUT', body: JSON.stringify({ transcript }) },
     );
+  }
+  retranscribeVideo(courseId: string, lessonId: string, blockId: string) {
+    return this.request<{ status: 'processing' }>(
+      `/courses/${courseId}/generate/lessons/${lessonId}/blocks/${blockId}/transcribe`,
+      { method: 'POST' },
+    );
+  }
+
+  // Generazione video con avatar parlante (HeyGen)
+  listVideoAvatars(courseId: string, opts?: { source?: 'mine' | 'stock'; token?: string; q?: string }) {
+    const qs = new URLSearchParams();
+    if (opts?.source) qs.set('source', opts.source);
+    if (opts?.token) qs.set('token', opts.token);
+    if (opts?.q) qs.set('q', opts.q);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request<Page<AvatarOption>>(`/courses/${courseId}/generate/video/avatars${suffix}`);
+  }
+  listVideoVoices(courseId: string, opts?: { language?: string; token?: string; q?: string }) {
+    const qs = new URLSearchParams();
+    if (opts?.language) qs.set('language', opts.language);
+    if (opts?.token) qs.set('token', opts.token);
+    if (opts?.q) qs.set('q', opts.q);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return this.request<Page<VoiceOption>>(`/courses/${courseId}/generate/video/voices${suffix}`);
+  }
+  generateConceptVideo(
+    courseId: string,
+    lessonId: string,
+    blockId: string,
+    input?: { avatarId?: string; voiceId?: string; script?: string },
+  ) {
+    return this.request<GenerateVideoRef>(
+      `/courses/${courseId}/generate/lessons/${lessonId}/blocks/${blockId}/video/heygen`,
+      { method: 'POST', body: JSON.stringify(input ?? {}) },
+    );
+  }
+
+  // Gestione avatar HeyGen del tenant (Impostazioni → Avatar)
+  listMyAvatars(q?: string) {
+    const suffix = q ? `?q=${encodeURIComponent(q)}` : '';
+    return this.request<Page<AvatarOption>>(`/tenant/avatars${suffix}`);
+  }
+  async createPhotoAvatar(name: string, file: File) {
+    const session = getSession();
+    const form = new FormData();
+    form.append('file', file);
+    form.append('name', name);
+    const headers = new Headers();
+    if (session) headers.set('Authorization', `Bearer ${session.token}`);
+    const res = await fetch(`${this.baseUrl}/tenant/avatars/photo`, { method: 'POST', headers, body: form });
+    if (res.status === 401) void handleSessionExpired();
+    if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    return (await res.json()) as CreateAvatarResult;
+  }
+  createPromptAvatar(name: string, prompt: string) {
+    return this.request<CreateAvatarResult>('/tenant/avatars/prompt', {
+      method: 'POST',
+      body: JSON.stringify({ name, prompt }),
+    });
+  }
+  getAvatarLook(lookId: string) {
+    return this.request<AvatarLookStatus>(`/tenant/avatars/looks/${encodeURIComponent(lookId)}`);
+  }
+  async deleteAvatar(groupId: string) {
+    await this.request<{ deleted: boolean }>(`/tenant/avatars/${encodeURIComponent(groupId)}`, { method: 'DELETE' });
   }
 
   // Immagini stock royalty-free

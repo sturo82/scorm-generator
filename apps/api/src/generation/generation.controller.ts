@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Get,
   HttpCode,
   Param,
   Post,
@@ -40,6 +41,27 @@ class GenerateContentDto {
   @IsOptional()
   @IsString()
   toneInstruction?: string;
+}
+
+/** Opzioni per la generazione del video avatar di un concetto. */
+class GenerateConceptVideoDto {
+  /** Avatar HeyGen scelto dall'autore (altrimenti il default configurato). */
+  @IsOptional()
+  @IsString()
+  avatarId?: string;
+
+  /** Voce TTS scelta dall'autore (altrimenti la voce di default dell'avatar). */
+  @IsOptional()
+  @IsString()
+  voiceId?: string;
+
+  // NB: l'engine NON è scelto dal client. Il server seleziona l'engine di
+  // default in base al tipo di avatar (vedi MediaService.generateConceptVideo).
+
+  /** Copione esplicito; se assente viene sintetizzato dal testo del concetto. */
+  @IsOptional()
+  @IsString()
+  script?: string;
 }
 
 /**
@@ -173,6 +195,84 @@ export class GenerationController {
     @Body(new ZodValidationPipe(SetVideoTranscript)) dto: SetVideoTranscriptType,
   ) {
     return this.media.setVideoTranscript(ctx.tenant.tenantId, courseId, lessonId, blockId, dto.transcript);
+  }
+
+  /**
+   * (Ri)avvia la trascrizione automatica (ASR) del video già presente nel block,
+   * senza rigenerarlo. Asincrono: 202 + stato 'processing'; il risultato arriva
+   * nel payload del block (transcriptStatus) via polling.
+   */
+  @Post('lessons/:lessonId/blocks/:blockId/transcribe')
+  @HttpCode(202)
+  retranscribeVideo(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('lessonId') lessonId: string,
+    @Param('blockId') blockId: string,
+  ) {
+    return this.media.retranscribeLessonVideo(ctx.tenant.tenantId, courseId, lessonId, blockId);
+  }
+
+  /**
+   * Genera un VIDEO con avatar parlante (HeyGen) per un singolo concetto della
+   * lezione, in alternativa al concetto testuale (approccio manuale: l'autore
+   * sceglie quale concetto trasformare in video). Se il block indicato è un
+   * concetto rich_text, viene convertito in un block video che ne conserva il
+   * testo. Asincrono: ritorna 202 + stato 'processing'; il rendering prosegue
+   * in background e il block si aggiorna a 'ready' col video scaricato.
+   * Soggetto alla quota mensile del piano (Free: 3 video/mese).
+   */
+  @Post('lessons/:lessonId/blocks/:blockId/video/heygen')
+  @HttpCode(202)
+  generateConceptVideo(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('lessonId') lessonId: string,
+    @Param('blockId') blockId: string,
+    @Body() dto: GenerateConceptVideoDto,
+  ) {
+    return this.media.generateConceptVideo(ctx.tenant.tenantId, courseId, lessonId, blockId, {
+      avatarId: dto.avatarId,
+      voiceId: dto.voiceId,
+      script: dto.script,
+    });
+  }
+
+  /**
+   * Elenca gli avatar HeyGen UNA PAGINA alla volta (no quota). `source`
+   * ('mine'|'stock'), `token` (cursore pagina), `q` (ricerca per nome).
+   */
+  @Get('video/avatars')
+  listVideoAvatars(
+    @Query('source') source?: string,
+    @Query('token') token?: string,
+    @Query('q') q?: string,
+  ) {
+    return this.media.listVideoAvatars({
+      source: source === 'mine' ? 'mine' : 'stock',
+      token,
+      query: q,
+    });
+  }
+
+  /**
+   * Elenca le voci HeyGen UNA PAGINA alla volta (no quota), filtrate per lingua
+   * del corso (default) o `language` (es. ?language=all per tutte). `token`
+   * pagina, `q` cerca per nome.
+   */
+  @Get('video/voices')
+  listVideoVoices(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Query('language') language?: string,
+    @Query('token') token?: string,
+    @Query('q') q?: string,
+  ) {
+    return this.media.listVideoVoices(ctx.tenant.tenantId, courseId, {
+      languageOverride: language,
+      token,
+      query: q,
+    });
   }
 
   /** Genera l'immagine di copertina del corso. */

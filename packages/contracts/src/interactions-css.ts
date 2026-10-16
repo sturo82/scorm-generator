@@ -412,4 +412,79 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
   }
   .flashcard-inner { transition: none !important; }
 }
+
+/* ============================================================================
+   LEZIONE VIDEO-FIRST a due colonne (condivisa anteprima + SCORM): video grande
+   a sinistra, barra a TAB verticale a destra con Contenuto / Attività
+   (interazioni) / Trascrizione (karaoke). Scoping [data-motion] così vale in
+   entrambi i contesti; usa i token --ix-* (brand → tema web → sistema).
+   ========================================================================== */
+[data-motion] .block.video.video-withpanel {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+[data-motion] .block.video .video-col { min-width: 0; }
+[data-motion] .block.video .video-frame {
+  position: relative; width: 100%; aspect-ratio: 16 / 9;
+  background: #000; border-radius: var(--ix-radius); overflow: hidden;
+}
+[data-motion] .block.video .video-frame video,
+[data-motion] .block.video .video-frame iframe {
+  position: absolute; inset: 0; width: 100%; height: 100%; border: 0;
+}
+[data-motion] .block.video .video-placeholder {
+  display: grid; place-items: center; aspect-ratio: 16 / 9; width: 100%;
+  border: 1px dashed var(--ix-border); border-radius: var(--ix-radius);
+  background: color-mix(in srgb, var(--ix-on-surface) 8%, var(--ix-surface));
+  color: var(--ix-on-surface); font-size: 0.9rem;
+}
+[data-motion] .block.video .video-alt { margin: 0.4rem 0 0; font-size: 0.8rem; opacity: 0.75; }
+
+/* Pannello laterale a tab */
+[data-motion] .block.video .video-panel {
+  min-width: 0; border: 1px solid var(--ix-border); border-radius: var(--ix-radius);
+  background: var(--ix-surface); overflow: hidden; display: flex; flex-direction: column;
+}
+[data-motion] .block.video.lesson-videofirst-vnext .video-panel { align-self: stretch; }
+[data-motion] .block.video .video-tabs {
+  display: flex; gap: 0.25rem; padding: 0.4rem 0.4rem 0;
+  border-bottom: 1px solid var(--ix-border);
+  background: color-mix(in srgb, var(--ix-on-surface) 5%, var(--ix-surface));
+}
+[data-motion] .block.video .vf-tabs-vertical { flex-wrap: nowrap; overflow-x: auto; }
+[data-motion] .block.video .video-tab {
+  border: 0; border-bottom: 2px solid transparent; background: transparent;
+  padding: 0.45rem 0.7rem; font-size: 0.78rem; font-weight: 700;
+  color: color-mix(in srgb, var(--ix-on-surface) 60%, transparent);
+  cursor: pointer; border-radius: 6px 6px 0 0; white-space: nowrap;
+}
+[data-motion] .block.video .video-tab.is-active {
+  color: var(--ix-on-surface); border-bottom-color: var(--ix-accent); background: var(--ix-surface);
+}
+[data-motion] .block.video .video-panel-body { padding: 0.75rem; overflow-y: auto; flex: 1 1 auto; }
+[data-motion] .block.video.lesson-videofirst-vnext .video-panel-body { max-height: none; }
+[data-motion] .block.video .vf-section-title { margin: 0.75rem 0 0.25rem; font-size: 0.9rem; font-weight: 700; }
+[data-motion] .block.video .vf-section-body { font-size: 0.9rem; line-height: 1.55; }
+[data-motion] .block.video .vf-section-body:not(:last-child) { margin-bottom: 0.75rem; }
+
+/* Trascrizione karaoke */
+[data-motion] .block.video .video-transcript { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+[data-motion] .block.video .transcript-cue {
+  display: block; width: 100%; text-align: left; border: 0; background: transparent;
+  padding: 0.3rem 0.5rem; border-radius: 6px; font-size: 0.88rem; line-height: 1.5;
+  color: color-mix(in srgb, var(--ix-on-surface) 70%, transparent); cursor: pointer;
+}
+[data-motion] .block.video .transcript-cue:hover { background: color-mix(in srgb, var(--ix-primary) 8%, transparent); }
+[data-motion] .block.video .transcript-cue.is-active {
+  background: color-mix(in srgb, var(--ix-primary) 14%, transparent); color: var(--ix-on-surface); font-weight: 600;
+}
+[data-motion] .block.video .cue-time { margin-right: 0.5rem; font-size: 0.66rem; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--ix-primary) 70%, var(--ix-on-surface)); }
+[data-motion] .block.video .cue-speaker { font-weight: 700; margin-right: 0.25rem; }
+[data-motion] .block.video .video-transcript-empty { margin: 0; font-size: 0.8rem; opacity: 0.7; }
+
+@media (max-width: 860px) {
+  [data-motion] .block.video.video-withpanel { grid-template-columns: 1fr; }
+}
 `;

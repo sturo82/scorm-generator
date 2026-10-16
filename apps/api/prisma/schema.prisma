@@ -85,6 +85,7 @@ enum MeterProvider {
   BEDROCK_IMAGE
   POLLY
   TRANSCRIBE
+  HEYGEN
 }
 
 // Unità di consumo misurata. Determina come `quantity` va moltiplicata per il
@@ -95,6 +96,9 @@ enum MeterUnit {
   IMAGES
   CHARACTERS
   SECONDS
+  VIDEOS
+  // Chiamate a pagamento "una tantum" (es. creazione avatar HeyGen: 1/chiamata).
+  CALLS
 }
 
 // --- Tenancy & accesso ------------------------------------------------------

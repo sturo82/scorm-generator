@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Block, Brief, PricingQuoteInput } from '@scorm/contracts';
 import { getApiClient } from './client';
 import type { BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole, AttachStockImageInput, AttachStockCoverInput } from './types';
@@ -26,6 +26,7 @@ export const qk = {
   videoChannels: ['videos', 'channels'] as const,
   users: ['users'] as const,
   stockImages: (courseId: string, q: string) => ['courses', courseId, 'stock-images', q] as const,
+  avatars: (q?: string) => ['tenant', 'avatars', q ?? ''] as const,
 };
 
 // --- Corsi ------------------------------------------------------------------
@@ -312,6 +313,104 @@ export function useGenerateLessonNarration(courseId: string) {
   return useMutation({
     mutationFn: (lessonId: string) => api.generateLessonNarration(courseId, lessonId),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.modules(courseId) }),
+  });
+}
+
+// --- Generazione video avatar (HeyGen) -------------------------------------
+
+/** Avatar disponibili per la generazione video (caricati on demand). */
+export function useVideoAvatars(
+  courseId: string,
+  enabled = true,
+  opts?: { source?: 'mine' | 'stock'; q?: string },
+) {
+  const source = opts?.source ?? 'stock';
+  const q = opts?.q ?? '';
+  return useInfiniteQuery({
+    queryKey: ['courses', courseId, 'video-avatars', source, q] as const,
+    queryFn: ({ pageParam }) =>
+      api.listVideoAvatars(courseId, { source, q: q || undefined, token: pageParam as string | undefined }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextToken,
+    enabled: !!courseId && enabled,
+    staleTime: 10 * 60_000,
+  });
+}
+
+/** Voci disponibili per la generazione video, PAGINATE (prima pagina veloce +
+ *  'Carica altri'). Filtrate per lingua del corso (default) o `language`; `q` cerca. */
+export function useVideoVoices(
+  courseId: string,
+  enabled = true,
+  opts?: { language?: string; q?: string },
+) {
+  const language = opts?.language;
+  const q = opts?.q ?? '';
+  return useInfiniteQuery({
+    queryKey: ['courses', courseId, 'video-voices', language ?? 'course', q] as const,
+    queryFn: ({ pageParam }) =>
+      api.listVideoVoices(courseId, { language, q: q || undefined, token: pageParam as string | undefined }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextToken,
+    enabled: !!courseId && enabled,
+    staleTime: 10 * 60_000,
+  });
+}
+
+/**
+ * Avvia la generazione del video avatar per un concetto. Il rendering prosegue
+ * lato server (stato nel payload del block): invalida i moduli così la UI
+ * ricarica i block e mostra lo stato 'processing'.
+ */
+export function useGenerateConceptVideo(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { lessonId: string; blockId: string; avatarId?: string; voiceId?: string; script?: string }) =>
+      api.generateConceptVideo(courseId, vars.lessonId, vars.blockId, {
+        avatarId: vars.avatarId,
+        voiceId: vars.voiceId,
+        script: vars.script,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.modules(courseId) }),
+  });
+}
+
+// --- Gestione avatar HeyGen del tenant (Impostazioni → Avatar) --------------
+
+/** Lista degli avatar dell'account (i "miei"). `q` cerca per nome. */
+export function useMyAvatars(q?: string, enabled = true) {
+  return useQuery({
+    queryKey: qk.avatars(q),
+    queryFn: () => api.listMyAvatars(q),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+/** Crea un avatar da FOTO (upload immagine). Invalida la lista al termine. */
+export function useCreatePhotoAvatar() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { name: string; file: File }) => api.createPhotoAvatar(vars.name, vars.file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tenant', 'avatars'] }),
+  });
+}
+
+/** Crea un avatar da PROMPT testuale. Invalida la lista al termine. */
+export function useCreatePromptAvatar() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { name: string; prompt: string }) => api.createPromptAvatar(vars.name, vars.prompt),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tenant', 'avatars'] }),
+  });
+}
+
+/** Elimina un avatar del tenant (per groupId). Invalida la lista al termine. */
+export function useDeleteAvatar() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (groupId: string) => api.deleteAvatar(groupId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tenant', 'avatars'] }),
   });
 }
 
@@ -618,6 +717,16 @@ export function useSetVideoTranscript(courseId: string) {
   return useMutation({
     mutationFn: (vars: { lessonId: string; blockId: string; transcript: TranscriptCue[] }) =>
       api.setVideoTranscript(courseId, vars.lessonId, vars.blockId, vars.transcript),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.modules(courseId) }),
+  });
+}
+
+/** (Ri)avvia la trascrizione automatica (ASR) del video di un block. */
+export function useRetranscribeVideo(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { lessonId: string; blockId: string }) =>
+      api.retranscribeVideo(courseId, vars.lessonId, vars.blockId),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.modules(courseId) }),
   });
 }

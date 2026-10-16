@@ -13,3 +13,5 @@ export const DOCUMENT_EXTRACTORS = 'DOCUMENT_EXTRACTORS';
 export const COGNITO_CLIENT = 'COGNITO_CLIENT';
 /** Provider immagini stock (Pexels/Unsplash); null se non configurato. */
 export const STOCK_IMAGE_PROVIDER = 'STOCK_IMAGE_PROVIDER';
+/** Provider di generazione video avatar (HeyGen); null se non configurato. */
+export const VIDEO_GEN_PROVIDER = 'VIDEO_GEN_PROVIDER';

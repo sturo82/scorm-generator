@@ -1,8 +1,12 @@
 import { Inject, Module, type OnModuleInit } from '@nestjs/common';
-import type { JobEnvelope, JobQueue } from '@scorm/domain';
+import { ConfigService } from '@nestjs/config';
+import type { JobEnvelope, JobQueue, VideoGenerationProvider } from '@scorm/domain';
+import { HeyGenVideoProvider } from '@scorm/adapters/heygen';
+import { testing } from '@scorm/adapters';
 import { KnowledgeModule } from '../knowledge/knowledge.module.js';
 import { CoursesModule } from '../courses/courses.module.js';
-import { JOB_QUEUE } from '../providers/provider.constants.js';
+import type { AppConfig } from '../config/configuration.js';
+import { JOB_QUEUE, VIDEO_GEN_PROVIDER } from '../providers/provider.constants.js';
 import {
   GenerationService,
   type GenJobType,
@@ -10,8 +14,38 @@ import {
 } from './generation.service.js';
 import { MediaService } from './media.service.js';
 import { GenerationController } from './generation.controller.js';
+import { AvatarsController } from './avatars.controller.js';
 import { JobsController } from './jobs.controller.js';
 import { ActiveJobsController } from './active-jobs.controller.js';
+
+/**
+ * Provider del generatore video avatar, scelto da configurazione (pattern
+ * identico allo stock image provider):
+ *  - PROVIDER_VIDEO=heygen + HEYGEN_API_KEY → adapter HeyGen reale
+ *  - PROVIDER_VIDEO=mock                    → mock deterministico (no quota)
+ *  - altrimenti                             → null: il service risponde 501
+ */
+const videoGenProvider = {
+  provide: VIDEO_GEN_PROVIDER,
+  inject: [ConfigService],
+  useFactory: (config: ConfigService<AppConfig, true>): VideoGenerationProvider | null => {
+    const cfg = config.get('heygen', { infer: true });
+    if (cfg.provider === 'heygen' && cfg.apiKey) {
+      return new HeyGenVideoProvider({
+        apiKey: cfg.apiKey,
+        baseUrl: cfg.baseUrl,
+        defaultAvatarId: cfg.defaultAvatarId,
+        defaultVoiceId: cfg.defaultVoiceId,
+        defaultResolution: cfg.resolution,
+        defaultEngine: cfg.engine || undefined,
+      });
+    }
+    if (cfg.provider === 'mock') {
+      return new testing.MockVideoGenerationProvider();
+    }
+    return null;
+  },
+};
 
 /**
  * Modulo di generazione AI. Importa KnowledgeModule per il RetrievalService
@@ -22,8 +56,8 @@ import { ActiveJobsController } from './active-jobs.controller.js';
  */
 @Module({
   imports: [KnowledgeModule, CoursesModule],
-  controllers: [GenerationController, JobsController, ActiveJobsController],
-  providers: [GenerationService, MediaService],
+  controllers: [GenerationController, AvatarsController, JobsController, ActiveJobsController],
+  providers: [GenerationService, MediaService, videoGenProvider],
   exports: [GenerationService, MediaService],
 })
 export class GenerationModule implements OnModuleInit {

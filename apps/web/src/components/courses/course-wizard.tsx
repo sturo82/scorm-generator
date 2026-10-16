@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Check, ChevronRight, FileText, ListTree, Wand2, Image as ImageIcon, Eye, Search } from 'lucide-react';
+import { Check, ChevronRight, ChevronDown, FileText, ListTree, Wand2, Image as ImageIcon, Eye, Search } from 'lucide-react';
 import type { Brief } from '@scorm/contracts';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
@@ -485,9 +485,23 @@ export function CourseWizard({ courseId }: { courseId: string }) {
               onToggle={handleToggleShareable}
             />
           </div>
-          <div className="mb-6">
-            <CoursePricingPanel courseId={courseId} />
-          </div>
+          {/* Costi & prezzo: informazione secondaria, in un pannello collassabile
+              e discreto (chiuso di default) così non ruba spazio all'anteprima. */}
+          <details className="group mb-6 rounded-lg border bg-muted/20">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground">
+              <span className="flex items-center gap-2">
+                <span aria-hidden>💰</span>
+                Costi &amp; prezzo del corso
+                <span className="font-normal text-xs text-muted-foreground/80">
+                  (consumo AI e margine — opzionale)
+                </span>
+              </span>
+              <ChevronDown className="size-4 shrink-0 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="border-t p-4">
+              <CoursePricingPanel courseId={courseId} />
+            </div>
+          </details>
           <CoursePreview courseId={courseId} />
         </StepShell>
       )}

@@ -15,6 +15,7 @@ import {
   renderStateful,
   buildCourseSteps,
   groupConcepts,
+  renderVideoFirstLesson,
   type VNode,
   type VChild,
   type RenderContext,
@@ -312,11 +313,21 @@ function renderBlockDom(block: { type: string; payload?: Record<string, unknown>
   return mount(vnode) as HTMLElement;
 }
 
+/** Costruisce il nodo DOM della lezione VIDEO-FIRST a due colonne (video + tab). */
+function renderVideoFirstLessonDom(
+  blocks: Array<{ id?: string; type: string; payload?: Record<string, unknown> }>,
+  ctx: RenderContext,
+): HTMLElement {
+  return mount(renderVideoFirstLesson(blocks, ctx)) as HTMLElement;
+}
+
 const RenderCore = {
   renderBlock,
   isHandledByCore,
   mount,
   renderBlockDom,
+  renderVideoFirstLesson,
+  renderVideoFirstLessonDom,
   buildCourseSteps,
   groupConcepts,
   courseLabels,

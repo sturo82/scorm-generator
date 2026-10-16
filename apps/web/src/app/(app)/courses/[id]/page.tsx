@@ -7,9 +7,11 @@ export function generateStaticParams() {
   return [{ id: 'placeholder' }];
 }
 
-// Nessun parametro oltre quelli generati: con output:'export' non c'è server per
-// renderizzare id arbitrari a build time; ci pensa il client + il fallback CDN.
-export const dynamicParams = false;
+// In PRODUZIONE (export statico) nessun parametro oltre quelli generati: non c'è
+// server per renderizzare id arbitrari a build time, ci pensa il client + il
+// fallback CDN. In SVILUPPO (`next dev`) invece permettiamo id dinamici, così
+// la navigazione diretta a /courses/<id> funziona on-demand (senza 404).
+export const dynamicParams = process.env.NODE_ENV !== 'production';
 
 export default function CourseDetailPage() {
   return <CourseDetailClient />;

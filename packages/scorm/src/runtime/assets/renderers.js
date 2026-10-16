@@ -87,6 +87,22 @@
     return fn(block.payload || {});
   }
 
+  /**
+   * Lezione VIDEO-FIRST a due colonne (video grande + barra tab laterale con
+   * Contenuto/Attività/Trascrizione), dal renderer CONDIVISO. Un unico markup
+   * per anteprima ed export. Fallback: se il core non è caricato, impila i
+   * block con renderBlock() (comportamento legacy, non blocca la fruizione).
+   */
+  function renderVideoFirstLesson(blocks) {
+    var core = global.RenderCore;
+    if (core && core.renderVideoFirstLessonDom) {
+      return core.renderVideoFirstLessonDom(blocks || [], coreCtx());
+    }
+    var wrap = el('div', { class: 'lesson-videofirst' });
+    (blocks || []).forEach(function (b) { wrap.appendChild(renderBlock(b)); });
+    return wrap;
+  }
+
   // --- Rendering di un assessment (test) --------------------------------------
   // Costruisce il form delle domande per tutti i tipi, raccoglie le risposte in
   // una mappa questionId -> answer e, al submit, invoca onSubmit(answers). La
@@ -191,7 +207,7 @@
     return wrap;
   }
 
-  global.Renderers = { renderBlock: renderBlock, renderAssessment: renderAssessment };
+  global.Renderers = { renderBlock: renderBlock, renderAssessment: renderAssessment, renderVideoFirstLesson: renderVideoFirstLesson };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = global.Renderers;

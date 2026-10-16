@@ -41,6 +41,10 @@
     "./stock": {
       "types": "./dist/stock/index.d.ts",
       "default": "./dist/stock/index.js"
+    },
+    "./heygen": {
+      "types": "./dist/heygen/index.d.ts",
+      "default": "./dist/heygen/index.js"
     }
   },
   "scripts": {

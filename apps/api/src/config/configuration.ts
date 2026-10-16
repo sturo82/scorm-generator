@@ -181,6 +181,33 @@ export interface AppConfig {
     pexelsApiKey?: string;
     unsplashAccessKey?: string;
   };
+  /**
+   * Generazione video avatar (HeyGen). `provider` seleziona l'adapter; se
+   * `heygen` è scelto ma manca l'API key, la generazione video è disabilitata
+   * (501). Il piano Free HeyGen consente 3 video/mese (720p, con watermark):
+   * `monthlyQuota` applica il limite a monte, per tenant, contando i consumi.
+   */
+  heygen: {
+    provider: 'heygen' | 'mock' | 'none';
+    apiKey?: string;
+    baseUrl: string;
+    /** Avatar di default se l'autore non ne sceglie uno. */
+    defaultAvatarId?: string;
+    /** Voce di default se l'autore non ne sceglie una. */
+    defaultVoiceId?: string;
+    /** Risoluzione di output (Free: 720p). */
+    resolution: string;
+    /**
+     * Motore di rendering di FALLBACK: 'avatar_iii' | 'avatar_iv' | 'avatar_v'
+     * | '' (vuoto). L'engine ora è una scelta per-generazione fatta dall'autore
+     * nella UI; questo valore è usato SOLO come ripiego se la richiesta non ne
+     * specifica uno. Se vuoto, si usa il default applicativo (Avatar III, il
+     * più economico). Non è più necessario impostarlo.
+     */
+    engine: string;
+    /** Numero massimo di video generabili per tenant al mese (piano Free: 3). */
+    monthlyQuota: number;
+  };
   /** Limiti di upload della knowledge base. */
   upload: {
     maxFileBytes: number;
@@ -324,6 +351,16 @@ export function loadConfiguration(): AppConfig {
       provider: env('STOCK_IMAGE_PROVIDER', 'none') as AppConfig['stock']['provider'],
       pexelsApiKey: process.env['PEXELS_API_KEY'],
       unsplashAccessKey: process.env['UNSPLASH_ACCESS_KEY'],
+    },
+    heygen: {
+      provider: env('PROVIDER_VIDEO', 'none') as AppConfig['heygen']['provider'],
+      apiKey: process.env['HEYGEN_API_KEY'],
+      baseUrl: env('HEYGEN_BASE_URL', 'https://api.heygen.com'),
+      defaultAvatarId: process.env['HEYGEN_AVATAR_ID'],
+      defaultVoiceId: process.env['HEYGEN_VOICE_ID'],
+      resolution: env('HEYGEN_RESOLUTION', '720p'),
+      engine: env('HEYGEN_ENGINE', ''),
+      monthlyQuota: Number(env('HEYGEN_MONTHLY_QUOTA', '3')),
     },
     upload: {
       maxFileBytes: Number(env('UPLOAD_MAX_FILE_BYTES', String(50 * 1024 * 1024))),

@@ -190,6 +190,17 @@ export const VideoCheckpointPayload = z.object({
   transcriptJobRef: z.string().optional(),
   /** Sezioni a tab affiancate al video (approfondimenti, punti chiave…). */
   sections: z.array(VideoSection).default([]),
+  /**
+   * Stato della generazione del video con avatar AI (HeyGen), quando il video
+   * non è caricato dall'autore ma generato da un copione. 'processing' = render
+   * in corso, 'ready' = video pronto (video.storageKey valorizzato), 'failed' =
+   * errore (videoGenError). Assente/'none' = nessuna generazione AI in corso.
+   */
+  videoGenStatus: z.enum(['none', 'processing', 'ready', 'failed']).optional(),
+  /** Motivo leggibile del fallimento della generazione video (solo 'failed'). */
+  videoGenError: z.string().optional(),
+  /** Riferimento al job del provider video (video_id HeyGen), per ripristino. */
+  videoGenJobRef: z.string().optional(),
 });
 
 export const CarouselStep = z.object({

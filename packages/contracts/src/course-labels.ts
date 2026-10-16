@@ -99,6 +99,10 @@ export interface CourseLabels {
   transcriptNone: string;
   videoComing: string;
   videoAlt: string;
+  /** Tab "Contenuto" del pannello laterale video-first (testo del concetto). */
+  tabContent: string;
+  /** Tab "Attività" del pannello laterale video-first (interazioni). */
+  tabActivities: string;
   /** Credito foto: "Foto di {autore} su {provider}". */
   photoCreditBy: string;
   photoCreditOn: string;
@@ -177,6 +181,8 @@ const EN: CourseLabels = {
   transcriptNone: 'No transcript available.',
   videoComing: 'Video coming soon',
   videoAlt: 'Video',
+  tabContent: 'Content',
+  tabActivities: 'Activities',
   photoCreditBy: 'Photo by ',
   photoCreditOn: ' on ',
   imagePlaceholderBadge: 'Image to insert',
@@ -255,6 +261,8 @@ const IT: CourseLabels = {
   transcriptNone: 'Nessuna trascrizione disponibile.',
   videoComing: 'Video in arrivo',
   videoAlt: 'Video',
+  tabContent: 'Contenuto',
+  tabActivities: 'Attività',
   photoCreditBy: 'Foto di ',
   photoCreditOn: ' su ',
   imagePlaceholderBadge: 'Immagine da inserire',

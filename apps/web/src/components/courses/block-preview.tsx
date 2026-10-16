@@ -132,6 +132,33 @@ function TranscriptStatusNote({
   return null;
 }
 
+/**
+ * Nota di stato della GENERAZIONE del video con avatar AI (HeyGen). Mostra il
+ * rendering in corso ('processing') o il motivo del fallimento ('failed'). A
+ * 'ready'/'none' non mostra nulla: il player del video prende il sopravvento.
+ */
+function VideoGenStatusNote({ status, error }: { status: string; error?: string }) {
+  if (status === 'processing') {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="inline-block size-2 animate-pulse rounded-full bg-sky-500" />
+        Generazione del video avatar in corso… (può richiedere qualche minuto)
+      </p>
+    );
+  }
+  if (status === 'failed') {
+    return (
+      <div className="rounded-md border border-amber-300/60 bg-amber-50 p-2.5 text-xs text-amber-900">
+        <p className="font-medium">Generazione del video avatar non riuscita</p>
+        <p className="mt-0.5 text-amber-800">
+          {error || 'Non è stato possibile generare il video. Riprova o carica un video manualmente.'}
+        </p>
+      </div>
+    );
+  }
+  return null;
+}
+
 const TYPE_LABELS: Record<string, string> = {
   rich_text: 'Testo',
   image_hotspot: 'Immagine interattiva',
@@ -234,6 +261,8 @@ function renderBody(
       const hasVideo = Boolean(video.storageKey);
       const transcriptStatus = (p.transcriptStatus as string) ?? 'none';
       const transcriptError = (p.transcriptError as string) ?? '';
+      const videoGenStatus = (p.videoGenStatus as string) ?? 'none';
+      const videoGenError = (p.videoGenError as string) ?? '';
       // storageKey è risolto in URL firmato dall'API: usabile come src video.
       const videoUrl = video.storageKey ?? '';
       const videoFilename = hasVideo
@@ -294,6 +323,8 @@ function renderBody(
           {(video.alt || video.placeholderPrompt) && (
             <p className="text-xs text-muted-foreground">{video.alt || video.placeholderPrompt}</p>
           )}
+          {/* Stato generazione video avatar (HeyGen): processing/failed. */}
+          <VideoGenStatusNote status={videoGenStatus} error={videoGenError} />
           {hasVideo && (
             <TranscriptStatusNote
               status={transcriptStatus}
