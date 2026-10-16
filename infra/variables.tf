@@ -155,14 +155,14 @@ variable "apprunner_cpu" {
   type        = string
   # 2 vCPU: l'API (Nest + Prisma) andava in OOM con 1 vCPU/2 GB (exit 137,
   # restart loop). App Runner richiede >=4 GB con 2 vCPU.
-  default     = "2048"
+  default = "2048"
 }
 
 variable "apprunner_memory" {
   description = "Memoria dei servizi App Runner (es. 4096 = 4 GB)."
   type        = string
   # 4 GB: raddoppiata rispetto ai 2 GB che causavano OOM.
-  default     = "4096"
+  default = "4096"
 }
 
 variable "api_image_tag" {
@@ -195,6 +195,12 @@ variable "stock_image_provider" {
   description = "Provider immagini stock: none|unsplash|pexels."
   type        = string
   default     = "none"
+}
+
+variable "heygen_monthly_quota" {
+  description = "Numero massimo di video avatar HeyGen generabili per tenant al mese."
+  type        = string
+  default     = "30"
 }
 
 # --- Ecosistema Knowkube (consumer K Scorm -> Manager) ---------------------

@@ -98,6 +98,20 @@ resource "aws_secretsmanager_secret_version" "unsplash" {
   }
 }
 
+# Chiave API HeyGen (generazione video avatar): placeholder, da popolare fuori
+# Terraform (secretsmanager put-secret-value). ignore_changes evita che un apply
+# la riazzeri dopo l'inserimento manuale della chiave reale.
+resource "aws_secretsmanager_secret" "heygen" {
+  name = "${var.project}/HEYGEN_API_KEY"
+}
+resource "aws_secretsmanager_secret_version" "heygen" {
+  secret_id     = aws_secretsmanager_secret.heygen.id
+  secret_string = "REPLACE_ME"
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}
+
 output "db_app_password" {
   value     = random_password.db_app.result
   sensitive = true

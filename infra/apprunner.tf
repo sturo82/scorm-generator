@@ -30,25 +30,30 @@ resource "aws_apprunner_service" "api" {
           OIDC_AUDIENCE = var.ecosystem_oidc_client_id
           # Il web usa l'ID token come Bearer: l'access token di Cognito non
           # include i custom attribute (`custom:tenant_id`), l'ID token sì.
-          OIDC_TOKEN_USE              = "id"
-          OIDC_TENANT_CLAIM           = "custom:tenant_id,tenant_id"
-          CORS_ORIGINS                = var.cors_origins != "" ? var.cors_origins : "https://${var.web_domain}"
-          WEB_APP_URL                 = "https://${var.web_domain}"
-          INTEGRATION_JWT_ISSUER      = "scorm-generator"
-          INTEGRATION_JWT_AUDIENCE    = "scorm-integration"
-          INTEGRATION_TOKEN_TTL_SEC   = "3600"
-          SSO_JWT_ISSUER              = "scorm-generator"
-          SSO_JWT_AUDIENCE            = "scorm-webapp"
-          SSO_USER_TOKEN_TTL_SEC      = "28800"
-          SSO_TICKET_TTL_SEC          = "60"
-          SSO_MAX_ROLE                = "ADMIN"
-          PROVIDER_LLM                = "bedrock"
-          PROVIDER_EMBEDDINGS         = "bedrock"
-          PROVIDER_VECTOR_STORE       = "pgvector"
-          PROVIDER_OBJECT_STORAGE     = "s3"
-          PROVIDER_IMAGE              = "bedrock"
-          PROVIDER_SPEECH             = "polly"
-          PROVIDER_TRANSCRIPTION      = "transcribe"
+          OIDC_TOKEN_USE            = "id"
+          OIDC_TENANT_CLAIM         = "custom:tenant_id,tenant_id"
+          CORS_ORIGINS              = var.cors_origins != "" ? var.cors_origins : "https://${var.web_domain}"
+          WEB_APP_URL               = "https://${var.web_domain}"
+          INTEGRATION_JWT_ISSUER    = "scorm-generator"
+          INTEGRATION_JWT_AUDIENCE  = "scorm-integration"
+          INTEGRATION_TOKEN_TTL_SEC = "3600"
+          SSO_JWT_ISSUER            = "scorm-generator"
+          SSO_JWT_AUDIENCE          = "scorm-webapp"
+          SSO_USER_TOKEN_TTL_SEC    = "28800"
+          SSO_TICKET_TTL_SEC        = "60"
+          SSO_MAX_ROLE              = "ADMIN"
+          PROVIDER_LLM              = "bedrock"
+          PROVIDER_EMBEDDINGS       = "bedrock"
+          PROVIDER_VECTOR_STORE     = "pgvector"
+          PROVIDER_OBJECT_STORAGE   = "s3"
+          PROVIDER_IMAGE            = "bedrock"
+          PROVIDER_SPEECH           = "polly"
+          PROVIDER_TRANSCRIPTION    = "transcribe"
+          # Generazione video avatar (HeyGen). Attiva solo con HEYGEN_API_KEY
+          # presente (secret sotto). L'engine è scelto dal server per tipo di
+          # avatar; HEYGEN_ENGINE resta solo come eventuale override operativo.
+          PROVIDER_VIDEO              = "heygen"
+          HEYGEN_MONTHLY_QUOTA        = var.heygen_monthly_quota
           AWS_REGION                  = var.region
           BEDROCK_REGION              = var.region
           BEDROCK_LLM_MODEL_ID        = var.bedrock_llm_model_id
@@ -91,6 +96,7 @@ resource "aws_apprunner_service" "api" {
           INTEGRATION_JWT_SECRET = aws_secretsmanager_secret.jwt_integration.arn
           SSO_USER_JWT_SECRET    = aws_secretsmanager_secret.jwt_sso_user.arn
           UNSPLASH_ACCESS_KEY    = aws_secretsmanager_secret.unsplash.arn
+          HEYGEN_API_KEY         = aws_secretsmanager_secret.heygen.arn
           # NB: MANAGER_M2M_CLIENT_SECRET NON è iniettato come env: nell'onboarding
           # zero-touch l'app lo PERSISTE e lo LEGGE da Secrets Manager (per ARN) a
           # runtime, dal provisioning kit. Non è noto al deploy.
