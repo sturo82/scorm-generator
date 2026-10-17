@@ -200,7 +200,7 @@ export class RssFeedProvider implements FeedProvider {
       const searchUrl =
         `${base}?action=query&list=search&srsearch=${encodeURIComponent(q)}` +
         `&srlimit=${max}&format=json&origin=*`;
-      const searchJson = JSON.parse(await this.download(searchUrl)) as {
+      const searchJson = JSON.parse(await this.download(searchUrl, "application/json")) as {
         query?: { search?: Array<{ title?: string }> };
       };
       const titles = (searchJson.query?.search ?? [])
@@ -212,7 +212,7 @@ export class RssFeedProvider implements FeedProvider {
       const extractUrl =
         `${base}?action=query&prop=extracts|info&inprop=url&exintro=1&explaintext=1` +
         `&titles=${encodeURIComponent(titles.join('|'))}&format=json&origin=*`;
-      const extractJson = JSON.parse(await this.download(extractUrl)) as {
+      const extractJson = JSON.parse(await this.download(extractUrl, "application/json")) as {
         query?: { pages?: Record<string, { title?: string; extract?: string; fullurl?: string }> };
       };
       const pages = extractJson.query?.pages ?? {};
@@ -232,6 +232,135 @@ export class RssFeedProvider implements FeedProvider {
     } catch {
       return []; // Wikipedia non raggiungibile: nessun contesto da qui.
     }
+  }
+
+  async searchOpenEducation(query: string, opts: { lang?: 'it' | 'en'; max?: number } = {}): Promise<FeedListItem[]> {
+    const q = query.trim();
+    if (!q) return [];
+    const lang = opts.lang === 'en' ? 'en' : 'it';
+    const perSource = Math.max(1, Math.min(opts.max ?? 4, 8));
+    // Interroga le 4 fonti OER in parallelo; una fonte giù non blocca le altre.
+    const [wikiversity, arxiv, ocw, openstax] = await Promise.all([
+      this.oerWikiversity(q, lang, perSource).catch(() => []),
+      this.oerArxiv(q, perSource).catch(() => []),
+      this.oerMitOcw(q, perSource).catch(() => []),
+      this.oerOpenStax(q, perSource).catch(() => []),
+    ]);
+    return [...wikiversity, ...arxiv, ...ocw, ...openstax];
+  }
+
+  /** Wikiversity: materiale didattico (API MediaWiki, come Wikipedia). */
+  private async oerWikiversity(q: string, lang: 'it' | 'en', max: number): Promise<FeedListItem[]> {
+    const base = `https://${lang}.wikiversity.org/w/api.php`;
+    const searchUrl = `${base}?action=query&list=search&srsearch=${encodeURIComponent(q)}&srlimit=${max}&format=json&origin=*`;
+    const sj = JSON.parse(await this.download(searchUrl, "application/json")) as { query?: { search?: Array<{ title?: string }> } };
+    const titles = (sj.query?.search ?? []).map((s) => s.title).filter((t): t is string => !!t);
+    if (titles.length === 0) return [];
+    const exUrl =
+      `${base}?action=query&prop=extracts|info&inprop=url&exintro=1&explaintext=1` +
+      `&titles=${encodeURIComponent(titles.join('|'))}&format=json&origin=*`;
+    const ej = JSON.parse(await this.download(exUrl, "application/json")) as {
+      query?: { pages?: Record<string, { title?: string; extract?: string; fullurl?: string }> };
+    };
+    const pages = ej.query?.pages ?? {};
+    const out: FeedListItem[] = [];
+    for (const k of Object.keys(pages)) {
+      const p = pages[k]!;
+      const extract = (p.extract ?? '').trim();
+      if (p.title && extract.length > 60) {
+        out.push({
+          title: p.title,
+          link: p.fullurl ?? `https://${lang}.wikiversity.org/wiki/${encodeURIComponent(p.title)}`,
+          summary: extract.slice(0, 2000),
+          source: 'Wikiversity',
+        });
+      }
+    }
+    return out;
+  }
+
+  /** arXiv: paper scientifici (Atom API). Usa titolo + abstract (campo content/summary). */
+  private async oerArxiv(q: string, max: number): Promise<FeedListItem[]> {
+    const url =
+      `https://export.arxiv.org/api/query?search_query=${encodeURIComponent(`all:${q}`)}` +
+      `&start=0&max_results=${max}&sortBy=relevance`;
+    const xml = await this.download(url);
+    // arXiv restituisce Atom: rss-parser lo gestisce. L'abstract sta in
+    // content/contentSnippet; il link è l'URL della pagina abstract.
+    const parsed = await this.parser.parseString(xml);
+    const out: FeedListItem[] = [];
+    for (const it of parsed.items ?? []) {
+      const title = (it.title ?? '').replace(/\s+/g, ' ').trim();
+      // Atom arXiv: l'abstract è nel campo <summary> (rss-parser lo espone come `summary`).
+      const raw = (it as { summary?: string; contentSnippet?: string; content?: string });
+      const summary = (raw.summary ?? raw.contentSnippet ?? raw.content ?? '').replace(/\s+/g, ' ').trim();
+      if (title && summary.length > 40) {
+        out.push({
+          title,
+          link: typeof it.link === 'string' ? it.link : undefined,
+          summary: summary.slice(0, 2000),
+          isoDate: it.isoDate,
+          source: 'arXiv',
+        });
+      }
+    }
+    return out;
+  }
+
+  /** MIT OpenCourseWare: corsi aperti (API learn.mit.edu, filtro platform=ocw). */
+  private async oerMitOcw(q: string, max: number): Promise<FeedListItem[]> {
+    const url =
+      `https://api.learn.mit.edu/api/v1/learning_resources_search/?q=${encodeURIComponent(q)}` +
+      `&platform=ocw&limit=${max}`;
+    const json = JSON.parse(await this.download(url, "application/json")) as {
+      results?: Array<{ title?: string; description?: string; url?: string; readable_id?: string }>;
+    };
+    const out: FeedListItem[] = [];
+    for (const r of json.results ?? []) {
+      const title = (r.title ?? '').trim();
+      // Le descrizioni OCW contengono HTML: riducilo a testo piano.
+      const summary = htmlToPlainText(r.description ?? '').trim();
+      if (title && summary.length > 40) {
+        out.push({
+          title,
+          link: r.url ?? undefined,
+          summary: summary.slice(0, 2000),
+          source: 'MIT OpenCourseWare',
+        });
+      }
+    }
+    return out;
+  }
+
+  /** OpenStax: manuali universitari a licenza aperta (CMS API, filtro per query). */
+  private async oerOpenStax(q: string, max: number): Promise<FeedListItem[]> {
+    const url =
+      'https://openstax.org/apps/cms/api/v2/pages/?type=books.Book' +
+      '&fields=title,description,book_subjects&limit=200';
+    const json = JSON.parse(await this.download(url, "application/json")) as {
+      items?: Array<{
+        title?: string;
+        description?: string;
+        meta?: { html_url?: string };
+        book_subjects?: string[];
+      }>;
+    };
+    const terms = q.toLowerCase().split(/\s+/).filter((t) => t.length > 2);
+    const scored = (json.items ?? [])
+      .map((b) => {
+        const hay = `${b.title ?? ''} ${(b.book_subjects ?? []).join(' ')} ${b.description ?? ''}`.toLowerCase();
+        const score = terms.reduce((s, t) => s + (hay.includes(t) ? 1 : 0), 0);
+        return { b, score };
+      })
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, max);
+    return scored.map(({ b }) => ({
+      title: (b.title ?? 'Manuale OpenStax').trim(),
+      link: b.meta?.html_url,
+      summary: htmlToPlainText(b.description ?? '').slice(0, 2000) || (b.book_subjects ?? []).join(', '),
+      source: 'OpenStax',
+    }));
   }
 
   async fetchArticle(url: string): Promise<FetchedArticle> {
@@ -269,15 +398,23 @@ export class RssFeedProvider implements FeedProvider {
     return this.dnsResolver ? assertSafeUrl(url, this.dnsResolver) : assertSafeUrl(url);
   }
 
-  /** GET con timeout, limite dimensione e User-Agent; ritorna il corpo come stringa. */
-  private async download(url: string): Promise<string> {
+  /**
+   * GET con timeout, limite dimensione e User-Agent; ritorna il corpo come
+   * stringa. `accept` permette di forzare l'header Accept (es. application/json
+   * per le API che fanno content-negotiation, come MIT Learn): col default
+   * orientato a XML/HTML alcune API restituirebbero HTML invece di JSON.
+   */
+  private async download(url: string, accept?: string): Promise<string> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const res = await this.fetchImpl(url, {
         signal: controller.signal,
         redirect: 'follow',
-        headers: { 'User-Agent': this.userAgent, Accept: 'application/rss+xml, application/xml, text/xml, text/html;q=0.9, */*;q=0.8' },
+        headers: {
+          'User-Agent': this.userAgent,
+          Accept: accept ?? 'application/rss+xml, application/xml, text/xml, text/html;q=0.9, */*;q=0.8',
+        },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       // Limita la dimensione leggendo lo stream con un tetto.

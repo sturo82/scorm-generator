@@ -105,6 +105,15 @@ export interface FeedProvider {
    */
   searchWikipedia(query: string, opts?: { lang?: 'it' | 'en'; max?: number }): Promise<WikipediaArticle[]>;
   /**
+   * Cerca materiali DIDATTICI a licenza aperta (OER) pertinenti a un argomento,
+   * da fonti riutilizzabili: Wikiversity, arXiv (paper), MIT OpenCourseWare,
+   * OpenStax (manuali). Restituisce item con titolo, estratto/descrizione (nel
+   * campo `summary`), URL e `source` per l'attribuzione. Niente scraping dei
+   * siti: si usa il testo fornito dalle rispettive API. NON include fonti a
+   * contenuto protetto (Coursera, corsi universitari chiusi).
+   */
+  searchOpenEducation(query: string, opts?: { lang?: 'it' | 'en'; max?: number }): Promise<FeedListItem[]>;
+  /**
    * Elenca le voci di un feed in forma LEGGERA (titolo + sommario + link + data),
    * senza scaricare il full-text. Usato per raccogliere molti candidati a basso
    * costo prima del pre-filtro semantico. Ordina dal più recente.

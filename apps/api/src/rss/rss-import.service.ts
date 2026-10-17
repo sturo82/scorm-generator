@@ -73,7 +73,7 @@ const DEFAULT_MAX_ARTICLES = 12;
 const HARD_MAX_ARTICLES = 25;
 
 /** Provenienza di un candidato (determina se e come recuperare il full-text). */
-type CandidateKind = 'feed' | 'gnews' | 'wikipedia';
+type CandidateKind = 'feed' | 'gnews' | 'wikipedia' | 'oer';
 
 interface Candidate extends FeedListItem {
   kind: CandidateKind;
@@ -178,6 +178,29 @@ export class RssImportService {
             }
           } catch (err) {
             this.logger.warn(`Wikipedia non raggiungibile: ${rawError(err)}`);
+          }
+        })(),
+      );
+
+      // Materiali didattici APERTI (OER): Wikiversity, arXiv, MIT OCW, OpenStax.
+      // Testo già pronto dalle API (niente scraping): lo usiamo come knowledge.
+      tasks.push(
+        (async () => {
+          try {
+            const oer = await this.feeds.searchOpenEducation(topic, { lang: gLang, max: 4 });
+            for (const o of oer) {
+              collected.push({
+                kind: 'oer',
+                title: o.title,
+                link: o.link,
+                summary: o.summary,
+                readyText: o.summary,
+                isoDate: o.isoDate,
+                source: o.source,
+              });
+            }
+          } catch (err) {
+            this.logger.warn(`Fonti didattiche aperte non raggiungibili: ${rawError(err)}`);
           }
         })(),
       );
@@ -335,7 +358,8 @@ export class RssImportService {
    */
   private async buildArticleHtml(item: Candidate): Promise<string> {
     let bodyHtml = `<p>${escapeHtml(item.summary)}</p>`;
-    if (item.kind === 'wikipedia' && item.readyText) {
+    if ((item.kind === 'wikipedia' || item.kind === 'oer') && item.readyText) {
+      // Wikipedia e OER: testo già fornito dalle API, nessuno scraping.
       bodyHtml = `<p>${escapeHtml(item.readyText)}</p>`;
     } else if (item.kind === 'feed' && item.link) {
       const art = await this.feeds.fetchArticle(item.link).catch(() => null);

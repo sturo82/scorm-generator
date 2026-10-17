@@ -124,7 +124,8 @@ export default function NewCourseFromRssPage() {
                 />
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Globe className="size-3.5" aria-hidden />
-                  Cerchiamo su Google News, testate autorevoli e Wikipedia, in italiano e inglese.
+                  Cerchiamo su Google News, testate autorevoli, Wikipedia e materiali didattici
+                  aperti (Wikiversity, arXiv, MIT OpenCourseWare, OpenStax), in italiano e inglese.
                 </p>
               </div>
 
