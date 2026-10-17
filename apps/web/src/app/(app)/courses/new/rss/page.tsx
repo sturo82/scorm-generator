@@ -50,11 +50,15 @@ export default function NewCourseFromRssPage() {
   const [title, setTitle] = React.useState('');
   const [audience, setAudience] = React.useState('');
   const [tone, setTone] = React.useState('');
+  const [scope, setScope] = React.useState('');
   const [language, setLanguage] = React.useState('it');
   const [source, setSource] = React.useState<Source>('everywhere');
   const [category, setCategory] = React.useState<FeedCategory | ''>('');
   const [maxArticles, setMaxArticles] = React.useState(12);
   const [newFeedUrl, setNewFeedUrl] = React.useState('');
+  // Lezioni suggerite EDITABILI: copia locale del pre-sommario, potabile e
+  // modificabile dall'autore. È ciò che viene congelato alla creazione.
+  const [editedLessons, setEditedLessons] = React.useState<string[]>([]);
 
   const myFeeds = feeds.data ?? [];
   const busy = create.isPending || preview.isPending;
@@ -76,13 +80,17 @@ export default function NewCourseFromRssPage() {
         category: source === 'mine' ? undefined : category || undefined,
         audience: audience.trim() || undefined,
         tone: tone.trim() || undefined,
+        scope: scope.trim() || undefined,
       });
       // Propone il titolo se l'utente non ne ha scritto uno.
       if (!title.trim() && res.proposedTitle) setTitle(res.proposedTitle);
-      // Riproponi target e tono proposti dall'LLM se l'utente non li ha indicati:
-      // diventano visibili e modificabili per rigenerare un'anteprima coerente.
+      // Riproponi target, tono e taglio proposti dall'LLM se l'utente non li ha
+      // indicati: diventano visibili e modificabili per rigenerare coerente.
       if (!audience.trim() && res.proposedAudience) setAudience(res.proposedAudience);
       if (!tone.trim() && res.proposedTone) setTone(res.proposedTone);
+      if (!scope.trim() && res.proposedScope) setScope(res.proposedScope);
+      // Carica le lezioni suggerite nella copia editabile (poda/modifica).
+      setEditedLessons(res.suggestedLessons ?? []);
     } catch (err) {
       const msg = err instanceof Error ? err.message.replace(/^API \d+:\s*/, '') : '';
       toast.show(msg || 'Anteprima non riuscita', 'error');
@@ -118,9 +126,19 @@ export default function NewCourseFromRssPage() {
         category: source === 'mine' ? undefined : category || undefined,
         audience: audience.trim() || undefined,
         tone: tone.trim() || undefined,
+        scope: scope.trim() || undefined,
         // Anteprima congelata: se l'autore l'ha generata, il corso nasce da
-        // QUELLA (coerenza con ciò che ha visto), non da una nuova sintesi.
-        preview: previewData ?? undefined,
+        // QUELLA (coerenza con ciò che ha visto), non da una nuova sintesi. Le
+        // lezioni sono quelle POTATE/modificate dall'autore e lo scope corrente.
+        preview: previewData
+          ? {
+              ...previewData,
+              suggestedLessons: editedLessons.map((l) => l.trim()).filter((l) => l.length > 0),
+              proposedScope: scope.trim() || previewData.proposedScope,
+              proposedAudience: audience.trim() || previewData.proposedAudience,
+              proposedTone: tone.trim() || previewData.proposedTone,
+            }
+          : undefined,
         maxArticles,
       });
       toast.show(
@@ -163,7 +181,10 @@ export default function NewCourseFromRssPage() {
                     // L'anteprima vale per l'argomento con cui è stata generata:
                     // se cambi argomento, la invalidiamo (va rigenerata) così
                     // "Crea corso" non congela un pre-sommario ormai incoerente.
-                    if (previewData) preview.reset();
+                    if (previewData) {
+                      preview.reset();
+                      setEditedLessons([]);
+                    }
                   }}
                 />
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -182,7 +203,7 @@ export default function NewCourseFromRssPage() {
                   <Input
                     id="rss-audience"
                     value={audience}
-                    maxLength={300}
+                    maxLength={1000}
                     placeholder="Es. neoassunti senza basi tecniche"
                     onChange={(e) => setAudience(e.target.value)}
                   />
@@ -194,10 +215,26 @@ export default function NewCourseFromRssPage() {
                   <Input
                     id="rss-tone"
                     value={tone}
-                    maxLength={200}
+                    maxLength={1000}
                     placeholder="Es. professionale ma accessibile"
                     onChange={(e) => setTone(e.target.value)}
                   />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="rss-scope">
+                    Taglio del corso <span className="font-normal text-muted-foreground">(opzionale)</span>
+                  </Label>
+                  <Input
+                    id="rss-scope"
+                    value={scope}
+                    maxLength={2000}
+                    placeholder="Es. pratico: come usare gli strumenti in classe, senza fondamenti tecnici"
+                    onChange={(e) => setScope(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    L&apos;angolazione con cui trattare l&apos;argomento: tiene le lezioni dentro
+                    l&apos;obiettivo reale (es. uso pratico) ed esclude ciò che è solo attinente al titolo.
+                  </p>
                 </div>
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground sm:col-span-2">
                   <Info className="size-3.5 shrink-0" aria-hidden />
@@ -247,6 +284,11 @@ export default function NewCourseFromRssPage() {
                             Tono: {previewData.proposedTone}
                           </span>
                         )}
+                        {(scope.trim() || previewData.proposedScope) && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs text-primary">
+                            Taglio: {scope.trim() || previewData.proposedScope}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -260,16 +302,50 @@ export default function NewCourseFromRssPage() {
                       </ul>
                     </div>
                   )}
-                  {previewData.suggestedLessons.length > 0 && (
-                    <div>
-                      <p className="mb-1 text-sm font-medium">Lezioni suggerite</p>
-                      <ol className="list-inside list-decimal space-y-0.5 text-sm text-muted-foreground">
-                        {previewData.suggestedLessons.map((l, i) => (
-                          <li key={i}>{l}</li>
-                        ))}
-                      </ol>
+                  <div>
+                    <div className="mb-1 flex items-center justify-between">
+                      <p className="text-sm font-medium">Lezioni suggerite</p>
+                      <span className="text-xs text-muted-foreground">
+                        {editedLessons.length} lezion{editedLessons.length === 1 ? 'e' : 'i'} · modificabili
+                      </span>
                     </div>
-                  )}
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      Rimuovi o riscrivi le lezioni fuori taglio: il corso sarà creato esattamente da queste.
+                    </p>
+                    <ol className="space-y-1.5">
+                      {editedLessons.map((l, i) => (
+                        <li key={i} className="flex items-center gap-2">
+                          <span className="w-5 shrink-0 text-right text-xs text-muted-foreground">{i + 1}.</span>
+                          <Input
+                            value={l}
+                            maxLength={200}
+                            aria-label={`Lezione ${i + 1}`}
+                            className="h-9 text-sm"
+                            onChange={(e) =>
+                              setEditedLessons((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))
+                            }
+                          />
+                          <button
+                            type="button"
+                            aria-label={`Rimuovi lezione ${i + 1}`}
+                            className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => setEditedLessons((prev) => prev.filter((_, j) => j !== i))}
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
+                        </li>
+                      ))}
+                    </ol>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="mt-1.5 h-8 gap-1.5 text-xs"
+                      onClick={() => setEditedLessons((prev) => [...prev, ''])}
+                    >
+                      <Plus className="size-3.5" /> Aggiungi lezione
+                    </Button>
+                  </div>
                   {previewData.sources.length > 0 && (
                     <p className="text-xs text-muted-foreground">
                       Fonti trovate: {previewData.sources.join(', ')} · {previewData.examined} contenuti esaminati

@@ -14,6 +14,7 @@ export interface FrozenPreviewInput {
   suggestedLessons?: string[];
   proposedAudience?: string;
   proposedTone?: string;
+  proposedScope?: string;
 }
 
 export interface DraftBriefInput {
@@ -25,11 +26,13 @@ export interface DraftBriefInput {
   audience?: string;
   /** Tono di voce scelto dall'utente (vincola il brief se presente). */
   tone?: string;
+  /** Taglio/scope scelto dall'utente (vincola il brief se presente). */
+  scope?: string;
   /**
    * Anteprima CONGELATA approvata dall'autore: se presente, il brief ne eredita
    * titolo, descrizione, obiettivi (dai concetti chiave), lezioni suggerite,
-   * pubblico e tono — senza una nuova sintesi LLM — per non discostarsi da ciò
-   * che l'utente ha visto. Il brief resta comunque una bozza modificabile.
+   * pubblico, tono e taglio — senza una nuova sintesi LLM — per non discostarsi
+   * da ciò che l'utente ha visto. Il brief resta comunque una bozza modificabile.
    */
   preview?: FrozenPreviewInput;
   /**
@@ -49,6 +52,13 @@ export interface PreviewInput {
   audience?: string;
   /** Tono di voce del corso, se specificato dall'utente. Se assente, lo propone l'LLM. */
   tone?: string;
+  /**
+   * Taglio/scope del corso: l'ANGOLAZIONE con cui trattare l'argomento (es.
+   * "pratico-applicativo per docenti; prospettiva d'uso in classe; NO fondamenti
+   * tecnici"). Se assente, lo propone l'LLM. Serve a tenere le lezioni dentro
+   * l'obiettivo reale del corso, non solo pertinenti al titolo.
+   */
+  scope?: string;
   articles: Array<{ title: string; summary: string }>;
 }
 
@@ -61,13 +71,23 @@ export interface PreviewOutput {
   proposedAudience: string;
   /** Tono di voce (riflette quello fornito, o proposto dall'LLM). */
   proposedTone: string;
+  /** Taglio/scope del corso (riflette quello fornito, o proposto dall'LLM). */
+  proposedScope: string;
 }
 
 /** JSON Schema del pre-sommario (anteprima) mostrato prima della generazione. */
 const PREVIEW_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
-  required: ['proposedTitle', 'description', 'keyConcepts', 'suggestedLessons', 'proposedAudience', 'proposedTone'],
+  required: [
+    'proposedTitle',
+    'description',
+    'keyConcepts',
+    'suggestedLessons',
+    'proposedAudience',
+    'proposedTone',
+    'proposedScope',
+  ],
   properties: {
     proposedTitle: { type: 'string', description: 'Titolo proposto per il corso' },
     description: { type: 'string', description: 'Descrizione sintetica (1-2 frasi) del corso' },
@@ -78,6 +98,13 @@ const PREVIEW_SCHEMA: Record<string, unknown> = {
     proposedTone: {
       type: 'string',
       description: 'Tono di voce consigliato per il corso (es. professionale, divulgativo, informale)',
+    },
+    proposedScope: {
+      type: 'string',
+      description:
+        "Taglio/angolazione del corso: con quale prospettiva tratta l'argomento per servire il " +
+        'pubblico (es. "applicativo: come il docente USA questi strumenti in classe", vs ' +
+        '"teorico: come funziona internamente"). Definisce cosa resta DENTRO e cosa è FUORI scope.',
     },
     keyConcepts: {
       type: 'array',
@@ -222,6 +249,7 @@ export class RssBriefService {
         typeof p.estimatedDurationMinutes === 'number' ? Math.round(p.estimatedDurationMinutes) : undefined,
       desiredLessonCount: typeof p.desiredLessonCount === 'number' ? Math.round(p.desiredLessonCount) : undefined,
       tone: input.tone?.trim() || undefined,
+      courseFocus: input.scope?.trim() || undefined,
       // Vincola il RAG della generazione alle SOLE fonti del corso (se presenti).
       knowledgeDocIds: input.knowledgeDocIds?.length ? input.knowledgeDocIds : undefined,
       language: input.language,
@@ -254,6 +282,7 @@ export class RssBriefService {
     const lessons = clean(pv.suggestedLessons);
     const audience = input.audience?.trim() || pv.proposedAudience?.trim() || undefined;
     const tone = input.tone?.trim() || pv.proposedTone?.trim() || undefined;
+    const courseFocus = input.scope?.trim() || pv.proposedScope?.trim() || undefined;
 
     // Obiettivi: dai concetti chiave; fallback alle lezioni se mancano i concetti.
     const objectives = concepts.length > 0 ? concepts.slice(0, 6) : lessons.slice(0, 6);
@@ -271,6 +300,7 @@ export class RssBriefService {
       desiredLessonCount: lessons.length > 0 ? Math.min(20, Math.max(2, lessons.length)) : undefined,
       suggestedLessons: lessons.length > 0 ? lessons : undefined,
       tone,
+      courseFocus,
       knowledgeDocIds: input.knowledgeDocIds?.length ? input.knowledgeDocIds : undefined,
       language: input.language,
     });
@@ -314,13 +344,33 @@ export class RssBriefService {
     } else {
       constraints.push('Proponi tu il tono di voce più adatto nel campo proposedTone.');
     }
+    const scope = input.scope?.trim();
+    if (scope) {
+      constraints.push(
+        `TAGLIO/SCOPE del corso (vincolo forte): «${scope}». Concetti e lezioni DEVONO restare dentro ` +
+          'questo taglio; ESCLUDI tutto ciò che ne esce, anche se pertinente al titolo. Riporta lo stesso ' +
+          'valore nel campo proposedScope.',
+      );
+    } else {
+      constraints.push(
+        'Proponi tu il TAGLIO/SCOPE più adatto nel campo proposedScope: con quale angolazione il corso ' +
+          'serve il pubblico (es. applicativo vs teorico), definendo cosa resta dentro e cosa fuori.',
+      );
+    }
 
     const result = await this.llm.generate({
       system:
         'Sei un progettista didattico. A partire da una rassegna di contenuti su un argomento, ' +
         'proponi un PRE-SOMMARIO del corso che si potrebbe generare: titolo, descrizione sintetica, ' +
-        'pubblico destinatario, tono di voce, i concetti chiave che verranno sviluppati e le lezioni ' +
-        'suggerite. Rispondi SOLO con JSON conforme allo schema. Sii concreto e fedele ai contenuti forniti. ' +
+        'pubblico destinatario, tono di voce, taglio/scope, i concetti chiave che verranno sviluppati e ' +
+        'le lezioni suggerite. Rispondi SOLO con JSON conforme allo schema. Sii concreto e fedele ai ' +
+        'contenuti forniti. ' +
+        // Regola di SCOPE: le lezioni devono servire il PUBBLICO nel fare ciò che il corso promette.
+        'REGOLA DI SCOPE: ragiona sempre dal punto di vista del pubblico e dell\'obiettivo del corso. ' +
+        'Se il taglio è applicativo/professionale (es. "usare uno strumento nel proprio lavoro"), NON ' +
+        'includere lezioni che spiegano il dominio "dall\'interno" o i suoi fondamenti tecnici/teorici, a ' +
+        'meno che non siano strettamente necessari all\'uso pratico. Una lezione pertinente al TITOLO ma ' +
+        'non all\'OBIETTIVO del pubblico è FUORI scope e va esclusa. ' +
         languageDirective(input.language),
       messages: [
         {
@@ -369,6 +419,7 @@ export class RssBriefService {
     const outAudience =
       audience || (typeof parsed.proposedAudience === 'string' ? parsed.proposedAudience.trim() : '');
     const outTone = tone || (typeof parsed.proposedTone === 'string' ? parsed.proposedTone.trim() : '');
+    const outScope = scope || (typeof parsed.proposedScope === 'string' ? parsed.proposedScope.trim() : '');
     return {
       proposedTitle: typeof parsed.proposedTitle === 'string' ? parsed.proposedTitle : input.topic,
       description: typeof parsed.description === 'string' ? parsed.description : '',
@@ -376,6 +427,7 @@ export class RssBriefService {
       suggestedLessons: asStrings(parsed.suggestedLessons),
       proposedAudience: outAudience,
       proposedTone: outTone,
+      proposedScope: outScope,
     };
   }
 }

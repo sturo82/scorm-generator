@@ -23,6 +23,13 @@ export const Brief = z.object({
   language: LanguageCode,
   /** Tono di voce desiderato; il tono di brand ha precedenza se presente. */
   tone: z.string().optional(),
+  /**
+   * Taglio/scope del corso: l'ANGOLAZIONE con cui trattare l'argomento per
+   * servire il pubblico (es. "applicativo: come il docente usa questi strumenti
+   * in classe"). Vincola outline e lezioni a restare dentro l'obiettivo reale
+   * del corso, escludendo temi pertinenti al titolo ma fuori dall'obiettivo.
+   */
+  courseFocus: z.string().optional(),
   /** Numero indicativo di lezioni desiderate. */
   desiredLessonCount: z.number().int().positive().optional(),
   /**

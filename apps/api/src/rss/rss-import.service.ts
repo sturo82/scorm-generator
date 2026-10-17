@@ -36,6 +36,8 @@ export interface CreateCourseFromRssInput {
   audience?: string;
   /** Tono di voce (opzionale): vincola la bozza di brief. */
   tone?: string;
+  /** Taglio/scope (opzionale): vincola la bozza di brief e la generazione. */
+  scope?: string;
   /**
    * Anteprima CONGELATA approvata dall'autore. Se presente, è la spina dorsale
    * del corso: titolo/descrizione/concetti/lezioni vengono da qui invece di
@@ -55,6 +57,7 @@ export interface FrozenPreview {
   suggestedLessons?: string[];
   proposedAudience?: string;
   proposedTone?: string;
+  proposedScope?: string;
 }
 
 export interface CreateCourseFromRssResult {
@@ -108,6 +111,8 @@ export interface RssPreviewResult {
   proposedAudience: string;
   /** Tono di voce (fornito dall'utente o proposto dall'anteprima). */
   proposedTone: string;
+  /** Taglio/scope del corso (fornito dall'utente o proposto dall'anteprima). */
+  proposedScope: string;
   /** Fonti da cui provengono i contenuti trovati (per trasparenza). */
   sources: string[];
   /** Numero di contenuti esaminati per l'anteprima. */
@@ -259,6 +264,7 @@ export class RssImportService {
         language: input.language,
         audience: input.audience,
         tone: input.tone,
+        scope: input.scope,
         preview,
         knowledgeDocIds,
         articles: chosen.map((c) => ({ title: c.title, summary: c.summary })),
@@ -293,6 +299,8 @@ export class RssImportService {
     audience?: string;
     /** Tono di voce (opzionale): se assente lo propone l'anteprima. */
     tone?: string;
+    /** Taglio/scope (opzionale): se assente lo propone l'anteprima. */
+    scope?: string;
   }): Promise<RssPreviewResult> {
     const topic = input.topic?.trim();
     if (!topic) throw new BadRequestException('Indica un argomento per l\'anteprima');
@@ -315,6 +323,7 @@ export class RssImportService {
       language: input.language,
       audience: input.audience,
       tone: input.tone,
+      scope: input.scope,
       articles: sample.map((c) => ({ title: c.title, summary: c.summary })),
     });
 

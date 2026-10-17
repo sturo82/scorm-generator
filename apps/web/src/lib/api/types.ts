@@ -213,6 +213,8 @@ export interface RssPreviewResult {
   proposedAudience: string;
   /** Tono di voce (fornito dall'utente o proposto dall'anteprima). */
   proposedTone: string;
+  /** Taglio/scope del corso (fornito dall'utente o proposto dall'anteprima). */
+  proposedScope: string;
   sources: string[];
   examined: number;
 }
@@ -345,6 +347,7 @@ export interface ApiClient {
     category?: FeedCategory;
     audience?: string;
     tone?: string;
+    scope?: string;
     /** Anteprima congelata approvata dall'autore (coerenza con il wizard). */
     preview?: RssPreviewResult;
     maxArticles: number;
@@ -357,6 +360,7 @@ export interface ApiClient {
     category?: FeedCategory;
     audience?: string;
     tone?: string;
+    scope?: string;
   }): Promise<RssPreviewResult>;
   deleteCourse(id: string): Promise<void>;
 

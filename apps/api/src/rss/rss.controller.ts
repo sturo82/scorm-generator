@@ -20,9 +20,11 @@ const CreateCourseFromRss = z.object({
     .enum(['italia', 'mondo', 'economia', 'tech', 'sicurezza', 'scienza', 'salute', 'ambiente', 'cultura', 'sport', 'politica'])
     .optional(),
   /** Pubblico destinatario (opzionale): vincola la bozza di brief. */
-  audience: z.string().max(300).optional(),
+  audience: z.string().max(1000).optional(),
   /** Tono di voce (opzionale): vincola la bozza di brief. */
-  tone: z.string().max(200).optional(),
+  tone: z.string().max(1000).optional(),
+  /** Taglio/scope (opzionale): vincola la bozza di brief e la generazione. */
+  scope: z.string().max(2000).optional(),
   /**
    * Anteprima CONGELATA approvata dall'autore (pre-sommario mostrato in UI). Se
    * presente, è la spina dorsale del corso: titolo, descrizione, concetti e
@@ -31,12 +33,16 @@ const CreateCourseFromRss = z.object({
    */
   preview: z
     .object({
+      // Limiti generosi: il pre-sommario è prodotto dall'LLM e questi campi
+      // (tono/scope descrittivi) possono essere discorsivi. Il DTO deve
+      // accettare esattamente ciò che l'anteprima ha restituito.
       proposedTitle: z.string().max(300).optional(),
-      description: z.string().max(2000).optional(),
-      keyConcepts: z.array(z.string().min(1)).max(20).optional(),
-      suggestedLessons: z.array(z.string().min(1)).max(20).optional(),
-      proposedAudience: z.string().max(300).optional(),
-      proposedTone: z.string().max(200).optional(),
+      description: z.string().max(4000).optional(),
+      keyConcepts: z.array(z.string().min(1).max(500)).max(20).optional(),
+      suggestedLessons: z.array(z.string().min(1).max(300)).max(20).optional(),
+      proposedAudience: z.string().max(1000).optional(),
+      proposedTone: z.string().max(1000).optional(),
+      proposedScope: z.string().max(2000).optional(),
     })
     .optional(),
   /** Numero di articoli pertinenti da includere (dopo filtro e dedup). */
@@ -53,9 +59,11 @@ const PreviewCourseFromRss = z.object({
     .enum(['italia', 'mondo', 'economia', 'tech', 'sicurezza', 'scienza', 'salute', 'ambiente', 'cultura', 'sport', 'politica'])
     .optional(),
   /** Pubblico destinatario (opzionale): se assente lo propone l'anteprima. */
-  audience: z.string().max(300).optional(),
+  audience: z.string().max(1000).optional(),
   /** Tono di voce (opzionale): se assente lo propone l'anteprima. */
-  tone: z.string().max(200).optional(),
+  tone: z.string().max(1000).optional(),
+  /** Taglio/scope del corso (opzionale): se assente lo propone l'anteprima. */
+  scope: z.string().max(2000).optional(),
 });
 type PreviewCourseFromRssType = z.infer<typeof PreviewCourseFromRss>;
 
@@ -92,6 +100,7 @@ export class RssController {
       category: dto.category,
       audience: dto.audience,
       tone: dto.tone,
+      scope: dto.scope,
       preview: dto.preview,
       maxArticles: dto.maxArticles,
       correlationId: ctx.correlationId,
@@ -112,6 +121,7 @@ export class RssController {
       category: dto.category,
       audience: dto.audience,
       tone: dto.tone,
+      scope: dto.scope,
     });
   }
 

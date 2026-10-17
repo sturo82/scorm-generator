@@ -83,10 +83,10 @@ export class HttpApiClient implements ApiClient {
   createCourse(input: { title: string; description?: string; language: string }) {
     return this.request<CourseView>('/courses', { method: 'POST', body: JSON.stringify(input) });
   }
-  createCourseFromRss(input: { topic: string; title?: string; language: string; source: 'everywhere' | 'mine'; category?: FeedCategory; audience?: string; tone?: string; preview?: RssPreviewResult; maxArticles: number }) {
+  createCourseFromRss(input: { topic: string; title?: string; language: string; source: 'everywhere' | 'mine'; category?: FeedCategory; audience?: string; tone?: string; scope?: string; preview?: RssPreviewResult; maxArticles: number }) {
     return this.request<CreateCourseFromRssResult>('/courses/from-rss', { method: 'POST', body: JSON.stringify(input) });
   }
-  previewCourseFromRss(input: { topic: string; language: string; source: 'everywhere' | 'mine'; category?: FeedCategory; audience?: string; tone?: string }) {
+  previewCourseFromRss(input: { topic: string; language: string; source: 'everywhere' | 'mine'; category?: FeedCategory; audience?: string; tone?: string; scope?: string }) {
     return this.request<RssPreviewResult>('/courses/from-rss/preview', { method: 'POST', body: JSON.stringify(input) });
   }
   listTenantFeeds() {

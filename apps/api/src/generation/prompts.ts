@@ -85,6 +85,15 @@ export function outlinePrompt(brief: Brief, context: string): string {
     `Livello: ${brief.level}`,
     `Durata stimata: ${brief.estimatedDurationMinutes} minuti`,
     `Lingua: ${brief.language}`,
+    // TAGLIO/SCOPE: vincolo forte sull'angolazione del corso. Tiene l'outline
+    // dentro l'obiettivo reale per il pubblico, non solo pertinente al titolo.
+    brief.courseFocus
+      ? `TAGLIO DEL CORSO (vincolo forte): ${brief.courseFocus}. Ogni modulo e lezione deve servire ` +
+        'questo taglio e questo pubblico. ESCLUDI argomenti che, pur attinenti al titolo, escono da ' +
+        'questo taglio (es. fondamenti teorici/interni del dominio quando il taglio è pratico-applicativo): ' +
+        'includili solo se strettamente indispensabili all\'obiettivo. In caso di dubbio, scegli la ' +
+        'prospettiva d\'uso del pubblico, non quella teorica.'
+      : '',
     brief.desiredLessonCount ? `Numero lezioni desiderato: ${brief.desiredLessonCount}` : '',
     // Lezioni suggerite dall'anteprima approvata: sono la STRUTTURA DI PARTENZA.
     // Il modello deve rispettarne l'impianto e la progressione, rifinendo titoli
@@ -132,6 +141,8 @@ export function lessonVideoFirstPrompt(input: {
   language: string;
   context: string;
   toneInstruction?: string;
+  /** Taglio/scope del corso: vincola la lezione a restare dentro l'angolazione. */
+  courseFocus?: string;
 }): string {
   const parts = [
     languageDirective(input.language),
@@ -140,6 +151,10 @@ export function lessonVideoFirstPrompt(input: {
     `Modulo: ${input.moduleTitle}`,
     `Lezione: ${input.lessonTitle}`,
     input.objectives.length > 0 ? `Obiettivi: ${input.objectives.join('; ')}` : '',
+    input.courseFocus
+      ? `TAGLIO DEL CORSO (vincolo): ${input.courseFocus}. Tratta il contenuto SOLO da questa ` +
+        'angolazione e per questo pubblico; non deviare verso aspetti fuori taglio.'
+      : '',
     input.toneInstruction ? `Indicazione aggiuntiva: ${input.toneInstruction}` : '',
     '',
     'La lezione ruota attorno a UN video dimostrativo. Produci i block in questo ordine:',
@@ -181,6 +196,8 @@ export function lessonContentPrompt(input: {
   toneInstruction?: string;
   /** Lezione incentrata su un video (segnaposto) con quiz/elementi dinamici. */
   videoFirst?: boolean;
+  /** Taglio/scope del corso: vincola la lezione a restare dentro l'angolazione. */
+  courseFocus?: string;
 }): string {
   if (input.videoFirst) return lessonVideoFirstPrompt(input);
   const parts = [
@@ -190,6 +207,10 @@ export function lessonContentPrompt(input: {
     `Modulo: ${input.moduleTitle}`,
     `Lezione: ${input.lessonTitle}`,
     input.objectives.length > 0 ? `Obiettivi: ${input.objectives.join('; ')}` : '',
+    input.courseFocus
+      ? `TAGLIO DEL CORSO (vincolo): ${input.courseFocus}. Tratta il contenuto SOLO da questa ` +
+        'angolazione e per questo pubblico; non deviare verso aspetti fuori taglio.'
+      : '',
     input.toneInstruction ? `Indicazione aggiuntiva: ${input.toneInstruction}` : '',
     '',
     'OBIETTIVO DI FRUIZIONE: la lezione deve essere VISIVA e scorrevole, NON un lungo muro ' +

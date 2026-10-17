@@ -484,6 +484,7 @@ export class GenerationService {
               context: formatContext(retrieved.chunks),
               toneInstruction,
               videoFirst,
+              courseFocus: brief?.success ? brief.data.courseFocus : undefined,
             }),
           },
         ],

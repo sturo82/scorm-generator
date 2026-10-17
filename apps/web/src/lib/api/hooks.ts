@@ -60,6 +60,7 @@ export function useCreateCourseFromRss() {
       category?: FeedCategory;
       audience?: string;
       tone?: string;
+      scope?: string;
       preview?: import('./types').RssPreviewResult;
       maxArticles: number;
     }) => api.createCourseFromRss(input),
@@ -77,6 +78,7 @@ export function useRssPreview() {
       category?: FeedCategory;
       audience?: string;
       tone?: string;
+      scope?: string;
     }) => api.previewCourseFromRss(input),
   });
 }
