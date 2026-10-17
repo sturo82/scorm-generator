@@ -1598,7 +1598,7 @@ export class MediaService implements OnModuleInit {
     nodeId?: string,
   ): Promise<{ started: number; remainingThisMonth: number }> {
     if (!this.cartoonGen) throw this.cartoonNotConfigured();
-    const cfg = this.config.get('novaReel', { infer: true });
+    const cfg = this.config.get('cartoonVideo', { infer: true });
     const course = await this.prisma.course.findFirst({ where: { id: courseId, tenantId }, select: { language: true } });
     const lesson = await this.requireLesson(tenantId, courseId, lessonId);
     const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as unknown[]) : [];
@@ -1626,7 +1626,7 @@ export class MediaService implements OnModuleInit {
     const room = Math.max(0, cfg.monthlyQuota - used);
     if (room === 0) {
       throw new BadRequestException(
-        `Hai esaurito i ${cfg.monthlyQuota} cartoon/mese. Attendi il mese prossimo o alza NOVA_REEL_MONTHLY_QUOTA.`,
+        `Hai esaurito i ${cfg.monthlyQuota} cartoon/mese. Attendi il mese prossimo o alza CARTOON_VIDEO_MONTHLY_QUOTA.`,
       );
     }
     const toStart = candidates.slice(0, room);
@@ -1706,7 +1706,7 @@ export class MediaService implements OnModuleInit {
           await this.writeCartoonError(ctx, r.reason).catch(() => undefined);
           return;
         }
-        await this.applyCartoonResult(ctx, r.s3Uri, r.durationSec);
+        await this.applyCartoonResult(ctx, r.bytes, r.contentType, r.durationSec);
         return;
       }
     } catch (err) {
@@ -1716,18 +1716,18 @@ export class MediaService implements OnModuleInit {
   }
 
   /**
-   * Scarica il cartoon prodotto (da data: URL del mock o da s3:// del bucket
-   * dell'app), lo salva sotto la key canonica dei media, imposta storageKey nel
-   * media della scena, azzera lo stato e registra il metering (SECONDS).
+   * Salva i byte del cartoon (consegnati dall'adapter) sotto la key canonica
+   * dei media, imposta storageKey nel media della scena, azzera lo stato e
+   * registra il metering (SECONDS).
    */
   private async applyCartoonResult(
     ctx: { tenantId: string; courseId: string; lessonId: string; blockId: string; nodeId: string },
-    s3Uri: string,
+    bytes: Uint8Array,
+    contentType: string | undefined,
     durationSec: number | undefined,
   ): Promise<void> {
-    const bytes = await this.readCartoonBytes(s3Uri);
     const key = `media/${ctx.tenantId}/${ctx.courseId}/video/${randomUUID()}.mp4`;
-    await this.storage.putObject(key, Buffer.from(bytes), { contentType: 'video/mp4' });
+    await this.storage.putObject(key, Buffer.from(bytes), { contentType: contentType ?? 'video/mp4' });
 
     const lesson = await this.requireLesson(ctx.tenantId, ctx.courseId, ctx.lessonId);
     const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as unknown[]) : [];
@@ -1750,12 +1750,13 @@ export class MediaService implements OnModuleInit {
       });
     }
 
-    const seconds = Math.max(1, Math.ceil(durationSec ?? this.config.get('novaReel', { infer: true }).sceneDurationSec));
+    const cfg = this.config.get('cartoonVideo', { infer: true });
+    const seconds = Math.max(1, Math.ceil(durationSec ?? cfg.sceneDurationSec));
     await this.meter.record({
       tenantId: ctx.tenantId,
       courseId: ctx.courseId,
       provider: 'BEDROCK_VIDEO',
-      model: this.config.get('novaReel', { infer: true }).modelId,
+      model: cfg.modelId,
       unit: 'SECONDS',
       quantity: seconds,
       source: 'scene_cartoon',
@@ -1764,23 +1765,6 @@ export class MediaService implements OnModuleInit {
       region: 'global',
     });
     this.logger.log(`Cartoon scena ${ctx.nodeId} pronto (${seconds}s): ${key}`);
-  }
-
-  /**
-   * Legge i byte del cartoon prodotto. Supporta:
-   *  - data: URL (mock) → decodifica base64;
-   *  - s3://<bucket>/<key> nel bucket dell'app → storage.getObject(key).
-   */
-  private async readCartoonBytes(s3Uri: string): Promise<Uint8Array> {
-    if (s3Uri.startsWith('data:')) {
-      const { bytes } = await downloadVideo(s3Uri);
-      return bytes;
-    }
-    const m = /^s3:\/\/([^/]+)\/(.+)$/.exec(s3Uri);
-    if (!m) throw new Error(`URI output cartoon non riconosciuto: ${s3Uri}`);
-    const key = m[2]!;
-    const buf = await this.storage.getObject(key);
-    return new Uint8Array(buf);
   }
 
   /** Scrive lo stato di errore della generazione cartoon nel media della scena. */

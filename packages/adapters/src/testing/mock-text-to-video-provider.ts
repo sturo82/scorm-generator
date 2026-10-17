@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import type {
   TextToVideoProvider,
   GenerateCartoonInput,
@@ -24,10 +25,7 @@ export class MockTextToVideoProvider implements TextToVideoProvider {
   }
 
   async fetchJob(_jobRef: string): Promise<GenerateCartoonJobResult> {
-    return {
-      status: 'completed',
-      s3Uri: `data:video/mp4;base64,${MockTextToVideoProvider.FAKE_MP4_BASE64}`,
-      durationSec: 6,
-    };
+    const bytes = new Uint8Array(Buffer.from(MockTextToVideoProvider.FAKE_MP4_BASE64, 'base64'));
+    return { status: 'completed', bytes, contentType: 'video/mp4', durationSec: 5 };
   }
 }

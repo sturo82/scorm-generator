@@ -26,11 +26,21 @@ cartoon; l'autore carica il video (finché il Livello 2 non è attivo).
 
 ## Generazione cartoon — provider video
 
-### Scelto: Amazon Nova Reel (AWS Bedrock) — Livello 2
+### In uso: Luma Ray 2 (AWS Bedrock, us-west-2) — Livello 2
 
-Modello video nativo di Bedrock, coerente con lo stack esistente (stesse
-credenziali AWS, stesso pattern asincrono + output su S3, metering come
-`BEDROCK_IMAGE`/`BEDROCK_LLM`).
+NOTA: Amazon Nova Reel NON è disponibile/abilitato sul nostro account AWS in
+nessuna region (verificato via `bedrock list-foundation-models`). L'unico
+modello video su Bedrock disponibile è **Luma Ray 2** (`luma.ray-v2:0`) in
+**us-west-2** — la stessa region della generazione immagini. L'integrazione usa
+quindi Luma Ray 2; l'adapter Nova Reel resta nel codice per un'eventuale futura
+disponibilità. Luma genera clip di 5s o 9s (540p/720p), prezzo ~$0.09/s
+(~$0.45 per clip da 5s a 720p).
+
+Modello video Bedrock, coerente con lo stack esistente (stesse credenziali AWS,
+pattern asincrono StartAsyncInvoke/GetAsyncInvoke + output su S3, metering
+`BEDROCK_VIDEO`). L'output va in un bucket dedicato in us-west-2
+(`scorm-video-gen-<account>`, prefix `luma-output`); l'adapter lo scarica e il
+servizio lo salva nel bucket assets dell'app.
 
 - Costo: ~$0.08 / secondo di video generato (~$0.48 per una scena da 6s).
 - Capacità: text-to-video e **image-to-video** (720p, 24fps), clip in

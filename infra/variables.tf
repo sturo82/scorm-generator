@@ -198,24 +198,36 @@ variable "stock_image_provider" {
 }
 
 variable "cartoon_video_provider" {
-  description = "Provider dei cartoon delle scene 'pillole' (Nova Reel). 'none' = spento; 'nova' = attivo; 'mock' = finto. Attivare solo dopo aver verificato region/bucket."
+  description = "Provider dei cartoon delle scene 'pillole'. 'none' = spento; 'luma' = Luma Ray 2 (Bedrock, us-west-2); 'nova' = Nova Reel (se disponibile); 'mock' = finto."
   type        = string
-  default     = "none"
+  default     = "luma"
 }
 
-variable "nova_reel_region" {
-  description = "Region Bedrock dove è abilitato Nova Reel (text-to-video). Da verificare sull'account; spesso us-east-1."
+variable "cartoon_video_model_id" {
+  description = "Model id del modello video Bedrock (Luma Ray 2 sul nostro account)."
   type        = string
-  default     = "us-east-1"
+  default     = "luma.ray-v2:0"
 }
 
-variable "nova_reel_output_s3_uri" {
-  description = "URI S3 base dove Nova Reel scrive l'output (es. s3://<bucket-assets>/nova-reel). Richiesto quando cartoon_video_provider = 'nova'."
+variable "cartoon_video_region" {
+  description = "Region Bedrock del modello video. Luma Ray 2 è in us-west-2 (come la generazione immagini)."
   type        = string
-  default     = ""
+  default     = "us-west-2"
 }
 
-variable "nova_reel_monthly_quota" {
+variable "cartoon_video_output_bucket" {
+  description = "Bucket S3 (nella region del modello) dove il modello video scrive l'output grezzo. Creato fuori Terraform: scorm-video-gen-<account> in us-west-2."
+  type        = string
+  default     = "scorm-video-gen-781748773767"
+}
+
+variable "cartoon_video_output_s3_uri" {
+  description = "URI S3 base dell'output video (es. s3://<bucket>/luma-output). Richiesto quando cartoon_video_provider != 'none'."
+  type        = string
+  default     = "s3://scorm-video-gen-781748773767/luma-output"
+}
+
+variable "cartoon_video_monthly_quota" {
   description = "Numero massimo di cartoon-scena generabili per tenant al mese."
   type        = string
   default     = "20"

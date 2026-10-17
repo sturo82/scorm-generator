@@ -32,10 +32,14 @@ export type GenerateCartoonJobResult =
   | {
       status: 'completed';
       /**
-       * URI S3 del video prodotto (es. "s3://bucket/prefix/.../output.mp4").
-       * Il servizio lo copia nella key canonica dei media del corso.
+       * Byte dell'MP4 prodotto. L'adapter li recupera dall'output del modello
+       * (su S3, nella region del provider) e li consegna già pronti: così il
+       * servizio li salva nella key canonica dei media SENZA doversi occupare
+       * di bucket/region del provider (che possono differire da quelli dell'app).
        */
-      s3Uri: string;
+      bytes: Uint8Array;
+      /** Content-type del video (default video/mp4). */
+      contentType?: string;
       /** Durata effettiva del video in secondi, se nota (per il metering). */
       durationSec?: number;
     }

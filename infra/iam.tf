@@ -70,12 +70,13 @@ data "aws_iam_policy_document" "api_permissions" {
     )
   }
 
-  # Bedrock Nova Reel (cartoon pillole): invocazione ASINCRONA (text-to-video)
-  # con output su S3. Richiede le azioni async oltre a InvokeModel, sulla region
-  # dei cartoon (var.nova_reel_region) sia sul foundation-model sia a livello di
-  # account (gli async-invoke non supportano ARN per-risorsa granulari).
+  # Modello video Bedrock (cartoon pillole, Luma Ray 2): invocazione ASINCRONA
+  # (text-to-video) con output su S3. Richiede le azioni async oltre a
+  # InvokeModel, sulla region del modello (var.cartoon_video_region), sia sul
+  # foundation-model sia a livello di account (async-invoke non supporta ARN
+  # per-risorsa granulari).
   statement {
-    sid = "BedrockNovaReelAsync"
+    sid = "BedrockVideoAsync"
     actions = [
       "bedrock:StartAsyncInvoke",
       "bedrock:GetAsyncInvoke",
@@ -83,8 +84,19 @@ data "aws_iam_policy_document" "api_permissions" {
       "bedrock:InvokeModel",
     ]
     resources = [
-      "arn:aws:bedrock:${var.nova_reel_region}::foundation-model/*",
-      "arn:aws:bedrock:${var.nova_reel_region}:${data.aws_caller_identity.current.account_id}:async-invoke/*",
+      "arn:aws:bedrock:${var.cartoon_video_region}::foundation-model/*",
+      "arn:aws:bedrock:${var.cartoon_video_region}:${data.aws_caller_identity.current.account_id}:async-invoke/*",
+    ]
+  }
+
+  # S3: bucket di OUTPUT del modello video (region del modello). Il servizio vi
+  # legge l'MP4 prodotto e lo copia nel bucket assets; il modello vi scrive.
+  statement {
+    sid       = "S3VideoGen"
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
+    resources = [
+      "arn:aws:s3:::${var.cartoon_video_output_bucket}",
+      "arn:aws:s3:::${var.cartoon_video_output_bucket}/*",
     ]
   }
 

@@ -53,7 +53,7 @@ export class UsageMeterService {
     if (provider === 'BEDROCK_LLM' || provider === 'BEDROCK_EMBEDDINGS') {
       return this.config.get('bedrock', { infer: true }).region;
     }
-    if (provider === 'BEDROCK_VIDEO') return this.config.get('novaReel', { infer: true }).region;
+    if (provider === 'BEDROCK_VIDEO') return this.config.get('cartoonVideo', { infer: true }).region;
     if (provider === 'TRANSCRIBE') return this.config.get('transcribe', { infer: true }).region;
     // HeyGen è un'API SaaS non regionale: il listino usa la pseudo-region 'global'.
     if (provider === 'HEYGEN') return 'global';

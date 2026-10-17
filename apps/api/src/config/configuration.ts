@@ -209,17 +209,18 @@ export interface AppConfig {
     monthlyQuota: number;
   };
   /**
-   * Generazione cartoon delle scene "pillole" (Amazon Nova Reel, Bedrock).
-   * `provider` seleziona l'adapter: 'nova' (reale), 'mock' (dev/test), 'none'
-   * (disabilitato → 501). Nova Reel scrive l'output su S3 (outputS3Uri).
+   * Generazione cartoon delle scene "pillole" (modelli video Bedrock, async +
+   * output su S3). `provider`: 'luma' (Luma Ray 2), 'nova' (Nova Reel, se
+   * disponibile), 'mock' (dev/test), 'none' (disabilitato → 501). Il modello
+   * scrive l'output su S3 (outputS3Uri), nella stessa region del servizio.
    */
-  novaReel: {
-    provider: 'nova' | 'mock' | 'none';
+  cartoonVideo: {
+    provider: 'luma' | 'nova' | 'mock' | 'none';
     modelId: string;
     region: string;
-    /** URI S3 base dove Nova Reel scrive l'output (es. "s3://bucket/nova-reel"). */
+    /** URI S3 base dove il modello scrive l'output (es. "s3://bucket/luma-output"). */
     outputS3Uri: string;
-    /** Durata di default di una scena, in secondi (multiplo di 6). */
+    /** Durata di default di una scena, in secondi (Luma usa 5s o 9s). */
     sceneDurationSec: number;
     /** Numero massimo di scene-cartoon generabili per tenant al mese. */
     monthlyQuota: number;
@@ -378,13 +379,14 @@ export function loadConfiguration(): AppConfig {
       engine: env('HEYGEN_ENGINE', ''),
       monthlyQuota: Number(env('HEYGEN_MONTHLY_QUOTA', '3')),
     },
-    novaReel: {
-      provider: env('PROVIDER_CARTOON_VIDEO', 'none') as AppConfig['novaReel']['provider'],
-      modelId: env('NOVA_REEL_MODEL_ID', 'amazon.nova-reel-v1:0'),
-      region: env('NOVA_REEL_REGION', env('BEDROCK_REGION', env('AWS_REGION', 'us-east-1'))),
-      outputS3Uri: env('NOVA_REEL_OUTPUT_S3_URI', ''),
-      sceneDurationSec: Number(env('NOVA_REEL_SCENE_DURATION_SEC', '6')),
-      monthlyQuota: Number(env('NOVA_REEL_MONTHLY_QUOTA', '20')),
+    cartoonVideo: {
+      provider: env('PROVIDER_CARTOON_VIDEO', 'none') as AppConfig['cartoonVideo']['provider'],
+      modelId: env('CARTOON_VIDEO_MODEL_ID', 'luma.ray-v2:0'),
+      region: env('CARTOON_VIDEO_REGION', env('MEDIA_REGION', 'us-west-2')),
+      outputS3Uri: env('CARTOON_VIDEO_OUTPUT_S3_URI', ''),
+      // Luma Ray 2 accetta 5s o 9s: default 5s.
+      sceneDurationSec: Number(env('CARTOON_VIDEO_SCENE_DURATION_SEC', '5')),
+      monthlyQuota: Number(env('CARTOON_VIDEO_MONTHLY_QUOTA', '20')),
     },
     upload: {
       maxFileBytes: Number(env('UPLOAD_MAX_FILE_BYTES', String(50 * 1024 * 1024))),

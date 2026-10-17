@@ -4,6 +4,7 @@ import {
   GetAsyncInvokeCommand,
   type StartAsyncInvokeCommandInput,
 } from '@aws-sdk/client-bedrock-runtime';
+import { S3Client, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
 import {
   type GenerateCartoonInput,
   type GenerateCartoonJobResult,
@@ -43,23 +44,24 @@ function clampDuration(sec?: number): number {
 export class NovaReelProvider implements TextToVideoProvider {
   readonly id = 'nova-reel';
   private readonly client: BedrockRuntimeClient;
+  private readonly s3: S3Client;
   private readonly modelId: string;
   private readonly outputS3Uri: string;
 
   constructor(opts: NovaReelProviderOptions) {
     this.modelId = opts.modelId ?? 'amazon.nova-reel-v1:0';
     this.outputS3Uri = opts.outputS3Uri.replace(/\/+$/, '');
-    this.client = new BedrockRuntimeClient({
-      region: opts.region ?? 'us-east-1',
-      credentials:
-        opts.accessKeyId && opts.secretAccessKey
-          ? {
-              accessKeyId: opts.accessKeyId,
-              secretAccessKey: opts.secretAccessKey,
-              sessionToken: opts.sessionToken,
-            }
-          : undefined,
-    });
+    const region = opts.region ?? 'us-east-1';
+    const credentials =
+      opts.accessKeyId && opts.secretAccessKey
+        ? {
+            accessKeyId: opts.accessKeyId,
+            secretAccessKey: opts.secretAccessKey,
+            sessionToken: opts.sessionToken,
+          }
+        : undefined;
+    this.client = new BedrockRuntimeClient({ region, credentials });
+    this.s3 = new S3Client({ region, credentials });
   }
 
   async startJob(input: GenerateCartoonInput): Promise<{ jobRef: string }> {
@@ -105,12 +107,36 @@ export class NovaReelProvider implements TextToVideoProvider {
       return { status: 'failed', reason: res.failureMessage || 'Generazione Nova Reel fallita' };
     }
     if (status === 'Completed') {
-      // Bedrock scrive l'output nella cartella S3 indicata; il video è output.mp4.
+      // Bedrock scrive l'MP4 nella cartella S3 dell'invocazione: lo individuiamo
+      // e ne scarichiamo i byte (coerente con la port text-to-video).
       const base = res.outputDataConfig?.s3OutputDataConfig?.s3Uri || this.outputS3Uri;
-      const s3Uri = `${base.replace(/\/+$/, '')}/output.mp4`;
-      return { status: 'completed', s3Uri };
+      try {
+        const bytes = await this.downloadOutputMp4(base);
+        return { status: 'completed', bytes, contentType: 'video/mp4' };
+      } catch (err) {
+        return { status: 'failed', reason: `Output video non recuperato da S3: ${errMsg(err)}` };
+      }
     }
     // Stato sconosciuto: trattalo come ancora in corso (verrà ripollato).
     return { status: 'processing' };
   }
+
+  /** Trova il primo .mp4 nella cartella S3 dell'output e ne scarica i byte. */
+  private async downloadOutputMp4(s3Folder: string): Promise<Uint8Array> {
+    const m = /^s3:\/\/([^/]+)\/?(.*)$/.exec(s3Folder.replace(/\/+$/, ''));
+    if (!m) throw new Error(`URI S3 non valido: ${s3Folder}`);
+    const bucket = m[1]!;
+    const prefix = m[2] ? `${m[2]}/` : '';
+    const listed = await this.s3.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix }));
+    const obj = (listed.Contents ?? []).find((o) => (o.Key ?? '').toLowerCase().endsWith('.mp4'));
+    if (!obj?.Key) throw new Error('Nessun MP4 trovato nella cartella di output');
+    const got = await this.s3.send(new GetObjectCommand({ Bucket: bucket, Key: obj.Key }));
+    const body = got.Body as { transformToByteArray?: () => Promise<Uint8Array> } | undefined;
+    if (!body?.transformToByteArray) throw new Error('Corpo S3 non leggibile');
+    return body.transformToByteArray();
+  }
+}
+
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : 'errore sconosciuto';
 }

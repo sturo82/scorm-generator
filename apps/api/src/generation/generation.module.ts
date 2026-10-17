@@ -2,7 +2,7 @@ import { Inject, Module, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { JobEnvelope, JobQueue, VideoGenerationProvider, TextToVideoProvider } from '@scorm/domain';
 import { HeyGenVideoProvider } from '@scorm/adapters/heygen';
-import { NovaReelProvider } from '@scorm/adapters/bedrock';
+import { NovaReelProvider, LumaRayProvider } from '@scorm/adapters/bedrock';
 import { testing } from '@scorm/adapters';
 import { KnowledgeModule } from '../knowledge/knowledge.module.js';
 import { CoursesModule } from '../courses/courses.module.js';
@@ -58,16 +58,27 @@ const cartoonVideoProvider = {
   provide: CARTOON_VIDEO_PROVIDER,
   inject: [ConfigService],
   useFactory: (config: ConfigService<AppConfig, true>): TextToVideoProvider | null => {
-    const cfg = config.get('novaReel', { infer: true });
+    const cfg = config.get('cartoonVideo', { infer: true });
+    const aws = config.get('bedrock', { infer: true });
+    const creds = {
+      accessKeyId: aws.accessKeyId,
+      secretAccessKey: aws.secretAccessKey,
+      sessionToken: aws.sessionToken,
+    };
+    if (cfg.provider === 'luma' && cfg.outputS3Uri) {
+      return new LumaRayProvider({
+        modelId: cfg.modelId,
+        region: cfg.region,
+        outputS3Uri: cfg.outputS3Uri,
+        ...creds,
+      });
+    }
     if (cfg.provider === 'nova' && cfg.outputS3Uri) {
-      const aws = config.get('bedrock', { infer: true });
       return new NovaReelProvider({
         modelId: cfg.modelId,
         region: cfg.region,
         outputS3Uri: cfg.outputS3Uri,
-        accessKeyId: aws.accessKeyId,
-        secretAccessKey: aws.secretAccessKey,
-        sessionToken: aws.sessionToken,
+        ...creds,
       });
     }
     if (cfg.provider === 'mock') {
