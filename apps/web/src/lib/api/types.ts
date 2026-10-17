@@ -203,6 +203,16 @@ export interface CreateCourseFromRssResult {
   briefDrafted: boolean;
 }
 
+/** Pre-sommario del corso mostrato prima della generazione. */
+export interface RssPreviewResult {
+  proposedTitle: string;
+  description: string;
+  keyConcepts: string[];
+  suggestedLessons: string[];
+  sources: string[];
+  examined: number;
+}
+
 /** Feed RSS personalizzato salvato dal tenant. */
 export interface TenantFeedView {
   id: string;
@@ -331,6 +341,13 @@ export interface ApiClient {
     category?: FeedCategory;
     maxArticles: number;
   }): Promise<CreateCourseFromRssResult>;
+  /** Anteprima (pre-sommario) del corso da un argomento, senza crearlo. */
+  previewCourseFromRss(input: {
+    topic: string;
+    language: string;
+    source: 'everywhere' | 'mine';
+    category?: FeedCategory;
+  }): Promise<RssPreviewResult>;
   deleteCourse(id: string): Promise<void>;
 
   // Feed RSS personalizzati del tenant (per la creazione corsi da argomento).

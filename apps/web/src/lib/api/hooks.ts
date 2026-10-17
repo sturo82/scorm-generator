@@ -64,6 +64,18 @@ export function useCreateCourseFromRss() {
   });
 }
 
+/** Anteprima (pre-sommario) del corso da un argomento. Non crea nulla. */
+export function useRssPreview() {
+  return useMutation({
+    mutationFn: (input: {
+      topic: string;
+      language: string;
+      source: 'everywhere' | 'mine';
+      category?: FeedCategory;
+    }) => api.previewCourseFromRss(input),
+  });
+}
+
 /** Feed RSS personalizzati del tenant (lista). */
 export function useTenantFeeds() {
   return useQuery({ queryKey: qk.tenantFeeds, queryFn: () => api.listTenantFeeds() });

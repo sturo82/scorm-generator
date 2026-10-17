@@ -15,6 +15,45 @@ export interface DraftBriefInput {
   articles: Array<{ title: string; summary: string }>;
 }
 
+export interface PreviewInput {
+  tenantId: string;
+  topic: string;
+  language: string;
+  articles: Array<{ title: string; summary: string }>;
+}
+
+export interface PreviewOutput {
+  proposedTitle: string;
+  description: string;
+  keyConcepts: string[];
+  suggestedLessons: string[];
+}
+
+/** JSON Schema del pre-sommario (anteprima) mostrato prima della generazione. */
+const PREVIEW_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['proposedTitle', 'description', 'keyConcepts', 'suggestedLessons'],
+  properties: {
+    proposedTitle: { type: 'string', description: 'Titolo proposto per il corso' },
+    description: { type: 'string', description: 'Descrizione sintetica (1-2 frasi) del corso' },
+    keyConcepts: {
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 4,
+      maxItems: 10,
+      description: 'Concetti chiave che il corso svilupperà',
+    },
+    suggestedLessons: {
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 3,
+      maxItems: 8,
+      description: 'Titoli delle lezioni/moduli suggeriti',
+    },
+  },
+};
+
 /** JSON Schema del sottoinsieme di brief che chiediamo al modello di proporre. */
 const BRIEF_DRAFT_SCHEMA: Record<string, unknown> = {
   type: 'object',
@@ -130,5 +169,75 @@ export class RssBriefService {
 
     await this.courses.saveBriefDraft(input.tenantId, input.courseId, draft);
     return true;
+  }
+
+  /**
+   * Sintetizza un PRE-SOMMARIO del corso (anteprima) dai titoli/sommari trovati:
+   * titolo proposto, descrizione, concetti chiave e lezioni suggerite. Non crea
+   * nulla; serve a dare all'autore consapevolezza di cosa otterrà. Lingua forzata
+   * a quella del corso (anche se le fonti sono in un'altra lingua).
+   */
+  async previewFromArticles(input: PreviewInput): Promise<PreviewOutput> {
+    const context = input.articles
+      .slice(0, 24)
+      .map((a, i) => `${i + 1}. ${a.title}\n${a.summary}`)
+      .join('\n\n')
+      .slice(0, 12000);
+
+    const result = await this.llm.generate({
+      system:
+        'Sei un progettista didattico. A partire da una rassegna di contenuti su un argomento, ' +
+        'proponi un PRE-SOMMARIO del corso che si potrebbe generare: titolo, descrizione sintetica, ' +
+        'i concetti chiave che verranno sviluppati e le lezioni suggerite. Rispondi SOLO con JSON ' +
+        'conforme allo schema. Sii concreto e fedele ai contenuti forniti. ' +
+        languageDirective(input.language),
+      messages: [
+        {
+          role: 'user',
+          content:
+            `Argomento: ${input.topic}\n\n` +
+            `Contenuti di riferimento (titolo + sommario):\n${context || '(nessun contenuto: basati sull\'argomento)'}\n\n` +
+            'Proponi il pre-sommario del corso.',
+        },
+      ],
+      schema: PREVIEW_SCHEMA,
+      temperature: 0.4,
+      maxTokens: 1200,
+    });
+
+    // Metering del consumo LLM dell'anteprima (courseId null: non ancora creato).
+    void this.meter.record({
+      tenantId: input.tenantId,
+      courseId: null,
+      provider: 'BEDROCK_LLM',
+      model: result.model,
+      unit: 'INPUT_TOKENS',
+      quantity: result.usage.inputTokens,
+      source: 'rss_preview',
+    });
+    void this.meter.record({
+      tenantId: input.tenantId,
+      courseId: null,
+      provider: 'BEDROCK_LLM',
+      model: result.model,
+      unit: 'OUTPUT_TOKENS',
+      quantity: result.usage.outputTokens,
+      source: 'rss_preview',
+    });
+
+    let parsed: Record<string, unknown> = {};
+    try {
+      parsed = JSON.parse(result.text) as Record<string, unknown>;
+    } catch {
+      this.logger.warn('Anteprima: risposta LLM non JSON');
+    }
+    const asStrings = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0) : [];
+    return {
+      proposedTitle: typeof parsed.proposedTitle === 'string' ? parsed.proposedTitle : input.topic,
+      description: typeof parsed.description === 'string' ? parsed.description : '',
+      keyConcepts: asStrings(parsed.keyConcepts),
+      suggestedLessons: asStrings(parsed.suggestedLessons),
+    };
   }
 }

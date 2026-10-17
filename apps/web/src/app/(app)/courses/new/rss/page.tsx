@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Trash2, Loader2, Info, Sparkles, ChevronDown, Globe, Rss } from 'lucide-react';
+import { Plus, Trash2, Loader2, Info, Sparkles, ChevronDown, Globe, Rss, Eye } from 'lucide-react';
 import { FEED_CATEGORIES, FEED_CATEGORY_LABEL, type FeedCategory } from '@scorm/contracts';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
 import {
   useCreateCourseFromRss,
+  useRssPreview,
   useTenantFeeds,
   useAddTenantFeed,
   useRemoveTenantFeed,
@@ -39,6 +40,7 @@ export default function NewCourseFromRssPage() {
   const router = useRouter();
   const toast = useToast();
   const create = useCreateCourseFromRss();
+  const preview = useRssPreview();
   const feeds = useTenantFeeds();
   const addFeed = useAddTenantFeed();
   const removeFeed = useRemoveTenantFeed();
@@ -53,8 +55,31 @@ export default function NewCourseFromRssPage() {
   const [newFeedUrl, setNewFeedUrl] = React.useState('');
 
   const myFeeds = feeds.data ?? [];
-  const canSubmit = topic.trim().length >= 2 && !create.isPending;
+  const busy = create.isPending || preview.isPending;
+  const canSubmit = topic.trim().length >= 2 && !busy;
   const mineButEmpty = source === 'mine' && myFeeds.length === 0;
+  const previewData = preview.data;
+
+  async function handlePreview() {
+    if (topic.trim().length < 2 || busy) return;
+    if (mineButEmpty) {
+      toast.show('Non hai feed salvati: aggiungine o scegli «Ovunque»', 'error');
+      return;
+    }
+    try {
+      const res = await preview.mutateAsync({
+        topic: topic.trim(),
+        language,
+        source,
+        category: source === 'mine' ? undefined : category || undefined,
+      });
+      // Propone il titolo se l'utente non ne ha scritto uno.
+      if (!title.trim() && res.proposedTitle) setTitle(res.proposedTitle);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message.replace(/^API \d+:\s*/, '') : '';
+      toast.show(msg || 'Anteprima non riuscita', 'error');
+    }
+  }
 
   async function handleAddFeed() {
     const url = newFeedUrl.trim();
@@ -129,8 +154,18 @@ export default function NewCourseFromRssPage() {
                 </p>
               </div>
 
-              {/* Azione principale */}
-              <div className="flex items-center gap-3">
+              {/* Azioni: Anteprima (pre-sommario) + Crea */}
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  disabled={!canSubmit || mineButEmpty}
+                  onClick={() => void handlePreview()}
+                >
+                  {preview.isPending ? <Loader2 className="size-4 animate-spin" /> : <Eye className="size-4" />}
+                  {preview.isPending ? 'Anteprima…' : 'Anteprima'}
+                </Button>
                 <Button type="submit" size="lg" disabled={!canSubmit || mineButEmpty}>
                   {create.isPending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
                   {create.isPending ? 'Ricerca e creazione…' : 'Crea corso'}
@@ -139,6 +174,48 @@ export default function NewCourseFromRssPage() {
                   Annulla
                 </Button>
               </div>
+
+              {/* Pre-sommario (anteprima): cosa conterrà il corso */}
+              {previewData && (
+                <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-primary">Anteprima del corso</p>
+                    <p className="mt-1 text-base font-semibold">{previewData.proposedTitle}</p>
+                    {previewData.description && (
+                      <p className="mt-1 text-sm text-muted-foreground">{previewData.description}</p>
+                    )}
+                  </div>
+                  {previewData.keyConcepts.length > 0 && (
+                    <div>
+                      <p className="mb-1 text-sm font-medium">Concetti chiave</p>
+                      <ul className="list-inside list-disc space-y-0.5 text-sm text-muted-foreground">
+                        {previewData.keyConcepts.map((c, i) => (
+                          <li key={i}>{c}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {previewData.suggestedLessons.length > 0 && (
+                    <div>
+                      <p className="mb-1 text-sm font-medium">Lezioni suggerite</p>
+                      <ol className="list-inside list-decimal space-y-0.5 text-sm text-muted-foreground">
+                        {previewData.suggestedLessons.map((l, i) => (
+                          <li key={i}>{l}</li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                  {previewData.sources.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Fonti trovate: {previewData.sources.join(', ')} · {previewData.examined} contenuti esaminati
+                    </p>
+                  )}
+                  <p className="text-xs italic text-muted-foreground">
+                    Anteprima indicativa: la generazione finale può rifinire struttura e contenuti.
+                    Premi «Crea corso» per procedere.
+                  </p>
+                </div>
+              )}
 
               {create.isPending && (
                 <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">

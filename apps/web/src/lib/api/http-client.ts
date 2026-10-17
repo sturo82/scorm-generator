@@ -12,6 +12,7 @@ import type {
   ExportResultView,
   JobRef,
   CreateCourseFromRssResult,
+  RssPreviewResult,
   TenantFeedView,
   JobView,
   KnowledgeDocView,
@@ -84,6 +85,9 @@ export class HttpApiClient implements ApiClient {
   }
   createCourseFromRss(input: { topic: string; title?: string; language: string; source: 'everywhere' | 'mine'; category?: FeedCategory; maxArticles: number }) {
     return this.request<CreateCourseFromRssResult>('/courses/from-rss', { method: 'POST', body: JSON.stringify(input) });
+  }
+  previewCourseFromRss(input: { topic: string; language: string; source: 'everywhere' | 'mine'; category?: FeedCategory }) {
+    return this.request<RssPreviewResult>('/courses/from-rss/preview', { method: 'POST', body: JSON.stringify(input) });
   }
   listTenantFeeds() {
     return this.request<TenantFeedView[]>('/tenant/feeds');

@@ -17,12 +17,23 @@ const CreateCourseFromRss = z.object({
   source: z.enum(['everywhere', 'mine']).default('everywhere'),
   /** Categoria dei feed predefiniti (restringe la ricerca). */
   category: z
-    .enum(['italia', 'mondo', 'economia', 'tech', 'scienza', 'salute', 'ambiente', 'cultura', 'sport', 'politica'])
+    .enum(['italia', 'mondo', 'economia', 'tech', 'sicurezza', 'scienza', 'salute', 'ambiente', 'cultura', 'sport', 'politica'])
     .optional(),
   /** Numero di articoli pertinenti da includere (dopo filtro e dedup). */
   maxArticles: z.number().int().min(1).max(25).default(12),
 });
 type CreateCourseFromRssType = z.infer<typeof CreateCourseFromRss>;
+
+/** Payload per l'ANTEPRIMA (pre-sommario) del corso da un argomento. */
+const PreviewCourseFromRss = z.object({
+  topic: z.string().min(2).max(300),
+  language: z.string().min(2).max(8).default('it'),
+  source: z.enum(['everywhere', 'mine']).default('everywhere'),
+  category: z
+    .enum(['italia', 'mondo', 'economia', 'tech', 'sicurezza', 'scienza', 'salute', 'ambiente', 'cultura', 'sport', 'politica'])
+    .optional(),
+});
+type PreviewCourseFromRssType = z.infer<typeof PreviewCourseFromRss>;
 
 /** Payload per salvare un feed personalizzato del tenant. */
 const AddFeed = z.object({
@@ -57,6 +68,21 @@ export class RssController {
       category: dto.category,
       maxArticles: dto.maxArticles,
       correlationId: ctx.correlationId,
+    });
+  }
+
+  /** Anteprima: pre-sommario dei concetti, senza creare il corso. */
+  @Post('courses/from-rss/preview')
+  preview(
+    @CurrentContext() ctx: AuthContext,
+    @Body(new ZodValidationPipe(PreviewCourseFromRss)) dto: PreviewCourseFromRssType,
+  ) {
+    return this.rss.previewCourseFromRss({
+      tenantId: ctx.tenant.tenantId,
+      topic: dto.topic,
+      language: dto.language,
+      source: dto.source,
+      category: dto.category,
     });
   }
 

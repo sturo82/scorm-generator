@@ -11,6 +11,7 @@ import type {
   CourseQuoteView,
   CourseView,
   CreateCourseFromRssResult,
+  RssPreviewResult,
   TenantFeedView,
   CreateFolder,
   EditorialStatus,
@@ -227,6 +228,19 @@ export class MockApiClient implements ApiClient {
     const importedCount = Math.min(input.maxArticles, 12);
     this.pushAudit('course.create_from_rss', 'course', course.id);
     return { courseId: course.id, importedCount, candidatesExamined: importedCount * 3, failedFeeds: [], briefDrafted: true };
+  }
+  async previewCourseFromRss(input: { topic: string; language: string; source: 'everywhere' | 'mine'; category?: string }): Promise<RssPreviewResult> {
+    await delay(700);
+    const t = input.topic.trim();
+    const title = t.charAt(0).toUpperCase() + t.slice(1);
+    return {
+      proposedTitle: title,
+      description: `Corso introduttivo su "${t}" (anteprima demo).`,
+      keyConcepts: [`Fondamenti di ${t}`, `Applicazioni pratiche`, `Rischi e buone pratiche`, `Tendenze recenti`],
+      suggestedLessons: [`Introduzione a ${t}`, `Concetti chiave`, `Casi reali`, `Sintesi e verifica`],
+      sources: ['Google News', 'Wikipedia', 'Fonti selezionate'],
+      examined: 18,
+    };
   }
   private tenantFeeds: TenantFeedView[] = [];
   async listTenantFeeds(): Promise<TenantFeedView[]> {

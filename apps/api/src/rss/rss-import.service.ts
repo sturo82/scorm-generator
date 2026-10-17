@@ -71,6 +71,24 @@ const RECENCY_WEIGHT = 0.15;
 /** Default/max di articoli finali. */
 const DEFAULT_MAX_ARTICLES = 12;
 const HARD_MAX_ARTICLES = 25;
+/** Candidati usati per l'ANTEPRIMA (pochi: solo per sintetizzare i concetti). */
+const PREVIEW_CANDIDATES = 24;
+
+/** Pre-sommario mostrato all'utente prima di generare il corso. */
+export interface RssPreviewResult {
+  /** Titolo proposto per il corso. */
+  proposedTitle: string;
+  /** Breve descrizione (1-2 frasi) di cosa tratterà il corso. */
+  description: string;
+  /** Concetti chiave che il corso svilupperà. */
+  keyConcepts: string[];
+  /** Lezioni/moduli suggeriti (titoli). */
+  suggestedLessons: string[];
+  /** Fonti da cui provengono i contenuti trovati (per trasparenza). */
+  sources: string[];
+  /** Numero di contenuti esaminati per l'anteprima. */
+  examined: number;
+}
 
 /** Provenienza di un candidato (determina se e come recuperare il full-text). */
 type CandidateKind = 'feed' | 'gnews' | 'wikipedia' | 'oer';
@@ -114,107 +132,8 @@ export class RssImportService {
     if (!topic) throw new BadRequestException('Indica un argomento per il corso');
     const maxArticles = Math.max(1, Math.min(Math.trunc(input.maxArticles || 0) || DEFAULT_MAX_ARTICLES, HARD_MAX_ARTICLES));
 
-    const failedFeeds: Array<{ url: string; reason: string }> = [];
-    const collected: Candidate[] = [];
-
-    // 1. Determina l'insieme di FEED da interrogare (tenant + eventuali curati).
-    const feedUrls = await this.resolveFeedUrls(input);
-    if (input.source === 'mine' && feedUrls.length === 0) {
-      throw new BadRequestException('Non hai feed personalizzati salvati. Aggiungine o scegli «Ovunque».');
-    }
-
-    // 2. Raccogli in PARALLELO da tutte le sorgenti.
-    const tasks: Array<Promise<void>> = [];
-
-    // 2a. Feed RSS diretti (link risolvibili → full-text via Readability).
-    tasks.push(
-      (async () => {
-        const lists = await Promise.all(
-          feedUrls.map(async (url) => {
-            try {
-              const res = await this.feeds.listItems(url, { maxItems: ITEMS_PER_FEED });
-              return res.items;
-            } catch (err) {
-              failedFeeds.push({ url, reason: rawError(err) });
-              return [] as FeedListItem[];
-            }
-          }),
-        );
-        for (const items of lists) for (const it of items) collected.push({ ...it, kind: 'feed' });
-      })(),
-    );
-
-    // 2b/2c. Google News (IT+EN) + Wikipedia: solo nella modalità "ovunque".
-    if (input.source === 'everywhere') {
-      const gLang = input.language === 'en' ? 'en' : 'it';
-      // Google News nella lingua del corso + in inglese (copertura internazionale).
-      const gnLangs: Array<'it' | 'en'> = gLang === 'en' ? ['en'] : ['it', 'en'];
-      for (const lang of gnLangs) {
-        tasks.push(
-          (async () => {
-            try {
-              const items = await this.feeds.searchGoogleNews(topic, { lang, maxItems: 20 });
-              for (const it of items) collected.push({ ...it, kind: 'gnews' });
-            } catch (err) {
-              this.logger.warn(`Google News (${lang}) non raggiungibile: ${rawError(err)}`);
-            }
-          })(),
-        );
-      }
-      // Wikipedia (contesto evergreen) nella lingua del corso.
-      tasks.push(
-        (async () => {
-          try {
-            const arts = await this.feeds.searchWikipedia(topic, { lang: gLang, max: 3 });
-            for (const a of arts) {
-              collected.push({
-                kind: 'wikipedia',
-                title: a.title,
-                link: a.url,
-                summary: a.extract.slice(0, 2000),
-                readyText: a.extract,
-                source: 'Wikipedia',
-              });
-            }
-          } catch (err) {
-            this.logger.warn(`Wikipedia non raggiungibile: ${rawError(err)}`);
-          }
-        })(),
-      );
-
-      // Materiali didattici APERTI (OER): Wikiversity, arXiv, MIT OCW, OpenStax.
-      // Testo già pronto dalle API (niente scraping): lo usiamo come knowledge.
-      tasks.push(
-        (async () => {
-          try {
-            const oer = await this.feeds.searchOpenEducation(topic, { lang: gLang, max: 4 });
-            for (const o of oer) {
-              collected.push({
-                kind: 'oer',
-                title: o.title,
-                link: o.link,
-                summary: o.summary,
-                readyText: o.summary,
-                isoDate: o.isoDate,
-                source: o.source,
-              });
-            }
-          } catch (err) {
-            this.logger.warn(`Fonti didattiche aperte non raggiungibili: ${rawError(err)}`);
-          }
-        })(),
-      );
-    }
-
-    await Promise.all(tasks);
-
-    // 3. Dedup ESATTA per URL/titolo normalizzato (prima degli embeddings).
-    const candidates = dedupeExact(collected).slice(0, MAX_CANDIDATES);
-    if (candidates.length === 0) {
-      throw new BadRequestException(
-        'Nessun contenuto trovato per questo argomento. Prova a riformularlo o riprova più tardi.',
-      );
-    }
+    // 1-3. Scoperta multi-fonte + dedup esatta (helper condiviso con la preview).
+    const { candidates, failedFeeds } = await this.gatherCandidates(input);
     const candidatesExamined = candidates.length;
 
     // 4. Pre-filtro SEMANTICO: embedda argomento + candidati, calcola pertinenza.
@@ -313,6 +232,153 @@ export class RssImportService {
         (briefDrafted ? ' + brief autocompilato' : ''),
     );
     return { courseId: course.id, importedCount: imported, candidatesExamined, failedFeeds, briefDrafted };
+  }
+
+  /**
+   * ANTEPRIMA del corso: a partire dall'argomento fa SOLO la scoperta
+   * multi-fonte (titoli + sommari, nessun embedding né ingestione né creazione
+   * corso) e sintetizza con l'LLM un pre-sommario — titolo proposto, breve
+   * descrizione, concetti chiave e lezioni suggerite — più l'elenco delle fonti
+   * trovate. Dà all'autore consapevolezza di cosa otterrà, a costo minimo (una
+   * sola chiamata LLM su testi brevi). È indicativa: la generazione finale può
+   * rifinire.
+   */
+  async previewCourseFromRss(input: {
+    tenantId: string;
+    topic: string;
+    language: string;
+    source: FeedSource;
+    category?: FeedCategory;
+  }): Promise<RssPreviewResult> {
+    const topic = input.topic?.trim();
+    if (!topic) throw new BadRequestException('Indica un argomento per l\'anteprima');
+
+    const { candidates } = await this.gatherCandidates({
+      tenantId: input.tenantId,
+      topic,
+      language: input.language,
+      source: input.source,
+      category: input.category,
+      maxArticles: PREVIEW_CANDIDATES,
+    });
+    // Per l'anteprima bastano pochi candidati recenti/rilevanti: cap ridotto.
+    const sample = candidates.slice(0, PREVIEW_CANDIDATES);
+    const sources = Array.from(new Set(sample.map((c) => c.source).filter((s): s is string => !!s)));
+
+    const preview = await this.briefService.previewFromArticles({
+      tenantId: input.tenantId,
+      topic,
+      language: input.language,
+      articles: sample.map((c) => ({ title: c.title, summary: c.summary })),
+    });
+
+    return { ...preview, sources, examined: sample.length };
+  }
+
+  /**
+   * Scoperta multi-fonte condivisa (create + preview): raccoglie in parallelo
+   * dai feed (tenant + curati) e, in modalità "ovunque", da Google News (IT+EN),
+   * Wikipedia e materiali didattici aperti (OER). Ritorna i candidati deduplicati
+   * (per URL/titolo) e i feed non raggiunti. Nessun embedding/ingestione qui.
+   */
+  private async gatherCandidates(
+    input: CreateCourseFromRssInput,
+  ): Promise<{ candidates: Candidate[]; failedFeeds: Array<{ url: string; reason: string }> }> {
+    const topic = input.topic.trim();
+    const failedFeeds: Array<{ url: string; reason: string }> = [];
+    const collected: Candidate[] = [];
+
+    const feedUrls = await this.resolveFeedUrls(input);
+    if (input.source === 'mine' && feedUrls.length === 0) {
+      throw new BadRequestException('Non hai feed personalizzati salvati. Aggiungine o scegli «Ovunque».');
+    }
+
+    const tasks: Array<Promise<void>> = [];
+
+    // Feed RSS diretti (link risolvibili → full-text via Readability in create).
+    tasks.push(
+      (async () => {
+        const lists = await Promise.all(
+          feedUrls.map(async (url) => {
+            try {
+              const res = await this.feeds.listItems(url, { maxItems: ITEMS_PER_FEED });
+              return res.items;
+            } catch (err) {
+              failedFeeds.push({ url, reason: rawError(err) });
+              return [] as FeedListItem[];
+            }
+          }),
+        );
+        for (const items of lists) for (const it of items) collected.push({ ...it, kind: 'feed' });
+      })(),
+    );
+
+    // Google News (IT+EN) + Wikipedia + OER: solo in modalità "ovunque".
+    if (input.source === 'everywhere') {
+      const gLang = input.language === 'en' ? 'en' : 'it';
+      const gnLangs: Array<'it' | 'en'> = gLang === 'en' ? ['en'] : ['it', 'en'];
+      for (const lang of gnLangs) {
+        tasks.push(
+          (async () => {
+            try {
+              const items = await this.feeds.searchGoogleNews(topic, { lang, maxItems: 20 });
+              for (const it of items) collected.push({ ...it, kind: 'gnews' });
+            } catch (err) {
+              this.logger.warn(`Google News (${lang}) non raggiungibile: ${rawError(err)}`);
+            }
+          })(),
+        );
+      }
+      tasks.push(
+        (async () => {
+          try {
+            const arts = await this.feeds.searchWikipedia(topic, { lang: gLang, max: 3 });
+            for (const a of arts) {
+              collected.push({
+                kind: 'wikipedia',
+                title: a.title,
+                link: a.url,
+                summary: a.extract.slice(0, 2000),
+                readyText: a.extract,
+                source: 'Wikipedia',
+              });
+            }
+          } catch (err) {
+            this.logger.warn(`Wikipedia non raggiungibile: ${rawError(err)}`);
+          }
+        })(),
+      );
+      tasks.push(
+        (async () => {
+          try {
+            const oer = await this.feeds.searchOpenEducation(topic, { lang: gLang, max: 4 });
+            for (const o of oer) {
+              collected.push({
+                kind: 'oer',
+                title: o.title,
+                link: o.link,
+                summary: o.summary,
+                readyText: o.summary,
+                isoDate: o.isoDate,
+                source: o.source,
+              });
+            }
+          } catch (err) {
+            this.logger.warn(`Fonti didattiche aperte non raggiungibili: ${rawError(err)}`);
+          }
+        })(),
+      );
+    }
+
+    await Promise.all(tasks);
+
+    const candidates = dedupeExact(collected).slice(0, MAX_CANDIDATES);
+    if (candidates.length === 0) {
+      throw new BadRequestException(
+        'Nessun contenuto trovato per questo argomento. Prova a riformularlo o riprova più tardi.',
+      );
+    }
+    return { candidates, failedFeeds };
   }
 
   /**

@@ -21,6 +21,7 @@ export type FeedCategory =
   | 'mondo'
   | 'economia'
   | 'tech'
+  | 'sicurezza'
   | 'scienza'
   | 'salute'
   | 'ambiente'
@@ -33,6 +34,7 @@ export const FEED_CATEGORY_LABEL: Record<FeedCategory, string> = {
   mondo: 'Mondo — internazionali',
   economia: 'Economia e finanza',
   tech: 'Tech, AI e sviluppo',
+  sicurezza: 'Cybersecurity',
   scienza: 'Scienza e ricerca',
   salute: 'Salute e medicina',
   ambiente: 'Ambiente e clima',
@@ -91,6 +93,14 @@ export const DEFAULT_FEEDS: readonly DefaultFeed[] = [
   { name: 'Engadget', url: 'https://www.engadget.com/rss.xml', category: 'tech', lang: 'en' },
   { name: 'ZDNet', url: 'https://www.zdnet.com/news/rss.xml', category: 'tech', lang: 'en' },
 
+  // ======================= CYBERSECURITY =======================
+  { name: 'Proofpoint', url: 'https://www.proofpoint.com/us/rss.xml', category: 'sicurezza', lang: 'en' },
+  { name: 'Krebs on Security', url: 'https://krebsonsecurity.com/feed/', category: 'sicurezza', lang: 'en' },
+  { name: 'The Hacker News', url: 'https://feeds.feedburner.com/TheHackersNews', category: 'sicurezza', lang: 'en' },
+  { name: 'BleepingComputer', url: 'https://www.bleepingcomputer.com/feed/', category: 'sicurezza', lang: 'en' },
+  { name: 'Schneier on Security', url: 'https://www.schneier.com/feed/atom/', category: 'sicurezza', lang: 'en' },
+  { name: 'Google Project Zero', url: 'https://googleprojectzero.blogspot.com/feeds/posts/default', category: 'sicurezza', lang: 'en' },
+
   // ======================= SCIENZA e ricerca =======================
   { name: 'Focus', url: 'https://www.focus.it/rss', category: 'scienza', lang: 'it' },
   { name: 'Galileo', url: 'https://www.galileonet.it/feed/', category: 'scienza', lang: 'it' },
@@ -148,6 +158,7 @@ export const FEED_CATEGORIES: FeedCategory[] = [
   'economia',
   'politica',
   'tech',
+  'sicurezza',
   'scienza',
   'salute',
   'ambiente',
