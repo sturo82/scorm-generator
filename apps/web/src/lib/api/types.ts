@@ -209,6 +209,10 @@ export interface RssPreviewResult {
   description: string;
   keyConcepts: string[];
   suggestedLessons: string[];
+  /** Pubblico destinatario (fornito dall'utente o proposto dall'anteprima). */
+  proposedAudience: string;
+  /** Tono di voce (fornito dall'utente o proposto dall'anteprima). */
+  proposedTone: string;
   sources: string[];
   examined: number;
 }
@@ -339,6 +343,10 @@ export interface ApiClient {
     language: string;
     source: 'everywhere' | 'mine';
     category?: FeedCategory;
+    audience?: string;
+    tone?: string;
+    /** Anteprima congelata approvata dall'autore (coerenza con il wizard). */
+    preview?: RssPreviewResult;
     maxArticles: number;
   }): Promise<CreateCourseFromRssResult>;
   /** Anteprima (pre-sommario) del corso da un argomento, senza crearlo. */
@@ -347,6 +355,8 @@ export interface ApiClient {
     language: string;
     source: 'everywhere' | 'mine';
     category?: FeedCategory;
+    audience?: string;
+    tone?: string;
   }): Promise<RssPreviewResult>;
   deleteCourse(id: string): Promise<void>;
 

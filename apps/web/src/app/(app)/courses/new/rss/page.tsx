@@ -48,6 +48,8 @@ export default function NewCourseFromRssPage() {
   const [topic, setTopic] = React.useState('');
   const [advanced, setAdvanced] = React.useState(false);
   const [title, setTitle] = React.useState('');
+  const [audience, setAudience] = React.useState('');
+  const [tone, setTone] = React.useState('');
   const [language, setLanguage] = React.useState('it');
   const [source, setSource] = React.useState<Source>('everywhere');
   const [category, setCategory] = React.useState<FeedCategory | ''>('');
@@ -72,9 +74,15 @@ export default function NewCourseFromRssPage() {
         language,
         source,
         category: source === 'mine' ? undefined : category || undefined,
+        audience: audience.trim() || undefined,
+        tone: tone.trim() || undefined,
       });
       // Propone il titolo se l'utente non ne ha scritto uno.
       if (!title.trim() && res.proposedTitle) setTitle(res.proposedTitle);
+      // Riproponi target e tono proposti dall'LLM se l'utente non li ha indicati:
+      // diventano visibili e modificabili per rigenerare un'anteprima coerente.
+      if (!audience.trim() && res.proposedAudience) setAudience(res.proposedAudience);
+      if (!tone.trim() && res.proposedTone) setTone(res.proposedTone);
     } catch (err) {
       const msg = err instanceof Error ? err.message.replace(/^API \d+:\s*/, '') : '';
       toast.show(msg || 'Anteprima non riuscita', 'error');
@@ -108,6 +116,11 @@ export default function NewCourseFromRssPage() {
         language,
         source,
         category: source === 'mine' ? undefined : category || undefined,
+        audience: audience.trim() || undefined,
+        tone: tone.trim() || undefined,
+        // Anteprima congelata: se l'autore l'ha generata, il corso nasce da
+        // QUELLA (coerenza con ciò che ha visto), non da una nuova sintesi.
+        preview: previewData ?? undefined,
         maxArticles,
       });
       toast.show(
@@ -145,12 +158,50 @@ export default function NewCourseFromRssPage() {
                   autoFocus
                   className="h-12 text-base"
                   placeholder="Es. regolamentazione dell'intelligenza artificiale in Europa"
-                  onChange={(e) => setTopic(e.target.value)}
+                  onChange={(e) => {
+                    setTopic(e.target.value);
+                    // L'anteprima vale per l'argomento con cui è stata generata:
+                    // se cambi argomento, la invalidiamo (va rigenerata) così
+                    // "Crea corso" non congela un pre-sommario ormai incoerente.
+                    if (previewData) preview.reset();
+                  }}
                 />
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Globe className="size-3.5" aria-hidden />
                   Cerchiamo su Google News, testate autorevoli, Wikipedia e materiali didattici
                   aperti (Wikiversity, arXiv, MIT OpenCourseWare, OpenStax), in italiano e inglese.
+                </p>
+              </div>
+
+              {/* Target e tono — opzionali: se vuoti, li propone l'anteprima */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="rss-audience">
+                    A chi è rivolto? <span className="font-normal text-muted-foreground">(opzionale)</span>
+                  </Label>
+                  <Input
+                    id="rss-audience"
+                    value={audience}
+                    maxLength={300}
+                    placeholder="Es. neoassunti senza basi tecniche"
+                    onChange={(e) => setAudience(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="rss-tone">
+                    Tono di voce <span className="font-normal text-muted-foreground">(opzionale)</span>
+                  </Label>
+                  <Input
+                    id="rss-tone"
+                    value={tone}
+                    maxLength={200}
+                    placeholder="Es. professionale ma accessibile"
+                    onChange={(e) => setTone(e.target.value)}
+                  />
+                </div>
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground sm:col-span-2">
+                  <Info className="size-3.5 shrink-0" aria-hidden />
+                  Se li lasci vuoti te li proponiamo noi nell&apos;anteprima: potrai modificarli e rigenerarla.
                 </p>
               </div>
 
@@ -164,7 +215,7 @@ export default function NewCourseFromRssPage() {
                   onClick={() => void handlePreview()}
                 >
                   {preview.isPending ? <Loader2 className="size-4 animate-spin" /> : <Eye className="size-4" />}
-                  {preview.isPending ? 'Anteprima…' : 'Anteprima'}
+                  {preview.isPending ? 'Anteprima…' : previewData ? 'Rigenera anteprima' : 'Anteprima'}
                 </Button>
                 <Button type="submit" size="lg" disabled={!canSubmit || mineButEmpty}>
                   {create.isPending ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
@@ -183,6 +234,20 @@ export default function NewCourseFromRssPage() {
                     <p className="mt-1 text-base font-semibold">{previewData.proposedTitle}</p>
                     {previewData.description && (
                       <p className="mt-1 text-sm text-muted-foreground">{previewData.description}</p>
+                    )}
+                    {(previewData.proposedAudience || previewData.proposedTone) && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {previewData.proposedAudience && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs text-primary">
+                            Target: {previewData.proposedAudience}
+                          </span>
+                        )}
+                        {previewData.proposedTone && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs text-primary">
+                            Tono: {previewData.proposedTone}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                   {previewData.keyConcepts.length > 0 && (

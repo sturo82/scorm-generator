@@ -19,6 +19,26 @@ const CreateCourseFromRss = z.object({
   category: z
     .enum(['italia', 'mondo', 'economia', 'tech', 'sicurezza', 'scienza', 'salute', 'ambiente', 'cultura', 'sport', 'politica'])
     .optional(),
+  /** Pubblico destinatario (opzionale): vincola la bozza di brief. */
+  audience: z.string().max(300).optional(),
+  /** Tono di voce (opzionale): vincola la bozza di brief. */
+  tone: z.string().max(200).optional(),
+  /**
+   * Anteprima CONGELATA approvata dall'autore (pre-sommario mostrato in UI). Se
+   * presente, è la spina dorsale del corso: titolo, descrizione, concetti e
+   * lezioni vengono da qui invece di essere rigenerati, così il corso non si
+   * discosta da ciò che l'utente ha visto. Resta modificabile nel wizard.
+   */
+  preview: z
+    .object({
+      proposedTitle: z.string().max(300).optional(),
+      description: z.string().max(2000).optional(),
+      keyConcepts: z.array(z.string().min(1)).max(20).optional(),
+      suggestedLessons: z.array(z.string().min(1)).max(20).optional(),
+      proposedAudience: z.string().max(300).optional(),
+      proposedTone: z.string().max(200).optional(),
+    })
+    .optional(),
   /** Numero di articoli pertinenti da includere (dopo filtro e dedup). */
   maxArticles: z.number().int().min(1).max(25).default(12),
 });
@@ -32,6 +52,10 @@ const PreviewCourseFromRss = z.object({
   category: z
     .enum(['italia', 'mondo', 'economia', 'tech', 'sicurezza', 'scienza', 'salute', 'ambiente', 'cultura', 'sport', 'politica'])
     .optional(),
+  /** Pubblico destinatario (opzionale): se assente lo propone l'anteprima. */
+  audience: z.string().max(300).optional(),
+  /** Tono di voce (opzionale): se assente lo propone l'anteprima. */
+  tone: z.string().max(200).optional(),
 });
 type PreviewCourseFromRssType = z.infer<typeof PreviewCourseFromRss>;
 
@@ -66,6 +90,9 @@ export class RssController {
       language: dto.language,
       source: dto.source,
       category: dto.category,
+      audience: dto.audience,
+      tone: dto.tone,
+      preview: dto.preview,
       maxArticles: dto.maxArticles,
       correlationId: ctx.correlationId,
     });
@@ -83,6 +110,8 @@ export class RssController {
       language: dto.language,
       source: dto.source,
       category: dto.category,
+      audience: dto.audience,
+      tone: dto.tone,
     });
   }
 

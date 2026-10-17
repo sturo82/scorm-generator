@@ -86,6 +86,16 @@ export function outlinePrompt(brief: Brief, context: string): string {
     `Durata stimata: ${brief.estimatedDurationMinutes} minuti`,
     `Lingua: ${brief.language}`,
     brief.desiredLessonCount ? `Numero lezioni desiderato: ${brief.desiredLessonCount}` : '',
+    // Lezioni suggerite dall'anteprima approvata: sono la STRUTTURA DI PARTENZA.
+    // Il modello deve rispettarne l'impianto e la progressione, rifinendo titoli
+    // e raggruppamento in moduli senza stravolgere né omettere i temi previsti.
+    (brief.suggestedLessons?.length ?? 0) > 0
+      ? 'Struttura di partenza (lezioni previste, approvate dall\'autore): ' +
+        `${brief.suggestedLessons!.map((l, i) => `${i + 1}) ${l}`).join('; ')}. ` +
+        'Rispetta questo impianto e questi temi — puoi raggrupparli in moduli, ' +
+        'affinare i titoli e aggiungere al più una lezione introduttiva o di sintesi, ' +
+        'ma NON eliminare i temi previsti né cambiarne la progressione.'
+      : '',
     brief.requestedAssessments.length > 0
       ? `Test richiesti: ${brief.requestedAssessments.join(', ')}`
       : '',

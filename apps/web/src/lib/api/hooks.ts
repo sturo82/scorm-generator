@@ -58,6 +58,9 @@ export function useCreateCourseFromRss() {
       language: string;
       source: 'everywhere' | 'mine';
       category?: FeedCategory;
+      audience?: string;
+      tone?: string;
+      preview?: import('./types').RssPreviewResult;
       maxArticles: number;
     }) => api.createCourseFromRss(input),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.courses }),
@@ -72,6 +75,8 @@ export function useRssPreview() {
       language: string;
       source: 'everywhere' | 'mine';
       category?: FeedCategory;
+      audience?: string;
+      tone?: string;
     }) => api.previewCourseFromRss(input),
   });
 }

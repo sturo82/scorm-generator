@@ -25,6 +25,13 @@ export const Brief = z.object({
   tone: z.string().optional(),
   /** Numero indicativo di lezioni desiderate. */
   desiredLessonCount: z.number().int().positive().optional(),
+  /**
+   * Lezioni suggerite (titoli) usate come STRUTTURA DI PARTENZA per l'outline:
+   * provengono dall'anteprima approvata dall'autore (corso da argomento). La
+   * generazione le rifinisce senza stravolgerle, così il corso resta coerente
+   * con ciò che l'anteprima ha promesso. Vuoto = outline libero dal brief.
+   */
+  suggestedLessons: z.array(z.string().min(1)).default([]),
   requestedAssessments: z.array(RequestedAssessment).default([]),
   constraints: z.array(z.string()).default([]),
   /** Brand associati al corso già in fase di brief (Requisito 2.5). */

@@ -32,9 +32,29 @@ export interface CreateCourseFromRssInput {
   source: FeedSource;
   /** Categoria dei feed predefiniti (opzionale: restringe la ricerca). */
   category?: FeedCategory;
+  /** Pubblico destinatario (opzionale): vincola la bozza di brief. */
+  audience?: string;
+  /** Tono di voce (opzionale): vincola la bozza di brief. */
+  tone?: string;
+  /**
+   * Anteprima CONGELATA approvata dall'autore. Se presente, è la spina dorsale
+   * del corso: titolo/descrizione/concetti/lezioni vengono da qui invece di
+   * essere rigenerati, per garantire coerenza con ciò che l'utente ha visto.
+   */
+  preview?: FrozenPreview;
   /** Numero di articoli pertinenti da includere (dopo filtro e dedup). */
   maxArticles: number;
   correlationId?: string;
+}
+
+/** Anteprima congelata passata a "Crea corso" per garantirne la coerenza. */
+export interface FrozenPreview {
+  proposedTitle?: string;
+  description?: string;
+  keyConcepts?: string[];
+  suggestedLessons?: string[];
+  proposedAudience?: string;
+  proposedTone?: string;
 }
 
 export interface CreateCourseFromRssResult {
@@ -84,6 +104,10 @@ export interface RssPreviewResult {
   keyConcepts: string[];
   /** Lezioni/moduli suggeriti (titoli). */
   suggestedLessons: string[];
+  /** Pubblico destinatario (fornito dall'utente o proposto dall'anteprima). */
+  proposedAudience: string;
+  /** Tono di voce (fornito dall'utente o proposto dall'anteprima). */
+  proposedTone: string;
   /** Fonti da cui provengono i contenuti trovati (per trasparenza). */
   sources: string[];
   /** Numero di contenuti esaminati per l'anteprima. */
@@ -180,21 +204,30 @@ export class RssImportService {
       );
     }
 
-    // 6. Crea il corso.
-    const title = input.title?.trim() || titleFromTopic(topic);
+    // 6. Crea il corso. Se c'è un'anteprima congelata, titolo e descrizione
+    // vengono da lì (coerenza con ciò che l'autore ha approvato); altrimenti
+    // titolo dall'argomento e descrizione da template.
+    const preview = input.preview;
+    const title = input.title?.trim() || preview?.proposedTitle?.trim() || titleFromTopic(topic);
+    const description =
+      preview?.description?.trim() ||
+      `Corso sull'argomento "${topic}", generato da ${chosen.length} notizie selezionate dai feed.`;
     const course = await this.courses.create({
       tenantId: input.tenantId,
       title,
       language: input.language,
-      description: `Corso sull'argomento "${topic}", generato da ${chosen.length} notizie selezionate dai feed.`,
+      description,
     });
 
     // 7. Scarica il full-text dei SOLI scelti e ingerisci come knowledge COURSE.
+    // Raccoglie gli id dei documenti creati: diventeranno la whitelist RAG del
+    // brief, così la generazione resta ancorata alle SOLE fonti del corso.
     let imported = 0;
+    const knowledgeDocIds: string[] = [];
     for (const item of chosen) {
       try {
         const html = await this.buildArticleHtml(item);
-        await this.knowledge.upload({
+        const doc = await this.knowledge.upload({
           tenantId: input.tenantId,
           scope: 'COURSE',
           courseId: course.id,
@@ -203,6 +236,7 @@ export class RssImportService {
           content: Buffer.from(html, 'utf8'),
           correlationId: input.correlationId,
         });
+        if (doc?.id) knowledgeDocIds.push(doc.id);
         imported++;
       } catch (err) {
         this.logger.warn(`Articolo non ingerito ("${item.title}"): ${rawError(err)}`);
@@ -214,6 +248,8 @@ export class RssImportService {
     }
 
     // 8. Autocompletamento del brief dalla knowledge raccolta (best-effort).
+    // Con l'anteprima congelata il brief ne eredita struttura e campi; in ogni
+    // caso knowledgeDocIds vincola il RAG alle fonti del corso.
     let briefDrafted = false;
     try {
       briefDrafted = await this.briefService.draftBriefFromArticles({
@@ -221,6 +257,10 @@ export class RssImportService {
         courseId: course.id,
         topic,
         language: input.language,
+        audience: input.audience,
+        tone: input.tone,
+        preview,
+        knowledgeDocIds,
         articles: chosen.map((c) => ({ title: c.title, summary: c.summary })),
       });
     } catch (err) {
@@ -249,6 +289,10 @@ export class RssImportService {
     language: string;
     source: FeedSource;
     category?: FeedCategory;
+    /** Pubblico destinatario (opzionale): se assente lo propone l'anteprima. */
+    audience?: string;
+    /** Tono di voce (opzionale): se assente lo propone l'anteprima. */
+    tone?: string;
   }): Promise<RssPreviewResult> {
     const topic = input.topic?.trim();
     if (!topic) throw new BadRequestException('Indica un argomento per l\'anteprima');
@@ -269,6 +313,8 @@ export class RssImportService {
       tenantId: input.tenantId,
       topic,
       language: input.language,
+      audience: input.audience,
+      tone: input.tone,
       articles: sample.map((c) => ({ title: c.title, summary: c.summary })),
     });
 

@@ -6,11 +6,37 @@ import { CoursesService } from '../courses/courses.service.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { LLM_PROVIDER } from '../providers/provider.constants.js';
 
+/** Anteprima congelata approvata dall'autore, spina dorsale del brief. */
+export interface FrozenPreviewInput {
+  proposedTitle?: string;
+  description?: string;
+  keyConcepts?: string[];
+  suggestedLessons?: string[];
+  proposedAudience?: string;
+  proposedTone?: string;
+}
+
 export interface DraftBriefInput {
   tenantId: string;
   courseId: string;
   topic: string;
   language: string;
+  /** Pubblico destinatario scelto dall'utente (vincola il brief se presente). */
+  audience?: string;
+  /** Tono di voce scelto dall'utente (vincola il brief se presente). */
+  tone?: string;
+  /**
+   * Anteprima CONGELATA approvata dall'autore: se presente, il brief ne eredita
+   * titolo, descrizione, obiettivi (dai concetti chiave), lezioni suggerite,
+   * pubblico e tono — senza una nuova sintesi LLM — per non discostarsi da ciò
+   * che l'utente ha visto. Il brief resta comunque una bozza modificabile.
+   */
+  preview?: FrozenPreviewInput;
+  /**
+   * Whitelist di documenti knowledge (le fonti ingerite del corso): salvata nel
+   * brief per vincolare il RAG della generazione alle SOLE fonti del corso.
+   */
+  knowledgeDocIds?: string[];
   /** Titoli + sommari degli articoli selezionati (contesto per il brief). */
   articles: Array<{ title: string; summary: string }>;
 }
@@ -19,6 +45,10 @@ export interface PreviewInput {
   tenantId: string;
   topic: string;
   language: string;
+  /** Pubblico destinatario, se specificato dall'utente. Se assente, lo propone l'LLM. */
+  audience?: string;
+  /** Tono di voce del corso, se specificato dall'utente. Se assente, lo propone l'LLM. */
+  tone?: string;
   articles: Array<{ title: string; summary: string }>;
 }
 
@@ -27,16 +57,28 @@ export interface PreviewOutput {
   description: string;
   keyConcepts: string[];
   suggestedLessons: string[];
+  /** Pubblico destinatario (riflette quello fornito, o proposto dall'LLM). */
+  proposedAudience: string;
+  /** Tono di voce (riflette quello fornito, o proposto dall'LLM). */
+  proposedTone: string;
 }
 
 /** JSON Schema del pre-sommario (anteprima) mostrato prima della generazione. */
 const PREVIEW_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
-  required: ['proposedTitle', 'description', 'keyConcepts', 'suggestedLessons'],
+  required: ['proposedTitle', 'description', 'keyConcepts', 'suggestedLessons', 'proposedAudience', 'proposedTone'],
   properties: {
     proposedTitle: { type: 'string', description: 'Titolo proposto per il corso' },
     description: { type: 'string', description: 'Descrizione sintetica (1-2 frasi) del corso' },
+    proposedAudience: {
+      type: 'string',
+      description: 'Pubblico destinatario del corso (chi è lo studente tipo, suo livello/ruolo)',
+    },
+    proposedTone: {
+      type: 'string',
+      description: 'Tono di voce consigliato per il corso (es. professionale, divulgativo, informale)',
+    },
     keyConcepts: {
       type: 'array',
       items: { type: 'string' },
@@ -94,6 +136,14 @@ export class RssBriefService {
 
   /** Ritorna true se la bozza è stata generata e salvata. Best-effort. */
   async draftBriefFromArticles(input: DraftBriefInput): Promise<boolean> {
+    // PERCORSO ANTEPRIMA CONGELATA: se l'autore ha approvato un pre-sommario, il
+    // brief ne eredita DIRETTAMENTE struttura e campi (nessuna nuova sintesi LLM,
+    // zero costo e zero deriva): titolo, descrizione, obiettivi (dai concetti
+    // chiave), lezioni suggerite, pubblico e tono. Resta una bozza modificabile.
+    if (this.hasUsablePreview(input.preview)) {
+      return this.draftBriefFromPreview(input);
+    }
+
     const context = input.articles
       .slice(0, 20)
       .map((a, i) => `${i + 1}. ${a.title}\n${a.summary}`)
@@ -114,7 +164,14 @@ export class RssBriefService {
           role: 'user',
           content:
             `Argomento del corso: ${input.topic}\n\n` +
-            `Notizie di riferimento (titolo + sommario):\n${context}\n\n` +
+            (input.audience?.trim()
+              ? `Pubblico destinatario (vincolo): «${input.audience.trim()}». Usa questo valore in targetAudience ` +
+                'e adatta obiettivi e livello a questo pubblico.\n'
+              : '') +
+            (input.tone?.trim()
+              ? `Tono di voce (vincolo): «${input.tone.trim()}». La descrizione deve rifletterlo.\n`
+              : '') +
+            `\nNotizie di riferimento (titolo + sommario):\n${context}\n\n` +
             'Proponi il brief del corso.',
         },
       ],
@@ -164,6 +221,57 @@ export class RssBriefService {
       estimatedDurationMinutes:
         typeof p.estimatedDurationMinutes === 'number' ? Math.round(p.estimatedDurationMinutes) : undefined,
       desiredLessonCount: typeof p.desiredLessonCount === 'number' ? Math.round(p.desiredLessonCount) : undefined,
+      tone: input.tone?.trim() || undefined,
+      // Vincola il RAG della generazione alle SOLE fonti del corso (se presenti).
+      knowledgeDocIds: input.knowledgeDocIds?.length ? input.knowledgeDocIds : undefined,
+      language: input.language,
+    });
+
+    await this.courses.saveBriefDraft(input.tenantId, input.courseId, draft);
+    return true;
+  }
+
+  /** True se l'anteprima ha abbastanza contenuto da fungere da spina dorsale. */
+  private hasUsablePreview(preview?: FrozenPreviewInput): preview is FrozenPreviewInput {
+    if (!preview) return false;
+    const hasConcepts = (preview.keyConcepts?.filter((s) => s.trim()).length ?? 0) > 0;
+    const hasLessons = (preview.suggestedLessons?.filter((s) => s.trim()).length ?? 0) > 0;
+    return hasConcepts || hasLessons;
+  }
+
+  /**
+   * Costruisce e salva il brief DALL'anteprima congelata, senza chiamata LLM.
+   * Mappa: concetti chiave → obiettivi di apprendimento; lezioni suggerite →
+   * suggestedLessons (seed dell'outline) + desiredLessonCount; titolo,
+   * descrizione, pubblico e tono dai campi dell'anteprima (o dai valori espliciti
+   * dell'utente, che hanno priorità). Livello e durata sono stime di default,
+   * modificabili nel wizard. Vincola il RAG alle fonti via knowledgeDocIds.
+   */
+  private async draftBriefFromPreview(input: DraftBriefInput): Promise<boolean> {
+    const pv = input.preview!;
+    const clean = (arr?: string[]): string[] => (arr ?? []).map((s) => s.trim()).filter((s) => s.length > 0);
+    const concepts = clean(pv.keyConcepts);
+    const lessons = clean(pv.suggestedLessons);
+    const audience = input.audience?.trim() || pv.proposedAudience?.trim() || undefined;
+    const tone = input.tone?.trim() || pv.proposedTone?.trim() || undefined;
+
+    // Obiettivi: dai concetti chiave; fallback alle lezioni se mancano i concetti.
+    const objectives = concepts.length > 0 ? concepts.slice(0, 6) : lessons.slice(0, 6);
+    // Durata euristica: ~12 min per lezione suggerita (o per obiettivo), con tetti.
+    const lessonCount = lessons.length > 0 ? lessons.length : Math.max(3, objectives.length);
+    const estimatedDurationMinutes = Math.min(480, Math.max(20, lessonCount * 12));
+
+    const draft: BriefDraftType = BriefDraft.parse({
+      title: pv.proposedTitle?.trim() || input.topic,
+      description: pv.description?.trim() || undefined,
+      learningObjectives: objectives.length > 0 ? objectives : undefined,
+      targetAudience: audience,
+      level: 'beginner',
+      estimatedDurationMinutes,
+      desiredLessonCount: lessons.length > 0 ? Math.min(20, Math.max(2, lessons.length)) : undefined,
+      suggestedLessons: lessons.length > 0 ? lessons : undefined,
+      tone,
+      knowledgeDocIds: input.knowledgeDocIds?.length ? input.knowledgeDocIds : undefined,
       language: input.language,
     });
 
@@ -184,18 +292,42 @@ export class RssBriefService {
       .join('\n\n')
       .slice(0, 12000);
 
+    const audience = input.audience?.trim();
+    const tone = input.tone?.trim();
+    // Vincoli: se l'utente ha indicato target e/o tono, il pre-sommario DEVE
+    // esservi coerente (e proposedAudience/proposedTone li ripetono invariati);
+    // altrimenti l'LLM li propone lui.
+    const constraints: string[] = [];
+    if (audience) {
+      constraints.push(
+        `Il corso è rivolto a questo pubblico: «${audience}». Adatta concetti e lezioni a questo pubblico ` +
+          'e riporta lo stesso valore nel campo proposedAudience.',
+      );
+    } else {
+      constraints.push('Proponi tu il pubblico destinatario più adatto nel campo proposedAudience.');
+    }
+    if (tone) {
+      constraints.push(
+        `Usa questo tono di voce: «${tone}». Descrizione e lezioni devono rifletterlo, e riporta lo stesso ` +
+          'valore nel campo proposedTone.',
+      );
+    } else {
+      constraints.push('Proponi tu il tono di voce più adatto nel campo proposedTone.');
+    }
+
     const result = await this.llm.generate({
       system:
         'Sei un progettista didattico. A partire da una rassegna di contenuti su un argomento, ' +
         'proponi un PRE-SOMMARIO del corso che si potrebbe generare: titolo, descrizione sintetica, ' +
-        'i concetti chiave che verranno sviluppati e le lezioni suggerite. Rispondi SOLO con JSON ' +
-        'conforme allo schema. Sii concreto e fedele ai contenuti forniti. ' +
+        'pubblico destinatario, tono di voce, i concetti chiave che verranno sviluppati e le lezioni ' +
+        'suggerite. Rispondi SOLO con JSON conforme allo schema. Sii concreto e fedele ai contenuti forniti. ' +
         languageDirective(input.language),
       messages: [
         {
           role: 'user',
           content:
             `Argomento: ${input.topic}\n\n` +
+            `Vincoli:\n- ${constraints.join('\n- ')}\n\n` +
             `Contenuti di riferimento (titolo + sommario):\n${context || '(nessun contenuto: basati sull\'argomento)'}\n\n` +
             'Proponi il pre-sommario del corso.',
         },
@@ -233,11 +365,17 @@ export class RssBriefService {
     }
     const asStrings = (v: unknown): string[] =>
       Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0) : [];
+    // Il valore fornito dall'utente ha priorità; altrimenti quello proposto dall'LLM.
+    const outAudience =
+      audience || (typeof parsed.proposedAudience === 'string' ? parsed.proposedAudience.trim() : '');
+    const outTone = tone || (typeof parsed.proposedTone === 'string' ? parsed.proposedTone.trim() : '');
     return {
       proposedTitle: typeof parsed.proposedTitle === 'string' ? parsed.proposedTitle : input.topic,
       description: typeof parsed.description === 'string' ? parsed.description : '',
       keyConcepts: asStrings(parsed.keyConcepts),
       suggestedLessons: asStrings(parsed.suggestedLessons),
+      proposedAudience: outAudience,
+      proposedTone: outTone,
     };
   }
 }
