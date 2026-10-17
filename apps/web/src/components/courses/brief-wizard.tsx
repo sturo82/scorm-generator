@@ -13,6 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dropzone } from '@/components/knowledge/dropzone';
 import { useToast } from '@/components/ui/toast';
 import { useBrands, useKnowledge, useUploadKnowledge } from '@/lib/api/hooks';
+import type { KnowledgeDocView } from '@/lib/api/types';
 
 interface BriefWizardProps {
   courseId?: string;
@@ -61,6 +62,7 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
       constraints: initial?.constraints ?? [],
       brandIds: initial?.brandIds ?? [],
       knowledgeDocIds: initial?.knowledgeDocIds ?? [],
+      courseSourceDocIds: initial?.courseSourceDocIds ?? [],
       autoGenerateImages: initial?.autoGenerateImages ?? true,
       videoFirst: initial?.videoFirst ?? false,
     },
@@ -72,6 +74,7 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
   const videoFirst = watch('videoFirst');
   const brandIds = watch('brandIds');
   const knowledgeDocIds = watch('knowledgeDocIds');
+  const courseSourceDocIds = watch('courseSourceDocIds');
   const autoGenerateImages = watch('autoGenerateImages');
   // Documenti disponibili: globali (ready) + del corso (ready), deduplicati.
   const availableDocs = React.useMemo(() => {
@@ -79,6 +82,23 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
     const seen = new Set<string>();
     return all.filter((d) => (seen.has(d.id) ? false : (seen.add(d.id), true)));
   }, [globalDocs.data, courseDocs.data]);
+
+  // Separa le FONTI DEL CORSO (documenti costitutivi: articoli ingeriti dal
+  // flusso "da argomento" + knowledge esistente agganciata) dalla knowledge
+  // AGGIUNTIVA (resto della knowledge del tenant, opzionale). La verità è
+  // brief.courseSourceDocIds; i doc del corso non marcati finiscono comunque
+  // tra le fonti (retro-compatibilità con corsi creati prima del marcatore).
+  const sourceIdSet = React.useMemo(() => new Set(courseSourceDocIds ?? []), [courseSourceDocIds]);
+  const { courseSources, extraDocs } = React.useMemo(() => {
+    const src: typeof availableDocs = [];
+    const extra: typeof availableDocs = [];
+    for (const d of availableDocs) {
+      if (sourceIdSet.has(d.id)) src.push(d);
+      else extra.push(d);
+    }
+    return { courseSources: src, extraDocs: extra };
+  }, [availableDocs, sourceIdSet]);
+  const whitelistEmpty = (knowledgeDocIds ?? []).length === 0;
 
   // Auto-selezione: quando un doc caricato inline diventa READY, lo aggiunge a
   // knowledgeDocIds e lo toglie dalla lista in attesa.
@@ -254,28 +274,69 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
                     Nessun documento ancora. Caricane uno qui sotto, oppure dalla sezione «Knowledge».
                   </p>
                 ) : (
-                  <div className="flex max-h-48 flex-col gap-2 overflow-auto rounded-lg border p-2">
-                    {availableDocs.map((d) => {
-                      const busy = d.status === 'PENDING' || d.status === 'PROCESSING';
-                      const failed = d.status === 'FAILED';
-                      return (
-                        <div key={d.id} className="flex items-center gap-2">
-                          <Checkbox
-                            checked={(knowledgeDocIds ?? []).includes(d.id)}
-                            onChange={(c) =>
-                              setValue('knowledgeDocIds', toggle(knowledgeDocIds ?? [], d.id, c))
-                            }
-                            disabled={busy || failed}
-                            label={`${d.filename}${d.scope === 'COURSE' ? ' (corso)' : ''}`}
-                          />
-                          {busy && (
-                            <span className="text-xs text-muted-foreground">elaborazione…</span>
-                          )}
-                          {failed && <span className="text-xs text-destructive">errore</span>}
+                  <div className="space-y-3">
+                    {/* FONTI DEL CORSO: documenti costitutivi, evidenziati. */}
+                    {courseSources.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                            Fonti di questo corso
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            i contenuti su cui è costruito il corso
+                          </span>
                         </div>
-                      );
-                    })}
+                        <div className="flex max-h-40 flex-col gap-2 overflow-auto rounded-lg border border-primary/30 bg-primary/5 p-2">
+                          {courseSources.map((d) => (
+                            <KnowledgeDocRow
+                              key={d.id}
+                              doc={d}
+                              checked={(knowledgeDocIds ?? []).includes(d.id)}
+                              isCourseSource
+                              onToggle={(c) => {
+                                if (!c) {
+                                  toast.show(
+                                    `"${d.filename}" è una fonte di questo corso: rimuoverla può renderlo incoerente.`,
+                                    'error',
+                                  );
+                                }
+                                setValue('knowledgeDocIds', toggle(knowledgeDocIds ?? [], d.id, c));
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* KNOWLEDGE AGGIUNTIVA: resto della knowledge del tenant. */}
+                    {extraDocs.length > 0 && (
+                      <div className="space-y-1.5">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          Knowledge aggiuntiva {courseSources.length > 0 ? '(opzionale)' : ''}
+                        </span>
+                        <div className="flex max-h-40 flex-col gap-2 overflow-auto rounded-lg border p-2">
+                          {extraDocs.map((d) => (
+                            <KnowledgeDocRow
+                              key={d.id}
+                              doc={d}
+                              checked={(knowledgeDocIds ?? []).includes(d.id)}
+                              onToggle={(c) =>
+                                setValue('knowledgeDocIds', toggle(knowledgeDocIds ?? [], d.id, c))
+                              }
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
+                )}
+
+                {/* Avviso: whitelist svuotata → la generazione usa TUTTA la knowledge. */}
+                {availableDocs.length > 0 && whitelistEmpty && (
+                  <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Nessun documento selezionato: la generazione userà tutta la knowledge pertinente
+                    del tenant, non solo le fonti di questo corso.
+                  </p>
                 )}
 
                 {/* Upload inline: disponibile solo con un corso già creato (scope COURSE). */}
@@ -351,4 +412,32 @@ function FieldError({ msg }: { msg?: string }) {
 
 function toggle<T>(arr: T[], value: T, on: boolean): T[] {
   return on ? [...new Set([...arr, value])] : arr.filter((x) => x !== value);
+}
+
+/** Riga di un documento knowledge selezionabile nel wizard (fonte o aggiuntivo). */
+function KnowledgeDocRow({
+  doc,
+  checked,
+  onToggle,
+  isCourseSource = false,
+}: {
+  doc: KnowledgeDocView;
+  checked: boolean;
+  onToggle: (checked: boolean) => void;
+  isCourseSource?: boolean;
+}) {
+  const busy = doc.status === 'PENDING' || doc.status === 'PROCESSING';
+  const failed = doc.status === 'FAILED';
+  return (
+    <div className="flex items-center gap-2">
+      <Checkbox
+        checked={checked}
+        onChange={onToggle}
+        disabled={busy || failed}
+        label={`${doc.filename}${!isCourseSource && doc.scope === 'COURSE' ? ' (corso)' : ''}`}
+      />
+      {busy && <span className="text-xs text-muted-foreground">elaborazione…</span>}
+      {failed && <span className="text-xs text-destructive">errore</span>}
+    </div>
+  );
 }

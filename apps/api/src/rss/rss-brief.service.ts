@@ -252,6 +252,8 @@ export class RssBriefService {
       courseFocus: input.scope?.trim() || undefined,
       // Vincola il RAG della generazione alle SOLE fonti del corso (se presenti).
       knowledgeDocIds: input.knowledgeDocIds?.length ? input.knowledgeDocIds : undefined,
+      // Questi documenti SONO le fonti costitutive del corso (marcatore per la UI).
+      courseSourceDocIds: input.knowledgeDocIds?.length ? input.knowledgeDocIds : undefined,
       language: input.language,
     });
 
@@ -302,6 +304,8 @@ export class RssBriefService {
       tone,
       courseFocus,
       knowledgeDocIds: input.knowledgeDocIds?.length ? input.knowledgeDocIds : undefined,
+      // Marcatore UI: questi documenti sono le fonti costitutive del corso.
+      courseSourceDocIds: input.knowledgeDocIds?.length ? input.knowledgeDocIds : undefined,
       language: input.language,
     });
 

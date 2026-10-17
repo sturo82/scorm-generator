@@ -50,6 +50,14 @@ export const Brief = z.object({
    */
   knowledgeDocIds: z.array(Id).default([]),
   /**
+   * Sottoinsieme di knowledgeDocIds che costituisce le FONTI del corso: i
+   * documenti su cui il corso è costruito (articoli ingeriti dal flusso "da
+   * argomento" + knowledge esistente agganciata). La UI li distingue dalla
+   * knowledge aggiuntiva e avvisa se vengono deselezionati. Non altera il RAG
+   * (che usa knowledgeDocIds): è solo un marcatore di provenienza.
+   */
+  courseSourceDocIds: z.array(Id).default([]),
+  /**
    * Se true (default), dopo la generazione dei contenuti di una lezione vengono
    * generate automaticamente le immagini illustrative. Disattivabile per
    * risparmiare tempo/budget (le immagini restano generabili manualmente).
