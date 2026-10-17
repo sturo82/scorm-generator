@@ -125,6 +125,12 @@ export const BranchingChoice = z.object({
 export const BranchingNode = z.object({
   id: Id,
   content: RichText,
+  /**
+   * Media della scena. Per il formato "pillole" è un VIDEO (cartoon), spesso
+   * segnaposto (placeholderPrompt = storyboard della scena). Nel render del
+   * libro-game, se il media è un video, la scena mostra prima il video e poi
+   * le scelte (vedi `gateChoicesOnMedia`).
+   */
   media: MediaRef.optional(),
   choices: z.array(BranchingChoice).default([]),
 });
@@ -133,6 +139,15 @@ export const BranchingScenarioPayload = Scorable.partial().extend({
   nodes: z.array(BranchingNode).min(1),
   /** Se true, lo scenario contribuisce al punteggio (Requisito 6.2). */
   scored: z.boolean().default(false),
+  /**
+   * Formato "pillole" (libro-game): se true, ogni scena con media VIDEO mostra
+   * prima il video e rivela le scelte solo al termine (o dopo un pulsante
+   * "continua"). Modalità pensata per i mini-video interattivi. Default false
+   * (comportamento classico: contenuto + scelte subito visibili).
+   */
+  pillole: z.boolean().default(false),
+  /** Se true, le scelte compaiono solo dopo la fine del video della scena. */
+  gateChoicesOnMedia: z.boolean().default(false),
 });
 
 export const VideoCheckpoint = z.object({

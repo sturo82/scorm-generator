@@ -9,6 +9,19 @@ import { Id, LanguageCode } from './primitives.js';
 export const ProficiencyLevel = z.enum(['beginner', 'intermediate', 'advanced']);
 export type ProficiencyLevel = z.infer<typeof ProficiencyLevel>;
 
+/**
+ * Formato del corso: determina la modalità di fruizione e il tipo di contenuti
+ * generati.
+ *  - 'completo'    : formato classico (testo, immagini, interazioni, quiz).
+ *  - 'video_first' : ogni lezione è incentrata su un video (equivale a videoFirst).
+ *  - 'pillole'     : mini-video interattivi in stile libro-game — scene brevi
+ *                    (cartoon), scelte con conseguenze (punteggio/feedback) che
+ *                    instradano alla scena successiva. Ogni pillola è una lezione
+ *                    con un block branching_scenario.
+ */
+export const CourseFormat = z.enum(['completo', 'video_first', 'pillole']);
+export type CourseFormat = z.infer<typeof CourseFormat>;
+
 /** Tipi di test richiesti nel corso (Requisito 2.1 / 6.3). */
 export const RequestedAssessment = z.enum(['intermediate', 'final']);
 export type RequestedAssessment = z.infer<typeof RequestedAssessment>;
@@ -68,8 +81,19 @@ export const Brief = z.object({
    * segnaposto video da riempire caricando il file) affiancato da elementi
    * dinamici e quiz. Si può comunque marcare singole lezioni come video-first
    * anche quando questo è false (vedi flag per-lezione).
+   *
+   * NB: campo STORICO mantenuto per compatibilità. La fonte di verità del
+   * formato è `format`; `videoFirst` resta allineato (true sse format ==
+   * 'video_first') ed è ancora usato dai prompt/player esistenti.
    */
   videoFirst: z.boolean().default(false),
+  /**
+   * Formato del corso (vedi CourseFormat). Default 'completo'. Guida la
+   * generazione: 'video_first' → lezioni incentrate su video; 'pillole' →
+   * libro-game di scene/scelte/conseguenze. Retro-compat: se assente ma
+   * videoFirst==true, va trattato come 'video_first'.
+   */
+  format: CourseFormat.default('completo'),
 });
 export type Brief = z.infer<typeof Brief>;
 

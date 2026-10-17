@@ -60,7 +60,7 @@
     "@scorm/domain": "0.1.0",
     "@aws-sdk/client-s3": "3.600.0",
     "@aws-sdk/s3-request-presigner": "3.600.0",
-    "@aws-sdk/client-bedrock-runtime": "3.600.0",
+    "@aws-sdk/client-bedrock-runtime": "3.750.0",
     "@aws-sdk/client-sqs": "3.600.0",
     "@aws-sdk/client-polly": "3.600.0",
     "@aws-sdk/client-transcribe": "3.600.0",

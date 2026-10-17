@@ -208,6 +208,22 @@ export interface AppConfig {
     /** Numero massimo di video generabili per tenant al mese (piano Free: 3). */
     monthlyQuota: number;
   };
+  /**
+   * Generazione cartoon delle scene "pillole" (Amazon Nova Reel, Bedrock).
+   * `provider` seleziona l'adapter: 'nova' (reale), 'mock' (dev/test), 'none'
+   * (disabilitato → 501). Nova Reel scrive l'output su S3 (outputS3Uri).
+   */
+  novaReel: {
+    provider: 'nova' | 'mock' | 'none';
+    modelId: string;
+    region: string;
+    /** URI S3 base dove Nova Reel scrive l'output (es. "s3://bucket/nova-reel"). */
+    outputS3Uri: string;
+    /** Durata di default di una scena, in secondi (multiplo di 6). */
+    sceneDurationSec: number;
+    /** Numero massimo di scene-cartoon generabili per tenant al mese. */
+    monthlyQuota: number;
+  };
   /** Limiti di upload della knowledge base. */
   upload: {
     maxFileBytes: number;
@@ -361,6 +377,14 @@ export function loadConfiguration(): AppConfig {
       resolution: env('HEYGEN_RESOLUTION', '720p'),
       engine: env('HEYGEN_ENGINE', ''),
       monthlyQuota: Number(env('HEYGEN_MONTHLY_QUOTA', '3')),
+    },
+    novaReel: {
+      provider: env('PROVIDER_CARTOON_VIDEO', 'none') as AppConfig['novaReel']['provider'],
+      modelId: env('NOVA_REEL_MODEL_ID', 'amazon.nova-reel-v1:0'),
+      region: env('NOVA_REEL_REGION', env('BEDROCK_REGION', env('AWS_REGION', 'us-east-1'))),
+      outputS3Uri: env('NOVA_REEL_OUTPUT_S3_URI', ''),
+      sceneDurationSec: Number(env('NOVA_REEL_SCENE_DURATION_SEC', '6')),
+      monthlyQuota: Number(env('NOVA_REEL_MONTHLY_QUOTA', '20')),
     },
     upload: {
       maxFileBytes: Number(env('UPLOAD_MAX_FILE_BYTES', String(50 * 1024 * 1024))),

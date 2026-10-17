@@ -239,6 +239,35 @@ export class GenerationController {
   }
 
   /**
+   * Genera i mini-cartoon delle scene di una pillola (block branching_scenario)
+   * con Amazon Nova Reel. Senza :nodeId genera TUTTE le scene con video
+   * segnaposto; con :nodeId genera solo quella scena. Asincrono: le scene vanno
+   * a 'processing' e poi 'ready' (polling in background). Soggetto a quota mensile.
+   */
+  @Post('lessons/:lessonId/blocks/:blockId/cartoon')
+  @HttpCode(202)
+  generateScenesCartoon(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('lessonId') lessonId: string,
+    @Param('blockId') blockId: string,
+  ) {
+    return this.media.generateScenesCartoon(ctx.tenant.tenantId, courseId, lessonId, blockId);
+  }
+
+  @Post('lessons/:lessonId/blocks/:blockId/scenes/:nodeId/cartoon')
+  @HttpCode(202)
+  generateSceneCartoon(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('lessonId') lessonId: string,
+    @Param('blockId') blockId: string,
+    @Param('nodeId') nodeId: string,
+  ) {
+    return this.media.generateScenesCartoon(ctx.tenant.tenantId, courseId, lessonId, blockId, nodeId);
+  }
+
+  /**
    * Elenca gli avatar HeyGen UNA PAGINA alla volta (no quota). `source`
    * ('mine'|'stock'), `token` (cursore pagina), `q` (ricerca per nome).
    */

@@ -54,6 +54,14 @@ resource "aws_apprunner_service" "api" {
           # avatar; HEYGEN_ENGINE resta solo come eventuale override operativo.
           PROVIDER_VIDEO              = "heygen"
           HEYGEN_MONTHLY_QUOTA        = var.heygen_monthly_quota
+          # Generazione cartoon delle scene "pillole" (Amazon Nova Reel, Bedrock
+          # async + output su S3). Spenta di default (var = "none"): per attivarla
+          # impostare provider "nova" e nova_reel_output_s3_uri (prefix nel bucket
+          # assets), previa verifica che Nova Reel sia abilitato nella region.
+          PROVIDER_CARTOON_VIDEO = var.cartoon_video_provider
+          NOVA_REEL_REGION       = var.nova_reel_region
+          NOVA_REEL_OUTPUT_S3_URI = var.nova_reel_output_s3_uri
+          NOVA_REEL_MONTHLY_QUOTA = var.nova_reel_monthly_quota
           AWS_REGION                  = var.region
           BEDROCK_REGION              = var.region
           BEDROCK_LLM_MODEL_ID        = var.bedrock_llm_model_id

@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus, Sparkles, Wand2, Trash2, Pencil, Image as ImageIcon, Volume2, Video, Captions, Search, Check, ChevronRight, Eye, UserRound } from 'lucide-react';
+import { Plus, Sparkles, Wand2, Trash2, Pencil, Image as ImageIcon, Volume2, Video, Captions, Search, Check, ChevronRight, Eye, UserRound, Film } from 'lucide-react';
 import type { Block } from '@scorm/contracts';
 import {
   DEFAULT_HEYGEN_ENGINE,
@@ -41,6 +41,7 @@ import {
   useVideoAvatars,
   useVideoVoices,
   useGenerateConceptVideo,
+  useGenerateScenesCartoon,
   useAttachStockImage,
   useUploadBlockImage,
   useVideos,
@@ -801,6 +802,7 @@ function LessonCard({
   // Dialog di generazione video avatar (HeyGen): block target su cui generare.
   const [videoGenTargetBlock, setVideoGenTargetBlock] = React.useState<string | null>(null);
   const genConceptVideo = useGenerateConceptVideo(courseId);
+  const genScenesCartoon = useGenerateScenesCartoon(courseId);
   // jobId locale per la generazione del singolo contenuto.
   const [localJobId, setLocalJobId] = React.useState<string | null>(null);
   const contentJob = useJobStatus(courseId, localJobId);
@@ -1134,6 +1136,33 @@ function LessonCard({
                       onClick={() => setVideoGenTargetBlock(b.id)}
                     >
                       <UserRound className="size-4 text-primary" />
+                    </Button>
+                  )}
+                  {/* Pillole: genera i mini-cartoon delle scene del libro-game
+                      (Nova Reel). Mostrato se lo scenario ha scene con video
+                      segnaposto ancora da produrre. */}
+                  {b.type === 'branching_scenario' && scenarioHasPendingCartoon(b) && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label="Genera i cartoon delle scene"
+                      title="Genera i mini-cartoon delle scene (Nova Reel)"
+                      disabled={genScenesCartoon.isPending}
+                      onClick={async () => {
+                        try {
+                          const res = await genScenesCartoon.mutateAsync({ lessonId: lesson.id, blockId: b.id });
+                          toast.show(
+                            `Generazione avviata per ${res.started} scen${res.started === 1 ? 'a' : 'e'}: ` +
+                              'prosegue sul server (le scene passano a «pronto»).',
+                            'success',
+                          );
+                        } catch (err) {
+                          const msg = err instanceof Error ? err.message.replace(/^API \d+:\s*/, '') : '';
+                          toast.show(msg || 'Generazione cartoon non avviata', 'error');
+                        }
+                      }}
+                    >
+                      <Film className="size-4 text-primary" />
                     </Button>
                   )}
                   <Button
@@ -1487,6 +1516,21 @@ function blockImageInfo(block: Block): { count: number; filled: number; firstPro
 }
 
 /** Etichetta e icona (emoji) leggibili per ciascun tipo di block. */
+/**
+ * True se uno scenario "pillole" ha almeno una scena con video SEGNAPOSTO
+ * (media video senza storageKey) ancora da generare: abilita il bottone
+ * "Genera cartoon". Difensivo sul payload (block non tipizzato qui).
+ */
+function scenarioHasPendingCartoon(block: Block): boolean {
+  if (block.type !== 'branching_scenario') return false;
+  const payload = (block.payload ?? {}) as { nodes?: Array<{ media?: Record<string, unknown> }> };
+  const nodes = Array.isArray(payload.nodes) ? payload.nodes : [];
+  return nodes.some((n) => {
+    const m = (n.media ?? {}) as Record<string, unknown>;
+    return String(m.kind) === 'video' && !m.storageKey;
+  });
+}
+
 const BLOCK_META: Record<string, { label: string; icon: string }> = {
   rich_text: { label: 'Testo', icon: '¶' },
   image_hotspot: { label: 'Immagine interattiva', icon: '◉' },

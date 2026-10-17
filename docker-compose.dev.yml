@@ -39,6 +39,8 @@ services:
       S3_BUCKET: sw-scorm-dev
       PROVIDER_TRANSCRIPTION: transcribe
       TRANSCRIBE_REGION: us-east-1
+      # Cartoon delle scene pillole: mock in dev (nessun costo AWS Nova Reel).
+      PROVIDER_CARTOON_VIDEO: ${PROVIDER_CARTOON_VIDEO:-mock}
     ports:
       - '3000:3000'
     depends_on:

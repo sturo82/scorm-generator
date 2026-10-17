@@ -434,6 +434,12 @@ export class HttpApiClient implements ApiClient {
       { method: 'POST', body: JSON.stringify(input ?? {}) },
     );
   }
+  generateScenesCartoon(courseId: string, lessonId: string, blockId: string, nodeId?: string) {
+    const path = nodeId
+      ? `/courses/${courseId}/generate/lessons/${lessonId}/blocks/${blockId}/scenes/${nodeId}/cartoon`
+      : `/courses/${courseId}/generate/lessons/${lessonId}/blocks/${blockId}/cartoon`;
+    return this.request<{ started: number; remainingThisMonth: number }>(path, { method: 'POST' });
+  }
 
   // Gestione avatar HeyGen del tenant (Impostazioni → Avatar)
   listMyAvatars(q?: string) {

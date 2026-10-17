@@ -109,12 +109,18 @@ export function outlinePrompt(brief: Brief, context: string): string {
       ? `Test richiesti: ${brief.requestedAssessments.join(', ')}`
       : '',
     brief.constraints.length > 0 ? `Vincoli: ${brief.constraints.join('; ')}` : '',
-    brief.videoFirst
-      ? 'MODALITÀ VIDEO-FIRST: il corso è basato su video. Imposta videoFirst=true su OGNI ' +
-        'lezione dell\'outline: ciascuna lezione sarà incentrata su un video con quiz ed ' +
-        'elementi dinamici affiancati.'
-      : 'Se una specifica lezione trae forte beneficio da una dimostrazione video, puoi ' +
-        'impostare videoFirst=true SOLO su quella lezione (usa con parsimonia, dove ha senso).',
+    brief.format === 'pillole'
+      ? 'MODALITÀ PILLOLE (libro-game): ogni "lezione" dell\'outline è una PILLOLA ' +
+        'autocontenuta — un mini-percorso interattivo a scene con scelte e conseguenze su UN ' +
+        'singolo concetto. Progetta lezioni brevi e focalizzate (una pillola = un concetto/' +
+        'situazione decisionale), non lezioni teoriche ampie. Ogni pillola sarà resa come ' +
+        'scenario a scelte con mini-video.'
+      : brief.videoFirst
+        ? 'MODALITÀ VIDEO-FIRST: il corso è basato su video. Imposta videoFirst=true su OGNI ' +
+          'lezione dell\'outline: ciascuna lezione sarà incentrata su un video con quiz ed ' +
+          'elementi dinamici affiancati.'
+        : 'Se una specifica lezione trae forte beneficio da una dimostrazione video, puoi ' +
+          'impostare videoFirst=true SOLO su quella lezione (usa con parsimonia, dove ha senso).',
     '',
     'Organizza il corso con una progressione didattica reale: dai fondamenti e dalle ' +
       'definizioni verso i concetti avanzati e l\'applicazione pratica. Le prime lezioni ' +
@@ -184,6 +190,65 @@ export function lessonVideoFirstPrompt(input: {
   return parts.filter((p) => p !== '').join('\n');
 }
 
+/**
+ * Prompt per una "pillola" (formato libro-game): genera UN block
+ * branching_scenario che rappresenta un mini-percorso interattivo a scene. Ogni
+ * scena ha un VIDEO segnaposto (cartoon da produrre: lo storyboard va in
+ * placeholderPrompt) e porta a dei bivi; ogni scelta ha una conseguenza
+ * (feedback) e un punteggio, e instrada a una scena successiva o a un esito.
+ */
+export function lessonPillolePrompt(input: {
+  courseTitle: string;
+  moduleTitle: string;
+  lessonTitle: string;
+  objectives: string[];
+  language: string;
+  context: string;
+  toneInstruction?: string;
+  courseFocus?: string;
+}): string {
+  const lang = languageName(input.language);
+  const parts = [
+    languageDirective(input.language),
+    `Genera UNA "pillola" interattiva in stile LIBRO-GAME (mini-video + scelte), in ${lang}.`,
+    `Corso: ${input.courseTitle}`,
+    `Modulo: ${input.moduleTitle}`,
+    `Pillola (lezione): ${input.lessonTitle}`,
+    input.objectives.length > 0 ? `Obiettivi: ${input.objectives.join('; ')}` : '',
+    input.courseFocus
+      ? `TAGLIO DEL CORSO (vincolo): ${input.courseFocus}. Resta in questa angolazione.`
+      : '',
+    input.toneInstruction ? `Indicazione aggiuntiva: ${input.toneInstruction}` : '',
+    '',
+    'Produci ESATTAMENTE UN block "branching_scenario" con questo payload:',
+    '{ ',
+    '  "startNodeId": "<id della scena iniziale>", ',
+    '  "scored": true, ',
+    '  "pillole": true, ',
+    '  "gateChoicesOnMedia": true, ',
+    '  "nodes": [ { ',
+    '     "id": "<slug-scena>", ',
+    '     "content": { "format": "html", "html": "<p>Breve testo della scena (1-3 frasi): situazione e domanda implicita.</p>" }, ',
+    `     "media": { "kind": "video", "alt": "<descrizione breve della scena in ${lang}>", "placeholderPrompt": "<STORYBOARD: cosa mostra il mini-cartoon di questa scena, personaggi, azione, stile cartoon semplice ed efficace, in ${lang}>" }, `,
+    '     "choices": [ { "id": "<slug-scelta>", "label": "<testo scelta>", "nextNodeId": "<id scena successiva o assente se esito finale>", "score": <numero: positivo se scelta corretta/virtuosa, 0 o negativo se errata>, "feedback": "<conseguenza della scelta: cosa succede e perché, 1-2 frasi>" } ] ', 
+    '  } ] ',
+    '}',
+    '',
+    'REGOLE del libro-game:',
+    `- Scrivi TUTTO in ${lang} (testi scena, label scelte, feedback, alt e placeholderPrompt).`,
+    '- 4-7 scene totali. La scena iniziale presenta una situazione concreta e realistica legata agli obiettivi.',
+    '- Ogni scena (tranne gli esiti finali) ha 2-3 scelte. Ogni scelta porta a una scena successiva (nextNodeId) o a un esito terminale (nextNodeId assente).',
+    '- Le CONSEGUENZE devono essere coerenti e istruttive: la scelta corretta fa progredire positivamente (score positivo), quella sbagliata mostra l\'errore e la sua conseguenza (score 0 o negativo), senza punire gratuitamente.',
+    '- Prevedi almeno un esito finale POSITIVO (percorso virtuoso) e almeno uno NEGATIVO (errori), entrambi con una scena conclusiva che spiega cosa si è imparato.',
+    '- Il media di OGNI scena è un VIDEO SEGNAPOSTO (cartoon): NON inventare storageKey/URL; descrivi lo storyboard in placeholderPrompt. I cartoon verranno prodotti a parte.',
+    '- Mantieni i mini-video concettualmente brevi (una singola idea/azione per scena), stile cartoon semplice e chiaro.',
+    '- Gli id dei nodi e delle scelte sono slug brevi univoci (es. "scena-1", "scelta-a").',
+    '',
+    input.context,
+  ];
+  return parts.filter((p) => p !== '').join('\n');
+}
+
 /** Prompt per generare i Block (interazioni) di una lezione (Requisito 4.2). */
 export function lessonContentPrompt(input: {
   courseTitle: string;
@@ -198,8 +263,11 @@ export function lessonContentPrompt(input: {
   videoFirst?: boolean;
   /** Taglio/scope del corso: vincola la lezione a restare dentro l'angolazione. */
   courseFocus?: string;
+  /** Formato del corso: 'pillole' genera un libro-game (branching_scenario). */
+  format?: 'completo' | 'video_first' | 'pillole';
 }): string {
-  if (input.videoFirst) return lessonVideoFirstPrompt(input);
+  if (input.format === 'pillole') return lessonPillolePrompt(input);
+  if (input.videoFirst || input.format === 'video_first') return lessonVideoFirstPrompt(input);
   const parts = [
     languageDirective(input.language),
     `Genera i contenuti didattici completi per la lezione seguente, in ${languageName(input.language)}.`,

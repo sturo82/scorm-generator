@@ -933,6 +933,37 @@ export class MockApiClient implements ApiClient {
     this.pushAudit('course.generate_concept_video', 'lesson', lessonId);
     return { status: 'processing', blockId, jobRef: `mock-heygen-${Date.now()}`, remainingThisMonth: 2 };
   }
+  async generateScenesCartoon(
+    courseId: string,
+    lessonId: string,
+    blockId: string,
+    nodeId?: string,
+  ): Promise<{ started: number; remainingThisMonth: number }> {
+    await delay(400);
+    const lesson = this.findLesson(courseId, lessonId);
+    const block = lesson.blocks.find((b) => b.id === blockId);
+    let started = 0;
+    if (block && block.type === 'branching_scenario') {
+      const payload = (block.payload ?? {}) as Record<string, unknown>;
+      const nodes = Array.isArray(payload.nodes) ? (payload.nodes as Array<Record<string, unknown>>) : [];
+      for (const node of nodes) {
+        if (nodeId && node.id !== nodeId) continue;
+        const media = (node.media ?? {}) as Record<string, unknown>;
+        if (String(media.kind) !== 'video' || media.storageKey) continue;
+        media.videoGenStatus = 'processing';
+        node.media = media;
+        started++;
+        setTimeout(() => {
+          media.videoGenStatus = 'ready';
+          media.storageKey = '#mock-nova-reel';
+          node.media = media;
+        }, 3000);
+      }
+      (block as { payload: unknown }).payload = payload;
+    }
+    this.pushAudit('course.generate_scene_cartoon', 'lesson', lessonId);
+    return { started, remainingThisMonth: Math.max(0, 20 - started) };
+  }
 
   // Gestione avatar HeyGen del tenant (Impostazioni → Avatar) — mock in-memory.
   private myAvatars: AvatarOption[] = [

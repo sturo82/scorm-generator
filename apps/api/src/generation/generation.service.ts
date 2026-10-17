@@ -485,6 +485,7 @@ export class GenerationService {
               toneInstruction,
               videoFirst,
               courseFocus: brief?.success ? brief.data.courseFocus : undefined,
+              format: brief?.success ? brief.data.format : undefined,
             }),
           },
         ],

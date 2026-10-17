@@ -523,6 +523,17 @@ export interface ApiClient {
     blockId: string,
     input?: { avatarId?: string; voiceId?: string; script?: string },
   ): Promise<GenerateVideoRef>;
+  /**
+   * Genera i mini-cartoon delle scene di una pillola (branching_scenario) con
+   * Nova Reel. Senza nodeId genera tutte le scene con video segnaposto; con
+   * nodeId solo quella scena. Asincrono: polling via refetch dei moduli.
+   */
+  generateScenesCartoon(
+    courseId: string,
+    lessonId: string,
+    blockId: string,
+    nodeId?: string,
+  ): Promise<{ started: number; remainingThisMonth: number }>;
 
   // Gestione avatar HeyGen del tenant (Impostazioni → Avatar). Creazione a
   // pagamento una tantum; lettura della lista senza quota.

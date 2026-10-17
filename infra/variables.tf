@@ -197,6 +197,30 @@ variable "stock_image_provider" {
   default     = "none"
 }
 
+variable "cartoon_video_provider" {
+  description = "Provider dei cartoon delle scene 'pillole' (Nova Reel). 'none' = spento; 'nova' = attivo; 'mock' = finto. Attivare solo dopo aver verificato region/bucket."
+  type        = string
+  default     = "none"
+}
+
+variable "nova_reel_region" {
+  description = "Region Bedrock dove è abilitato Nova Reel (text-to-video). Da verificare sull'account; spesso us-east-1."
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "nova_reel_output_s3_uri" {
+  description = "URI S3 base dove Nova Reel scrive l'output (es. s3://<bucket-assets>/nova-reel). Richiesto quando cartoon_video_provider = 'nova'."
+  type        = string
+  default     = ""
+}
+
+variable "nova_reel_monthly_quota" {
+  description = "Numero massimo di cartoon-scena generabili per tenant al mese."
+  type        = string
+  default     = "20"
+}
+
 variable "heygen_monthly_quota" {
   description = "Numero massimo di video avatar HeyGen generabili per tenant al mese."
   type        = string

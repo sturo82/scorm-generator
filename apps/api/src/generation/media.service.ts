@@ -19,6 +19,7 @@ import type {
   Page,
   SpeechProvider,
   TranscriptionProvider,
+  TextToVideoProvider,
   VideoGenerationProvider,
   VoiceOption,
 } from '@scorm/domain';
@@ -34,6 +35,7 @@ import {
   SPEECH_PROVIDER,
   TRANSCRIPTION_PROVIDER,
   VIDEO_GEN_PROVIDER,
+  CARTOON_VIDEO_PROVIDER,
 } from '../providers/provider.constants.js';
 
 /** Contesto di attribuzione costi passato alle operazioni media. */
@@ -167,6 +169,9 @@ export class MediaService implements OnModuleInit {
     // Opzionale: null se PROVIDER_VIDEO non è configurato (o manca l'API key).
     // In quel caso generateConceptVideo risponde 501, come lo stock image.
     @Optional() @Inject(VIDEO_GEN_PROVIDER) private readonly videoGen: VideoGenerationProvider | null,
+    // Opzionale: null se PROVIDER_CARTOON_VIDEO non è configurato. In quel caso
+    // la generazione dei cartoon delle scene "pillole" risponde 501.
+    @Optional() @Inject(CARTOON_VIDEO_PROVIDER) private readonly cartoonGen: TextToVideoProvider | null,
   ) {}
 
   /**
@@ -1543,6 +1548,263 @@ export class MediaService implements OnModuleInit {
       }
     }
     return parts.join('\n\n').trim();
+  }
+
+  // --- Cartoon delle scene "pillole" (Nova Reel) ----------------------------
+
+  /** NotImplemented coerente con gli altri provider opzionali (risposta 501). */
+  private cartoonNotConfigured(): NotImplementedException {
+    return new NotImplementedException(
+      'Generazione cartoon non configurata (imposta PROVIDER_CARTOON_VIDEO=nova e NOVA_REEL_OUTPUT_S3_URI)',
+    );
+  }
+
+  /** Scene-cartoon generate dal tenant nel mese solare corrente (per la quota). */
+  private async countCartoonsThisMonth(tenantId: string): Promise<number> {
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    return this.prisma.usageRecord.count({
+      where: { tenantId, provider: 'BEDROCK_VIDEO', source: 'scene_cartoon', createdAt: { gte: monthStart } },
+    });
+  }
+
+  /**
+   * Localizza il block branching_scenario di una lezione. Lancia se assente.
+   */
+  private findScenarioBlock(
+    blocks: unknown[],
+    blockId: string,
+  ): { id?: unknown; type?: string; payload?: Record<string, unknown> } {
+    const list = blocks as Array<{ id?: unknown; type?: string; payload?: Record<string, unknown> }>;
+    const byId = list.find((b) => b.id === blockId && b.type === 'branching_scenario');
+    if (byId) return byId;
+    const anyScenario = list.find((b) => b.type === 'branching_scenario');
+    if (anyScenario) return anyScenario;
+    throw new NotFoundException('Nessun block branching_scenario (pillola) trovato nella lezione');
+  }
+
+  /**
+   * Avvia la generazione del cartoon per UNA scena (node) di una pillola, o per
+   * TUTTE le scene con un video segnaposto se `nodeId` è assente. Per ogni scena
+   * usa `media.placeholderPrompt` (storyboard) come prompt text-to-video, avvia
+   * Nova Reel, segna la scena 'processing' e fa polling in background. Ritorna
+   * quante scene sono state avviate.
+   */
+  async generateScenesCartoon(
+    tenantId: string,
+    courseId: string,
+    lessonId: string,
+    blockId: string,
+    nodeId?: string,
+  ): Promise<{ started: number; remainingThisMonth: number }> {
+    if (!this.cartoonGen) throw this.cartoonNotConfigured();
+    const cfg = this.config.get('novaReel', { infer: true });
+    const course = await this.prisma.course.findFirst({ where: { id: courseId, tenantId }, select: { language: true } });
+    const lesson = await this.requireLesson(tenantId, courseId, lessonId);
+    const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as unknown[]) : [];
+    const scenario = this.findScenarioBlock(blocks, blockId);
+    const payload = (scenario.payload ?? {}) as Record<string, unknown>;
+    const nodes = Array.isArray(payload.nodes) ? (payload.nodes as Array<Record<string, unknown>>) : [];
+
+    // Scene candidate: quelle con media VIDEO ancora SENZA file (placeholder) e
+    // non già in elaborazione. Se nodeId è dato, limita a quella scena.
+    const candidates = nodes.filter((n) => {
+      if (nodeId && n.id !== nodeId) return false;
+      const m = (n.media ?? {}) as Record<string, unknown>;
+      return String(m.kind) === 'video' && !m.storageKey && m.videoGenStatus !== 'processing';
+    });
+    if (candidates.length === 0) {
+      throw new BadRequestException(
+        nodeId
+          ? 'La scena indicata non ha un video da generare (già presente o non è un video).'
+          : 'Nessuna scena con video da generare in questa pillola.',
+      );
+    }
+
+    // Quota mensile per tenant.
+    const used = await this.countCartoonsThisMonth(tenantId);
+    const room = Math.max(0, cfg.monthlyQuota - used);
+    if (room === 0) {
+      throw new BadRequestException(
+        `Hai esaurito i ${cfg.monthlyQuota} cartoon/mese. Attendi il mese prossimo o alza NOVA_REEL_MONTHLY_QUOTA.`,
+      );
+    }
+    const toStart = candidates.slice(0, room);
+
+    const jobs: Array<{ nodeId: string; jobRef: string }> = [];
+    for (const node of toStart) {
+      const media = (node.media ?? {}) as Record<string, unknown>;
+      const prompt = String(media.placeholderPrompt || media.alt || '').trim();
+      if (!prompt) continue;
+      try {
+        const { jobRef } = await this.cartoonGen.startJob({
+          prompt,
+          durationSec: cfg.sceneDurationSec,
+          language: course?.language ?? undefined,
+          aspectRatio: '16:9',
+        });
+        media.videoGenStatus = 'processing';
+        media.videoGenJobRef = jobRef;
+        delete media.videoGenError;
+        node.media = media;
+        jobs.push({ nodeId: node.id as string, jobRef });
+      } catch (err) {
+        this.logger.warn(`Avvio cartoon scena ${String(node.id)} fallito: ${rawVideoGenError(err)}`);
+      }
+    }
+
+    if (jobs.length === 0) {
+      throw new BadRequestException('Nessun cartoon avviato (storyboard mancante o provider non disponibile).');
+    }
+
+    scenario.payload = payload;
+    await this.prisma.lesson.update({
+      where: { id: lessonId },
+      data: { blocks: blocks as object, updatedAt: new Date() },
+    });
+
+    // Polling SEQUENZIALE in background: le scene condividono lo stesso record
+    // lesson.blocks, quindi applicare i risultati UNO ALLA VOLTA evita la race
+    // (lost update) che si avrebbe con N polling concorrenti che riscrivono il
+    // medesimo JSON.
+    void this.pollCartoonJobsSequential(
+      { tenantId, courseId, lessonId, blockId: scenario.id as string },
+      jobs,
+    );
+
+    return { started: jobs.length, remainingThisMonth: Math.max(0, room - jobs.length) };
+  }
+
+  /** Esegue in sequenza il polling+applicazione dei cartoon delle scene. */
+  private async pollCartoonJobsSequential(
+    base: { tenantId: string; courseId: string; lessonId: string; blockId: string },
+    jobs: Array<{ nodeId: string; jobRef: string }>,
+  ): Promise<void> {
+    for (const j of jobs) {
+      await this.pollCartoonJob({ ...base, nodeId: j.nodeId }, j.jobRef);
+    }
+  }
+
+  /** Polling in background di un job cartoon Nova Reel per una scena. */
+  private async pollCartoonJob(
+    ctx: { tenantId: string; courseId: string; lessonId: string; blockId: string; nodeId: string },
+    jobRef: string,
+  ): Promise<void> {
+    if (!this.cartoonGen) return;
+    const deadline = Date.now() + VIDEOGEN_POLL_TIMEOUT_MS;
+    try {
+      for (;;) {
+        if (Date.now() > deadline) {
+          await this.writeCartoonError(ctx, 'La generazione del cartoon ha impiegato troppo tempo.').catch(() => undefined);
+          return;
+        }
+        await sleep(VIDEOGEN_POLL_INTERVAL_MS);
+        const r = await this.cartoonGen.fetchJob(jobRef);
+        if (r.status === 'processing') continue;
+        if (r.status === 'failed') {
+          this.logger.warn(`Cartoon scena ${ctx.nodeId} fallito: ${r.reason}`);
+          await this.writeCartoonError(ctx, r.reason).catch(() => undefined);
+          return;
+        }
+        await this.applyCartoonResult(ctx, r.s3Uri, r.durationSec);
+        return;
+      }
+    } catch (err) {
+      this.logger.warn(`Polling cartoon scena ${ctx.nodeId} fallito: ${rawVideoGenError(err)}`);
+      await this.writeCartoonError(ctx, rawVideoGenError(err)).catch(() => undefined);
+    }
+  }
+
+  /**
+   * Scarica il cartoon prodotto (da data: URL del mock o da s3:// del bucket
+   * dell'app), lo salva sotto la key canonica dei media, imposta storageKey nel
+   * media della scena, azzera lo stato e registra il metering (SECONDS).
+   */
+  private async applyCartoonResult(
+    ctx: { tenantId: string; courseId: string; lessonId: string; blockId: string; nodeId: string },
+    s3Uri: string,
+    durationSec: number | undefined,
+  ): Promise<void> {
+    const bytes = await this.readCartoonBytes(s3Uri);
+    const key = `media/${ctx.tenantId}/${ctx.courseId}/video/${randomUUID()}.mp4`;
+    await this.storage.putObject(key, Buffer.from(bytes), { contentType: 'video/mp4' });
+
+    const lesson = await this.requireLesson(ctx.tenantId, ctx.courseId, ctx.lessonId);
+    const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as unknown[]) : [];
+    const scenario = this.findScenarioBlock(blocks, ctx.blockId);
+    const payload = (scenario.payload ?? {}) as Record<string, unknown>;
+    const nodes = Array.isArray(payload.nodes) ? (payload.nodes as Array<Record<string, unknown>>) : [];
+    const node = nodes.find((n) => n.id === ctx.nodeId);
+    if (node) {
+      const media = (node.media ?? {}) as Record<string, unknown>;
+      media.storageKey = key;
+      media.source = 'upload';
+      media.videoGenStatus = 'ready';
+      delete media.videoGenJobRef;
+      delete media.videoGenError;
+      node.media = media;
+      scenario.payload = payload;
+      await this.prisma.lesson.update({
+        where: { id: ctx.lessonId },
+        data: { blocks: blocks as object, updatedAt: new Date() },
+      });
+    }
+
+    const seconds = Math.max(1, Math.ceil(durationSec ?? this.config.get('novaReel', { infer: true }).sceneDurationSec));
+    await this.meter.record({
+      tenantId: ctx.tenantId,
+      courseId: ctx.courseId,
+      provider: 'BEDROCK_VIDEO',
+      model: this.config.get('novaReel', { infer: true }).modelId,
+      unit: 'SECONDS',
+      quantity: seconds,
+      source: 'scene_cartoon',
+      // Listino region-agnostico (seed 'global'): evita mismatch con la region
+      // Bedrock effettiva (Nova Reel non è in tutte le region).
+      region: 'global',
+    });
+    this.logger.log(`Cartoon scena ${ctx.nodeId} pronto (${seconds}s): ${key}`);
+  }
+
+  /**
+   * Legge i byte del cartoon prodotto. Supporta:
+   *  - data: URL (mock) → decodifica base64;
+   *  - s3://<bucket>/<key> nel bucket dell'app → storage.getObject(key).
+   */
+  private async readCartoonBytes(s3Uri: string): Promise<Uint8Array> {
+    if (s3Uri.startsWith('data:')) {
+      const { bytes } = await downloadVideo(s3Uri);
+      return bytes;
+    }
+    const m = /^s3:\/\/([^/]+)\/(.+)$/.exec(s3Uri);
+    if (!m) throw new Error(`URI output cartoon non riconosciuto: ${s3Uri}`);
+    const key = m[2]!;
+    const buf = await this.storage.getObject(key);
+    return new Uint8Array(buf);
+  }
+
+  /** Scrive lo stato di errore della generazione cartoon nel media della scena. */
+  private async writeCartoonError(
+    ctx: { tenantId: string; courseId: string; lessonId: string; blockId: string; nodeId: string },
+    reason: string,
+  ): Promise<void> {
+    const lesson = await this.requireLesson(ctx.tenantId, ctx.courseId, ctx.lessonId);
+    const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as unknown[]) : [];
+    const scenario = this.findScenarioBlock(blocks, ctx.blockId);
+    const payload = (scenario.payload ?? {}) as Record<string, unknown>;
+    const nodes = Array.isArray(payload.nodes) ? (payload.nodes as Array<Record<string, unknown>>) : [];
+    const node = nodes.find((n) => n.id === ctx.nodeId);
+    if (!node) return;
+    const media = (node.media ?? {}) as Record<string, unknown>;
+    media.videoGenStatus = 'failed';
+    media.videoGenError = reason;
+    delete media.videoGenJobRef;
+    node.media = media;
+    scenario.payload = payload;
+    await this.prisma.lesson.update({
+      where: { id: ctx.lessonId },
+      data: { blocks: blocks as object, updatedAt: new Date() },
+    });
   }
 
   private async requireLesson(tenantId: string, courseId: string, lessonId: string) {

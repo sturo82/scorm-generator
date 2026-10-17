@@ -86,6 +86,7 @@ enum MeterProvider {
   POLLY
   TRANSCRIBE
   HEYGEN
+  BEDROCK_VIDEO
 }
 
 // Unità di consumo misurata. Determina come `quantity` va moltiplicata per il

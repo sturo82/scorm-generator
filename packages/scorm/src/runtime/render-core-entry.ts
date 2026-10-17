@@ -107,6 +107,7 @@ function applyStateful(root: HTMLElement, spec: StatefulSpec): void {
   function rerender(): void {
     host!.innerHTML = '';
     host!.appendChild(mount(renderStateful(spec, state, resolve, labels)));
+    applyScenarioVideoGate(host!);
   }
   function dispatch(ev: string, arg?: string, arg2?: string): void {
     state = reduce(spec, state, { ev, arg, arg2 });
@@ -141,6 +142,22 @@ function applyStateful(root: HTMLElement, spec: StatefulSpec): void {
   });
 
   rerender();
+}
+
+/**
+ * Libro-game "pillole": in una scena con video "gated" (data-scenario-video=
+ * "gate"), nascondi le scelte finché il video non termina, poi rivelale. Se il
+ * video non è riproducibile o l'utente usa i controlli, resta un fallback:
+ * le scelte compaiono comunque al primo 'ended'. Idempotente per render.
+ */
+function applyScenarioVideoGate(host: HTMLElement): void {
+  const video = host.querySelector<HTMLVideoElement>('video[data-scenario-video="gate"]');
+  const choices = host.querySelector<HTMLElement>('.scenario-choices[data-choices-gated="1"]');
+  if (!video || !choices) return;
+  // Stato iniziale: scelte nascoste finché il video non finisce.
+  choices.setAttribute('hidden', 'hidden');
+  const reveal = (): void => choices.removeAttribute('hidden');
+  video.addEventListener('ended', reveal, { once: true });
 }
 
 /** video-karaoke: tab + evidenziazione cue su timeupdate + click-to-seek. */

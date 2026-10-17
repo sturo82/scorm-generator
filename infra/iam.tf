@@ -70,6 +70,24 @@ data "aws_iam_policy_document" "api_permissions" {
     )
   }
 
+  # Bedrock Nova Reel (cartoon pillole): invocazione ASINCRONA (text-to-video)
+  # con output su S3. Richiede le azioni async oltre a InvokeModel, sulla region
+  # dei cartoon (var.nova_reel_region) sia sul foundation-model sia a livello di
+  # account (gli async-invoke non supportano ARN per-risorsa granulari).
+  statement {
+    sid = "BedrockNovaReelAsync"
+    actions = [
+      "bedrock:StartAsyncInvoke",
+      "bedrock:GetAsyncInvoke",
+      "bedrock:ListAsyncInvokes",
+      "bedrock:InvokeModel",
+    ]
+    resources = [
+      "arn:aws:bedrock:${var.nova_reel_region}::foundation-model/*",
+      "arn:aws:bedrock:${var.nova_reel_region}:${data.aws_caller_identity.current.account_id}:async-invoke/*",
+    ]
+  }
+
   # S3: oggetti del solo bucket assets.
   statement {
     sid       = "S3Assets"

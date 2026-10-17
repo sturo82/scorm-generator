@@ -4,6 +4,7 @@ export * from './mock-image-provider.js';
 export * from './mock-speech-provider.js';
 export * from './mock-transcription-provider.js';
 export * from './mock-video-generation-provider.js';
+export * from './mock-text-to-video-provider.js';
 export * from './in-memory-vector-store.js';
 export * from './local-object-storage.js';
 export * from './in-memory-job-queue.js';

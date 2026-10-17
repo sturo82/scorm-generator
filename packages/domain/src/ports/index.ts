@@ -5,6 +5,7 @@ export * from './stock-image-provider.js';
 export * from './speech-provider.js';
 export * from './transcription-provider.js';
 export * from './video-generation-provider.js';
+export * from './text-to-video-provider.js';
 export * from './vector-store.js';
 export * from './object-storage.js';
 export * from './job-queue.js';

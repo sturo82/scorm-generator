@@ -350,18 +350,61 @@ function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: Medi
     children.push(h('p', { class: 'scenario-end' }, [L.scenarioNoStart]));
     return h('div', { class: 'scenario-view', 'aria-live': 'polite' }, children);
   }
-  if (node.media) {
-    const src = resolveMedia(node.media);
-    if (src) children.push(h('img', { class: 'block-media', src, alt: String(node.media.alt || ''), loading: 'lazy' }));
+  // Libro-game "pillole": le scelte compaiono dopo il video della scena.
+  const gateOnMedia = spec.payload.gateChoicesOnMedia === true;
+  const media = node.media;
+  const isVideo = !!media && String(media.kind) === 'video';
+  const mediaSrc = media ? resolveMedia(media) : null;
+  // Il gating è attivo solo se c'è un video RIPRODUCIBILE (src risolto): su un
+  // segnaposto senza file non si può aspettare la fine, quindi le scelte restano
+  // visibili per non bloccare la fruizione in anteprima.
+  const gated = gateOnMedia && isVideo && !!mediaSrc;
+
+  if (media) {
+    if (isVideo && mediaSrc) {
+      // Scena video del libro-game: mostra il mini-video (cartoon).
+      children.push(
+        h('video', {
+          class: 'block-media scenario-video',
+          src: mediaSrc,
+          controls: 'true',
+          playsinline: 'true',
+          preload: 'metadata',
+          // Segnale per il behavior: al termine del video rivela le scelte.
+          'data-scenario-video': gated ? 'gate' : 'free',
+        }),
+      );
+    } else if (isVideo && !mediaSrc) {
+      // Video segnaposto (storyboard non ancora prodotto): riquadro informativo.
+      children.push(
+        h('div', { class: 'scenario-video-placeholder', 'aria-label': String(media.alt || '') }, [
+          String(media.alt || media.placeholderPrompt || ''),
+        ]),
+      );
+    } else if (mediaSrc) {
+      children.push(
+        h('img', { class: 'block-media', src: mediaSrc, alt: String(media.alt || ''), loading: 'lazy' }),
+      );
+    }
   }
   children.push(hHtml('div', { class: 'block-rich' }, node.content?.html || ''));
   const noChoices = (node.choices || []).length === 0;
   if (!s.ended && !noChoices) {
-    (node.choices || []).forEach((ch) => {
-      children.push(
-        h('button', { class: 'scenario-choice', type: 'button', 'data-ev': 'choose', 'data-arg': ch.id }, [ch.label]),
-      );
-    });
+    // Contenitore delle scelte: se "gated", parte nascosto e il behavior lo
+    // rivela alla fine del video (data-choices-gated="1").
+    const choiceButtons: VChild[] = (node.choices || []).map((ch) =>
+      h('button', { class: 'scenario-choice', type: 'button', 'data-ev': 'choose', 'data-arg': ch.id }, [ch.label]),
+    );
+    children.push(
+      h(
+        'div',
+        {
+          class: 'scenario-choices' + (gated ? ' is-gated' : ''),
+          'data-choices-gated': gated ? '1' : '0',
+        },
+        choiceButtons,
+      ),
+    );
   }
   if (s.ended || noChoices) {
     children.push(h('p', { class: 'scenario-end' }, [L.scenarioEnd(s.score)]));

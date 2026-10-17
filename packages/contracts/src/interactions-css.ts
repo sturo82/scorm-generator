@@ -335,6 +335,9 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
 
 .scenario-choice { display: block; width: 100%; text-align: left; margin-top: 0.5rem; padding: 0.7rem 0.9rem; border: 1px solid var(--ix-border); border-radius: 10px; background: var(--ix-surface); color: var(--ix-on-surface); cursor: pointer; transition: border-color var(--mo-dur) var(--mo-ease), background var(--mo-dur) var(--mo-ease); }
 .scenario-choice:hover { border-color: var(--ix-accent); background: color-mix(in srgb, var(--ix-accent) 6%, transparent); }
+.scenario-video { width: 100%; max-height: 420px; border-radius: 10px; background: #000; margin-bottom: 0.75rem; }
+.scenario-video-placeholder { display: grid; place-items: center; min-height: 160px; padding: 1rem; border: 1px dashed var(--ix-border); border-radius: 10px; background: color-mix(in srgb, var(--ix-accent) 4%, transparent); color: var(--ix-on-surface); font-size: 0.85rem; text-align: center; margin-bottom: 0.75rem; }
+.scenario-choices.is-gated[hidden] { display: none; }
 
 /* ============================================================================
    QUIZ / ASSESSMENT — feedback immediato animato.

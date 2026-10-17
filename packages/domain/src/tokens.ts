@@ -11,6 +11,7 @@ import type {
   TranscriptionProvider,
   VectorStore,
   VideoGenerationProvider,
+  TextToVideoProvider,
 } from './ports/index.js';
 
 /**
@@ -25,6 +26,7 @@ export const TOKENS = {
   SpeechProvider: createToken<SpeechProvider>('SpeechProvider'),
   TranscriptionProvider: createToken<TranscriptionProvider>('TranscriptionProvider'),
   VideoGenerationProvider: createToken<VideoGenerationProvider>('VideoGenerationProvider'),
+  TextToVideoProvider: createToken<TextToVideoProvider>('TextToVideoProvider'),
   FeedProvider: createToken<FeedProvider>('FeedProvider'),
   VectorStore: createToken<VectorStore>('VectorStore'),
   ObjectStorage: createToken<ObjectStorage>('ObjectStorage'),

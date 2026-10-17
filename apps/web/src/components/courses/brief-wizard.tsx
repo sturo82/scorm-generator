@@ -14,6 +14,7 @@ import { Dropzone } from '@/components/knowledge/dropzone';
 import { useToast } from '@/components/ui/toast';
 import { useBrands, useKnowledge, useUploadKnowledge } from '@/lib/api/hooks';
 import { getApiClient } from '@/lib/api/client';
+import { cn } from '@/lib/cn';
 import type { KnowledgeDocView } from '@/lib/api/types';
 
 interface BriefWizardProps {
@@ -66,17 +67,18 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
       courseSourceDocIds: initial?.courseSourceDocIds ?? [],
       autoGenerateImages: initial?.autoGenerateImages ?? true,
       videoFirst: initial?.videoFirst ?? false,
+      format: initial?.format ?? (initial?.videoFirst ? 'video_first' : 'completo'),
     },
   });
 
   const { register, handleSubmit, watch, setValue, formState, trigger } = form;
   const objectives = watch('learningObjectives');
   const assessments = watch('requestedAssessments');
-  const videoFirst = watch('videoFirst');
   const brandIds = watch('brandIds');
   const knowledgeDocIds = watch('knowledgeDocIds');
   const courseSourceDocIds = watch('courseSourceDocIds');
   const autoGenerateImages = watch('autoGenerateImages');
+  const format = watch('format') ?? (watch('videoFirst') ? 'video_first' : 'completo');
   // Documenti disponibili: globali (ready) + del corso (ready), deduplicati.
   const availableDocs = React.useMemo(() => {
     const all = [...(globalDocs.data ?? []), ...(courseDocs.data ?? [])];
@@ -369,16 +371,43 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
               </div>
 
               <div className="space-y-2 rounded-lg border p-3">
-                <Checkbox
-                  checked={videoFirst === true}
-                  onChange={(c) => setValue('videoFirst', c)}
-                  label="Corso video-first (ogni lezione incentrata su un video)"
-                />
-                <p className="pl-6 text-xs text-muted-foreground">
-                  Ogni lezione sarà costruita attorno a un video (segnaposto da riempire caricando
-                  il file) con elementi dinamici e quiz affiancati. Puoi comunque marcare singole
-                  lezioni come video nello step «Struttura».
-                </p>
+                <Label>Formato del corso</Label>
+                <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Formato del corso">
+                  {([
+                    ['completo', 'Completo', 'Testo, immagini, interazioni e quiz. Il formato classico.'],
+                    ['video_first', 'Video-first', 'Ogni lezione è incentrata su un video, con elementi e quiz affiancati.'],
+                    ['pillole', 'Pillole', 'Mini-video interattivi in stile libro-game: scegli e scopri le conseguenze.'],
+                  ] as Array<['completo' | 'video_first' | 'pillole', string, string]>).map(
+                    ([val, title, desc]) => (
+                      <button
+                        key={val}
+                        type="button"
+                        role="radio"
+                        aria-checked={format === val}
+                        onClick={() => {
+                          setValue('format', val);
+                          // Mantiene videoFirst allineato (compat con prompt/player).
+                          setValue('videoFirst', val === 'video_first');
+                        }}
+                        className={cn(
+                          'rounded-lg border p-3 text-left transition-colors',
+                          format === val
+                            ? 'border-primary bg-primary/10'
+                            : 'border-input hover:bg-accent/60',
+                        )}
+                      >
+                        <span className="block text-sm font-medium">{title}</span>
+                        <span className="mt-0.5 block text-xs text-muted-foreground">{desc}</span>
+                      </button>
+                    ),
+                  )}
+                </div>
+                {format === 'pillole' && (
+                  <p className="pl-1 text-xs text-muted-foreground">
+                    Ogni pillola è un breve percorso a scene con scelte e conseguenze. I mini-video
+                    (cartoon) sono segnaposto da caricare; la generazione ne produce lo storyboard.
+                  </p>
+                )}
               </div>
             </div>
           )}

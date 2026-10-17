@@ -1,12 +1,13 @@
 import { Inject, Module, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { JobEnvelope, JobQueue, VideoGenerationProvider } from '@scorm/domain';
+import type { JobEnvelope, JobQueue, VideoGenerationProvider, TextToVideoProvider } from '@scorm/domain';
 import { HeyGenVideoProvider } from '@scorm/adapters/heygen';
+import { NovaReelProvider } from '@scorm/adapters/bedrock';
 import { testing } from '@scorm/adapters';
 import { KnowledgeModule } from '../knowledge/knowledge.module.js';
 import { CoursesModule } from '../courses/courses.module.js';
 import type { AppConfig } from '../config/configuration.js';
-import { JOB_QUEUE, VIDEO_GEN_PROVIDER } from '../providers/provider.constants.js';
+import { JOB_QUEUE, VIDEO_GEN_PROVIDER, CARTOON_VIDEO_PROVIDER } from '../providers/provider.constants.js';
 import {
   GenerationService,
   type GenJobType,
@@ -48,6 +49,35 @@ const videoGenProvider = {
 };
 
 /**
+ * Provider dei cartoon delle scene "pillole" (text-to-video), scelto da config:
+ *  - PROVIDER_CARTOON_VIDEO=nova + NOVA_REEL_OUTPUT_S3_URI → Amazon Nova Reel
+ *  - PROVIDER_CARTOON_VIDEO=mock                           → mock (no costi AWS)
+ *  - altrimenti                                            → null: service 501
+ */
+const cartoonVideoProvider = {
+  provide: CARTOON_VIDEO_PROVIDER,
+  inject: [ConfigService],
+  useFactory: (config: ConfigService<AppConfig, true>): TextToVideoProvider | null => {
+    const cfg = config.get('novaReel', { infer: true });
+    if (cfg.provider === 'nova' && cfg.outputS3Uri) {
+      const aws = config.get('bedrock', { infer: true });
+      return new NovaReelProvider({
+        modelId: cfg.modelId,
+        region: cfg.region,
+        outputS3Uri: cfg.outputS3Uri,
+        accessKeyId: aws.accessKeyId,
+        secretAccessKey: aws.secretAccessKey,
+        sessionToken: aws.sessionToken,
+      });
+    }
+    if (cfg.provider === 'mock') {
+      return new testing.MockTextToVideoProvider();
+    }
+    return null;
+  },
+};
+
+/**
  * Modulo di generazione AI. Importa KnowledgeModule per il RetrievalService
  * (RAG) e CoursesModule per ModulesService (materializzazione outline). I
  * provider (LLM, immagini, audio, storage, coda) sono risolti dal container
@@ -57,7 +87,7 @@ const videoGenProvider = {
 @Module({
   imports: [KnowledgeModule, CoursesModule],
   controllers: [GenerationController, AvatarsController, JobsController, ActiveJobsController],
-  providers: [GenerationService, MediaService, videoGenProvider],
+  providers: [GenerationService, MediaService, videoGenProvider, cartoonVideoProvider],
   exports: [GenerationService, MediaService],
 })
 export class GenerationModule implements OnModuleInit {

@@ -434,6 +434,20 @@ export function useGenerateConceptVideo(courseId: string) {
   });
 }
 
+/**
+ * Genera i cartoon delle scene di una pillola (branching_scenario) con Nova
+ * Reel. Senza nodeId genera tutte le scene con video segnaposto; con nodeId
+ * solo quella scena. Invalida i moduli così la UI mostra processing→ready.
+ */
+export function useGenerateScenesCartoon(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { lessonId: string; blockId: string; nodeId?: string }) =>
+      api.generateScenesCartoon(courseId, vars.lessonId, vars.blockId, vars.nodeId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.modules(courseId) }),
+  });
+}
+
 // --- Gestione avatar HeyGen del tenant (Impostazioni → Avatar) --------------
 
 /** Lista degli avatar dell'account (i "miei"). `q` cerca per nome. */
