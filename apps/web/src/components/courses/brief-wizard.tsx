@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Brief, type Brief as BriefType } from '@scorm/contracts';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input, Label } from '@/components/ui/input';
@@ -13,6 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dropzone } from '@/components/knowledge/dropzone';
 import { useToast } from '@/components/ui/toast';
 import { useBrands, useKnowledge, useUploadKnowledge } from '@/lib/api/hooks';
+import { getApiClient } from '@/lib/api/client';
 import type { KnowledgeDocView } from '@/lib/api/types';
 
 interface BriefWizardProps {
@@ -426,18 +427,52 @@ function KnowledgeDocRow({
   onToggle: (checked: boolean) => void;
   isCourseSource?: boolean;
 }) {
+  const toast = useToast();
   const busy = doc.status === 'PENDING' || doc.status === 'PROCESSING';
   const failed = doc.status === 'FAILED';
+  const [downloading, setDownloading] = React.useState(false);
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      const url = await getApiClient().getKnowledgeDownloadUrl(doc.id);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = doc.filename;
+      a.rel = 'noopener';
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : 'Download non riuscito', 'error');
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <div className="flex items-center gap-2">
-      <Checkbox
-        checked={checked}
-        onChange={onToggle}
-        disabled={busy || failed}
-        label={`${doc.filename}${!isCourseSource && doc.scope === 'COURSE' ? ' (corso)' : ''}`}
-      />
+      <div className="min-w-0 flex-1">
+        <Checkbox
+          checked={checked}
+          onChange={onToggle}
+          disabled={busy || failed}
+          label={`${doc.filename}${!isCourseSource && doc.scope === 'COURSE' ? ' (corso)' : ''}`}
+        />
+      </div>
       {busy && <span className="text-xs text-muted-foreground">elaborazione…</span>}
       {failed && <span className="text-xs text-destructive">errore</span>}
+      <button
+        type="button"
+        aria-label={`Scarica ${doc.filename}`}
+        title="Scarica"
+        disabled={downloading}
+        onClick={() => void handleDownload()}
+        className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+      >
+        <Download className="size-4" />
+      </button>
     </div>
   );
 }

@@ -1,11 +1,12 @@
 'use client';
 
 import * as React from 'react';
-import { Check, ChevronRight, ChevronDown, FileText, ListTree, Wand2, Image as ImageIcon, Eye, Search } from 'lucide-react';
+import { Check, ChevronRight, ChevronDown, FileText, ListTree, Wand2, Image as ImageIcon, Eye, Search, Database } from 'lucide-react';
 import type { Brief } from '@scorm/contracts';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
 import { BriefWizard } from '@/components/courses/brief-wizard';
+import { CourseSourcesPanel } from '@/components/courses/course-sources-panel';
 import { CourseBuilder } from '@/components/courses/course-builder';
 import { CoursePreview } from '@/components/courses/course-preview';
 import { CoursePricingPanel } from '@/components/courses/course-pricing-panel';
@@ -30,7 +31,7 @@ import { usePendingAssessments } from '@/lib/use-pending-assessments';
 import { cn } from '@/lib/cn';
 import { ClipboardCheck } from 'lucide-react';
 
-type StepId = 'brief' | 'structure' | 'content' | 'cover' | 'review';
+type StepId = 'brief' | 'sources' | 'structure' | 'content' | 'cover' | 'review';
 
 interface StepDef {
   id: StepId;
@@ -41,6 +42,7 @@ interface StepDef {
 
 const STEPS: StepDef[] = [
   { id: 'brief', title: 'Brief', hint: 'Definisci obiettivi e pubblico del corso.', icon: FileText },
+  { id: 'sources', title: 'Fonti', hint: 'I contenuti su cui è costruito il corso.', icon: Database },
   { id: 'structure', title: 'Struttura', hint: 'Genera moduli e lezioni dal brief con un clic.', icon: ListTree },
   { id: 'content', title: 'Contenuti', hint: 'Genera i contenuti didattici delle lezioni.', icon: Wand2 },
   { id: 'cover', title: 'Media', hint: 'Copertina, immagini e narrazione.', icon: ImageIcon },
@@ -116,6 +118,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
   const hasCover = Boolean(course.data?.coverImageUrl);
   const done: Record<StepId, boolean> = {
     brief: hasBrief,
+    sources: hasBrief,
     structure: hasStructure,
     content: hasContent,
     cover: hasCover,
@@ -280,7 +283,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
         <div className="mb-4 h-2 w-full overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
           <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progressPct}%` }} />
         </div>
-        <ol className="grid gap-2 sm:grid-cols-5">
+        <ol className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {STEPS.map((step, i) => {
             const isActive = step.id === active;
             const isDone = done[step.id];
@@ -327,6 +330,17 @@ export function CourseWizard({ courseId }: { courseId: string }) {
             onSubmit={handleSaveBrief}
             saving={saveBrief.isPending}
           />
+        </StepShell>
+      )}
+
+      {active === 'sources' && (
+        <StepShell
+          title="Fonti del corso"
+          description="I contenuti su cui è costruito il corso: scaricali o rimuovili. Non compaiono nella Knowledge globale perché appartengono a questo corso."
+          onNext={goNext}
+          nextLabel="Vai alla struttura"
+        >
+          <CourseSourcesPanel courseId={courseId} />
         </StepShell>
       )}
 

@@ -1,33 +1,37 @@
 'use client';
 
 import * as React from 'react';
-import { Download, FileText, RefreshCw, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/app/page-header';
 import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { IngestStatusBadge } from '@/components/status-badge';
 import { Dropzone } from '@/components/knowledge/dropzone';
+import { KnowledgeDocCard } from '@/components/knowledge/knowledge-doc-card';
 import { useToast } from '@/components/ui/toast';
 import {
+  useCourses,
   useKnowledge,
   useUploadKnowledge,
   useDeleteKnowledge,
   useReprocessKnowledge,
 } from '@/lib/api/hooks';
-import { getApiClient } from '@/lib/api/client';
-import { formatBytes } from '@/lib/format';
 
 const ACCEPT =
   '.pdf,.docx,.pptx,.xlsx,.txt,.md,.html,.csv,application/pdf,text/plain,text/markdown,text/html,text/csv';
 
 export default function KnowledgePage() {
-  const docs = useKnowledge('GLOBAL');
+  const toast = useToast();
   const upload = useUploadKnowledge();
   const del = useDeleteKnowledge();
   const reprocess = useReprocessKnowledge();
-  const toast = useToast();
-  const [busyId, setBusyId] = React.useState<string | null>(null);
+
+  // Vista: knowledge GLOBALE (riusabile) oppure le fonti di uno specifico corso.
+  // '' = globale; altrimenti l'id del corso selezionato.
+  const [courseFilter, setCourseFilter] = React.useState('');
+  const isCourseView = courseFilter !== '';
+
+  const courses = useCourses();
+  const docs = useKnowledge(isCourseView ? 'COURSE' : 'GLOBAL', isCourseView ? courseFilter : undefined);
 
   async function handleFiles(files: File[]) {
     for (const file of files) {
@@ -40,58 +44,71 @@ export default function KnowledgePage() {
     }
   }
 
-  async function handleDelete(id: string, name: string) {
-    if (!confirm(`Eliminare "${name}"? Verranno rimossi anche i relativi embeddings.`)) return;
-    try {
-      await del.mutateAsync(id);
-      toast.show('Documento eliminato', 'success');
-    } catch {
-      toast.show('Eliminazione non riuscita', 'error');
-    }
+  function handleDelete(id: string, name: string) {
+    // La conferma spiega la conseguenza reale: per le fonti di un corso, la
+    // rimozione incide sulle FUTURE rigenerazioni, non sul contenuto già prodotto.
+    const msg = isCourseView
+      ? `Eliminare "${name}"? È una fonte del corso: verrà rimossa dalle future rigenerazioni (il contenuto già generato resta). Si rimuovono anche i relativi embeddings.`
+      : `Eliminare "${name}"? Verranno rimossi anche i relativi embeddings.`;
+    if (!confirm(msg)) return;
+    void del
+      .mutateAsync(id)
+      .then(() => toast.show('Documento eliminato', 'success'))
+      .catch(() => toast.show('Eliminazione non riuscita', 'error'));
   }
 
-  async function handleReprocess(id: string) {
-    try {
-      await reprocess.mutateAsync(id);
-      toast.show('Riprocessamento avviato', 'success');
-    } catch (err) {
-      toast.show(err instanceof Error ? err.message : 'Riprocessamento non riuscito', 'error');
-    }
-  }
-
-  async function handleDownload(id: string, name: string) {
-    setBusyId(id);
-    try {
-      const url = await getApiClient().getKnowledgeDownloadUrl(id);
-      // Apre l'URL firmato: il browser scarica il file originale.
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name;
-      a.rel = 'noopener';
-      a.target = '_blank';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    } catch (err) {
-      toast.show(err instanceof Error ? err.message : 'Download non riuscito', 'error');
-    } finally {
-      setBusyId(null);
-    }
+  function handleReprocess(id: string) {
+    void reprocess
+      .mutateAsync(id)
+      .then(() => toast.show('Riprocessamento avviato', 'success'))
+      .catch((err) =>
+        toast.show(err instanceof Error ? err.message : 'Riprocessamento non riuscito', 'error'),
+      );
   }
 
   return (
     <>
       <PageHeader
         title="Knowledge base"
-        description="Carica documenti per dare contesto all'AI. La knowledge globale è riusabile da tutti i corsi."
+        description="Carica documenti per dare contesto all'AI. La knowledge globale è riusabile da tutti i corsi; le fonti di un corso sono i contenuti su cui quel corso è costruito."
       />
 
-      <div className="mb-8">
-        <Dropzone onFiles={handleFiles} accept={ACCEPT} disabled={upload.isPending} />
-        {upload.isPending && <p className="mt-2 text-sm text-muted-foreground">Caricamento in corso…</p>}
+      {/* Selettore vista: Globale vs fonti di un corso specifico. */}
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <label htmlFor="kb-scope" className="text-sm font-medium">
+          Mostra
+        </label>
+        <Select
+          id="kb-scope"
+          value={courseFilter}
+          className="max-w-xs"
+          onChange={(e) => setCourseFilter(e.target.value)}
+        >
+          <option value="">Knowledge globale (riusabile)</option>
+          <optgroup label="Fonti di un corso">
+            {(courses.data ?? []).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.title}
+              </option>
+            ))}
+          </optgroup>
+        </Select>
       </div>
 
-      <h2 className="mb-3 text-lg font-semibold">Documenti</h2>
+      {/* Upload: solo per la knowledge GLOBALE. Le fonti di un corso si creano
+          dal corso (flusso "da argomento" o upload nello step del brief). */}
+      {!isCourseView && (
+        <div className="mb-8">
+          <Dropzone onFiles={handleFiles} accept={ACCEPT} disabled={upload.isPending} />
+          {upload.isPending && (
+            <p className="mt-2 text-sm text-muted-foreground">Caricamento in corso…</p>
+          )}
+        </div>
+      )}
+
+      <h2 className="mb-3 text-lg font-semibold">
+        {isCourseView ? 'Fonti del corso' : 'Documenti'}
+      </h2>
 
       {docs.isLoading && (
         <div className="space-y-2">
@@ -104,7 +121,9 @@ export default function KnowledgePage() {
       {docs.data && docs.data.length === 0 && (
         <Card className="border-dashed">
           <CardContent className="py-12 text-center text-muted-foreground">
-            Nessun documento. Carica il primo file per iniziare.
+            {isCourseView
+              ? 'Questo corso non ha ancora fonti. Si creano generando il corso da un argomento o caricando documenti dallo step «Brief».'
+              : 'Nessun documento. Carica il primo file per iniziare.'}
           </CardContent>
         </Card>
       )}
@@ -112,49 +131,12 @@ export default function KnowledgePage() {
       <ul className="space-y-2">
         {docs.data?.map((doc) => (
           <li key={doc.id}>
-            <Card>
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground">
-                  <FileText className="size-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{doc.filename}</p>
-                  <p className="text-sm text-muted-foreground">{formatBytes(doc.sizeBytes)}</p>
-                </div>
-                <IngestStatusBadge status={doc.status} />
-                {doc.status === 'FAILED' && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Riprocessa documento"
-                    className="text-muted-foreground"
-                    disabled={reprocess.isPending}
-                    onClick={() => handleReprocess(doc.id)}
-                  >
-                    <RefreshCw className="size-4" />
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Scarica documento"
-                  className="text-muted-foreground"
-                  disabled={busyId === doc.id}
-                  onClick={() => handleDownload(doc.id, doc.filename)}
-                >
-                  <Download className="size-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Elimina documento"
-                  className="text-muted-foreground"
-                  onClick={() => handleDelete(doc.id, doc.filename)}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </CardContent>
-            </Card>
+            <KnowledgeDocCard
+              doc={doc}
+              onReprocess={handleReprocess}
+              reprocessing={reprocess.isPending}
+              onDelete={handleDelete}
+            />
           </li>
         ))}
       </ul>
