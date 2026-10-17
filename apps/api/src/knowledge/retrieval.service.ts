@@ -107,6 +107,62 @@ export class RetrievalService {
   }
 
   /**
+   * Cerca semanticamente nella knowledge GLOBAL del tenant i DOCUMENTI più
+   * pertinenti a un argomento, per includerli tra le fonti di un corso "da
+   * argomento". Ritorna documenti DISTINTI (non chunk): per ciascuno il chunk
+   * più pertinente (come sommario) e lo score massimo. Non tocca la knowledge
+   * COURSE. Se `vector` è fornito, lo riusa (evita un secondo embedding e il
+   * relativo costo); altrimenti embedda `text`.
+   */
+  async searchGlobalDocs(input: {
+    tenantId: string;
+    text: string;
+    /** Embedding dell'argomento già calcolato a monte (riuso, zero costo extra). */
+    vector?: number[];
+    /** Numero massimo di documenti distinti da restituire. */
+    maxDocs?: number;
+    /** Soglia minima di similarità per considerare un chunk pertinente. */
+    minScore?: number;
+  }): Promise<Array<{ documentId: string; documentName: string; text: string; score: number }>> {
+    const maxDocs = input.maxDocs ?? 4;
+    const minScore = input.minScore ?? 0.35;
+    const scope = { tenantId: input.tenantId };
+
+    let embedding = input.vector;
+    if (!embedding || embedding.length === 0) {
+      [embedding] = await this.embeddings.embed([input.text]);
+      void this.meter.record({
+        tenantId: input.tenantId,
+        courseId: null,
+        provider: 'BEDROCK_EMBEDDINGS',
+        model: this.config.get('bedrock', { infer: true }).embeddingsModelId,
+        unit: 'INPUT_TOKENS',
+        quantity: estimateTokensFromText([input.text]),
+        source: 'rag_query',
+      });
+    }
+    if (!embedding || embedding.length === 0) return [];
+
+    // Prende abbondante dai soli chunk GLOBAL, poi collassa per documento
+    // tenendo il chunk più pertinente di ciascuno.
+    const matches = await this.vectors.query(scope, embedding, maxDocs * 6, { scope: 'global' });
+    const byDoc = new Map<string, { documentId: string; documentName: string; text: string; score: number }>();
+    for (const m of matches) {
+      if (m.score < minScore) continue;
+      const existing = byDoc.get(m.documentId);
+      if (!existing || m.score > existing.score) {
+        byDoc.set(m.documentId, {
+          documentId: m.documentId,
+          documentName: m.documentName,
+          text: m.text,
+          score: m.score,
+        });
+      }
+    }
+    return [...byDoc.values()].sort((a, b) => b.score - a.score).slice(0, maxDocs);
+  }
+
+  /**
    * Elenca i chunk della knowledge pertinenti al corso (global + course,
    * rispettando la whitelist knowledgeDocIds), SENZA vettori. Serve a
    * impacchettare l'indice RAG lessicale offline nel pacchetto SCORM e per

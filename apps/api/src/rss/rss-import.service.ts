@@ -5,6 +5,7 @@ import { DEFAULT_FEEDS, FEED_CATEGORIES, defaultFeedsForCategory, type FeedCateg
 import type { AppConfig } from '../config/configuration.js';
 import { CoursesService } from '../courses/courses.service.js';
 import { KnowledgeService } from '../knowledge/knowledge.service.js';
+import { RetrievalService } from '../knowledge/retrieval.service.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { estimateTokensFromText } from '../metering/token-estimate.js';
 import { TenantFeedService } from './tenant-feed.service.js';
@@ -96,6 +97,8 @@ const DEFAULT_MAX_ARTICLES = 12;
 const HARD_MAX_ARTICLES = 25;
 /** Candidati usati per l'ANTEPRIMA (pochi: solo per sintetizzare i concetti). */
 const PREVIEW_CANDIDATES = 24;
+/** Documenti della knowledge GLOBAL esistente da includere tra le fonti. */
+const KNOWLEDGE_CANDIDATES = 6;
 
 /** Pre-sommario mostrato all'utente prima di generare il corso. */
 export interface RssPreviewResult {
@@ -120,12 +123,17 @@ export interface RssPreviewResult {
 }
 
 /** Provenienza di un candidato (determina se e come recuperare il full-text). */
-type CandidateKind = 'feed' | 'gnews' | 'wikipedia' | 'oer';
+type CandidateKind = 'feed' | 'gnews' | 'wikipedia' | 'oer' | 'knowledge';
 
 interface Candidate extends FeedListItem {
   kind: CandidateKind;
-  /** Testo già pronto (Wikipedia): se presente, non serve scraping. */
+  /** Testo già pronto (Wikipedia/OER/knowledge): se presente, non serve scraping. */
   readyText?: string;
+  /**
+   * Per i candidati 'knowledge': id del documento GLOBAL già indicizzato. Serve
+   * a includerlo in brief.knowledgeDocIds SENZA ri-ingerirlo (è già chunked).
+   */
+  knowledgeDocId?: string;
   /** Embedding del titolo+sommario (riempito nel pre-filtro). */
   vector?: number[];
   /** Similarità coseno con l'argomento. */
@@ -148,6 +156,7 @@ export class RssImportService {
   constructor(
     private readonly courses: CoursesService,
     private readonly knowledge: KnowledgeService,
+    private readonly retrieval: RetrievalService,
     private readonly tenantFeeds: TenantFeedService,
     private readonly briefService: RssBriefService,
     private readonly meter: UsageMeterService,
@@ -229,7 +238,15 @@ export class RssImportService {
     // brief, così la generazione resta ancorata alle SOLE fonti del corso.
     let imported = 0;
     const knowledgeDocIds: string[] = [];
+    // Documenti GLOBAL esistenti scelti: NON si ri-ingeriscono (già indicizzati),
+    // si agganciano direttamente alla whitelist RAG del corso.
+    let reusedExisting = 0;
     for (const item of chosen) {
+      if (item.kind === 'knowledge' && item.knowledgeDocId) {
+        knowledgeDocIds.push(item.knowledgeDocId);
+        reusedExisting++;
+        continue;
+      }
       try {
         const html = await this.buildArticleHtml(item);
         const doc = await this.knowledge.upload({
@@ -248,7 +265,8 @@ export class RssImportService {
       }
     }
 
-    if (imported === 0) {
+    // Serve almeno una fonte utilizzabile: articoli ingeriti o knowledge riusata.
+    if (imported === 0 && reusedExisting === 0) {
       throw new BadRequestException('Nessun articolo è stato importato (contenuti vuoti o quota esaurita).');
     }
 
@@ -274,10 +292,20 @@ export class RssImportService {
     }
 
     this.logger.log(
-      `Corso ${course.id} da argomento "${topic}": ${imported} storie da ${candidatesExamined} candidati` +
+      `Corso ${course.id} da argomento "${topic}": ${imported} storie ingerite` +
+        (reusedExisting > 0 ? ` + ${reusedExisting} doc dalla knowledge esistente` : '') +
+        ` da ${candidatesExamined} candidati` +
         (briefDrafted ? ' + brief autocompilato' : ''),
     );
-    return { courseId: course.id, importedCount: imported, candidatesExamined, failedFeeds, briefDrafted };
+    // importedCount riflette TUTTE le fonti collegate al corso (articoli nuovi +
+    // documenti già presenti riusati), per coerenza con ciò che l'utente vede.
+    return {
+      courseId: course.id,
+      importedCount: imported + reusedExisting,
+      candidatesExamined,
+      failedFeeds,
+      briefDrafted,
+    };
   }
 
   /**
@@ -349,6 +377,34 @@ export class RssImportService {
     }
 
     const tasks: Array<Promise<void>> = [];
+
+    // Knowledge GLOBAL esistente del tenant: cerca i documenti già caricati
+    // pertinenti all'argomento e includili tra le fonti (SEMPRE, è roba
+    // dell'utente). Non vengono ri-ingeriti: si agganciano in create via il
+    // loro documentId. Best-effort: un errore qui non blocca la scoperta.
+    tasks.push(
+      (async () => {
+        try {
+          const docs = await this.retrieval.searchGlobalDocs({
+            tenantId: input.tenantId,
+            text: topicQuery(topic, input.language),
+            maxDocs: KNOWLEDGE_CANDIDATES,
+          });
+          for (const d of docs) {
+            collected.push({
+              kind: 'knowledge',
+              title: d.documentName,
+              summary: d.text.slice(0, 2000),
+              readyText: d.text,
+              source: 'La tua knowledge',
+              knowledgeDocId: d.documentId,
+            });
+          }
+        } catch (err) {
+          this.logger.warn(`Knowledge esistente non interrogabile: ${rawError(err)}`);
+        }
+      })(),
+    );
 
     // Feed RSS diretti (link risolvibili → full-text via Readability in create).
     tasks.push(
