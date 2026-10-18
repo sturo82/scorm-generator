@@ -862,7 +862,10 @@ function LessonCard({
   const videoGenProcessing = React.useMemo(
     () =>
       lesson.blocks.some(
-        (b) => (b.payload as { videoGenStatus?: string } | undefined)?.videoGenStatus === 'processing',
+        (b) =>
+          (b.payload as { videoGenStatus?: string } | undefined)?.videoGenStatus === 'processing' ||
+          // Pillole: anche se una SCENA del branching_scenario è in elaborazione.
+          scenarioCartoonProgress(b).processing > 0,
       ),
     [lesson.blocks],
   );
@@ -1145,11 +1148,43 @@ function LessonCard({
                       <UserRound className="size-4 text-primary" />
                     </Button>
                   )}
+                  {/* Pillole: indicatore di avanzamento della generazione dei
+                      cartoon delle scene. Mostra lo stato "in lavorazione N/M"
+                      (con spinner) mentre le scene vengono prodotte sul server,
+                      aggiornato dall'auto-refresh; oppure "pronti" a fine. */}
+                  {b.type === 'branching_scenario' &&
+                    (() => {
+                      const prog = scenarioCartoonProgress(b);
+                      if (prog.total === 0) return null;
+                      if (prog.processing > 0) {
+                        return (
+                          <span
+                            className="flex items-center gap-1 rounded-md bg-accent/50 px-2 py-1 text-xs text-muted-foreground"
+                            title="Generazione dei cartoon in corso sul server"
+                          >
+                            <AiWorkingInline label={`Cartoon ${prog.ready}/${prog.total}…`} />
+                          </span>
+                        );
+                      }
+                      if (prog.ready === prog.total) {
+                        return (
+                          <span
+                            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-primary"
+                            title="Tutti i cartoon delle scene sono pronti"
+                          >
+                            <Check className="size-3.5" /> Cartoon pronti
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
                   {/* Pillole: prova la generazione di UNA SOLA scena (costo
                       minimo ~1 clip). Utile per testare il provider video senza
                       produrre tutte le scene. Mostrato se c'è almeno una scena
-                      con cartoon segnaposto. */}
-                  {b.type === 'branching_scenario' && scenarioHasPendingCartoon(b) && (
+                      con cartoon segnaposto (e nessuna già in elaborazione). */}
+                  {b.type === 'branching_scenario' &&
+                    scenarioHasPendingCartoon(b) &&
+                    scenarioCartoonProgress(b).processing === 0 && (
                     <Button
                       size="icon"
                       variant="ghost"
@@ -1180,8 +1215,10 @@ function LessonCard({
                   )}
                   {/* Pillole: genera i mini-cartoon di TUTTE le scene del
                       libro-game. Mostrato se lo scenario ha scene con video
-                      segnaposto ancora da produrre. */}
-                  {b.type === 'branching_scenario' && scenarioHasPendingCartoon(b) && (
+                      segnaposto ancora da produrre (e nessuna in elaborazione). */}
+                  {b.type === 'branching_scenario' &&
+                    scenarioHasPendingCartoon(b) &&
+                    scenarioCartoonProgress(b).processing === 0 && (
                     <Button
                       size="icon"
                       variant="ghost"
@@ -1192,8 +1229,8 @@ function LessonCard({
                         try {
                           const res = await genScenesCartoon.mutateAsync({ lessonId: lesson.id, blockId: b.id });
                           toast.show(
-                            `Generazione avviata per ${res.started} scen${res.started === 1 ? 'a' : 'e'}: ` +
-                              'prosegue sul server (le scene passano a «pronto»).',
+                            `Generazione avviata per ${res.started} scen${res.started === 1 ? 'a' : 'e'}. ` +
+                              'Vedrai l\'avanzamento qui accanto (si aggiorna da solo); ogni scena richiede qualche minuto.',
                             'success',
                           );
                         } catch (err) {
@@ -1585,6 +1622,28 @@ function scenarioHasPendingCartoon(block: Block): boolean {
     const m = (n.media ?? {}) as Record<string, unknown>;
     return String(m.kind) === 'video' && !m.storageKey;
   });
+}
+
+/**
+ * Conta lo stato dei cartoon delle scene di una pillola: quante scene video in
+ * totale, quante pronte (storageKey) e quante in elaborazione (videoGenStatus=
+ * 'processing'). Alimenta l'indicatore di avanzamento e l'auto-refresh.
+ */
+function scenarioCartoonProgress(block: Block): { total: number; ready: number; processing: number } {
+  if (block.type !== 'branching_scenario') return { total: 0, ready: 0, processing: 0 };
+  const payload = (block.payload ?? {}) as { nodes?: Array<{ media?: Record<string, unknown> }> };
+  const nodes = Array.isArray(payload.nodes) ? payload.nodes : [];
+  let total = 0;
+  let ready = 0;
+  let processing = 0;
+  for (const n of nodes) {
+    const m = (n.media ?? {}) as Record<string, unknown>;
+    if (String(m.kind) !== 'video') continue;
+    total += 1;
+    if (m.storageKey) ready += 1;
+    else if (m.videoGenStatus === 'processing') processing += 1;
+  }
+  return { total, ready, processing };
 }
 
 /**

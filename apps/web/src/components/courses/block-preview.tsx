@@ -335,13 +335,31 @@ function renderBody(
         </div>
       );
     }
+    case 'branching_scenario': {
+      // Pillole: nota di avanzamento se i cartoon delle scene sono in generazione.
+      const nodes = ((block.payload ?? {}) as { nodes?: Array<{ media?: Record<string, unknown> }> }).nodes ?? [];
+      const procScenes = nodes.filter((n) => {
+        const m = (n.media ?? {}) as Record<string, unknown>;
+        return String(m.kind) === 'video' && !m.storageKey && m.videoGenStatus === 'processing';
+      }).length;
+      return (
+        <div className="space-y-2">
+          {procScenes > 0 && (
+            <p className="rounded-md bg-accent/50 px-3 py-2 text-xs text-muted-foreground">
+              Generazione dei cartoon in corso per {procScenes} scen{procScenes === 1 ? 'a' : 'e'}. La pagina si
+              aggiorna da sola; ogni scena mostra il video appena pronto (qualche minuto).
+            </p>
+          )}
+          <BlockRenderer block={block} />
+        </div>
+      );
+    }
     case 'image_hotspot':
     case 'timeline':
     case 'click_reveal':
     case 'dragdrop_match':
     case 'dragdrop_order':
     case 'sorting_categories':
-    case 'branching_scenario':
       // Anteprima reale e interattiva via il renderer condiviso (identica a
       // corso/export): immagine+pallini, drag&drop, ordinamento, scenario, ecc.
       return <BlockRenderer block={block} />;
