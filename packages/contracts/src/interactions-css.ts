@@ -333,11 +333,25 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
 .dnd-chip.is-correct { border-color: #16a34a; background: color-mix(in srgb, #16a34a 14%, transparent); color: #15803d; }
 .dnd-chip.is-wrong { border-color: #dc2626; background: color-mix(in srgb, #dc2626 12%, transparent); color: #b91c1c; }
 
-.scenario-choice { display: block; width: 100%; text-align: left; margin-top: 0.5rem; padding: 0.7rem 0.9rem; border: 1px solid var(--ix-border); border-radius: 10px; background: var(--ix-surface); color: var(--ix-on-surface); cursor: pointer; transition: border-color var(--mo-dur) var(--mo-ease), background var(--mo-dur) var(--mo-ease); }
-.scenario-choice:hover { border-color: var(--ix-accent); background: color-mix(in srgb, var(--ix-accent) 6%, transparent); }
-.scenario-video { width: 100%; max-height: 420px; border-radius: 10px; background: #000; margin-bottom: 0.75rem; }
-.scenario-video-placeholder { display: grid; place-items: center; min-height: 160px; padding: 1rem; border: 1px dashed var(--ix-border); border-radius: 10px; background: color-mix(in srgb, var(--ix-accent) 4%, transparent); color: var(--ix-on-surface); font-size: 0.85rem; text-align: center; margin-bottom: 0.75rem; }
+/* Libro-game "pillole": PLAYER unico. Il video riempie il "palco" e gli overlay
+   (testo, scelte, esito) sono sovrapposti, così l'interazione è tutta nel player. */
+.scenario-stage { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #000; }
+.scenario-video, .scenario-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+.scenario-preload { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; left: -9999px; }
+.scenario-video-placeholder { position: absolute; inset: 0; display: grid; place-items: center; padding: 1rem; background: color-mix(in srgb, var(--ix-accent) 10%, #111); color: #fff; font-size: 0.9rem; text-align: center; }
+/* Strato overlay a tutta area: non cattura i click dove non serve. */
+.scenario-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 0.75rem; padding: 1rem clamp(1rem, 4%, 2rem) clamp(1rem, 4%, 1.75rem); pointer-events: none; background: linear-gradient(to bottom, rgba(0,0,0,0) 45%, rgba(0,0,0,0.6) 100%); }
+.scenario-overlay .scenario-text { color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,0.55); font-size: clamp(1rem, 2.4vw, 1.4rem); line-height: 1.35; max-width: 70ch; }
+/* Scelte in overlay: cliccabili (riattiva pointer-events), impilate in basso. */
+.scenario-choices--overlay { pointer-events: auto; display: grid; gap: 0.6rem; }
+.scenario-choice { display: block; width: 100%; text-align: left; padding: 0.75rem 1rem; border: 1px solid rgba(255,255,255,0.35); border-radius: 12px; background: rgba(17,24,39,0.72); color: #fff; backdrop-filter: blur(4px); font-size: clamp(0.95rem, 2vw, 1.15rem); cursor: pointer; transition: border-color var(--mo-dur) var(--mo-ease), background var(--mo-dur) var(--mo-ease), transform var(--mo-dur) var(--mo-ease); }
+.scenario-choice:hover { border-color: var(--ix-accent); background: color-mix(in srgb, var(--ix-accent) 55%, rgba(17,24,39,0.72)); transform: translateY(var(--mo-lift)); }
 .scenario-choices.is-gated[hidden] { display: none; }
+/* Esito finale: pannello centrale sopra il video. */
+.scenario-outcome { pointer-events: auto; align-self: center; margin-top: auto; margin-bottom: auto; display: grid; gap: 0.75rem; justify-items: center; text-align: center; padding: 1.25rem 1.5rem; border-radius: 14px; background: rgba(17,24,39,0.82); color: #fff; backdrop-filter: blur(6px); }
+.scenario-outcome .scenario-end { margin: 0; font-size: clamp(1.05rem, 2.6vw, 1.5rem); font-weight: 700; }
+.scenario-restart { pointer-events: auto; padding: 0.6rem 1.1rem; border: 1px solid rgba(255,255,255,0.4); border-radius: 999px; background: var(--ix-accent); color: var(--ix-on-primary, #fff); font-weight: 600; cursor: pointer; }
+.scenario-restart:hover { transform: scale(var(--mo-pop)); }
 
 /* ============================================================================
    QUIZ / ASSESSMENT — feedback immediato animato.

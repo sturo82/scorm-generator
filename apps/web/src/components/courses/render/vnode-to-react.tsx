@@ -151,11 +151,36 @@ const previewResolve = (m: Record<string, unknown>): string | null =>
 function StatefulView({ node, spec }: { node: VNode; spec: StatefulSpec }): React.ReactElement {
   const [state, setState] = React.useState<StatefulState>(() => initialState(spec));
   const dragValue = React.useRef<string | null>(null);
+  const rootRef = React.useRef<HTMLDivElement>(null);
   const labels = React.useContext(LabelsContext);
 
   function dispatch(ev: string, arg?: string, arg2?: string): void {
     setState((s) => reduce(spec, s, { ev, arg, arg2 }));
   }
+
+  // Parità col player SCORM per lo scenario "pillole": a ogni scena il video
+  // parte dall'inizio in autoplay e, se "gated", le scelte in overlay restano
+  // nascoste finché il video non finisce (poi compaiono). Il preload della clip
+  // successiva è già nel markup (<video class="scenario-preload">).
+  React.useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const video = root.querySelector<HTMLVideoElement>('video.scenario-video');
+    if (!video) return;
+    try {
+      video.currentTime = 0;
+      const pr = video.play();
+      if (pr && typeof pr.catch === 'function') pr.catch(() => undefined);
+    } catch {
+      /* play() non disponibile */
+    }
+    const gatedChoices = root.querySelector<HTMLElement>('.scenario-choices[data-choices-gated="1"]');
+    if (!gatedChoices) return;
+    gatedChoices.setAttribute('hidden', 'hidden');
+    const reveal = (): void => gatedChoices.removeAttribute('hidden');
+    video.addEventListener('ended', reveal, { once: true });
+    return () => video.removeEventListener('ended', reveal);
+  }, [state]);
   function onClick(e: React.MouseEvent<HTMLDivElement>): void {
     const t = (e.target as HTMLElement).closest<HTMLElement>('[data-ev]');
     if (!t) return;
@@ -190,7 +215,7 @@ function StatefulView({ node, spec }: { node: VNode; spec: StatefulSpec }): Reac
   );
   const props = toReactProps(shell.attrs);
   const children = (shell.children ?? []).map((c, i) => renderVChild(c, i));
-  return React.createElement(shell.tag, { ...props, onClick, onDragStart, onDragOver, onDrop }, ...children);
+  return React.createElement(shell.tag, { ...props, ref: rootRef, onClick, onDragStart, onDragOver, onDrop }, ...children);
 }
 
 /** video-karaoke: tab attivo + evidenziazione cue su timeupdate + click-to-seek. */

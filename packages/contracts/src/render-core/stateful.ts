@@ -370,61 +370,91 @@ function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: Medi
   // visibili per non bloccare la fruizione in anteprima.
   const gated = gateOnMedia && isVideo && !!mediaSrc;
 
-  if (media) {
-    if (isVideo && mediaSrc) {
-      // Scena video del libro-game: mostra il mini-video (cartoon).
-      children.push(
-        h('video', {
-          class: 'block-media scenario-video',
-          src: mediaSrc,
-          controls: 'true',
-          playsinline: 'true',
-          preload: 'metadata',
-          // Segnale per il behavior: al termine del video rivela le scelte.
-          'data-scenario-video': gated ? 'gate' : 'free',
-        }),
-      );
-    } else if (isVideo && !mediaSrc) {
-      // Video segnaposto (storyboard non ancora prodotto): riquadro informativo.
-      children.push(
-        h('div', { class: 'scenario-video-placeholder', 'aria-label': String(media.alt || '') }, [
-          String(media.alt || media.placeholderPrompt || ''),
-        ]),
-      );
-    } else if (mediaSrc) {
-      children.push(
-        h('img', { class: 'block-media', src: mediaSrc, alt: String(media.alt || ''), loading: 'lazy' }),
-      );
+  const noChoices = (node.choices || []).length === 0;
+  const ended = s.ended || noChoices;
+
+  // --- PLAYER: un "palco" (stage) con il video a tutto riquadro e, SOPRA, gli
+  // overlay (testo della scena + scelte + esito). Così l'esperienza è tutta
+  // dentro il player: l'utente guarda, poi le scelte compaiono sovrapposte al
+  // video e, al click, parte la clip della scena successiva (stesso player). ---
+  const stageChildren: VChild[] = [];
+
+  if (isVideo && mediaSrc) {
+    stageChildren.push(
+      h('video', {
+        class: 'block-media scenario-video',
+        src: mediaSrc,
+        // controls lasciati ma l'esperienza è autoplay + gate; playsinline per iOS.
+        controls: 'true',
+        playsinline: 'true',
+        preload: 'auto',
+        'data-scenario-video': gated ? 'gate' : 'free',
+      }),
+    );
+  } else if (isVideo && !mediaSrc) {
+    stageChildren.push(
+      h('div', { class: 'scenario-video-placeholder', 'aria-label': String(media?.alt || '') }, [
+        String(media?.alt || media?.placeholderPrompt || ''),
+      ]),
+    );
+  } else if (mediaSrc) {
+    stageChildren.push(
+      h('img', { class: 'block-media scenario-image', src: mediaSrc, alt: String(media?.alt || ''), loading: 'lazy' }),
+    );
+  }
+
+  // Preload nascosto delle clip delle scene raggiungibili (nextNodeId): così al
+  // click la scena successiva parte senza stacco percepibile. Idempotente.
+  if (!ended) {
+    for (const ch of node.choices || []) {
+      if (!ch.nextNodeId) continue;
+      const nx = nodeById(spec, ch.nextNodeId);
+      const nm = nx?.media;
+      const nsrc = nm ? resolveMedia(nm as Record<string, unknown>) : null;
+      if (nsrc && String((nm as Record<string, unknown>).kind) === 'video') {
+        stageChildren.push(
+          h('video', { class: 'scenario-preload', src: nsrc, preload: 'auto', muted: 'true', 'aria-hidden': 'true' }),
+        );
+      }
     }
   }
-  children.push(hHtml('div', { class: 'block-rich' }, node.content?.html || ''));
-  const noChoices = (node.choices || []).length === 0;
-  if (!s.ended && !noChoices) {
-    // Contenitore delle scelte: se "gated", parte nascosto e il behavior lo
-    // rivela alla fine del video (data-choices-gated="1").
+
+  // Overlay di CONTENUTO: testo della scena (in basso, leggibile sul velo).
+  const overlayChildren: VChild[] = [];
+  const html = node.content?.html || '';
+  if (html) overlayChildren.push(hHtml('div', { class: 'block-rich scenario-text' }, html));
+
+  // Overlay di SCELTE (sovrapposte al video). Se "gated" parte nascosto e il
+  // behavior lo rivela a fine video (data-choices-gated="1").
+  if (!ended) {
     const choiceButtons: VChild[] = (node.choices || []).map((ch) =>
       h('button', { class: 'scenario-choice', type: 'button', 'data-ev': 'choose', 'data-arg': ch.id }, [ch.label]),
     );
-    children.push(
+    overlayChildren.push(
       h(
         'div',
         {
-          class: 'scenario-choices' + (gated ? ' is-gated' : ''),
+          class: 'scenario-choices scenario-choices--overlay' + (gated ? ' is-gated' : ''),
           'data-choices-gated': gated ? '1' : '0',
         },
         choiceButtons,
       ),
     );
-  }
-  if (s.ended || noChoices) {
-    children.push(h('p', { class: 'scenario-end' }, [L.scenarioEnd(s.score)]));
-    children.push(
-      h('button', { class: 'scenario-restart', type: 'button', 'data-ev': 'restart' }, [L.scenarioRestart]),
+  } else {
+    // Esito finale: messaggio + replay, in overlay centrale.
+    overlayChildren.push(
+      h('div', { class: 'scenario-outcome' }, [
+        h('p', { class: 'scenario-end' }, [L.scenarioEnd(s.score)]),
+        h('button', { class: 'scenario-restart', type: 'button', 'data-ev': 'restart' }, [L.scenarioRestart]),
+      ]),
     );
   }
+
+  stageChildren.push(h('div', { class: 'scenario-overlay' }, overlayChildren));
+
   return h(
     'div',
     { class: 'scenario-view scenario-' + role, 'data-scenario-role': role, 'aria-live': 'polite' },
-    children,
+    [h('div', { class: 'scenario-stage' }, stageChildren)],
   );
 }
