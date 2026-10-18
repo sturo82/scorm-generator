@@ -35,6 +35,10 @@ export const Module = z.object({
 });
 export type Module = z.infer<typeof Module>;
 
+/** Motore di sintesi vocale (Amazon Polly): economico vs qualità superiore. */
+export const SpeechEngine = z.enum(['standard', 'neural']);
+export type SpeechEngine = z.infer<typeof SpeechEngine>;
+
 export const Course = z.object({
   id: Id,
   tenantId: Id,
@@ -62,6 +66,13 @@ export const Course = z.object({
    * (barra in alto espandibile). Applicata identica ad anteprima e player SCORM.
    */
   navPosition: z.enum(['side', 'top']).default('side'),
+  /**
+   * Preferenza del motore di sintesi vocale (Polly) per la narrazione: 'standard'
+   * (economico) o 'neural' (qualità superiore, più costoso). Assente = eredita il
+   * default dell'ambiente (SPEECH_ENGINE). Override puntuale possibile al momento
+   * della generazione della narrazione.
+   */
+  speechEngine: SpeechEngine.optional(),
   /** Brand primario del corso: pilota colori/logo/accenti (anteprima + export). */
   primaryBrandId: z.string().optional(),
   /**

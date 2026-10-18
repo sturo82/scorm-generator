@@ -200,7 +200,10 @@ variable "stock_image_provider" {
 variable "cartoon_video_provider" {
   description = "Provider dei cartoon delle scene 'pillole'. 'none' = spento; 'luma' = Luma Ray 2 (Bedrock, us-west-2); 'nova' = Nova Reel (se disponibile); 'mock' = finto."
   type        = string
-  default     = "luma"
+  # SPENTO in prod: Luma Ray 2 su Bedrock costa ~$1.50/s a 720p (~$52 a pillola
+  # da 7 scene) — proibitivo. In attesa di un provider economico (fal.ai:
+  # Seedance/Wan/LTX ~$0.02-0.08/s). Lasciare 'none' finché non è pronto.
+  default = "none"
 }
 
 variable "cartoon_video_model_id" {

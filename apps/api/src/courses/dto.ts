@@ -41,6 +41,10 @@ export class UpdateCourseSettingsDto {
   navPosition?: 'side' | 'top';
 
   @IsOptional()
+  @IsIn(['standard', 'neural'])
+  speechEngine?: 'standard' | 'neural';
+
+  @IsOptional()
   @IsInt()
   @Min(0)
   @Max(100)

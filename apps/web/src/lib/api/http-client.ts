@@ -105,7 +105,7 @@ export class HttpApiClient implements ApiClient {
   saveBriefDraft(courseId: string, draft: BriefDraft) {
     return this.request<CourseView>(`/courses/${courseId}/brief/draft`, { method: 'PUT', body: JSON.stringify(draft) });
   }
-  updateCourseSettings(courseId: string, settings: { interactionStyle?: 'sober' | 'lively'; navPosition?: 'side' | 'top'; coverPosition?: number; primaryBrandId?: string; instructor?: { name?: string; role?: string; avatarKey?: string } }) {
+  updateCourseSettings(courseId: string, settings: { interactionStyle?: 'sober' | 'lively'; navPosition?: 'side' | 'top'; speechEngine?: 'standard' | 'neural'; coverPosition?: number; primaryBrandId?: string; instructor?: { name?: string; role?: string; avatarKey?: string } }) {
     return this.request<CourseView>(`/courses/${courseId}/settings`, { method: 'PUT', body: JSON.stringify(settings) });
   }
   setCourseShareable(courseId: string, shareable: boolean) {
@@ -214,10 +214,10 @@ export class HttpApiClient implements ApiClient {
       { method: 'POST' },
     );
   }
-  generateLessonNarration(courseId: string, lessonId: string) {
+  generateLessonNarration(courseId: string, lessonId: string, engine?: 'standard' | 'neural') {
     return this.request<{ url: string; bytes: number; voice: string }>(
       `/courses/${courseId}/generate/lessons/${lessonId}/narration`,
-      { method: 'POST' },
+      { method: 'POST', body: JSON.stringify(engine ? { engine } : {}) },
     );
   }
   generateCover(courseId: string) {

@@ -43,6 +43,18 @@ class GenerateContentDto {
   toneInstruction?: string;
 }
 
+/** Opzioni per la generazione della narrazione audio (TTS). */
+class GenerateNarrationDto {
+  /**
+   * Override puntuale del motore TTS: 'standard' (economico) o 'neural' (qualità
+   * superiore, più costoso). Se assente, si usa la preferenza del corso o il
+   * default dell'ambiente.
+   */
+  @IsOptional()
+  @IsIn(['standard', 'neural'])
+  engine?: 'standard' | 'neural';
+}
+
 /** Opzioni per la generazione del video avatar di un concetto. */
 class GenerateConceptVideoDto {
   /** Avatar HeyGen scelto dall'autore (altrimenti il default configurato). */
@@ -140,8 +152,9 @@ export class GenerationController {
     @CurrentContext() ctx: AuthContext,
     @Param('courseId') courseId: string,
     @Param('lessonId') lessonId: string,
+    @Body() dto: GenerateNarrationDto = {},
   ) {
-    return this.media.generateLessonNarration(ctx.tenant.tenantId, courseId, lessonId);
+    return this.media.generateLessonNarration(ctx.tenant.tenantId, courseId, lessonId, dto.engine);
   }
 
   /**

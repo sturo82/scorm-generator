@@ -339,6 +339,8 @@ interface ScenarioNode {
   content?: { html?: string };
   choices?: Choice[];
   media?: Record<string, unknown>;
+  /** Ruolo didattico: 'teach' (spiega) o 'quiz' (verifica). Opzionale. */
+  role?: 'teach' | 'quiz';
 }
 function nodeById(spec: StatefulSpec, id: string): ScenarioNode | undefined {
   return ((spec.payload.nodes as ScenarioNode[]) || []).find((n) => n.id === id);
@@ -350,6 +352,14 @@ function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: Medi
     children.push(h('p', { class: 'scenario-end' }, [L.scenarioNoStart]));
     return h('div', { class: 'scenario-view', 'aria-live': 'polite' }, children);
   }
+  // Ruolo didattico della scena (pillole): 'teach' spiega, 'quiz' verifica.
+  // Se assente, lo deduciamo: più di una scelta ⇒ quiz, altrimenti teach.
+  const role =
+    node.role === 'teach' || node.role === 'quiz'
+      ? node.role
+      : (node.choices || []).length > 1
+        ? 'quiz'
+        : 'teach';
   // Libro-game "pillole": le scelte compaiono dopo il video della scena.
   const gateOnMedia = spec.payload.gateChoicesOnMedia === true;
   const media = node.media;
@@ -412,5 +422,9 @@ function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: Medi
       h('button', { class: 'scenario-restart', type: 'button', 'data-ev': 'restart' }, [L.scenarioRestart]),
     );
   }
-  return h('div', { class: 'scenario-view', 'aria-live': 'polite' }, children);
+  return h(
+    'div',
+    { class: 'scenario-view scenario-' + role, 'data-scenario-role': role, 'aria-live': 'polite' },
+    children,
+  );
 }

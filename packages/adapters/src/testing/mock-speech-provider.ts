@@ -20,6 +20,7 @@ export class MockSpeechProvider implements SpeechProvider {
       bytes: new Uint8Array(MP3_SILENCE),
       contentType: 'audio/mpeg',
       voice: input.voice ?? 'mock',
+      engine: input.engine ?? 'neural',
     };
   }
 }

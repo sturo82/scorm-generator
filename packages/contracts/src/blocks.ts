@@ -122,6 +122,18 @@ export const BranchingChoice = z.object({
   score: z.number().optional(),
   feedback: z.string().optional(),
 });
+/**
+ * Ruolo didattico della scena nel formato "pillole":
+ *  - 'teach': SPIEGA un concetto (video + testo), poi una sola scelta "continua"
+ *    che prosegue verso la scena successiva. Non valutata.
+ *  - 'quiz': VERIFICA l'apprendimento con scelte valutate (score/feedback) che
+ *    diramano verso scene/esiti diversi.
+ * Opzionale per retrocompatibilità: assente = comportamento classico (il player
+ * deduce dal numero di scelte). La pillola ideale alterna teach → ... → quiz.
+ */
+export const BranchingNodeRole = z.enum(['teach', 'quiz']);
+export type BranchingNodeRole = z.infer<typeof BranchingNodeRole>;
+
 export const BranchingNode = z.object({
   id: Id,
   content: RichText,
@@ -132,6 +144,8 @@ export const BranchingNode = z.object({
    * le scelte (vedi `gateChoicesOnMedia`).
    */
   media: MediaRef.optional(),
+  /** Ruolo didattico della scena (spiegazione vs verifica). Opzionale. */
+  role: BranchingNodeRole.optional(),
   choices: z.array(BranchingChoice).default([]),
 });
 export const BranchingScenarioPayload = Scorable.partial().extend({

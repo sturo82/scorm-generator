@@ -35,6 +35,8 @@ export interface CourseView {
   interactionStyle: InteractionStyle;
   /** Posizione del menu di navigazione: 'side' (default) | 'top'. */
   navPosition: 'side' | 'top';
+  /** Preferenza motore TTS della narrazione: 'standard' | 'neural' (assente = default ambiente). */
+  speechEngine?: 'standard' | 'neural';
   /** Brand primario del corso (colori/logo/accenti). */
   primaryBrandId?: string;
   /** Docente/relatore del corso (nome, ruolo, URL foto firmato). */
@@ -127,6 +129,7 @@ export class CoursesService {
     settings: {
       interactionStyle?: InteractionStyle;
       navPosition?: 'side' | 'top';
+      speechEngine?: 'standard' | 'neural';
       coverPosition?: number;
       primaryBrandId?: string | null;
       instructor?: { name?: string | null; role?: string | null; avatarKey?: string | null } | null;
@@ -136,6 +139,7 @@ export class CoursesService {
     const data: {
       interactionStyle?: string;
       navPosition?: string;
+      speechEngine?: string;
       coverPosition?: number;
       primaryBrandId?: string | null;
       instructorName?: string | null;
@@ -144,6 +148,7 @@ export class CoursesService {
     } = {};
     if (settings.interactionStyle) data.interactionStyle = settings.interactionStyle;
     if (settings.navPosition) data.navPosition = settings.navPosition;
+    if (settings.speechEngine) data.speechEngine = settings.speechEngine;
     if (settings.coverPosition !== undefined) data.coverPosition = clampPosition(settings.coverPosition);
     if (settings.primaryBrandId !== undefined) {
       // Verifica che il brand appartenga al tenant (o azzera con null).
@@ -270,6 +275,7 @@ export class CoursesService {
     coverPosition?: number | null;
     interactionStyle?: string | null;
     navPosition?: string | null;
+    speechEngine?: string | null;
     primaryBrandId?: string | null;
     instructorName?: string | null;
     instructorRole?: string | null;
@@ -318,6 +324,10 @@ export class CoursesService {
       coverPosition: clampPosition(course.coverPosition),
       interactionStyle: course.interactionStyle === 'lively' ? 'lively' : 'sober',
       navPosition: course.navPosition === 'top' ? 'top' : 'side',
+      speechEngine:
+        course.speechEngine === 'standard' || course.speechEngine === 'neural'
+          ? course.speechEngine
+          : undefined,
       primaryBrandId: course.primaryBrandId ?? undefined,
       instructor,
       folderId: course.folderId ?? null,

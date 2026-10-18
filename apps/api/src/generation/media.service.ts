@@ -108,6 +108,15 @@ const TRANSCRIPTION_POLL_INTERVAL_MS = 5_000;
 const VIDEOGEN_POLL_TIMEOUT_MS = 20 * 60_000;
 const VIDEOGEN_POLL_INTERVAL_MS = 10_000;
 
+/**
+ * Avvio dei job cartoon: su provider Bedrock Marketplace (es. Luma Ray) il
+ * PRIMO StartAsyncInvoke può fallire perché la sottoscrizione Marketplace è
+ * ancora in attivazione ("try again after 5 minutes"), e più avvii ravvicinati
+ * possono incorrere in throttling. Ritentiamo con backoff gli errori TRANSITORI.
+ */
+const CARTOON_START_MAX_ATTEMPTS = 6;
+const CARTOON_START_BACKOFF_MS = [5_000, 15_000, 30_000, 45_000, 60_000];
+
 /** Parole massime del copione per restare entro ~1 minuto di parlato (Free). */
 const VIDEO_SCRIPT_MAX_WORDS = 140;
 
@@ -402,6 +411,7 @@ export class MediaService implements OnModuleInit {
     tenantId: string,
     courseId: string,
     lessonId: string,
+    engineOverride?: 'standard' | 'neural',
   ): Promise<GenerateNarrationResult> {
     const lesson = await this.requireLesson(tenantId, courseId, lessonId);
     const course = await this.prisma.course.findFirst({ where: { id: courseId, tenantId } });
@@ -410,20 +420,27 @@ export class MediaService implements OnModuleInit {
     const text = this.extractNarrationText(blocks);
     if (!text) throw new NotFoundException('Nessun testo narrabile nella lezione');
 
+    // Risoluzione engine: override puntuale (C) → preferenza del corso (B) →
+    // default dell'ambiente (SPEECH_ENGINE). Così l'autore può alzare la qualità
+    // (neural) quando vuole, con un default sicuro/economico a livello istanza.
+    const engine = this.resolveSpeechEngine(engineOverride, (course as { speechEngine?: string } | null)?.speechEngine);
+
     const result = await this.speech.synthesize({
       text,
       language: ttsLocale(course?.language),
+      engine,
     });
     const key = `media/${tenantId}/${courseId}/audio/${lessonId}.mp3`;
     await this.storage.putObject(key, Buffer.from(result.bytes), {
       contentType: result.contentType,
     });
-    // Metering: Polly fattura per carattere sintetizzato (unità di billing).
+    // Metering: Polly fattura per carattere sintetizzato; il prezzo dipende
+    // dall'engine EFFETTIVO usato (neural ~4x standard), quindi lo riportiamo.
     await this.meter.record({
       tenantId,
       courseId,
       provider: 'POLLY',
-      model: `polly-${this.config.get('media', { infer: true }).speechEngine}`,
+      model: `polly-${result.engine ?? engine}`,
       unit: 'CHARACTERS',
       quantity: text.length,
       source: 'narration',
@@ -432,6 +449,24 @@ export class MediaService implements OnModuleInit {
     await this.prisma.lesson.update({ where: { id: lessonId }, data: { narrationKey: key } });
     const url = await this.storage.getSignedUrl(key, { expiresInSec: MEDIA_URL_TTL_SEC });
     return { url, bytes: result.bytes.byteLength, voice: result.voice };
+  }
+
+  /**
+   * Risolve il motore TTS da usare: override puntuale → preferenza del corso →
+   * default dell'ambiente. Valori non validi vengono ignorati a favore del
+   * livello successivo.
+   */
+  private resolveSpeechEngine(
+    override?: string | null,
+    coursePref?: string | null,
+  ): 'standard' | 'neural' {
+    const valid = (v?: string | null): 'standard' | 'neural' | undefined =>
+      v === 'standard' || v === 'neural' ? v : undefined;
+    return (
+      valid(override) ??
+      valid(coursePref) ??
+      this.config.get('media', { infer: true }).speechEngine
+    );
   }
 
   /**
@@ -1611,7 +1646,14 @@ export class MediaService implements OnModuleInit {
     const candidates = nodes.filter((n) => {
       if (nodeId && n.id !== nodeId) return false;
       const m = (n.media ?? {}) as Record<string, unknown>;
-      return String(m.kind) === 'video' && !m.storageKey && m.videoGenStatus !== 'processing';
+      if (String(m.kind) !== 'video' || m.storageKey) return false;
+      // Rigenera le scene senza video. Escludi quelle già in elaborazione CON un
+      // job attivo (jobRef presente): una scena 'processing' SENZA jobRef è
+      // rimasta bloccata (es. riavvio durante l'avvio) e va ripresa.
+      if (m.videoGenStatus === 'processing' && typeof m.videoGenJobRef === 'string' && m.videoGenJobRef) {
+        return false;
+      }
+      return true;
     });
     if (candidates.length === 0) {
       throw new BadRequestException(
@@ -1629,60 +1671,150 @@ export class MediaService implements OnModuleInit {
         `Hai esaurito i ${cfg.monthlyQuota} cartoon/mese. Attendi il mese prossimo o alza CARTOON_VIDEO_MONTHLY_QUOTA.`,
       );
     }
-    const toStart = candidates.slice(0, room);
+    const toStart = candidates
+      .slice(0, room)
+      .map((n) => ({
+        nodeId: String(n.id),
+        prompt: String(
+          ((n.media ?? {}) as Record<string, unknown>).placeholderPrompt ||
+            ((n.media ?? {}) as Record<string, unknown>).alt ||
+            '',
+        ).trim(),
+      }))
+      .filter((s) => s.prompt.length > 0);
 
-    const jobs: Array<{ nodeId: string; jobRef: string }> = [];
-    for (const node of toStart) {
+    if (toStart.length === 0) {
+      throw new BadRequestException('Nessun cartoon avviato (storyboard mancante in tutte le scene).');
+    }
+
+    // Marca subito TUTTE le scene candidate come 'processing' e persiste, così
+    // la UI mostra l'avanzamento anche prima che i singoli job partano (gli
+    // avvii avvengono uno alla volta in background, con retry).
+    for (const s of toStart) {
+      const node = nodes.find((n) => String(n.id) === s.nodeId);
+      if (!node) continue;
       const media = (node.media ?? {}) as Record<string, unknown>;
-      const prompt = String(media.placeholderPrompt || media.alt || '').trim();
-      if (!prompt) continue;
-      try {
-        const { jobRef } = await this.cartoonGen.startJob({
-          prompt,
-          durationSec: cfg.sceneDurationSec,
-          language: course?.language ?? undefined,
-          aspectRatio: '16:9',
-        });
-        media.videoGenStatus = 'processing';
-        media.videoGenJobRef = jobRef;
-        delete media.videoGenError;
-        node.media = media;
-        jobs.push({ nodeId: node.id as string, jobRef });
-      } catch (err) {
-        this.logger.warn(`Avvio cartoon scena ${String(node.id)} fallito: ${rawVideoGenError(err)}`);
-      }
+      media.videoGenStatus = 'processing';
+      delete media.videoGenError;
+      delete media.videoGenJobRef;
+      node.media = media;
     }
-
-    if (jobs.length === 0) {
-      throw new BadRequestException('Nessun cartoon avviato (storyboard mancante o provider non disponibile).');
-    }
-
     scenario.payload = payload;
     await this.prisma.lesson.update({
       where: { id: lessonId },
       data: { blocks: blocks as object, updatedAt: new Date() },
     });
 
-    // Polling SEQUENZIALE in background: le scene condividono lo stesso record
-    // lesson.blocks, quindi applicare i risultati UNO ALLA VOLTA evita la race
-    // (lost update) che si avrebbe con N polling concorrenti che riscrivono il
-    // medesimo JSON.
-    void this.pollCartoonJobsSequential(
-      { tenantId, courseId, lessonId, blockId: scenario.id as string },
-      jobs,
+    // Lavorazione SEQUENZIALE in background: per ogni scena avvia il job (con
+    // retry/backoff sugli errori transitori: sottoscrizione Marketplace in
+    // attivazione, throttling) e poi fa il polling fino al risultato. Elaborare
+    // UNA scena alla volta evita sia la race (lost update) sul JSON condiviso
+    // lesson.blocks, sia la raffica di StartAsyncInvoke che scatena il throttling.
+    void this.processScenesCartoonSequential(
+      {
+        tenantId,
+        courseId,
+        lessonId,
+        blockId: scenario.id as string,
+        language: course?.language ?? undefined,
+        durationSec: cfg.sceneDurationSec,
+      },
+      toStart,
     );
 
-    return { started: jobs.length, remainingThisMonth: Math.max(0, room - jobs.length) };
+    return { started: toStart.length, remainingThisMonth: Math.max(0, room - toStart.length) };
   }
 
-  /** Esegue in sequenza il polling+applicazione dei cartoon delle scene. */
-  private async pollCartoonJobsSequential(
-    base: { tenantId: string; courseId: string; lessonId: string; blockId: string },
-    jobs: Array<{ nodeId: string; jobRef: string }>,
+  /**
+   * Per ogni scena: avvia il job cartoon (con retry sugli errori transitori) e
+   * ne attende il risultato, UNA scena alla volta. La prima scena "scalda" la
+   * sottoscrizione Marketplace del provider, così le successive non incappano
+   * nell'errore di attivazione.
+   */
+  private async processScenesCartoonSequential(
+    base: {
+      tenantId: string;
+      courseId: string;
+      lessonId: string;
+      blockId: string;
+      language?: string;
+      durationSec: number;
+    },
+    scenes: Array<{ nodeId: string; prompt: string }>,
   ): Promise<void> {
-    for (const j of jobs) {
-      await this.pollCartoonJob({ ...base, nodeId: j.nodeId }, j.jobRef);
+    if (!this.cartoonGen) return;
+    for (const s of scenes) {
+      const ctx = { ...base, nodeId: s.nodeId };
+      const jobRef = await this.startCartoonJobWithRetry(s.prompt, base).catch((err) => {
+        this.logger.warn(`Avvio cartoon scena ${s.nodeId} fallito: ${rawVideoGenError(err)}`);
+        return null;
+      });
+      if (!jobRef) {
+        await this.writeCartoonError(ctx, 'Avvio della generazione non riuscito dopo più tentativi.').catch(
+          () => undefined,
+        );
+        continue;
+      }
+      await this.setCartoonJobRef(ctx, jobRef).catch(() => undefined);
+      await this.pollCartoonJob(ctx, jobRef);
     }
+  }
+
+  /**
+   * Avvia un job cartoon ritentando con backoff gli errori TRANSITORI (prima
+   * sottoscrizione Marketplace in attivazione, throttling). Rilancia subito gli
+   * errori non transitori. Ritorna il jobRef o lancia all'ultimo tentativo.
+   */
+  private async startCartoonJobWithRetry(
+    prompt: string,
+    opts: { language?: string; durationSec: number },
+  ): Promise<string> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < CARTOON_START_MAX_ATTEMPTS; attempt++) {
+      try {
+        const { jobRef } = await this.cartoonGen!.startJob({
+          prompt,
+          durationSec: opts.durationSec,
+          language: opts.language,
+          aspectRatio: '16:9',
+        });
+        return jobRef;
+      } catch (err) {
+        lastErr = err;
+        if (!isTransientCartoonError(err) || attempt === CARTOON_START_MAX_ATTEMPTS - 1) throw err;
+        const wait = CARTOON_START_BACKOFF_MS[Math.min(attempt, CARTOON_START_BACKOFF_MS.length - 1)]!;
+        this.logger.log(
+          `Avvio cartoon transitorio (tentativo ${attempt + 1}/${CARTOON_START_MAX_ATTEMPTS}), ` +
+            `riprovo tra ${Math.round(wait / 1000)}s: ${rawVideoGenError(err)}`,
+        );
+        await sleep(wait);
+      }
+    }
+    throw lastErr;
+  }
+
+  /** Persiste il jobRef sulla scena (per ripristino dopo riavvio) + processing. */
+  private async setCartoonJobRef(
+    ctx: { tenantId: string; courseId: string; lessonId: string; blockId: string; nodeId: string },
+    jobRef: string,
+  ): Promise<void> {
+    const lesson = await this.requireLesson(ctx.tenantId, ctx.courseId, ctx.lessonId);
+    const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as unknown[]) : [];
+    const scenario = this.findScenarioBlock(blocks, ctx.blockId);
+    const payload = (scenario.payload ?? {}) as Record<string, unknown>;
+    const nodes = Array.isArray(payload.nodes) ? (payload.nodes as Array<Record<string, unknown>>) : [];
+    const node = nodes.find((n) => String(n.id) === ctx.nodeId);
+    if (!node) return;
+    const media = (node.media ?? {}) as Record<string, unknown>;
+    media.videoGenStatus = 'processing';
+    media.videoGenJobRef = jobRef;
+    delete media.videoGenError;
+    node.media = media;
+    scenario.payload = payload;
+    await this.prisma.lesson.update({
+      where: { id: ctx.lessonId },
+      data: { blocks: blocks as object, updatedAt: new Date() },
+    });
   }
 
   /** Polling in background di un job cartoon Nova Reel per una scena. */
@@ -1999,6 +2131,32 @@ function rawVideoGenError(err: unknown): string {
     return err.message;
   }
   return typeof err === 'string' ? err : 'errore sconosciuto';
+}
+
+/**
+ * True se l'errore di avvio del job cartoon è TRANSITORIO e vale la pena
+ * ritentare: sottoscrizione Marketplace ancora in attivazione (tipico al primo
+ * uso di un modello Bedrock Marketplace come Luma Ray), throttling o errori
+ * di servizio temporanei. Gli errori di configurazione/permessi NON sono
+ * transitori e vanno rilanciati subito.
+ */
+function isTransientCartoonError(err: unknown): boolean {
+  const raw = rawVideoGenError(err).toLowerCase();
+  const name = err instanceof Error ? err.name.toLowerCase() : '';
+  return (
+    raw.includes('try again') ||
+    raw.includes('after 5 minutes') ||
+    raw.includes('subscription') ||
+    raw.includes('marketplace') ||
+    raw.includes('throttl') ||
+    raw.includes('too many requests') ||
+    raw.includes('rate exceeded') ||
+    raw.includes('serviceunavailable') ||
+    raw.includes('service unavailable') ||
+    name.includes('throttling') ||
+    name.includes('toomanyrequests') ||
+    name.includes('serviceunavailable')
+  );
 }
 
 /** Traduce l'errore del provider video in un messaggio chiaro per l'autore. */

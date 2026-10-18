@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus, Sparkles, Wand2, Trash2, Pencil, Image as ImageIcon, Volume2, Video, Captions, Search, Check, ChevronRight, Eye, UserRound, Film } from 'lucide-react';
+import { Plus, Sparkles, Wand2, Trash2, Pencil, Image as ImageIcon, Volume2, Video, Captions, Search, Check, ChevronRight, Eye, UserRound, Film, Clapperboard } from 'lucide-react';
 import type { Block } from '@scorm/contracts';
 import {
   DEFAULT_HEYGEN_ENGINE,
@@ -937,10 +937,17 @@ function LessonCard({
     }
   }
 
-  async function handleGenerateNarration() {
+  async function handleGenerateNarration(engine?: 'standard' | 'neural') {
     try {
-      await genNarration.mutateAsync(lesson.id);
-      toast.show('Narrazione generata', 'success');
+      await genNarration.mutateAsync({ lessonId: lesson.id, engine });
+      toast.show(
+        engine === 'neural'
+          ? 'Narrazione generata (voce neurale)'
+          : engine === 'standard'
+            ? 'Narrazione generata (voce standard)'
+            : 'Narrazione generata',
+        'success',
+      );
     } catch {
       toast.show('Generazione narrazione non riuscita', 'error');
     }
@@ -1138,15 +1145,48 @@ function LessonCard({
                       <UserRound className="size-4 text-primary" />
                     </Button>
                   )}
-                  {/* Pillole: genera i mini-cartoon delle scene del libro-game
-                      (Nova Reel). Mostrato se lo scenario ha scene con video
+                  {/* Pillole: prova la generazione di UNA SOLA scena (costo
+                      minimo ~1 clip). Utile per testare il provider video senza
+                      produrre tutte le scene. Mostrato se c'è almeno una scena
+                      con cartoon segnaposto. */}
+                  {b.type === 'branching_scenario' && scenarioHasPendingCartoon(b) && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label="Prova il cartoon di una sola scena"
+                      title="Prova: genera il cartoon di una sola scena (costo minimo)"
+                      disabled={genScenesCartoon.isPending}
+                      onClick={async () => {
+                        const nodeId = firstPendingCartoonNodeId(b);
+                        if (!nodeId) {
+                          toast.show('Nessuna scena da generare', 'error');
+                          return;
+                        }
+                        try {
+                          await genScenesCartoon.mutateAsync({ lessonId: lesson.id, blockId: b.id, nodeId });
+                          toast.show(
+                            'Generazione avviata per 1 scena: prosegue sul server ' +
+                              '(la scena passa a «pronto» in qualche minuto).',
+                            'success',
+                          );
+                        } catch (err) {
+                          const msg = err instanceof Error ? err.message.replace(/^API \d+:\s*/, '') : '';
+                          toast.show(msg || 'Generazione cartoon non avviata', 'error');
+                        }
+                      }}
+                    >
+                      <Clapperboard className="size-4 text-primary" />
+                    </Button>
+                  )}
+                  {/* Pillole: genera i mini-cartoon di TUTTE le scene del
+                      libro-game. Mostrato se lo scenario ha scene con video
                       segnaposto ancora da produrre. */}
                   {b.type === 'branching_scenario' && scenarioHasPendingCartoon(b) && (
                     <Button
                       size="icon"
                       variant="ghost"
-                      aria-label="Genera i cartoon delle scene"
-                      title="Genera i mini-cartoon delle scene (Nova Reel)"
+                      aria-label="Genera i cartoon di tutte le scene"
+                      title="Genera i mini-cartoon di tutte le scene"
                       disabled={genScenesCartoon.isPending}
                       onClick={async () => {
                         try {
@@ -1225,9 +1265,25 @@ function LessonCard({
                 {attachStock.isPending ? <AiWorkingInline label="Collego…" /> : 'Immagini stock'}
               </Button>
             )}
-            <Button size="sm" variant="outline" onClick={handleGenerateNarration} disabled={genNarration.isPending}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleGenerateNarration()}
+              disabled={genNarration.isPending}
+              title="Genera la narrazione usando la voce impostata per il corso"
+            >
               <Volume2 className="size-4" />
               {genNarration.isPending ? <AiWorkingInline label="Narrazione…" /> : 'Genera narrazione'}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => handleGenerateNarration('neural')}
+              disabled={genNarration.isPending}
+              title="Genera questa narrazione con la voce neurale (qualità superiore, più costosa)"
+            >
+              <Volume2 className="size-4 text-primary" />
+              Voce HD
             </Button>
             {videoBlock && (
               <>
@@ -1529,6 +1585,26 @@ function scenarioHasPendingCartoon(block: Block): boolean {
     const m = (n.media ?? {}) as Record<string, unknown>;
     return String(m.kind) === 'video' && !m.storageKey;
   });
+}
+
+/**
+ * Id della PRIMA scena con cartoon segnaposto ancora da generare (o null).
+ * Serve al bottone "prova una scena": genera un solo cartoon per testare il
+ * provider video a costo minimo, invece di produrre tutte le scene insieme.
+ */
+function firstPendingCartoonNodeId(block: Block): string | null {
+  if (block.type !== 'branching_scenario') return null;
+  const payload = (block.payload ?? {}) as {
+    nodes?: Array<{ id?: unknown; media?: Record<string, unknown> }>;
+  };
+  const nodes = Array.isArray(payload.nodes) ? payload.nodes : [];
+  for (const n of nodes) {
+    const m = (n.media ?? {}) as Record<string, unknown>;
+    if (String(m.kind) === 'video' && !m.storageKey && typeof n.id === 'string' && n.id) {
+      return n.id;
+    }
+  }
+  return null;
 }
 
 const BLOCK_META: Record<string, { label: string; icon: string }> = {

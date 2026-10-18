@@ -10,6 +10,12 @@ export interface SpeechSynthesizeInput {
   language?: string;
   /** Voce specifica del provider (es. "Bianca"); prevale su language. */
   voice?: string;
+  /**
+   * Motore di sintesi: 'standard' (economico) o 'neural' (qualità superiore, più
+   * costoso). Se assente, il provider usa il proprio default. Per-richiesta:
+   * consente di scegliere la qualità a livello di corso o di singola generazione.
+   */
+  engine?: 'standard' | 'neural';
 }
 
 export interface SpeechSynthesizeResult {
@@ -17,8 +23,10 @@ export interface SpeechSynthesizeResult {
   bytes: Uint8Array;
   /** MIME dell'audio (es. audio/mpeg). */
   contentType: string;
-  /** Voce/engine usati (per audit). */
+  /** Voce usata (per audit). */
   voice: string;
+  /** Engine effettivamente usato (per audit/metering). */
+  engine?: 'standard' | 'neural';
 }
 
 export interface SpeechProvider {

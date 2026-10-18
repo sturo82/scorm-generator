@@ -178,6 +178,19 @@ export function CourseWizard({ courseId }: { courseId: string }) {
     }
   }
 
+  async function handleSetSpeechEngine(engine: 'standard' | 'neural') {
+    if ((course.data?.speechEngine ?? 'neural') === engine) return;
+    try {
+      await updateSettings.mutateAsync({ speechEngine: engine });
+      toast.show(
+        engine === 'neural' ? 'Voce neurale (qualità alta) applicata' : 'Voce standard (economica) applicata',
+        'success',
+      );
+    } catch {
+      toast.show('Impostazione non salvata', 'error');
+    }
+  }
+
   async function handleSetPrimaryBrand(brandId: string) {
     if (course.data?.primaryBrandId === brandId) return;
     try {
@@ -483,6 +496,12 @@ export function CourseWizard({ courseId }: { courseId: string }) {
             onChange={handleSetNavPosition}
             saving={updateSettings.isPending}
           />
+
+          <SpeechEnginePicker
+            value={course.data?.speechEngine ?? 'neural'}
+            onChange={handleSetSpeechEngine}
+            saving={updateSettings.isPending}
+          />
         </StepShell>
       )}
 
@@ -750,6 +769,59 @@ function NavPositionPicker({
       <p className="mb-3 text-xs text-muted-foreground">
         Dove mostrare l&apos;indice di navigazione del corso. Identico in anteprima e nel pacchetto
         SCORM esportato.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {options.map((opt) => {
+          const selected = value === opt.id;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => onChange(opt.id)}
+              aria-pressed={selected}
+              className={cn(
+                'rounded-lg border p-3 text-left transition',
+                selected ? 'border-primary bg-accent/50 ring-1 ring-primary' : 'hover:bg-accent/30',
+              )}
+            >
+              <span className="flex items-center gap-2 text-sm font-medium">
+                {selected && <Check className="size-3.5 text-primary" />}
+                {opt.title}
+              </span>
+              <span className="mt-1 block text-xs text-muted-foreground">{opt.desc}</span>
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * Scelta del motore di sintesi vocale (Amazon Polly) per la narrazione del
+ * corso: 'standard' (economico) o 'neural' (qualità superiore, più costoso).
+ * È la preferenza del corso; al momento della generazione si può comunque
+ * forzare un engine diverso per quella singola narrazione.
+ */
+function SpeechEnginePicker({
+  value,
+  onChange,
+  saving,
+}: {
+  value: 'standard' | 'neural';
+  onChange: (engine: 'standard' | 'neural') => void;
+  saving?: boolean;
+}) {
+  const options: Array<{ id: 'standard' | 'neural'; title: string; desc: string }> = [
+    { id: 'standard', title: 'Standard', desc: 'Voce sintetica più semplice. Costo contenuto: ideale per bozze o grandi volumi.' },
+    { id: 'neural', title: 'Neurale', desc: 'Voce molto più naturale e fluida. Costa circa 4× la standard. Consigliata per la pubblicazione.' },
+  ];
+  return (
+    <fieldset className="rounded-xl border bg-card p-4" disabled={saving}>
+      <legend className="px-1 text-sm font-medium">Voce della narrazione</legend>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Qualità della voce per l&apos;audio generato dal testo delle lezioni. Puoi comunque
+        scegliere un&apos;altra voce al momento di generare la singola narrazione.
       </p>
       <div className="grid gap-2 sm:grid-cols-2">
         {options.map((opt) => {

@@ -290,6 +290,11 @@ model Course {
   // Propagato ad anteprima web e player SCORM (data-motion). Validato a livello
   // applicativo dall'enum interactionStyle del contratto Course.
   interactionStyle String  @default("sober")
+  // Preferenza del motore di sintesi vocale (Polly) per la narrazione del corso:
+  // "standard" (economico) o "neural" (qualità superiore, più costoso). Null =
+  // eredita il default dell'ambiente (SPEECH_ENGINE). Override puntuale possibile
+  // al momento della generazione. Validato a livello applicativo.
+  speechEngine String?
   // Posizione del menu/indice di navigazione: "side" (sidebar, default) oppure
   // "top" (barra in alto espandibile). Applicata identica ad anteprima e player.
   navPosition String  @default("side")

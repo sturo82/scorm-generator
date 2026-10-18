@@ -67,6 +67,10 @@ export class PollySpeechProvider implements SpeechProvider {
 
   async synthesize(input: SpeechSynthesizeInput): Promise<SpeechSynthesizeResult> {
     const voice = input.voice ?? this.voiceForLanguage(input.language) ?? this.defaultVoice;
+    // Engine per-richiesta (scelta del corso/generazione) con fallback al default
+    // del provider. Le voci usate (Bianca, Joanna, Amy, Lucia, Lea, Vicki, Ines)
+    // supportano sia 'standard' sia 'neural' su Polly.
+    const engine: Engine = input.engine ?? this.engine;
 
     let response;
     try {
@@ -75,7 +79,7 @@ export class PollySpeechProvider implements SpeechProvider {
           Text: input.text,
           OutputFormat: 'mp3',
           VoiceId: voice as never,
-          Engine: this.engine,
+          Engine: engine,
         }),
       );
     } catch (err) {
@@ -90,6 +94,7 @@ export class PollySpeechProvider implements SpeechProvider {
       bytes: Buffer.from(bytes),
       contentType: 'audio/mpeg',
       voice,
+      engine,
     };
   }
 

@@ -53,6 +53,8 @@ export interface CourseView {
   interactionStyle?: 'sober' | 'lively';
   /** Posizione del menu di navigazione: 'side' (default) | 'top'. */
   navPosition?: 'side' | 'top';
+  /** Preferenza motore TTS narrazione: 'standard' | 'neural' (assente = default). */
+  speechEngine?: 'standard' | 'neural';
   /** Brand primario del corso (colori/logo/accenti in anteprima + export). */
   primaryBrandId?: string;
   /** Docente/relatore del corso (header sempre visibile). */
@@ -375,6 +377,7 @@ export interface ApiClient {
     settings: {
       interactionStyle?: 'sober' | 'lively';
       navPosition?: 'side' | 'top';
+      speechEngine?: 'standard' | 'neural';
       coverPosition?: number;
       primaryBrandId?: string;
       instructor?: { name?: string; role?: string; avatarKey?: string };
@@ -413,7 +416,7 @@ export interface ApiClient {
   uploadLessonVideo(courseId: string, lessonId: string, blockId: string, file: File): Promise<{ storageKey: string; url: string }>;
   // Media: ancora sincrone (durata contenuta); ritornano il risultato diretto.
   generateLessonImages(courseId: string, lessonId: string): Promise<{ generated: number; skipped: number; failed: number; warnings: string[] }>;
-  generateLessonNarration(courseId: string, lessonId: string): Promise<{ url: string; bytes: number; voice: string }>;
+  generateLessonNarration(courseId: string, lessonId: string, engine?: 'standard' | 'neural'): Promise<{ url: string; bytes: number; voice: string }>;
   generateCover(courseId: string): Promise<{ url: string }>;
   generateModuleCover(courseId: string, moduleId: string): Promise<{ url: string }>;
 
