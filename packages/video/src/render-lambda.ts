@@ -8,9 +8,31 @@ import {
   downloadMedia,
   type AwsRegion,
 } from '@remotion/lambda';
+import { defaultProvider } from '@aws-sdk/credential-provider-node';
 import { computeAllSceneBounds, type VideoSpec, type WordMark } from '@scorm/contracts';
 import { COMPOSITION_ID } from './Root.js';
 import type { RenderPillolaInput, RenderPillolaResult } from './render.js';
+
+/**
+ * Remotion Lambda NON usa la default credential chain dell'AWS SDK: cerca le env
+ * REMOTION_AWS_ACCESS_KEY_ID/SECRET(/SESSION_TOKEN). In produzione l'API gira con
+ * un RUOLO IAM (App Runner instance role), senza chiavi statiche. Qui risolviamo
+ * le credenziali temporanee dal ruolo (default chain) e le esponiamo come env
+ * REMOTION_AWS_* appena prima della chiamata: così Remotion usa il ruolo, senza
+ * chiavi lunghe nel repo. Idempotente/best-effort: se non riesce, lascia che
+ * Remotion provi comunque (utile in locale con AWS_* già impostate).
+ */
+async function ensureRemotionCredentials(): Promise<void> {
+  if (process.env['REMOTION_AWS_ACCESS_KEY_ID'] && process.env['REMOTION_AWS_SECRET_ACCESS_KEY']) return;
+  try {
+    const creds = await defaultProvider()();
+    process.env['REMOTION_AWS_ACCESS_KEY_ID'] = creds.accessKeyId;
+    process.env['REMOTION_AWS_SECRET_ACCESS_KEY'] = creds.secretAccessKey;
+    if (creds.sessionToken) process.env['REMOTION_AWS_SESSION_TOKEN'] = creds.sessionToken;
+  } catch {
+    // best-effort: in locale potrebbero esserci già le env.
+  }
+}
 
 /**
  * Opzioni per il rendering su AWS Lambda (@remotion/lambda). La function e il
@@ -40,6 +62,7 @@ export async function renderPillolaOnLambda(
   input: RenderPillolaInput,
   opts: LambdaRenderOptions,
 ): Promise<RenderPillolaResult> {
+  await ensureRemotionCredentials();
   const audioSrc = toDataUrl(input.audio, input.audioContentType);
   const inputProps: { spec: VideoSpec; audioSrc: string; words: WordMark[] } = {
     spec: input.spec,

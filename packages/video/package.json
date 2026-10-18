@@ -22,7 +22,8 @@
     "remotion": "4.0.536",
     "@remotion/bundler": "4.0.536",
     "@remotion/renderer": "4.0.536",
-    "@remotion/lambda": "4.0.536"
+    "@remotion/lambda": "4.0.536",
+    "@aws-sdk/credential-provider-node": "3.600.0"
   },
   "devDependencies": {
     "@types/react": "18.3.1",

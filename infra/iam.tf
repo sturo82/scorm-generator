@@ -116,23 +116,64 @@ data "aws_iam_policy_document" "api_permissions" {
   # function Remotion e legge l'MP4 prodotto dal bucket Remotion. Abilitato solo
   # se var.cartoon_render_lambda_enabled = true (altrimenti nessun permesso extra:
   # il rendering gira in-process o il provider è spento).
+  # Invocazione della function Remotion + gestione (list/get) necessaria al client.
   dynamic "statement" {
     for_each = var.cartoon_render_lambda_enabled ? [1] : []
     content {
-      sid       = "RemotionLambdaInvoke"
-      actions   = ["lambda:InvokeFunction"]
-      resources = ["arn:aws:lambda:${var.cartoon_render_lambda_region}:${data.aws_caller_identity.current.account_id}:function:remotion-render-*"]
+      sid = "RemotionLambdaInvoke"
+      actions = [
+        "lambda:InvokeFunction",
+        "lambda:InvokeAsync",
+        "lambda:GetFunction",
+        "lambda:ListFunctions",
+      ]
+      resources = ["*"]
+    }
+  }
+  # S3 del bucket Remotion (site + output + info di render). Il client Remotion
+  # richiede anche il listing globale dei bucket e la location.
+  dynamic "statement" {
+    for_each = var.cartoon_render_lambda_enabled ? [1] : []
+    content {
+      sid = "RemotionLambdaS3"
+      actions = [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:PutObjectAcl",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+      ]
+      resources = [
+        "arn:aws:s3:::remotionlambda-*",
+        "arn:aws:s3:::remotionlambda-*/*",
+      ]
     }
   }
   dynamic "statement" {
     for_each = var.cartoon_render_lambda_enabled ? [1] : []
     content {
-      sid     = "RemotionLambdaS3"
-      actions = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
-      resources = [
-        "arn:aws:s3:::remotionlambda-*",
-        "arn:aws:s3:::remotionlambda-*/*",
-      ]
+      sid       = "RemotionLambdaS3List"
+      actions   = ["s3:ListAllMyBuckets"]
+      resources = ["*"]
+    }
+  }
+  # Remotion valida i permessi del chiamante (iam:SimulatePrincipalPolicy) e passa
+  # il ruolo di esecuzione alla function (iam:PassRole su remotion-lambda-role).
+  dynamic "statement" {
+    for_each = var.cartoon_render_lambda_enabled ? [1] : []
+    content {
+      sid       = "RemotionLambdaIam"
+      actions   = ["iam:SimulatePrincipalPolicy"]
+      resources = ["*"]
+    }
+  }
+  dynamic "statement" {
+    for_each = var.cartoon_render_lambda_enabled ? [1] : []
+    content {
+      sid       = "RemotionLambdaPassRole"
+      actions   = ["iam:PassRole"]
+      resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/remotion-lambda-role"]
     }
   }
 
