@@ -9,6 +9,8 @@ import {
 } from '@scorm/contracts';
 import { REGISTRY } from './registry.js';
 import { AnimatedLayer } from './AnimatedLayer.js';
+import { IllustratedBackground } from './components/IllustratedBackground.js';
+import { Caption } from './components/Caption.js';
 
 /**
  * Composition root del cartoon pillola: interpreta un VideoSpec + audio del
@@ -49,8 +51,16 @@ const SceneView: React.FC<{
   const bg = scene.background?.color;
   // Colore "primario" del tema come currentColor dei componenti SVG/testo.
   const primary = palette[0] ?? '#111827';
+  const illustration = scene.illustration;
+  const hasIllustration = !!illustration?.src;
   return (
-    <AbsoluteFill style={{ backgroundColor: bg, color: primary }}>
+    <AbsoluteFill style={{ backgroundColor: bg ?? (hasIllustration ? '#000' : undefined), color: primary }}>
+      {/* Stile B (explainer illustrato): sfondo immagine cartoon animata (Ken
+          Burns). Sopra, i layer (testo/diagrammi) e SEMPRE i sottotitoli
+          karaoke sincronizzati con la voce. */}
+      {hasIllustration && (
+        <IllustratedBackground src={illustration!.src!} kenBurns={illustration!.kenBurns} />
+      )}
       {scene.layers.map((layer) => {
         const Comp = REGISTRY[layer.component];
         if (!Comp) return null;
@@ -73,6 +83,11 @@ const SceneView: React.FC<{
           </AnimatedLayer>
         );
       })}
+      {/* Scena illustrata senza un layer Caption esplicito: aggiungiamo noi i
+          sottotitoli karaoke, così la voce è sempre accompagnata dal testo. */}
+      {hasIllustration && !scene.layers.some((l) => l.component === 'Caption') && (
+        <Caption words={words} fps={fps} />
+      )}
     </AbsoluteFill>
   );
 };

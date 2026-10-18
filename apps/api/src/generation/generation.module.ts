@@ -7,6 +7,7 @@ import type {
   TextToVideoProvider,
   LLMProvider,
   SpeechProvider,
+  ImageProvider,
 } from '@scorm/domain';
 import { HeyGenVideoProvider } from '@scorm/adapters/heygen';
 import { NovaReelProvider, LumaRayProvider } from '@scorm/adapters/bedrock';
@@ -20,6 +21,7 @@ import {
   CARTOON_VIDEO_PROVIDER,
   LLM_PROVIDER,
   SPEECH_PROVIDER,
+  IMAGE_PROVIDER,
 } from '../providers/provider.constants.js';
 import { generateVideoSpec } from './video-spec.generator.js';
 import {
@@ -70,11 +72,12 @@ const videoGenProvider = {
  */
 const cartoonVideoProvider = {
   provide: CARTOON_VIDEO_PROVIDER,
-  inject: [ConfigService, LLM_PROVIDER, SPEECH_PROVIDER],
+  inject: [ConfigService, LLM_PROVIDER, SPEECH_PROVIDER, IMAGE_PROVIDER],
   useFactory: (
     config: ConfigService<AppConfig, true>,
     llm: LLMProvider,
     speech: SpeechProvider,
+    images: ImageProvider,
   ): TextToVideoProvider | null => {
     const cfg = config.get('cartoonVideo', { infer: true });
     const aws = config.get('bedrock', { infer: true });
@@ -108,6 +111,7 @@ const cartoonVideoProvider = {
             };
       return new RemotionCartoonProvider({
         speech,
+        images,
         generateSpec: (input) => generateVideoSpec(llm, input),
         render,
       });

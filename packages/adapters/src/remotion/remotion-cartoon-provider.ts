@@ -3,9 +3,19 @@ import {
   type GenerateCartoonJobResult,
   type TextToVideoProvider,
   type SpeechProvider,
+  type ImageProvider,
   ProviderUnavailableError,
 } from '@scorm/domain';
+import { Buffer } from 'node:buffer';
 import type { VideoSpec, WordMark } from '@scorm/contracts';
+
+/**
+ * Suffisso di stile applicato ai prompt delle illustrazioni di scena, per avere
+ * un look "cartoon explainer" coerente tra le scene (stile Brain Bites).
+ */
+const ILLUSTRATION_STYLE_SUFFIX =
+  ', flat 2D cartoon illustration, clean vector style, bold simple shapes, soft warm colors, ' +
+  'friendly character design, minimal background, no text, high quality, consistent style';
 
 /**
  * Funzione che genera il VideoSpec dallo storyboard di una scena. Iniettata
@@ -33,6 +43,11 @@ export interface RemotionCartoonProviderOptions {
   generateSpec: GenerateSpecFn;
   speech: SpeechProvider;
   render: RenderFn;
+  /**
+   * Generatore di immagini (Bedrock): produce le illustrazioni di scena (stile
+   * B). Se assente, le scene restano senza illustrazione (solo grafica/testo).
+   */
+  images?: ImageProvider;
 }
 
 interface JobState {
@@ -56,6 +71,7 @@ export class RemotionCartoonProvider implements TextToVideoProvider {
   private readonly generateSpec: GenerateSpecFn;
   private readonly speech: SpeechProvider;
   private readonly render: RenderFn;
+  private readonly images?: ImageProvider;
   /** Job in corso/conclusi, per jobRef. In-memory (una scena alla volta). */
   private readonly jobs = new Map<string, JobState>();
 
@@ -63,6 +79,7 @@ export class RemotionCartoonProvider implements TextToVideoProvider {
     this.generateSpec = opts.generateSpec;
     this.speech = opts.speech;
     this.render = opts.render;
+    this.images = opts.images;
   }
 
   async startJob(input: GenerateCartoonInput): Promise<{ jobRef: string }> {
@@ -94,6 +111,8 @@ export class RemotionCartoonProvider implements TextToVideoProvider {
     try {
       const language = input.language ?? 'it';
       const { spec } = await this.generateSpec({ scenePrompt: input.prompt, language });
+      // Stile B: genera le illustrazioni delle scene (Bedrock) e popola src.
+      await this.resolveIllustrations(spec);
       const tts = await this.speech.synthesizeWithMarks!({ text: spec.voiceover.text, language });
       const { bytes, durationSec } = await this.render({
         spec,
@@ -107,6 +126,32 @@ export class RemotionCartoonProvider implements TextToVideoProvider {
       });
     } catch (err) {
       this.jobs.set(jobRef, { status: 'failed', reason: describeError(err) });
+    }
+  }
+
+  /**
+   * Per ogni scena con un'illustrazione richiesta (illustration.prompt), genera
+   * l'immagine cartoon con l'ImageProvider e ne imposta `src` come data URL
+   * (così il render — in-process o Lambda — la usa come sfondo senza storage
+   * esterno). Best-effort per scena: se una generazione fallisce, la scena resta
+   * senza illustrazione (ripiega sui layer/testo), senza bloccare il video.
+   */
+  private async resolveIllustrations(spec: VideoSpec): Promise<void> {
+    if (!this.images) return;
+    for (const scene of spec.scenes) {
+      const ill = scene.illustration;
+      if (!ill || ill.src || !ill.prompt) continue;
+      try {
+        const res = await this.images.generate({
+          prompt: ill.prompt + ILLUSTRATION_STYLE_SUFFIX,
+          width: 1280,
+          height: 768,
+        });
+        const b64 = Buffer.from(res.bytes).toString('base64');
+        ill.src = `data:${res.contentType};base64,${b64}`;
+      } catch {
+        // scena senza illustrazione: il render userà i layer/testo.
+      }
     }
   }
 }

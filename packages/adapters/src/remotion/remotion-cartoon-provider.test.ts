@@ -92,6 +92,31 @@ describe('RemotionCartoonProvider', () => {
     expect(r.status).toBe('failed');
   });
 
+  it('stile B: genera l\'illustrazione (ImageProvider) e la passa al render come src', async () => {
+    const specWithIllus: VideoSpec = {
+      ...SPEC,
+      scenes: [
+        { id: 's1', durationHint: 'auto', illustration: { prompt: 'un gatto', kenBurns: 'in' }, layers: [] },
+      ],
+    };
+    const images = {
+      id: 'mock-img',
+      generate: async () => ({ bytes: new Uint8Array([7, 7]), contentType: 'image/png', model: 'mock' }),
+    };
+    let renderedSpec: VideoSpec | undefined;
+    const render: RenderFn = async (args) => {
+      renderedSpec = args.spec;
+      return { bytes: new Uint8Array([1]), durationSec: 3 };
+    };
+    const p = new RemotionCartoonProvider({ generateSpec: async () => ({ spec: specWithIllus }), speech: speechWithMarks(), render, images });
+    const { jobRef } = await p.startJob({ prompt: 'x', language: 'it' });
+    const r = await waitDone(p, jobRef);
+    expect(r.status).toBe('completed');
+    // L'illustrazione è stata risolta in un data URL e passata al render.
+    const src = renderedSpec?.scenes[0]?.illustration?.src ?? '';
+    expect(src.startsWith('data:image/png;base64,')).toBe(true);
+  });
+
   it('startJob lancia se lo SpeechProvider non supporta i word-timings', async () => {
     const speechNoMarks: SpeechProvider = {
       id: 'mock',

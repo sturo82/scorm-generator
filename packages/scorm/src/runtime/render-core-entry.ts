@@ -151,6 +151,24 @@ function applyStateful(root: HTMLElement, spec: StatefulSpec): void {
  * le scelte compaiono comunque al primo 'ended'. Idempotente per render.
  */
 function applyScenarioVideoGate(host: HTMLElement): void {
+  // Qualsiasi video di scena (gate o free): all'ingresso nella scena riparte
+  // dall'inizio e va in autoplay, così navigando tra le scene parte SEMPRE il
+  // video (con audio) della scena corrente, non quello lasciato in pausa prima.
+  const sceneVideo = host.querySelector<HTMLVideoElement>('video.scenario-video');
+  if (sceneVideo) {
+    try {
+      sceneVideo.currentTime = 0;
+      const pr = sceneVideo.play();
+      if (pr && typeof (pr as Promise<void>).catch === 'function') {
+        // L'autoplay con audio può essere bloccato dal browser al primo caricamento
+        // (prima di un'interazione utente): in tal caso restano i controlli manuali.
+        (pr as Promise<void>).catch(() => undefined);
+      }
+    } catch {
+      /* play() non disponibile (es. jsdom): ininfluente */
+    }
+  }
+
   const video = host.querySelector<HTMLVideoElement>('video[data-scenario-video="gate"]');
   const choices = host.querySelector<HTMLElement>('.scenario-choices[data-choices-gated="1"]');
   if (!video || !choices) return;

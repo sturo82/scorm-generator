@@ -58,6 +58,7 @@ export const ComponentName = z.enum([
   'ChainDiagram',
   'IconStat',
   'ArrowFlow',
+  'LowerThird',
 ]);
 export type ComponentName = z.infer<typeof ComponentName>;
 
@@ -80,13 +81,32 @@ export const SceneBackground = z.object({
 export type SceneBackground = z.infer<typeof SceneBackground>;
 
 /**
- * Una scena del video. La durata è 'auto' (derivata dal segmento di voiceover
- * coperto dai layer) oppure esplicita in millisecondi.
+ * Illustrazione di scena (stile explainer "Brain Bites"): un'immagine 2D cartoon
+ * generata dal `prompt`, usata come SFONDO animato della scena (Ken Burns). A
+ * generazione, il provider produce l'immagine e popola `src` (data URL o
+ * storageKey); l'LLM fornisce solo il `prompt`.
+ */
+export const SceneIllustration = z.object({
+  /** Descrizione dell'illustrazione (soggetto/azione/ambientazione). */
+  prompt: z.string().min(1),
+  /** Sorgente dell'immagine risolta (riempita dal provider; assente a monte). */
+  src: z.string().optional(),
+  /** Movimento di camera sull'immagine. */
+  kenBurns: z.enum(['in', 'out', 'left', 'right', 'none']).default('in'),
+});
+export type SceneIllustration = z.infer<typeof SceneIllustration>;
+
+/**
+ * Una scena del video. La durata è 'auto' (derivata dal voiceover) oppure
+ * esplicita in ms. `illustration` (stile B) rende la scena un'illustrazione
+ * cartoon animata con testo/sottotitoli sopra; `layers` resta per i componenti
+ * grafici (diagrammi, stat) quando servono.
  */
 export const Scene = z.object({
   id: z.string().min(1),
   durationHint: z.union([z.literal('auto'), z.number().int().positive()]).default('auto'),
   background: SceneBackground.optional(),
+  illustration: SceneIllustration.optional(),
   layers: z.array(Layer).default([]),
 });
 export type Scene = z.infer<typeof Scene>;

@@ -7,6 +7,7 @@ import { BulletList } from './components/BulletList.js';
 import { ChainDiagram } from './components/ChainDiagram.js';
 import { IconStat } from './components/IconStat.js';
 import { ArrowFlow } from './components/ArrowFlow.js';
+import { LowerThird } from './components/LowerThird.js';
 
 /**
  * Registry: mappa i nomi della whitelist `ComponentName` (contracts) ai
@@ -20,4 +21,5 @@ export const REGISTRY: Record<ComponentName, React.FC<ComponentProps>> = {
   ChainDiagram,
   IconStat,
   ArrowFlow,
+  LowerThird,
 };
