@@ -23,3 +23,5 @@ export * from './folder.js';
 export * from './app-branding.js';
 export * from './video-asset.js';
 export * from './stock-image.js';
+export * from './video-spec.js';
+export * from './video-spec-timing.js';

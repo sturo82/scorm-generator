@@ -4,6 +4,8 @@ import {
   type SpeechProvider,
   type SpeechSynthesizeInput,
   type SpeechSynthesizeResult,
+  type SpeechSynthesizeWithMarksResult,
+  type SpeechWordMark,
   ProviderUnavailableError,
 } from '@scorm/domain';
 
@@ -104,8 +106,74 @@ export class PollySpeechProvider implements SpeechProvider {
     };
   }
 
+  /**
+   * Sintesi CON speech marks a livello di parola: due chiamate a Polly, una per
+   * l'MP3 e una per i marks (OutputFormat=json, SpeechMarkTypes=['word']). I
+   * marks arrivano come NDJSON (una riga JSON per parola); li convertiamo in
+   * WordMark[] con start/end in ms. Usato dal code-to-video per il sync.
+   */
+  async synthesizeWithMarks(input: SpeechSynthesizeInput): Promise<SpeechSynthesizeWithMarksResult> {
+    const audio = await this.synthesize(input);
+    const voice = input.voice ?? this.voiceForLanguage(input.language) ?? this.defaultVoice;
+    const engine: Engine = input.engine ?? this.engine;
+
+    let marksResponse;
+    try {
+      marksResponse = await this.client.send(
+        new SynthesizeSpeechCommand({
+          Text: input.text,
+          OutputFormat: 'json',
+          SpeechMarkTypes: ['word'],
+          VoiceId: voice as never,
+          Engine: engine,
+        }),
+      );
+    } catch (err) {
+      throw new ProviderUnavailableError('polly', err);
+    }
+
+    const stream = marksResponse.AudioStream;
+    if (!stream) throw new ProviderUnavailableError('polly', new Error('SpeechMarks vuoti'));
+    const raw = await (stream as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray();
+    const ndjson = Buffer.from(raw).toString('utf8');
+    const marks = parsePollySpeechMarks(ndjson);
+
+    return { ...audio, marks };
+  }
+
   private voiceForLanguage(language?: string): string | undefined {
     if (!language) return undefined;
     return VOICE_BY_LANGUAGE[language] ?? VOICE_BY_LANGUAGE[language.split('-')[0]!];
   }
+}
+
+/**
+ * Converte l'output NDJSON degli speech marks di Polly in WordMark[]. Ogni riga
+ * è un JSON tipo `{"time":500,"type":"word","start":5,"end":10,"value":"mondo"}`
+ * dove `time` è l'offset in ms della parola. `endMs` di ciascuna parola è lo
+ * `startMs` della successiva (l'ultima resta senza fine nota: endMs = startMs).
+ * Robusto a righe vuote/malformate (ignorate). Funzione pura: testabile.
+ */
+export function parsePollySpeechMarks(ndjson: string): SpeechWordMark[] {
+  const marks: SpeechWordMark[] = [];
+  for (const line of ndjson.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let obj: { time?: unknown; type?: unknown; value?: unknown };
+    try {
+      obj = JSON.parse(trimmed);
+    } catch {
+      continue; // riga non JSON: ignorata
+    }
+    if (obj.type !== 'word') continue;
+    const time = typeof obj.time === 'number' ? obj.time : Number(obj.time);
+    const value = typeof obj.value === 'string' ? obj.value : '';
+    if (!Number.isFinite(time)) continue;
+    marks.push({ word: value, startMs: time, endMs: time });
+  }
+  // endMs = start della parola successiva (ultima parola: resta uguale a start).
+  for (let i = 0; i < marks.length - 1; i++) {
+    marks[i]!.endMs = marks[i + 1]!.startMs;
+  }
+  return marks;
 }
