@@ -119,25 +119,27 @@ describe('video-spec-timing', () => {
     expect(b.endFrame).toBe(60);
   });
 
-  it('computeSceneBounds: auto → fino alla fine della parola ancorata più avanzata', () => {
+  it('computeSceneBounds: auto copre TUTTO il voiceover (ultima parola) + coda, non la parola ancorata', () => {
     const scene = {
       id: 's',
       durationHint: 'auto',
-      layers: [{ id: 'l', component: 'Caption', props: {}, enter: { at: { word: 2 }, anim: 'none', ms: 1 } }],
+      // Layer ancorato solo a word 0: la durata NON deve fermarsi lì, ma coprire
+      // l'intero voiceover (ultima parola) così l'audio non viene troncato.
+      layers: [{ id: 'l', component: 'Caption', props: {}, enter: { at: { word: 0 }, anim: 'none', ms: 1 } }],
     } as unknown as Scene;
     const b = computeSceneBounds(scene, WORDS, 0, 30);
-    // parola 2 endMs=2000 → 60 frame
-    expect(b.endFrame).toBe(60);
+    // ultima parola endMs=2000 + coda 600 = 2600ms @30fps = 78 frame
+    expect(b.endFrame).toBe(78);
   });
 
-  it('computeSceneBounds: auto senza ancore a parola → fallback', () => {
+  it('computeSceneBounds: auto senza word-timings → fallback', () => {
     const scene = {
       id: 's',
       durationHint: 'auto',
       layers: [{ id: 'l', component: 'Caption', props: {}, enter: { at: 'sceneStart', anim: 'none', ms: 1 } }],
     } as unknown as Scene;
-    const b = computeSceneBounds(scene, WORDS, 0, 30, 3000);
-    expect(b.length).toBe(90); // fallback 3000ms @30fps
+    const b = computeSceneBounds(scene, [], 0, 30, 3000);
+    expect(b.length).toBe(90); // fallback 3000ms @30fps (nessun word-timing)
   });
 
   it('computeAllSceneBounds: le scene si susseguono senza buchi', () => {

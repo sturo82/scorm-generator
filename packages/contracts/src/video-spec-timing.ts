@@ -53,13 +53,17 @@ export function resolveFrame(
  *
  * Durata:
  * - numero (ms): durata esplicita.
- * - 'auto': dalla parola ancorata PIÙ AVANZATA tra i layer della scena fino alla
- *   fine di quella parola; se la scena non ancora alcuna parola (es. solo
- *   sceneStart/sceneEnd), si usa `fallbackMs`.
+ * - 'auto': copre TUTTO il voiceover della scena (fino alla fine dell'ultima
+ *   parola), più una piccola coda, così l'audio non viene mai troncato. Se non
+ *   ci sono word-timings, si usa `fallbackMs`. NB: ogni clip pillola è autonoma
+ *   e `words` contiene solo il voiceover di quella scena.
  *
  * `startFrame` è il frame assoluto dove la scena inizia (= fine della scena
  * precedente, 0 per la prima).
  */
+/** Coda (ms) aggiunta dopo l'ultima parola, così l'ultima sillaba non è tagliata. */
+const TAIL_MS = 600;
+
 export function computeSceneBounds(
   scene: Scene,
   words: WordMark[],
@@ -71,26 +75,12 @@ export function computeSceneBounds(
   if (typeof scene.durationHint === 'number') {
     length = Math.max(1, msToFrame(scene.durationHint, fps));
   } else {
-    // 'auto': trova la parola ancorata più avanzata nei layer (enter/exit).
-    let maxWordEndMs = -1;
-    for (const layer of scene.layers) {
-      for (const anchor of [layer.enter.at, layer.exit?.at]) {
-        if (anchor && typeof anchor === 'object' && 'word' in anchor) {
-          const idx = anchor.word;
-          if (Number.isInteger(idx) && idx >= 0 && idx < words.length) {
-            maxWordEndMs = Math.max(maxWordEndMs, words[idx]!.endMs);
-          }
-        }
-      }
-    }
-    if (maxWordEndMs < 0) {
-      length = Math.max(1, msToFrame(fallbackMs, fps));
-    } else {
-      // Dalla prima parola della scena (start) fino alla fine dell'ultima parola
-      // ancorata. Se non c'è un riferimento d'inizio esplicito, si parte da 0.
-      const endFrameAbs = msToFrame(maxWordEndMs, fps);
-      length = Math.max(1, endFrameAbs - startFrame);
-    }
+    // 'auto': la durata è l'INTERO voiceover della scena (fine dell'ultima
+    // parola) + una coda, NON la parola ancorata nei layer: così la voce non
+    // viene mai tagliata a metà. Fallback se non ci sono word-timings.
+    const lastWordEndMs = words.length > 0 ? words[words.length - 1]!.endMs : -1;
+    const totalMs = lastWordEndMs >= 0 ? lastWordEndMs + TAIL_MS : fallbackMs;
+    length = Math.max(1, msToFrame(totalMs, fps));
   }
   const endFrame = startFrame + length;
   return { startFrame, endFrame, length };
