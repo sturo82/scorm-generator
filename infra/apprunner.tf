@@ -63,6 +63,12 @@ resource "aws_apprunner_service" "api" {
           CARTOON_VIDEO_REGION         = var.cartoon_video_region
           CARTOON_VIDEO_OUTPUT_S3_URI  = var.cartoon_video_output_s3_uri
           CARTOON_VIDEO_MONTHLY_QUOTA  = var.cartoon_video_monthly_quota
+          # Code-to-video: dove gira il rendering Remotion e, se 'lambda', i
+          # riferimenti alla function/site deployati (scripts/remotion-lambda.mjs).
+          CARTOON_RENDER_MODE          = var.cartoon_render_mode
+          CARTOON_LAMBDA_FUNCTION_NAME = var.cartoon_lambda_function_name
+          CARTOON_LAMBDA_SERVE_URL     = var.cartoon_lambda_serve_url
+          CARTOON_LAMBDA_REGION        = var.cartoon_render_lambda_region
           AWS_REGION                  = var.region
           BEDROCK_REGION              = var.region
           BEDROCK_LLM_MODEL_ID        = var.bedrock_llm_model_id

@@ -254,6 +254,24 @@ variable "cartoon_render_lambda_region" {
   default     = "eu-west-1"
 }
 
+variable "cartoon_render_mode" {
+  description = "Dove gira il rendering Remotion: 'inprocess' (Chromium nel processo API) o 'lambda' (AWS Lambda)."
+  type        = string
+  default     = "inprocess"
+}
+
+variable "cartoon_lambda_function_name" {
+  description = "Nome della function Remotion Lambda deployata (da scripts/remotion-lambda.mjs). Richiesto se cartoon_render_mode='lambda'."
+  type        = string
+  default     = ""
+}
+
+variable "cartoon_lambda_serve_url" {
+  description = "Serve URL del site Remotion deployato (da scripts/remotion-lambda.mjs). Richiesto se cartoon_render_mode='lambda'."
+  type        = string
+  default     = ""
+}
+
 variable "heygen_monthly_quota" {
   description = "Numero massimo di video avatar HeyGen generabili per tenant al mese."
   type        = string
