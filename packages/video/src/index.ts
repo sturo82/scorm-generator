@@ -6,3 +6,4 @@ export { REGISTRY } from './registry.js';
 export { AnimatedLayer } from './AnimatedLayer.js';
 export { PillolaVideo } from './PillolaVideo.js';
 export { RemotionRoot, COMPOSITION_ID } from './Root.js';
+export { renderPillola, type RenderPillolaInput, type RenderPillolaResult } from './render.js';

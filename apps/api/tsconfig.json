@@ -10,7 +10,8 @@
     { "path": "../../packages/contracts" },
     { "path": "../../packages/domain" },
     { "path": "../../packages/adapters" },
-    { "path": "../../packages/scorm" }
+    { "path": "../../packages/scorm" },
+    { "path": "../../packages/video" }
   ],
   "include": ["src/**/*"],
   "exclude": ["dist", "node_modules", "**/*.test.ts"]

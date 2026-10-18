@@ -95,3 +95,60 @@ Finché il provider resta `none`, il formato "pillole" funziona con i cartoon
 caricati a mano dall'autore (gli storyboard sono comunque generati). Con `nova`
 attivo, il bottone "Genera cartoon" produce i mini-video via Nova Reel
 (~$0.08/s, quota mensile per tenant via `nova_reel_monthly_quota`).
+
+---
+
+## Livello 2b — Cartoon "code-to-video" (Remotion) — CONSIGLIATO
+
+I modelli video neurali (Luma Ray 2 su Bedrock) costano troppo per l'uso
+standard: ~$0.09–1.5/s, cioè decine di dollari a pillola. Per questo è stato
+costruito un motore **code-to-video deterministico** che genera i mini-cartoon
+per programma, con costo di **pochi centesimi a scena** e qualità vettoriale
+nitida.
+
+### Come funziona
+Pipeline (provider `remotion`, `TextToVideoProvider`):
+1. **LLM → VideoSpec**: dallo storyboard della scena, un prompt produce un JSON
+   `VideoSpec` (schema Zod in `@scorm/contracts`) validato, con self-repair.
+   L'LLM compone SOLO componenti di una whitelist (nessun codice arbitrario).
+2. **TTS → voce + word-timings**: Amazon Polly sintetizza il voiceover e
+   restituisce gli speech marks a livello di parola (`synthesizeWithMarks`).
+3. **Remotion → MP4**: la composizione `PillolaVideo` (`@scorm/video`) disegna
+   scene SVG animate, sincronizzate con la voce ancorando gli eventi alle
+   PAROLE del voiceover; `@remotion/renderer` produce l'MP4 (h264).
+4. I byte dell'MP4 rientrano nel flusso esistente (`applyCartoonResult`) →
+   `storageKey` della scena. Player, gate video→scelte e metering invariati.
+
+### Componenti disponibili (whitelist)
+`TextReveal`, `Caption` (sottotitolo karaoke sincronizzato), `BulletList`,
+`ChainDiagram`, `IconStat`, `ArrowFlow`. Si estende aggiungendo un componente a
+`@scorm/video` e il relativo nome all'enum `ComponentName` dei contratti.
+
+### Costi
+| Voce | Code-to-video (remotion) | Luma Bedrock 720p |
+|------|--------------------------|-------------------|
+| Per secondo | ~$0.01 (TTS + CPU) | $0.09–1.50 |
+| Pillola ~35s (7 scene) | ~$0.35 | ~$3–52 |
+
+Listino metering: `remotion-code-to-video` a $0.01/s (migrazione
+`0040_remotion_pricing`). Quota mensile per tenant invariata
+(`CARTOON_VIDEO_MONTHLY_QUOTA`).
+
+### Attivazione e infrastruttura di rendering
+Remotion rende via **Chromium headless** + FFmpeg. Per tenere l'immagine API
+leggera, `@scorm/video` è importato DINAMICAMENTE solo quando il provider è
+`remotion`, e il download di Chromium è disattivato nell'immagine di default
+(`REMOTION_SKIP_CHROMIUM_DOWNLOAD=true`). Due strade per attivarlo:
+
+- **MVP in-process**: fornire Chromium nell'immagine API (aggiungere il pacchetto
+  headless-shell di Remotion / dipendenze di sistema) e impostare
+  `PROVIDER_CARTOON_VIDEO=remotion`. Il render gira nel processo API: semplice,
+  ma i render (secondi-minuti) competono con l'API per CPU — adatto a volumi bassi.
+- **Runner dedicato (consigliato in prod)**: eseguire il rendering in un worker
+  separato o su `@remotion/lambda`. Isola la CPU, scala indipendentemente e non
+  rallenta l'API. Il port `TextToVideoProvider` non cambia: cambia solo
+  l'implementazione di `RenderFn` iniettata nel wiring.
+
+Config: `CARTOON_VIDEO_WIDTH` / `_HEIGHT` / `_FPS` (default 1920×1080@30).
+Finché `PROVIDER_CARTOON_VIDEO=none` (default prod), nulla di tutto questo è
+attivo e non ci sono costi.

@@ -1884,19 +1884,22 @@ export class MediaService implements OnModuleInit {
 
     const cfg = this.config.get('cartoonVideo', { infer: true });
     const seconds = Math.max(1, Math.ceil(durationSec ?? cfg.sceneDurationSec));
+    // Il modello del listino dipende dal provider: 'remotion' è code-to-video
+    // (costo ~CPU/TTS, listino 'remotion-code-to-video'), luma/nova sono modelli
+    // neurali ($/s). Listino region-agnostico (seed 'global') per evitare
+    // mismatch con la region Bedrock effettiva.
+    const meterModel = cfg.provider === 'remotion' ? 'remotion-code-to-video' : cfg.modelId;
     await this.meter.record({
       tenantId: ctx.tenantId,
       courseId: ctx.courseId,
       provider: 'BEDROCK_VIDEO',
-      model: cfg.modelId,
+      model: meterModel,
       unit: 'SECONDS',
       quantity: seconds,
       source: 'scene_cartoon',
-      // Listino region-agnostico (seed 'global'): evita mismatch con la region
-      // Bedrock effettiva (Nova Reel non è in tutte le region).
       region: 'global',
     });
-    this.logger.log(`Cartoon scena ${ctx.nodeId} pronto (${seconds}s): ${key}`);
+    this.logger.log(`Cartoon scena ${ctx.nodeId} pronto (${seconds}s, ${cfg.provider}): ${key}`);
   }
 
   /** Scrive lo stato di errore della generazione cartoon nel media della scena. */

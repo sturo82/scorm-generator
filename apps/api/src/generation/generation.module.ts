@@ -1,13 +1,27 @@
 import { Inject, Module, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { JobEnvelope, JobQueue, VideoGenerationProvider, TextToVideoProvider } from '@scorm/domain';
+import type {
+  JobEnvelope,
+  JobQueue,
+  VideoGenerationProvider,
+  TextToVideoProvider,
+  LLMProvider,
+  SpeechProvider,
+} from '@scorm/domain';
 import { HeyGenVideoProvider } from '@scorm/adapters/heygen';
 import { NovaReelProvider, LumaRayProvider } from '@scorm/adapters/bedrock';
-import { testing } from '@scorm/adapters';
+import { testing, RemotionCartoonProvider, type RenderFn } from '@scorm/adapters';
 import { KnowledgeModule } from '../knowledge/knowledge.module.js';
 import { CoursesModule } from '../courses/courses.module.js';
 import type { AppConfig } from '../config/configuration.js';
-import { JOB_QUEUE, VIDEO_GEN_PROVIDER, CARTOON_VIDEO_PROVIDER } from '../providers/provider.constants.js';
+import {
+  JOB_QUEUE,
+  VIDEO_GEN_PROVIDER,
+  CARTOON_VIDEO_PROVIDER,
+  LLM_PROVIDER,
+  SPEECH_PROVIDER,
+} from '../providers/provider.constants.js';
+import { generateVideoSpec } from './video-spec.generator.js';
 import {
   GenerationService,
   type GenJobType,
@@ -56,8 +70,12 @@ const videoGenProvider = {
  */
 const cartoonVideoProvider = {
   provide: CARTOON_VIDEO_PROVIDER,
-  inject: [ConfigService],
-  useFactory: (config: ConfigService<AppConfig, true>): TextToVideoProvider | null => {
+  inject: [ConfigService, LLM_PROVIDER, SPEECH_PROVIDER],
+  useFactory: (
+    config: ConfigService<AppConfig, true>,
+    llm: LLMProvider,
+    speech: SpeechProvider,
+  ): TextToVideoProvider | null => {
     const cfg = config.get('cartoonVideo', { infer: true });
     const aws = config.get('bedrock', { infer: true });
     const creds = {
@@ -65,6 +83,22 @@ const cartoonVideoProvider = {
       secretAccessKey: aws.secretAccessKey,
       sessionToken: aws.sessionToken,
     };
+    // Code-to-video deterministico (Remotion): LLM->VideoSpec, Polly->voce+marks,
+    // render->MP4. Nessun modello neurale, costo ~solo TTS+CPU.
+    if (cfg.provider === 'remotion') {
+      // Import DINAMICO di @scorm/video (Remotion/Chromium, pesante): caricato
+      // SOLO quando il provider è attivo, così l'immagine API senza remotion non
+      // deve includerlo e non paga l'avvio. Il bundle/render avviene al primo job.
+      const render: RenderFn = async (args) => {
+        const { renderPillola } = await import('@scorm/video');
+        return renderPillola(args);
+      };
+      return new RemotionCartoonProvider({
+        speech,
+        generateSpec: (input) => generateVideoSpec(llm, input),
+        render,
+      });
+    }
     if (cfg.provider === 'luma' && cfg.outputS3Uri) {
       return new LumaRayProvider({
         modelId: cfg.modelId,

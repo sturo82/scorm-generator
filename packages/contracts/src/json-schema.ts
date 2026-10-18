@@ -3,6 +3,7 @@ import { Assessment, Question } from './assessment.js';
 import { Block } from './blocks.js';
 import { Brief } from './brief.js';
 import { CourseOutline } from './course.js';
+import { VideoSpec } from './video-spec.js';
 
 /**
  * JSON Schema derivati dagli schema Zod, da usare per la generazione strutturata
@@ -15,6 +16,7 @@ export const blockJsonSchema = zodToJsonSchema(Block, 'Block');
 export const questionJsonSchema = zodToJsonSchema(Question, 'Question');
 export const assessmentJsonSchema = zodToJsonSchema(Assessment, 'Assessment');
 export const briefJsonSchema = zodToJsonSchema(Brief, 'Brief');
+export const videoSpecJsonSchema = zodToJsonSchema(VideoSpec, 'VideoSpec');
 
 /** Mappa nome -> JSON Schema, comoda per registrare i tool dei provider. */
 export const jsonSchemas = {
@@ -23,4 +25,5 @@ export const jsonSchemas = {
   Question: questionJsonSchema,
   Assessment: assessmentJsonSchema,
   Brief: briefJsonSchema,
+  VideoSpec: videoSpecJsonSchema,
 } as const;

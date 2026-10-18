@@ -362,3 +362,54 @@ export function assessmentPrompt(input: {
   ];
   return parts.filter((p) => p !== '').join('\n');
 }
+
+/**
+ * Prompt per generare un VideoSpec (code-to-video) dallo storyboard di una
+ * scena pillola. L'LLM compone SOLO i componenti della whitelist e restituisce
+ * JSON conforme allo schema VideoSpec. Il timing è ancorato alle PAROLE del
+ * voiceover (campo `at: { word: N }`), non ai secondi.
+ */
+export function videoSpecPrompt(input: {
+  /** Storyboard/descrizione della scena (placeholderPrompt o alt). */
+  scenePrompt: string;
+  language: string;
+  /** Palette e sfondo suggeriti dal brand, se disponibili. */
+  palette?: string[];
+  bg?: string;
+}): string {
+  const lang = languageName(input.language);
+  const palette = input.palette && input.palette.length > 0 ? input.palette : ['#0ea5e9', '#22c55e', '#f59e0b', '#111827'];
+  const bg = input.bg ?? '#f8fafc';
+  const parts = [
+    languageDirective(input.language),
+    `Progetta un breve VIDEO esplicativo 2D (stile "explainer", grafica vettoriale piatta) per la scena seguente, in ${lang}.`,
+    `SCENA (storyboard): ${input.scenePrompt}`,
+    '',
+    'Restituisci ESCLUSIVAMENTE un JSON conforme allo schema VideoSpec, con questa forma:',
+    '{',
+    '  "version": 1,',
+    '  "canvas": { "width": 1920, "height": 1080, "fps": 30 },',
+    `  "theme": { "palette": ${JSON.stringify(palette)}, "bg": ${JSON.stringify(bg)}, "fontFamily": "Inter" },`,
+    `  "voiceover": { "text": "<testo COMPLETO della voce fuoricampo in ${lang}, 2-4 frasi che spiegano la scena>", "lang": "${input.language}" },`,
+    '  "scenes": [ { "id": "<slug>", "durationHint": "auto", "layers": [ /* layer */ ] } ]',
+    '}',
+    '',
+    'COMPONENTI DISPONIBILI (usa SOLO questi nel campo "component" dei layer):',
+    '- "TextReveal": titolo/parola chiave. props: { text, variant: "title"|"body" }',
+    '- "Caption": sottotitolo karaoke sincronizzato col voiceover. props: { } (segue le parole automaticamente)',
+    '- "BulletList": elenco a comparsa progressiva. props: { title?, items: string[] }',
+    '- "ChainDiagram": catena di blocchi collegati (concetti/step). props: { blocks: number(1-6), highlight?: number, labels?: string[] }',
+    '- "IconStat": numero animato + etichetta. props: { value: number, label?, suffix?, icon? }',
+    '- "ArrowFlow": flusso input→processo→output. props: { steps: string[] (2-5) }',
+    '',
+    'REGOLE:',
+    `- Scrivi TUTTI i testi (voiceover, text, title, items, labels, steps) in ${lang}.`,
+    '- Includi SEMPRE un layer "Caption" nella scena per i sottotitoli sincronizzati.',
+    '- Ancora l\'entrata dei layer alle PAROLE del voiceover col campo "enter": { "at": { "word": N }, "anim": "fadeUp"|"popIn"|"slideIn"|"fadeOut"|"none", "ms": 400 }. N è l\'indice (0-based) della parola del voiceover da cui il layer compare.',
+    '- La Caption usa "enter": { "at": "sceneStart" } e "exit": { "at": "sceneEnd" }.',
+    '- Usa 1-3 layer di contenuto oltre alla Caption. Scegli i componenti adatti al concetto (es. ChainDiagram per processi, IconStat per dati, BulletList per punti).',
+    '- Mantieni "durationHint": "auto" (la durata segue il voiceover).',
+    '- NON usare componenti fuori dalla lista. NON inventare campi non previsti. Restituisci SOLO il JSON.',
+  ];
+  return parts.filter((p) => p !== '').join('\n');
+}

@@ -209,21 +209,28 @@ export interface AppConfig {
     monthlyQuota: number;
   };
   /**
-   * Generazione cartoon delle scene "pillole" (modelli video Bedrock, async +
-   * output su S3). `provider`: 'luma' (Luma Ray 2), 'nova' (Nova Reel, se
-   * disponibile), 'mock' (dev/test), 'none' (disabilitato → 501). Il modello
-   * scrive l'output su S3 (outputS3Uri), nella stessa region del servizio.
+   * Generazione cartoon delle scene "pillole". `provider`:
+   *  - 'remotion': code-to-video deterministico (LLM→VideoSpec + TTS + Remotion),
+   *    economico e nitido (nessun modello neurale, nessun outputS3Uri);
+   *  - 'luma' (Luma Ray 2) / 'nova' (Nova Reel): modelli video Bedrock (premium,
+   *    async + output su S3);
+   *  - 'mock' (dev/test); 'none' (disabilitato → 501).
    */
   cartoonVideo: {
-    provider: 'luma' | 'nova' | 'mock' | 'none';
+    provider: 'remotion' | 'luma' | 'nova' | 'mock' | 'none';
     modelId: string;
     region: string;
-    /** URI S3 base dove il modello scrive l'output (es. "s3://bucket/luma-output"). */
+    /** URI S3 base dove il modello neurale scrive l'output (solo luma/nova). */
     outputS3Uri: string;
     /** Durata di default di una scena, in secondi (Luma usa 5s o 9s). */
     sceneDurationSec: number;
     /** Numero massimo di scene-cartoon generabili per tenant al mese. */
     monthlyQuota: number;
+    /** Risoluzione del code-to-video (Remotion): larghezza×altezza di default. */
+    width: number;
+    height: number;
+    /** Frame rate del code-to-video (Remotion). */
+    fps: number;
   };
   /** Limiti di upload della knowledge base. */
   upload: {
@@ -387,6 +394,9 @@ export function loadConfiguration(): AppConfig {
       // Luma Ray 2 accetta 5s o 9s: default 5s.
       sceneDurationSec: Number(env('CARTOON_VIDEO_SCENE_DURATION_SEC', '5')),
       monthlyQuota: Number(env('CARTOON_VIDEO_MONTHLY_QUOTA', '20')),
+      width: Number(env('CARTOON_VIDEO_WIDTH', '1920')),
+      height: Number(env('CARTOON_VIDEO_HEIGHT', '1080')),
+      fps: Number(env('CARTOON_VIDEO_FPS', '30')),
     },
     upload: {
       maxFileBytes: Number(env('UPLOAD_MAX_FILE_BYTES', String(50 * 1024 * 1024))),

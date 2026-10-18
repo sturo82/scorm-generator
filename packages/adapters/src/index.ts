@@ -6,3 +6,10 @@
 export const ADAPTERS_VERSION = '0.1.0' as const;
 
 export * as testing from './testing/index.js';
+
+export {
+  RemotionCartoonProvider,
+  type RemotionCartoonProviderOptions,
+  type GenerateSpecFn,
+  type RenderFn,
+} from './remotion/remotion-cartoon-provider.js';

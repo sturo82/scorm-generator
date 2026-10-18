@@ -14,12 +14,18 @@ COPY packages/contracts/package.json packages/contracts/
 COPY packages/domain/package.json packages/domain/
 COPY packages/adapters/package.json packages/adapters/
 COPY packages/scorm/package.json packages/scorm/
+COPY packages/video/package.json packages/video/
 COPY apps/api/package.json apps/api/
 # Anche il package.json del web: così `npm ci` installa l'INTERO workspace e il
 # build dell'API (tsc -b con project references) risolve ogni dipendenza come in
 # locale/CI. Il frontend non viene compilato in quest'immagine, ma le sue dep
 # presenti evitano divergenze dal build verificato.
 COPY apps/web/package.json apps/web/
+# Remotion (dep di @scorm/video) scaricherebbe un Chromium headless in postinstall:
+# lo SALTIAMO qui (immagine più leggera, build più veloce). Il rendering
+# code-to-video gira solo con PROVIDER_CARTOON_VIDEO=remotion, per cui Chromium
+# va fornito nell'ambiente di rendering (vedi stage/infra dedicati).
+ENV REMOTION_SKIP_CHROMIUM_DOWNLOAD=true
 RUN npm ci
 
 # ---- Build ----
@@ -40,6 +46,7 @@ RUN npm run build --workspace @scorm/contracts \
   && npm run build --workspace @scorm/domain \
   && npm run build --workspace @scorm/adapters \
   && npm run build --workspace @scorm/scorm \
+  && npm run build --workspace @scorm/video \
   && npm run build --workspace @scorm/api
 
 # ---- Runtime (solo dipendenze di produzione) ----
@@ -63,12 +70,19 @@ COPY packages/contracts/package.json packages/contracts/
 COPY packages/domain/package.json packages/domain/
 COPY packages/adapters/package.json packages/adapters/
 COPY packages/scorm/package.json packages/scorm/
+COPY packages/video/package.json packages/video/
 COPY apps/api/package.json apps/api/
+# Salta il download di Chromium di Remotion anche a runtime: l'immagine resta
+# leggera. @scorm/video è importato DINAMICAMENTE solo se PROVIDER_CARTOON_VIDEO=
+# remotion; per attivarlo in prod, fornire Chromium (immagine dedicata o
+# @remotion/lambda) — vedi docs/COURSE-FORMATS-PILLOLE.md.
+ENV REMOTION_SKIP_CHROMIUM_DOWNLOAD=true
 RUN npm ci --omit=dev
 COPY --from=build /app/packages/contracts/dist packages/contracts/dist
 COPY --from=build /app/packages/domain/dist packages/domain/dist
 COPY --from=build /app/packages/adapters/dist packages/adapters/dist
 COPY --from=build /app/packages/scorm/dist packages/scorm/dist
+COPY --from=build /app/packages/video/dist packages/video/dist
 COPY --from=build /app/apps/api/dist apps/api/dist
 # Client Prisma generato (engine + client).
 COPY --from=build /app/node_modules/.prisma node_modules/.prisma
