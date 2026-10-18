@@ -112,6 +112,30 @@ data "aws_iam_policy_document" "api_permissions" {
     resources = [aws_s3_bucket.assets.arn]
   }
 
+  # Rendering code-to-video su AWS Lambda (@remotion/lambda): l'API invoca la
+  # function Remotion e legge l'MP4 prodotto dal bucket Remotion. Abilitato solo
+  # se var.cartoon_render_lambda_enabled = true (altrimenti nessun permesso extra:
+  # il rendering gira in-process o il provider è spento).
+  dynamic "statement" {
+    for_each = var.cartoon_render_lambda_enabled ? [1] : []
+    content {
+      sid       = "RemotionLambdaInvoke"
+      actions   = ["lambda:InvokeFunction"]
+      resources = ["arn:aws:lambda:${var.cartoon_render_lambda_region}:${data.aws_caller_identity.current.account_id}:function:remotion-render-*"]
+    }
+  }
+  dynamic "statement" {
+    for_each = var.cartoon_render_lambda_enabled ? [1] : []
+    content {
+      sid     = "RemotionLambdaS3"
+      actions = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
+      resources = [
+        "arn:aws:s3:::remotionlambda-*",
+        "arn:aws:s3:::remotionlambda-*/*",
+      ]
+    }
+  }
+
   # Polly (sintesi vocale) e Transcribe (ASR).
   statement {
     sid       = "Polly"

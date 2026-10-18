@@ -88,11 +88,24 @@ const cartoonVideoProvider = {
     if (cfg.provider === 'remotion') {
       // Import DINAMICO di @scorm/video (Remotion/Chromium, pesante): caricato
       // SOLO quando il provider è attivo, così l'immagine API senza remotion non
-      // deve includerlo e non paga l'avvio. Il bundle/render avviene al primo job.
-      const render: RenderFn = async (args) => {
-        const { renderPillola } = await import('@scorm/video');
-        return renderPillola(args);
-      };
+      // deve includerlo e non paga l'avvio.
+      // renderMode sceglie DOVE gira Chromium:
+      //  - 'lambda' (enterprise): render su AWS Lambda, isolato e scalabile;
+      //  - 'inprocess' (MVP): render nel processo API (richiede Chromium locale).
+      const render: RenderFn =
+        cfg.renderMode === 'lambda'
+          ? async (args) => {
+              const { renderPillolaOnLambda } = await import('@scorm/video');
+              return renderPillolaOnLambda(args, {
+                region: cfg.lambdaRegion,
+                functionName: cfg.lambdaFunctionName,
+                serveUrl: cfg.lambdaServeUrl,
+              });
+            }
+          : async (args) => {
+              const { renderPillola } = await import('@scorm/video');
+              return renderPillola(args);
+            };
       return new RemotionCartoonProvider({
         speech,
         generateSpec: (input) => generateVideoSpec(llm, input),

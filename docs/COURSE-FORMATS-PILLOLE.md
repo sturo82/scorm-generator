@@ -152,3 +152,39 @@ leggera, `@scorm/video` è importato DINAMICAMENTE solo quando il provider è
 Config: `CARTOON_VIDEO_WIDTH` / `_HEIGHT` / `_FPS` (default 1920×1080@30).
 Finché `PROVIDER_CARTOON_VIDEO=none` (default prod), nulla di tutto questo è
 attivo e non ci sono costi.
+
+### Rendering su AWS Lambda (modalità enterprise — consigliata in prod)
+
+Il rendering headless è CPU/RAM-bound e a vita breve: in produzione NON va nel
+processo API (saturerebbe la CPU e degraderebbe le richieste HTTP). La scelta
+enterprise è **AWS Lambda** con `@remotion/lambda`, che frammenta il render su
+più invocazioni e scala a zero (si paga solo il render reale): ideale per un
+workload sporadico come i cartoon. L'API resta leggera (import dinamico).
+
+Selezione via env: `CARTOON_RENDER_MODE=inprocess` (default, MVP) oppure
+`lambda`. Il port `TextToVideoProvider` non cambia: cambia solo la `RenderFn`
+iniettata nel wiring (`renderPillola` vs `renderPillolaOnLambda`).
+
+Attivazione (una volta, e di nuovo quando cambia la composizione `@scorm/video`):
+
+1. **Build del package video**: `npm run build --workspace @scorm/video` (serve
+   `packages/video/dist/remotion-entry.js` come entry del site Remotion).
+2. **Deploy function + site** (crea la Lambda con Chromium e carica il bundle su
+   un bucket `remotionlambda-*`):
+   ```bash
+   CARTOON_LAMBDA_REGION=eu-west-1 node scripts/remotion-lambda.mjs
+   ```
+   Lo script stampa le env da impostare sull'API:
+   `CARTOON_LAMBDA_FUNCTION_NAME`, `CARTOON_LAMBDA_SERVE_URL`, `CARTOON_LAMBDA_REGION`.
+3. **IAM**: in `infra/terraform.tfvars` imposta `cartoon_render_lambda_enabled = true`
+   (e `cartoon_render_lambda_region` se diversa da eu-west-1), poi `terraform apply`.
+   Aggiunge al ruolo API `lambda:InvokeFunction` sulla function `remotion-render-*`
+   e l'accesso al bucket `remotionlambda-*`.
+4. **Attiva** sull'API: `PROVIDER_CARTOON_VIDEO=remotion`, `CARTOON_RENDER_MODE=lambda`,
+   più le tre `CARTOON_LAMBDA_*` del passo 2.
+
+La region della function e del bucket Remotion devono coincidere (consigliata
+`eu-west-1`, la stessa dell'app). Finché `cartoon_render_lambda_enabled=false` e
+`CARTOON_RENDER_MODE` non è `lambda`, nulla di tutto questo è attivo: l'immagine
+API include `@remotion/lambda` ma non lo carica (import dinamico), e il ruolo IAM
+non ha permessi extra.

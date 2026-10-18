@@ -236,6 +236,24 @@ variable "cartoon_video_monthly_quota" {
   default     = "20"
 }
 
+# --- Rendering code-to-video su AWS Lambda (@remotion/lambda) ---------------
+variable "cartoon_render_lambda_enabled" {
+  description = <<-EOT
+    Abilita i permessi IAM del ruolo API per il rendering code-to-video su AWS
+    Lambda (invoke della function Remotion + lettura del bucket Remotion). Tieni
+    false finché non hai eseguito lo script di deploy (scripts/remotion-lambda.mjs)
+    e impostato CARTOON_RENDER_MODE=lambda sull'API. Nessun effetto sul provider.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "cartoon_render_lambda_region" {
+  description = "Region della function/bucket Remotion Lambda (consigliata: eu-west-1, stessa dell'app)."
+  type        = string
+  default     = "eu-west-1"
+}
+
 variable "heygen_monthly_quota" {
   description = "Numero massimo di video avatar HeyGen generabili per tenant al mese."
   type        = string

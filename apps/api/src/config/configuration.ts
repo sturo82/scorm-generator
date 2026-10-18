@@ -231,6 +231,18 @@ export interface AppConfig {
     height: number;
     /** Frame rate del code-to-video (Remotion). */
     fps: number;
+    /**
+     * Dove gira il rendering Remotion quando provider='remotion':
+     *  - 'inprocess': Chromium nel processo API (MVP, volumi bassi);
+     *  - 'lambda': AWS Lambda (@remotion/lambda) — enterprise, isolato e scalabile.
+     */
+    renderMode: 'inprocess' | 'lambda';
+    /** (lambda) Nome della function Remotion deployata. */
+    lambdaFunctionName: string;
+    /** (lambda) Serve URL del site Remotion deployato. */
+    lambdaServeUrl: string;
+    /** (lambda) Region della function/bucket Remotion. */
+    lambdaRegion: string;
   };
   /** Limiti di upload della knowledge base. */
   upload: {
@@ -397,6 +409,10 @@ export function loadConfiguration(): AppConfig {
       width: Number(env('CARTOON_VIDEO_WIDTH', '1920')),
       height: Number(env('CARTOON_VIDEO_HEIGHT', '1080')),
       fps: Number(env('CARTOON_VIDEO_FPS', '30')),
+      renderMode: env('CARTOON_RENDER_MODE', 'inprocess') as AppConfig['cartoonVideo']['renderMode'],
+      lambdaFunctionName: env('CARTOON_LAMBDA_FUNCTION_NAME', ''),
+      lambdaServeUrl: env('CARTOON_LAMBDA_SERVE_URL', ''),
+      lambdaRegion: env('CARTOON_LAMBDA_REGION', env('AWS_REGION', 'eu-west-1')),
     },
     upload: {
       maxFileBytes: Number(env('UPLOAD_MAX_FILE_BYTES', String(50 * 1024 * 1024))),
