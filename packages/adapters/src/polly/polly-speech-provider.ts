@@ -90,11 +90,17 @@ export class PollySpeechProvider implements SpeechProvider {
     if (!stream) throw new ProviderUnavailableError('polly', new Error('AudioStream vuoto'));
     const bytes = await (stream as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray();
 
+    // Riporta l'engine effettivo ai fini del metering. Il port espone solo le
+    // due classi di costo rilevanti ('standard'|'neural'); gli engine Polly più
+    // nuovi (generative/long-form) non sono usati qui, ma se lo fossero li
+    // riconduciamo a 'neural' (classe di costo premium) per sicurezza.
+    const reportedEngine: 'standard' | 'neural' = engine === 'standard' ? 'standard' : 'neural';
+
     return {
       bytes: Buffer.from(bytes),
       contentType: 'audio/mpeg',
       voice,
-      engine,
+      engine: reportedEngine,
     };
   }
 
