@@ -551,6 +551,16 @@ export function useSetLessonVideoFirst(courseId: string) {
   });
 }
 
+/** Imposta il formato didattico di una lezione (pillola/video_first/standard). */
+export function useSetLessonFormat(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { moduleId: string; lessonId: string; format: 'pillola' | 'video_first' | 'standard' }) =>
+      api.setLessonFormat(courseId, vars.moduleId, vars.lessonId, vars.format),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.modules(courseId) }),
+  });
+}
+
 /**
  * Chunk + embeddings neurali del corso per la ricerca semantica in anteprima.
  * `enabled` permette il caricamento LAZY (solo quando serve), perché il calcolo

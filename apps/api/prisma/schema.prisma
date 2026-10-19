@@ -364,11 +364,16 @@ model Lesson {
   schemaVersion String      @default("0.1.0")
   // Chiave S3 della narrazione audio generata (TTS). URL firmato risolto a lettura.
   narrationKey  String?
+  // Formato didattico della lezione (fonte di verità per-lezione):
+  // 'pillola' | 'video_first' | 'standard'. Nullable per i corsi storici, in cui
+  // va derivato dai flag videoFirst/pillola (lessonFormatFromFlags).
+  format        String?
   // Lezione "video-first": generata attorno a un video (segnaposto) con quiz
-  // ed elementi dinamici affiancati. Pilota prompt e layout del player.
+  // ed elementi dinamici affiancati. DERIVATO da format === 'video_first'
+  // (mantenuto per compatibilità con prompt/player/export esistenti).
   videoFirst    Boolean     @default(false)
   // Lezione "pillola": layout dedicato (contenitore scorrevole, card per blocco,
-  // contenuto/azioni distinti). Deriva da Brief.format === 'pillole'.
+  // contenuto/azioni distinti). DERIVATO da format === 'pillola'.
   pillola       Boolean     @default(false)
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt

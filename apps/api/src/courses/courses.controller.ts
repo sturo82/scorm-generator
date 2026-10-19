@@ -18,6 +18,7 @@ import {
   Block,
   Question,
   MoveCourse,
+  LessonFormat,
   type Brief as BriefType,
   type BriefDraft as BriefDraftType,
   type Block as BlockType,
@@ -42,6 +43,7 @@ import {
 const BlockArraySchema = z.array(Block);
 const StringArraySchema = z.array(z.string());
 const VideoFirstSchema = z.object({ videoFirst: z.boolean() });
+const LessonFormatSchema = z.object({ format: LessonFormat });
 const ShareableSchema = z.object({ shareable: z.boolean() });
 
 /**
@@ -253,6 +255,19 @@ export class CoursesController {
     @Body(new ZodValidationPipe(VideoFirstSchema)) body: { videoFirst: boolean },
   ) {
     return this.modules.setLessonVideoFirst(ctx.tenant.tenantId, id, moduleId, lessonId, body.videoFirst);
+  }
+
+  /** Imposta il formato didattico di una lezione (pillola/video_first/standard). */
+  @Put(':id/modules/:moduleId/lessons/:lessonId/format')
+  @Roles('EDITOR')
+  setLessonFormat(
+    @CurrentContext() ctx: AuthContext,
+    @Param('id') id: string,
+    @Param('moduleId') moduleId: string,
+    @Param('lessonId') lessonId: string,
+    @Body(new ZodValidationPipe(LessonFormatSchema)) body: { format: 'pillola' | 'video_first' | 'standard' },
+  ) {
+    return this.modules.setLessonFormat(ctx.tenant.tenantId, id, moduleId, lessonId, body.format);
   }
 
   // --- Assessment / Domande -------------------------------------------------

@@ -9,6 +9,34 @@ import { EditorialMeta, Id, LanguageCode } from './primitives.js';
  * (scope intermediate/final).
  */
 
+/**
+ * Formato didattico di una SINGOLA lezione. È la fonte di verità per-lezione
+ * del tipo di contenuto; i flag booleani `videoFirst`/`pillola` restano come
+ * derivati (retro-compatibilità con prompt/player esistenti):
+ *  - 'pillola'     : micro-learning, contenitore scorrevole a card (hook video
+ *                    code-to-video + core + checkpoint + takeaway). → pillola=true.
+ *  - 'video_first' : incentrata su UN video portante, layout a 2 colonne. → videoFirst=true.
+ *  - 'standard'    : testo + immagini + interazioni (il "completo" classico). → entrambi false.
+ * Mappa con CourseFormat a livello di corso: 'standard' ↔ 'completo'.
+ */
+export const LessonFormat = z.enum(['pillola', 'video_first', 'standard']);
+export type LessonFormat = z.infer<typeof LessonFormat>;
+
+/** Deriva i flag booleani storici (videoFirst/pillola) dal formato lezione. */
+export function lessonFlagsFromFormat(format: LessonFormat): { videoFirst: boolean; pillola: boolean } {
+  return {
+    videoFirst: format === 'video_first',
+    pillola: format === 'pillola',
+  };
+}
+
+/** Deriva il formato lezione dai flag booleani storici (pillola ha precedenza). */
+export function lessonFormatFromFlags(flags: { videoFirst?: boolean; pillola?: boolean }): LessonFormat {
+  if (flags.pillola) return 'pillola';
+  if (flags.videoFirst) return 'video_first';
+  return 'standard';
+}
+
 export const Lesson = z.object({
   id: Id,
   title: z.string().min(1),
@@ -16,12 +44,17 @@ export const Lesson = z.object({
   blocks: z.array(Block).default([]),
   /** Chiave/URL della narrazione audio (TTS) della lezione, se generata. */
   narrationKey: z.string().optional(),
+  /**
+   * Formato didattico della lezione (fonte di verità per-lezione). Assente nei
+   * corsi storici: in tal caso va derivato dai flag con lessonFormatFromFlags.
+   */
+  format: LessonFormat.optional(),
   /** Lezione video-first: pilota il layout a 2 colonne nel player/anteprima. */
   videoFirst: z.boolean().default(false),
   /**
    * Lezione "pillola": pilota un layout dedicato (contenitore scorrevole con
    * ogni blocco in una card ben definita, contenuto e azioni distinti). Deriva
-   * da Brief.format === 'pillole', come videoFirst deriva da 'video_first'.
+   * da format === 'pillola' (storicamente da Brief.format === 'pillole').
    */
   pillola: z.boolean().default(false),
   editorial: EditorialMeta.default({}),
@@ -109,9 +142,16 @@ export const LessonOutline = z.object({
   /** Tipi di interazione suggeriti per la lezione. */
   suggestedBlockTypes: z.array(z.string()).default([]),
   /**
+   * Formato didattico CONSIGLIATO per la lezione (pillola/video_first/standard):
+   * l'LLM lo propone in base alla natura del contenuto, l'autore può cambiarlo.
+   * Se il brief forza un formato globale, tutte le lezioni ricevono quello.
+   * Assente negli outline storici → si ricade su `videoFirst`/standard.
+   */
+  format: LessonFormat.optional(),
+  /**
    * Lezione "video-first": incentrata su un video (segnaposto da riempire) con
-   * elementi dinamici e quiz affiancati. L'AI può proporlo dove ha senso; è
-   * forzato a true per tutte le lezioni se il brief è video-first.
+   * elementi dinamici e quiz affiancati. Campo STORICO: la fonte di verità è
+   * `format`; resta allineato (true sse format === 'video_first').
    */
   videoFirst: z.boolean().default(false),
 });

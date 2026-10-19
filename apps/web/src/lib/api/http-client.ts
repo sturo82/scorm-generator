@@ -253,6 +253,18 @@ export class HttpApiClient implements ApiClient {
       { method: 'PUT', body: JSON.stringify({ videoFirst }) },
     );
   }
+
+  async setLessonFormat(
+    courseId: string,
+    moduleId: string,
+    lessonId: string,
+    format: 'pillola' | 'video_first' | 'standard',
+  ) {
+    await this.request(
+      `/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}/format`,
+      { method: 'PUT', body: JSON.stringify({ format }) },
+    );
+  }
   getRagChunks(courseId: string) {
     return this.request<Array<{ text: string; documentName: string; section?: string }>>(
       `/courses/${courseId}/rag-chunks`,

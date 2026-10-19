@@ -49,7 +49,7 @@ import {
   useEditLessonBlocks,
   useSetStatus,
   useSetStatusAll,
-  useSetLessonVideoFirst,
+  useSetLessonFormat,
   useJobStatus,
   useAssessments,
   useDeleteAssessment,
@@ -780,7 +780,7 @@ function LessonCard({
   const deleteLesson = useDeleteLesson(courseId);
   const editBlocks = useEditLessonBlocks(courseId);
   const setStatus = useSetStatus(courseId);
-  const setVideoFirst = useSetLessonVideoFirst(courseId);
+  const setFormat = useSetLessonFormat(courseId);
   const toast = useToast();
   const [tone, setTone] = React.useState('');
   const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -1006,23 +1006,32 @@ function LessonCard({
     }
   }
 
-  // Modalità struttura: solo titolo, stato ed eliminazione lezione.
+  // Modalità struttura: titolo, FORMATO (pillola/video-first/standard), stato,
+  // eliminazione. Il formato è consigliato dall'AI (lesson.format) e sempre
+  // modificabile qui; aggiorna i flag derivati lato server.
   if (editableLessons) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-4 py-2">
         <span className="text-sm font-medium">{lesson.title}</span>
         <div className="flex items-center gap-3">
-          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground" title="Lezione incentrata su un video (quiz ed elementi dinamici affiancati)">
-            <input
-              type="checkbox"
-              className="size-4 accent-[hsl(var(--primary))]"
-              checked={lesson.videoFirst === true}
-              disabled={setVideoFirst.isPending}
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="Formato didattico della lezione">
+            <span className="sr-only">Formato della lezione {lesson.title}</span>
+            <select
+              className="rounded-md border border-input bg-background px-2 py-1 text-xs"
+              value={lessonFormatOf(lesson)}
+              disabled={setFormat.isPending}
               onChange={(e) =>
-                setVideoFirst.mutate({ moduleId, lessonId: lesson.id, videoFirst: e.target.checked })
+                setFormat.mutate({
+                  moduleId,
+                  lessonId: lesson.id,
+                  format: e.target.value as 'pillola' | 'video_first' | 'standard',
+                })
               }
-            />
-            <Video className="size-3.5" /> Video
+            >
+              <option value="standard">Standard</option>
+              <option value="video_first">Video-first</option>
+              <option value="pillola">Pillola</option>
+            </select>
           </label>
           <StatusControls
             status={lesson.status}
@@ -1070,14 +1079,23 @@ function LessonCard({
             </span>
           </span>
         </button>
-        {lesson.videoFirst && (
-          <span
-            className="hidden items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary sm:inline-flex"
-            title="Lezione incentrata su un video (video-first)"
-          >
-            <UserRound className="size-3" /> Video-first
-          </span>
-        )}
+        {(() => {
+          const fmt = lessonFormatOf(lesson);
+          if (fmt === 'standard') return null;
+          const label = fmt === 'pillola' ? 'Pillola' : 'Video-first';
+          const title =
+            fmt === 'pillola'
+              ? 'Micro-lezione a contenitore scorrevole (pillola)'
+              : 'Lezione incentrata su un video (video-first)';
+          return (
+            <span
+              className="hidden items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary sm:inline-flex"
+              title={title}
+            >
+              <UserRound className="size-3" /> {label}
+            </span>
+          );
+        })()}
         {blockCount > 0 && (
           <span className="hidden items-center gap-1 text-xs text-emerald-600 sm:flex" aria-hidden>
             <span className="inline-block size-1.5 rounded-full bg-emerald-500" /> pronta
@@ -1647,6 +1665,20 @@ function cartoonScenesOf(block: Block): UiCartoonScene[] {
 /** True se il block ospita almeno una scena cartoon (scenario o video_checkpoint). */
 function blockHasCartoonScenes(block: Block): boolean {
   return cartoonScenesOf(block).length > 0;
+}
+
+/**
+ * Formato didattico effettivo di una lezione per la UI: la fonte di verità è
+ * lesson.format; per i corsi storici (senza format) si deriva dai flag
+ * videoFirst/pillola (pillola ha precedenza), con fallback a 'standard'.
+ */
+function lessonFormatOf(lesson: LessonView): 'pillola' | 'video_first' | 'standard' {
+  if (lesson.format === 'pillola' || lesson.format === 'video_first' || lesson.format === 'standard') {
+    return lesson.format;
+  }
+  if (lesson.pillola) return 'pillola';
+  if (lesson.videoFirst) return 'video_first';
+  return 'standard';
 }
 
 /**

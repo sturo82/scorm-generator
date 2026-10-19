@@ -109,18 +109,27 @@ export function outlinePrompt(brief: Brief, context: string): string {
       ? `Test richiesti: ${brief.requestedAssessments.join(', ')}`
       : '',
     brief.constraints.length > 0 ? `Vincoli: ${brief.constraints.join('; ')}` : '',
+    // FORMATO PER-LEZIONE: ogni lezione dell'outline porta un campo "format"
+    // (pillola | video_first | standard). Se il brief forza un formato globale,
+    // tutte le lezioni ricevono quello; altrimenti l'LLM consiglia il formato
+    // più adatto lezione per lezione secondo la natura del contenuto.
     brief.format === 'pillole'
-      ? 'MODALITÀ PILLOLE (libro-game): ogni "lezione" dell\'outline è una PILLOLA ' +
-        'autocontenuta — un mini-percorso interattivo a scene con scelte e conseguenze su UN ' +
-        'singolo concetto. Progetta lezioni brevi e focalizzate (una pillola = un concetto/' +
-        'situazione decisionale), non lezioni teoriche ampie. Ogni pillola sarà resa come ' +
-        'scenario a scelte con mini-video.'
-      : brief.videoFirst
-        ? 'MODALITÀ VIDEO-FIRST: il corso è basato su video. Imposta videoFirst=true su OGNI ' +
-          'lezione dell\'outline: ciascuna lezione sarà incentrata su un video con quiz ed ' +
-          'elementi dinamici affiancati.'
-        : 'Se una specifica lezione trae forte beneficio da una dimostrazione video, puoi ' +
-          'impostare videoFirst=true SOLO su quella lezione (usa con parsimonia, dove ha senso).',
+      ? 'FORMATO FORZATO: PILLOLE. Imposta "format": "pillola" su OGNI lezione. Ogni pillola è una ' +
+        'micro-lezione (2-4 min) su UN singolo concetto: hook video breve, spiegazione sintetica, una ' +
+        'verifica rapida, takeaway. Progetta lezioni brevi e focalizzate, non teoriche e ampie.'
+      : brief.format === 'video_first' || brief.videoFirst
+        ? 'FORMATO FORZATO: VIDEO-FIRST. Imposta "format": "video_first" su OGNI lezione: ciascuna è ' +
+          'incentrata su un video portante con capitoli, verifiche intermedie e quiz affiancati.'
+        : 'FORMATO PER-LEZIONE (consiglia tu): imposta il campo "format" di OGNI lezione al valore più ' +
+          'adatto alla sua natura didattica, scegliendo tra:\n' +
+          '  - "pillola": concetto singolo e pratico, "sapere fare subito", ripasso veloce o consiglio ' +
+          'operativo (micro-lezione 2-4 min con mini-video di aggancio);\n' +
+          '  - "video_first": argomento articolato che beneficia di una dimostrazione/screencast/caso ' +
+          'reale guidato passo-passo (lezione 8-15 min con video portante);\n' +
+          '  - "standard": teoria, definizioni, normative, checklist, contenuto da studiare anche senza ' +
+          'audio/video (testo + immagini + interazioni).\n' +
+          'Usa un MIX equilibrato e coerente con la progressione: non forzare tutto a un unico formato. ' +
+          'In dubbio, scegli "standard".',
     '',
     'Organizza il corso con una progressione didattica reale: dai fondamenti e dalle ' +
       'definizioni verso i concetti avanzati e l\'applicazione pratica. Le prime lezioni ' +

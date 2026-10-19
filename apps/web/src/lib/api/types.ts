@@ -88,11 +88,20 @@ export interface LessonView {
   updatedAt: string;
   /** URL firmato della narrazione audio generata, se presente. */
   narrationUrl?: string;
-  /** Lezione video-first (incentrata su un video). */
+  /**
+   * Formato didattico della lezione (fonte di verità per-lezione):
+   * 'pillola' | 'video_first' | 'standard'. Assente nei corsi storici → si
+   * deriva dai flag videoFirst/pillola.
+   */
+  format?: 'pillola' | 'video_first' | 'standard';
+  /** Lezione video-first (incentrata su un video). DERIVATO da format. */
   videoFirst?: boolean;
-  /** Lezione "pillola": layout a contenitore scorrevole con card per blocco. */
+  /** Lezione "pillola": layout a contenitore scorrevole con card per blocco. DERIVATO da format. */
   pillola?: boolean;
 }
+
+/** Formato didattico per-lezione (allineato a LessonFormat dei contracts). */
+export type LessonFormatValue = 'pillola' | 'video_first' | 'standard';
 
 /** Chunk della knowledge per il widget RAG "Chiedi al corso". */
 export interface RagChunk {
@@ -432,6 +441,7 @@ export interface ApiClient {
   /** Applica uno stato (default APPROVED) a tutto il corso: moduli, lezioni, assessment. */
   setStatusAll(courseId: string, status: EditorialStatus): Promise<{ modules: number; lessons: number; assessments: number }>;
   setLessonVideoFirst(courseId: string, moduleId: string, lessonId: string, videoFirst: boolean): Promise<void>;
+  setLessonFormat(courseId: string, moduleId: string, lessonId: string, format: LessonFormatValue): Promise<void>;
   /** Chunk della knowledge del corso per il widget RAG (anteprima). */
   getRagChunks(courseId: string): Promise<RagChunk[]>;
   /** Chunk + embeddings neurali del corso per la ricerca semantica in anteprima. */

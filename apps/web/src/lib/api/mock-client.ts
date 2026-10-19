@@ -540,6 +540,23 @@ export class MockApiClient implements ApiClient {
       if (l) (l as { videoFirst?: boolean }).videoFirst = videoFirst;
     }
   }
+  async setLessonFormat(
+    courseId: string,
+    _moduleId: string,
+    lessonId: string,
+    format: 'pillola' | 'video_first' | 'standard',
+  ) {
+    await delay(150);
+    for (const m of this.modules[courseId] ?? []) {
+      const l = m.lessons.find((x) => x.id === lessonId);
+      if (l) {
+        const row = l as { format?: string; videoFirst?: boolean; pillola?: boolean };
+        row.format = format;
+        row.videoFirst = format === 'video_first';
+        row.pillola = format === 'pillola';
+      }
+    }
+  }
   async getRagChunks(_courseId: string) {
     await delay(120);
     return [

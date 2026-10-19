@@ -6,6 +6,9 @@ import {
   Assessment,
   CourseOutline,
   CONTRACTS_VERSION,
+  LessonFormat,
+  lessonFlagsFromFormat,
+  type LessonFormat as LessonFormatType,
   type Block as BlockType,
   type Question as QuestionType,
   type Assessment as AssessmentType,
@@ -184,13 +187,24 @@ export class ModulesService {
         "Il corso non ha un outline valido da materializzare: genera prima l'outline",
       );
     }
-    // Corso video-first: ogni lezione eredita il flag; altrimenti vale il flag
-    // per-lezione dall'outline.
-    const courseVideoFirst =
-      !!(course.brief && (course.brief as { videoFirst?: boolean }).videoFirst);
-    // Corso in PILLOLE: ogni lezione è una pillola (layout a card scorrevoli).
-    const coursePillola =
-      !!(course.brief && (course.brief as { format?: string }).format === 'pillole');
+    // Formato GLOBALE forzato dal brief, se presente: vince su tutto e assegna
+    // lo stesso formato a ogni lezione. Altrimenti il formato è deciso
+    // PER-LEZIONE dall'outline (campo format, con fallback ai flag storici).
+    const briefFormat = (course.brief as { format?: string } | null)?.format;
+    const forcedLessonFormat: LessonFormatType | null =
+      briefFormat === 'pillole'
+        ? 'pillola'
+        : briefFormat === 'video_first' || (course.brief as { videoFirst?: boolean } | null)?.videoFirst
+          ? 'video_first'
+          : null;
+
+    /** Formato effettivo di una lezione dell'outline (globale forzato → outline → standard). */
+    const resolveLessonFormat = (lo: { format?: unknown; videoFirst?: boolean }): LessonFormatType => {
+      if (forcedLessonFormat) return forcedLessonFormat;
+      const parsed = LessonFormat.safeParse(lo.format);
+      if (parsed.success) return parsed.data;
+      return lo.videoFirst === true ? 'video_first' : 'standard';
+    };
 
     const norm = (s: string): string => s.trim().toLowerCase().replace(/\s+/g, ' ');
     const hasBlocks = (blocks: unknown): boolean =>
@@ -229,8 +243,8 @@ export class ModulesService {
         for (let li = 0; li < mo.lessons.length; li++) {
           const lo = mo.lessons[li]!;
           const lessonRow = lessonByTitle.get(norm(lo.title));
-          const videoFirst = courseVideoFirst || lo.videoFirst === true;
-          const pillola = coursePillola;
+          const format = resolveLessonFormat(lo);
+          const { videoFirst, pillola } = lessonFlagsFromFormat(format);
           if (!lessonRow) {
             await tx.lesson.create({
               data: {
@@ -238,6 +252,7 @@ export class ModulesService {
                 title: lo.title,
                 position: li,
                 objectives: lo.objectives as object,
+                format,
                 videoFirst,
                 pillola,
               },
@@ -245,11 +260,12 @@ export class ModulesService {
           } else if (
             lessonRow.position !== li ||
             lessonRow.videoFirst !== videoFirst ||
-            (lessonRow as { pillola?: boolean }).pillola !== pillola
+            (lessonRow as { pillola?: boolean }).pillola !== pillola ||
+            (lessonRow as { format?: string | null }).format !== format
           ) {
             await tx.lesson.update({
               where: { id: lessonRow.id },
-              data: { position: li, videoFirst, pillola },
+              data: { position: li, format, videoFirst, pillola },
             });
           }
         }
@@ -318,6 +334,30 @@ export class ModulesService {
   }
 
   /** Marca/smarca una lezione come video-first (incentrata su un video). */
+  /**
+   * Imposta il FORMATO didattico di una lezione (pillola/video_first/standard),
+   * fonte di verità per-lezione, e allinea i flag derivati videoFirst/pillola.
+   */
+  async setLessonFormat(
+    tenantId: string,
+    courseId: string,
+    moduleId: string,
+    lessonId: string,
+    format: LessonFormatType,
+  ) {
+    await this.requireLesson(tenantId, courseId, moduleId, lessonId);
+    const { videoFirst, pillola } = lessonFlagsFromFormat(format);
+    return this.prisma.lesson.update({
+      where: { id: lessonId },
+      data: { format, videoFirst, pillola },
+    });
+  }
+
+  /**
+   * Marca/smarca una lezione come video-first. Mantenuto per compatibilità: ora
+   * delega a setLessonFormat così formato e flag restano sempre coerenti
+   * (video-first → 'video_first'; altrimenti torna a 'standard').
+   */
   async setLessonVideoFirst(
     tenantId: string,
     courseId: string,
@@ -325,11 +365,7 @@ export class ModulesService {
     lessonId: string,
     videoFirst: boolean,
   ) {
-    await this.requireLesson(tenantId, courseId, moduleId, lessonId);
-    return this.prisma.lesson.update({
-      where: { id: lessonId },
-      data: { videoFirst },
-    });
+    return this.setLessonFormat(tenantId, courseId, moduleId, lessonId, videoFirst ? 'video_first' : 'standard');
   }
 
   // --- Assessment e domande -------------------------------------------------
