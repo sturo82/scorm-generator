@@ -112,6 +112,17 @@ interface AvatarGroup {
 interface AvatarGroupListResponse {
   data?: { avatar_group_list?: AvatarGroup[] };
 }
+/** Risposta di GET /v2/avatar_group/{group_id}/avatars: i look del gruppo. */
+interface GroupAvatarItem {
+  id?: string;
+  name?: string;
+  status?: string;
+  image_url?: string;
+  gender?: string;
+}
+interface GroupAvatarListResponse {
+  data?: { avatar_list?: GroupAvatarItem[] };
+}
 interface ListVoicesResponse {
   data?: VoiceItem[] | { voices?: VoiceItem[] };
   has_more?: boolean;
@@ -180,7 +191,15 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     this.defaultResolution = opts.defaultResolution ?? '720p';
     this.defaultEngine = opts.defaultEngine;
     this.fetchImpl = opts.fetchImpl ?? fetch;
-    this.cacheTtlMs = opts.cacheTtlMs ?? 60 * 60_000; // 1h
+    // TTL breve: l'elenco "mine" è piccolo ma cambia quando l'utente crea/
+    // elimina avatar (anche fuori dalla piattaforma). 5 minuti bilancia
+    // freschezza e numero di chiamate; il refresh esplicito lo bypassa.
+    this.cacheTtlMs = opts.cacheTtlMs ?? 5 * 60_000; // 5 min
+  }
+
+  /** Invalida la cache degli avatar dell'account (dopo create/delete). */
+  invalidateMineCache(): void {
+    this.mineCache = undefined;
   }
 
   private headers(): Record<string, string> {
@@ -325,32 +344,66 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
   }
 
   /** Avatar DELL'ACCOUNT ("mine") via /v2/avatar_group.list?include_public=false. */
-  private async fetchMineAvatars(): Promise<AvatarOption[]> {
+  /**
+   * Avatar DELL'ACCOUNT ("mine"). HeyGen organizza gli avatar dell'utente in
+   * GRUPPI (/v2/avatar_group.list), ciascuno con uno o più LOOK. La generazione
+   * video (/v3/videos) richiede l'id del LOOK, NON quello del gruppo: usare il
+   * group id dà "avatar_not_found". Quindi per ogni gruppo risolviamo i look
+   * (/v2/avatar_group/{id}/avatars) ed emettiamo una voce per ogni look pronto
+   * (status 'completed'), con `id` = look id. Il nome combina gruppo e look.
+   *
+   * `force` bypassa e ripopola la cache (usato dal refresh esplicito e dopo
+   * create/delete di un avatar dalla piattaforma).
+   */
+  private async fetchMineAvatars(force = false): Promise<AvatarOption[]> {
     const now = Date.now();
-    if (this.mineCache && this.mineCache.expires > now && this.cacheTtlMs > 0) {
+    if (!force && this.mineCache && this.mineCache.expires > now && this.cacheTtlMs > 0) {
       return this.mineCache.promise;
     }
     const promise = (async (): Promise<AvatarOption[]> => {
       const json = await this.getPage<AvatarGroupListResponse>('/v2/avatar_group.list', undefined, {
         include_public: 'false',
       });
-      const groups = json.data?.avatar_group_list ?? [];
-      return groups
-        .map((g): AvatarOption | null => {
-          if (!g.id) return null;
-          return {
-            id: g.id,
-            name: g.name ?? g.id,
-            previewUrl: g.preview_image,
-            source: 'mine',
-            group: g.name,
-            groupType: g.group_type,
-          };
-        })
-        .filter((x): x is AvatarOption => x !== null);
+      const groups = (json.data?.avatar_group_list ?? []).filter((g) => g.id);
+
+      // Per ogni gruppo, risolve i look in parallelo. Un errore su un gruppo non
+      // deve far fallire l'intera lista: in quel caso il gruppo viene saltato.
+      const perGroup = await Promise.all(
+        groups.map(async (g): Promise<AvatarOption[]> => {
+          try {
+            const looks = await this.fetchGroupLooks(g.id as string);
+            const ready = looks.filter((l) => l.id && (l.status ?? '').toLowerCase() === 'completed');
+            // Se non ci sono look pronti risolvibili, salta il gruppo: esporre il
+            // group id non sarebbe utilizzabile per la generazione.
+            if (ready.length === 0) return [];
+            const multi = ready.length > 1;
+            return ready.map((l): AvatarOption => ({
+              id: l.id as string,
+              name: multi && l.name ? `${g.name ?? 'Avatar'} — ${l.name}` : g.name ?? l.name ?? (l.id as string),
+              previewUrl: l.image_url ?? g.preview_image,
+              gender: l.gender,
+              source: 'mine',
+              group: g.name,
+              groupType: g.group_type,
+            }));
+          } catch {
+            return [];
+          }
+        }),
+      );
+      return perGroup.flat();
     })();
     if (this.cacheTtlMs > 0) this.mineCache = { expires: now + this.cacheTtlMs, promise };
+    else this.mineCache = undefined;
     return promise;
+  }
+
+  /** Look di un gruppo avatar (/v2/avatar_group/{id}/avatars). */
+  private async fetchGroupLooks(groupId: string): Promise<GroupAvatarItem[]> {
+    const json = await this.getPage<GroupAvatarListResponse>(
+      `/v2/avatar_group/${encodeURIComponent(groupId)}/avatars`,
+    );
+    return json.data?.avatar_list ?? [];
   }
 
   async listAvatarsPage(input?: ListAvatarsInput): Promise<Page<AvatarOption>> {
@@ -359,7 +412,7 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
 
     // "Mine": pochi, ritornati in blocco (una chiamata, cache). Filtra per query.
     if (source === 'mine') {
-      let items = await this.fetchMineAvatars();
+      let items = await this.fetchMineAvatars(input?.refresh === true);
       if (query) items = items.filter((a) => a.name.toLowerCase().includes(query));
       return { items };
     }

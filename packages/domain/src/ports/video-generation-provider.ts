@@ -107,6 +107,12 @@ export interface ListAvatarsInput {
    * scorrendo le pagine (con un limite di sicurezza) e ritorna i match.
    */
   query?: string;
+  /**
+   * Forza il bypass della cache degli avatar dell'account ('mine') e ne
+   * ripopola il contenuto da HeyGen. Utile dopo aver creato un avatar (anche
+   * fuori dalla piattaforma) per vederlo subito.
+   */
+  refresh?: boolean;
 }
 
 /** Parametri per paginare le voci. */
@@ -191,4 +197,10 @@ export interface VideoGenerationProvider {
   getAvatarLook?(lookId: string): Promise<AvatarLookStatus>;
   /** Elimina un avatar (gruppo + look). Opzionale. */
   deleteAvatar?(groupId: string): Promise<void>;
+  /**
+   * Invalida l'eventuale cache interna degli avatar dell'account ("mine"), così
+   * la lettura successiva rilegge da zero. Opzionale: i provider senza cache non
+   * la implementano. Chiamata dopo create/delete per riflettere subito i cambi.
+   */
+  invalidateMineCache?(): void;
 }

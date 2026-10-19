@@ -588,7 +588,7 @@ export interface ApiClient {
   // Gestione avatar HeyGen del tenant (Impostazioni → Avatar). Creazione a
   // pagamento una tantum; lettura della lista senza quota.
   /** Elenca gli avatar dell'account (i "miei"). `q` cerca per nome. */
-  listMyAvatars(q?: string): Promise<Page<AvatarOption>>;
+  listMyAvatars(q?: string, refresh?: boolean): Promise<Page<AvatarOption>>;
   /** Crea un avatar da FOTO (upload immagine). Asincrono: look in 'processing'. */
   createPhotoAvatar(name: string, file: File): Promise<CreateAvatarResult>;
   /** Crea un avatar da PROMPT testuale. Asincrono: look in 'processing'. */

@@ -499,6 +499,19 @@ export function useMyAvatars(q?: string, enabled = true) {
   });
 }
 
+/**
+ * Forza il refresh della lista avatar bypassando la cache del server (utile
+ * dopo aver creato un avatar su HeyGen fuori dalla piattaforma). Esegue una
+ * lettura con refresh e poi invalida le query locali così la UI si aggiorna.
+ */
+export function useRefreshMyAvatars() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (q?: string) => api.listMyAvatars(q, true),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tenant', 'avatars'] }),
+  });
+}
+
 /** Crea un avatar da FOTO (upload immagine). Invalida la lista al termine. */
 export function useCreatePhotoAvatar() {
   const qc = useQueryClient();

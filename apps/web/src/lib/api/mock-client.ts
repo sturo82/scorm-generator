@@ -1016,7 +1016,7 @@ export class MockApiClient implements ApiClient {
     { id: 'mock-mine-1', name: 'Il mio avatar (demo)', gender: 'male', source: 'mine', group: 'Il mio avatar (demo)', groupType: 'PHOTO' },
   ];
 
-  async listMyAvatars(q?: string): Promise<Page<AvatarOption>> {
+  async listMyAvatars(q?: string, _refresh?: boolean): Promise<Page<AvatarOption>> {
     await delay(200);
     const query = (q ?? '').toLowerCase();
     const items = query ? this.myAvatars.filter((a) => a.name.toLowerCase().includes(query)) : [...this.myAvatars];

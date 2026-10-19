@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Loader2, Upload, Trash2, Sparkles, Image as ImageIcon, Info } from 'lucide-react';
+import { Loader2, Upload, Trash2, Sparkles, Image as ImageIcon, Info, RefreshCw } from 'lucide-react';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,11 +16,13 @@ import {
 } from '@scorm/contracts';
 import {
   useMyAvatars,
+  useRefreshMyAvatars,
   useCreatePhotoAvatar,
   useCreatePromptAvatar,
   useDeleteAvatar,
 } from '@/lib/api/hooks';
 import type { AvatarOption } from '@/lib/api/types';
+import { cn } from '@/lib/cn';
 
 /**
  * Prezzo AL CLIENTE della creazione di un avatar (costo provider markuppato).
@@ -43,6 +45,7 @@ type CreateMode = 'photo' | 'prompt';
 export default function AvatarsSettingsPage() {
   const toast = useToast();
   const { data, isLoading, isError } = useMyAvatars();
+  const refreshAvatars = useRefreshMyAvatars();
   const createPhoto = useCreatePhotoAvatar();
   const createPrompt = useCreatePromptAvatar();
   const del = useDeleteAvatar();
@@ -143,8 +146,23 @@ export default function AvatarsSettingsPage() {
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         {/* Elenco avatar del tenant */}
         <Card>
-          <CardHeader>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle>I tuoi avatar</CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={refreshAvatars.isPending}
+              onClick={async () => {
+                try {
+                  await refreshAvatars.mutateAsync(undefined);
+                  toast.show('Elenco avatar aggiornato', 'success');
+                } catch {
+                  toast.show('Aggiornamento non riuscito', 'error');
+                }
+              }}
+            >
+              <RefreshCw className={cn('size-4', refreshAvatars.isPending && 'animate-spin')} /> Aggiorna
+            </Button>
           </CardHeader>
           <CardContent>
             {isLoading ? (

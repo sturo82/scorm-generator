@@ -813,9 +813,9 @@ export class MediaService implements OnModuleInit {
    * caricati nell'account HeyGen). Non consuma quota. È la lista mostrata nella
    * sezione Impostazioni → Avatar. Delega al provider (una chiamata, caching).
    */
-  async listMyAvatars(query?: string): Promise<Page<AvatarOption>> {
+  async listMyAvatars(query?: string, refresh = false): Promise<Page<AvatarOption>> {
     if (!this.videoGen) throw this.videoNotConfigured();
-    return this.videoGen.listAvatarsPage({ source: 'mine', query });
+    return this.videoGen.listAvatarsPage({ source: 'mine', query, refresh });
   }
 
   /**
@@ -878,6 +878,8 @@ export class MediaService implements OnModuleInit {
       region: 'global',
     });
     this.logger.log(`Avatar creato (tenant ${tenantId}): ${result.name} [${result.avatarId}] status=${result.status}`);
+    // Invalida la cache "mine": il nuovo avatar deve comparire alla prossima lista.
+    this.videoGen.invalidateMineCache?.();
     return result;
   }
 
@@ -909,6 +911,8 @@ export class MediaService implements OnModuleInit {
       this.logger.warn(`Eliminazione avatar fallita (${groupId}): ${detail}`);
       throw new BadRequestException(`Eliminazione avatar non riuscita: ${detail}`);
     }
+    // Invalida la cache "mine": l'avatar eliminato non deve più comparire.
+    this.videoGen.invalidateMineCache?.();
     return { deleted: true };
   }
 

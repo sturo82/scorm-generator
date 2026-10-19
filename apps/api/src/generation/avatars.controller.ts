@@ -41,10 +41,10 @@ class CreatePromptAvatarDto {
 export class AvatarsController {
   constructor(private readonly media: MediaService) {}
 
-  /** Elenca gli avatar dell'account (i "miei"). `q` cerca per nome. */
+  /** Elenca gli avatar dell'account (i "miei"). `q` cerca per nome; `refresh=true` bypassa la cache. */
   @Get()
-  list(@Query('q') q?: string) {
-    return this.media.listMyAvatars(q);
+  list(@Query('q') q?: string, @Query('refresh') refresh?: string) {
+    return this.media.listMyAvatars(q, refresh === 'true');
   }
 
   /** Stato di un look avatar in creazione (polling dopo la creazione). */

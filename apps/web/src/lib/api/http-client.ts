@@ -462,8 +462,11 @@ export class HttpApiClient implements ApiClient {
   }
 
   // Gestione avatar HeyGen del tenant (Impostazioni → Avatar)
-  listMyAvatars(q?: string) {
-    const suffix = q ? `?q=${encodeURIComponent(q)}` : '';
+  listMyAvatars(q?: string, refresh?: boolean) {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (refresh) params.set('refresh', 'true');
+    const suffix = params.toString() ? `?${params.toString()}` : '';
     return this.request<Page<AvatarOption>>(`/tenant/avatars${suffix}`);
   }
   async createPhotoAvatar(name: string, file: File) {
