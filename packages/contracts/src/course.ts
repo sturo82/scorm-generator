@@ -18,6 +18,12 @@ export const Lesson = z.object({
   narrationKey: z.string().optional(),
   /** Lezione video-first: pilota il layout a 2 colonne nel player/anteprima. */
   videoFirst: z.boolean().default(false),
+  /**
+   * Lezione "pillola": pilota un layout dedicato (contenitore scorrevole con
+   * ogni blocco in una card ben definita, contenuto e azioni distinti). Deriva
+   * da Brief.format === 'pillole', come videoFirst deriva da 'video_first'.
+   */
+  pillola: z.boolean().default(false),
   editorial: EditorialMeta.default({}),
 });
 export type Lesson = z.infer<typeof Lesson>;

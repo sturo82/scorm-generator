@@ -217,6 +217,7 @@ export class ExportService {
           blocks: Array.isArray(l.blocks) ? l.blocks : [],
           narrationKey: l.narrationKey ?? undefined,
           videoFirst: l.videoFirst === true,
+          pillola: (l as { pillola?: boolean }).pillola === true,
         })),
       })),
       // Scarta gli assessment senza domande: lo schema richiede min 1 domanda e

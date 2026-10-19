@@ -103,6 +103,20 @@
     return wrap;
   }
 
+  /**
+   * Lezione PILLOLA: contenitore scorrevole con una card per blocco (contenuto
+   * vs azioni distinti), dal renderer CONDIVISO. Fallback: impila i block.
+   */
+  function renderPillolaLesson(blocks) {
+    var core = global.RenderCore;
+    if (core && core.renderPillolaLessonDom) {
+      return core.renderPillolaLessonDom(blocks || [], coreCtx());
+    }
+    var wrap = el('div', { class: 'lesson-pillola' });
+    (blocks || []).forEach(function (b) { wrap.appendChild(renderBlock(b)); });
+    return wrap;
+  }
+
   // --- Rendering di un assessment (test) --------------------------------------
   // Costruisce il form delle domande per tutti i tipi, raccoglie le risposte in
   // una mappa questionId -> answer e, al submit, invoca onSubmit(answers). La
@@ -207,7 +221,7 @@
     return wrap;
   }
 
-  global.Renderers = { renderBlock: renderBlock, renderAssessment: renderAssessment, renderVideoFirstLesson: renderVideoFirstLesson };
+  global.Renderers = { renderBlock: renderBlock, renderAssessment: renderAssessment, renderVideoFirstLesson: renderVideoFirstLesson, renderPillolaLesson: renderPillolaLesson };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = global.Renderers;

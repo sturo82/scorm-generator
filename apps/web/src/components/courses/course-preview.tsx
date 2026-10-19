@@ -14,6 +14,7 @@ import {
 import {
   buildCourseSteps,
   renderVideoFirstLesson,
+  renderPillolaLesson,
   imagePlaceholderSlot,
   type RenderContext,
 } from '@scorm/contracts/render-core';
@@ -860,6 +861,37 @@ function LessonPreview({
 
   // Reset del concetto quando cambia lezione.
   React.useEffect(() => setSub(0), [lesson.id]);
+
+  // Lezione PILLOLA: contenitore scorrevole con una card per blocco (contenuto
+  // vs azioni distinti), dal renderer CONDIVISO (identico al player SCORM).
+  if (lesson.pillola) {
+    const blocks = lesson.blocks as Block[];
+    const ctx: RenderContext = {
+      resolveMedia: (m) => m.storageKey ?? null,
+      renderPlaceholder: (m) => imagePlaceholderSlot(m, labels),
+      labels,
+    };
+    const vnode = renderPillolaLesson(
+      blocks.map((b) => ({ id: b.id, type: b.type, payload: b.payload as Record<string, unknown> })),
+      ctx,
+    );
+    return (
+      <article className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+        <header className="border-b p-5">
+          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--brand-primary, #4f46e5)' }}>
+            {labels.moduleN(step.moduleIndex + 1)} · {step.moduleTitle} · Pillola
+          </p>
+          <div className="mt-1 flex items-center gap-2">
+            <h3 className="text-xl font-bold">{lesson.title}</h3>
+            <EditorialStatusBadge status={lesson.status} />
+          </div>
+        </header>
+        <div className="brand-scope p-5" data-motion="sober">
+          <VNodeView node={vnode} labels={labels} />
+        </div>
+      </article>
+    );
+  }
 
   // Lezione VIDEO-FIRST (stile Brain Bites): in cima il video a tutta larghezza
   // con il suo pannello trascrizione/tab a fianco (gestito da VideoCheckpoint);

@@ -566,6 +566,13 @@
       return;
     }
 
+    // Lezione PILLOLA: contenitore scorrevole con una card per blocco (contenuto
+    // vs azioni distinti). Layout dedicato dal renderer condiviso.
+    if (lesson.pillola) {
+      this.renderPillolaLesson(step, main);
+      return;
+    }
+
     // Concetti della lezione (gruppi di blocchi), dalla struttura CONDIVISA.
     var concepts =
       global.RenderCore && global.RenderCore.groupConcepts
@@ -635,6 +642,26 @@
     }
 
     // Completa alla visualizzazione (lezione senza gate di test).
+    this.markComplete(step);
+  };
+
+  /**
+   * Lezione PILLOLA: contenitore scorrevole con una card per blocco, dal
+   * renderer CONDIVISO (stesso markup/stile dell'anteprima). Ogni blocco è una
+   * card ben definita con etichetta di ruolo (Contenuto / Attività). La lezione
+   * si completa alla visualizzazione.
+   */
+  Player.prototype.renderPillolaLesson = function (step, main) {
+    var lesson = step.lesson;
+    var blocks = lesson.blocks || [];
+    if (this.renderers.renderPillolaLesson) {
+      main.appendChild(this.renderers.renderPillolaLesson(blocks));
+    } else {
+      var self = this;
+      var wrap = el('div', 'lesson-pillola');
+      blocks.forEach(function (block) { wrap.appendChild(self.renderers.renderBlock(block)); });
+      main.appendChild(wrap);
+    }
     this.markComplete(step);
   };
 

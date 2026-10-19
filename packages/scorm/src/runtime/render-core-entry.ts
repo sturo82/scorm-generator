@@ -16,6 +16,7 @@ import {
   buildCourseSteps,
   groupConcepts,
   renderVideoFirstLesson,
+  renderPillolaLesson,
   type VNode,
   type VChild,
   type RenderContext,
@@ -356,6 +357,14 @@ function renderVideoFirstLessonDom(
   return mount(renderVideoFirstLesson(blocks, ctx)) as HTMLElement;
 }
 
+/** Costruisce il nodo DOM della lezione PILLOLA (contenitore scorrevole a card). */
+function renderPillolaLessonDom(
+  blocks: Array<{ id?: string; type: string; payload?: Record<string, unknown> }>,
+  ctx: RenderContext,
+): HTMLElement {
+  return mount(renderPillolaLesson(blocks, ctx)) as HTMLElement;
+}
+
 const RenderCore = {
   renderBlock,
   isHandledByCore,
@@ -363,6 +372,8 @@ const RenderCore = {
   renderBlockDom,
   renderVideoFirstLesson,
   renderVideoFirstLessonDom,
+  renderPillolaLesson,
+  renderPillolaLessonDom,
   buildCourseSteps,
   groupConcepts,
   courseLabels,

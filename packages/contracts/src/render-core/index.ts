@@ -25,5 +25,6 @@ export {
 } from './blocks/dragdrop.js';
 export { renderVideoCheckpoint } from './blocks/video-checkpoint.js';
 export { renderVideoFirstLesson } from './blocks/video-first-lesson.js';
+export { renderPillolaLesson } from './blocks/pillola-lesson.js';
 export * from './stateful.js';
 export * from './course-structure.js';

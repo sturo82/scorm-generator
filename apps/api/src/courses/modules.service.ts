@@ -188,6 +188,9 @@ export class ModulesService {
     // per-lezione dall'outline.
     const courseVideoFirst =
       !!(course.brief && (course.brief as { videoFirst?: boolean }).videoFirst);
+    // Corso in PILLOLE: ogni lezione è una pillola (layout a card scorrevoli).
+    const coursePillola =
+      !!(course.brief && (course.brief as { format?: string }).format === 'pillole');
 
     const norm = (s: string): string => s.trim().toLowerCase().replace(/\s+/g, ' ');
     const hasBlocks = (blocks: unknown): boolean =>
@@ -227,6 +230,7 @@ export class ModulesService {
           const lo = mo.lessons[li]!;
           const lessonRow = lessonByTitle.get(norm(lo.title));
           const videoFirst = courseVideoFirst || lo.videoFirst === true;
+          const pillola = coursePillola;
           if (!lessonRow) {
             await tx.lesson.create({
               data: {
@@ -235,12 +239,17 @@ export class ModulesService {
                 position: li,
                 objectives: lo.objectives as object,
                 videoFirst,
+                pillola,
               },
             });
-          } else if (lessonRow.position !== li || lessonRow.videoFirst !== videoFirst) {
+          } else if (
+            lessonRow.position !== li ||
+            lessonRow.videoFirst !== videoFirst ||
+            (lessonRow as { pillola?: boolean }).pillola !== pillola
+          ) {
             await tx.lesson.update({
               where: { id: lessonRow.id },
-              data: { position: li, videoFirst },
+              data: { position: li, videoFirst, pillola },
             });
           }
         }

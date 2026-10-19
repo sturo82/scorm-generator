@@ -90,6 +90,8 @@ export interface LessonView {
   narrationUrl?: string;
   /** Lezione video-first (incentrata su un video). */
   videoFirst?: boolean;
+  /** Lezione "pillola": layout a contenitore scorrevole con card per blocco. */
+  pillola?: boolean;
 }
 
 /** Chunk della knowledge per il widget RAG "Chiedi al corso". */

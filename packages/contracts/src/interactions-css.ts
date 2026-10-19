@@ -504,4 +504,37 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
 @media (max-width: 860px) {
   [data-motion] .block.video.video-withpanel { grid-template-columns: 1fr; }
 }
+
+/* ============================================================================
+   PILLOLA — contenitore scorrevole coerente: ogni blocco è una CARD distinta,
+   con etichetta di ruolo e stile diverso per CONTENUTO vs AZIONI.
+   ========================================================================== */
+[data-motion] .lesson-pillola { display: flex; flex-direction: column; gap: 1.1rem; }
+[data-motion] .lesson-pillola .pillola-card {
+  border: 1px solid var(--ix-border);
+  border-radius: calc(var(--ix-radius) + 2px);
+  background: var(--ix-surface);
+  overflow: hidden;
+  box-shadow: var(--ix-shadow-sm, 0 1px 2px rgba(0,0,0,0.06));
+}
+[data-motion] .lesson-pillola .pillola-card-head {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  border-bottom: 1px solid var(--ix-border);
+  background: color-mix(in srgb, var(--ix-on-surface) 4%, var(--ix-surface));
+}
+[data-motion] .lesson-pillola .pillola-card-badge {
+  font-size: 0.66rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 0.18rem 0.55rem; border-radius: 999px;
+  color: var(--ix-on-primary, #fff);
+}
+[data-motion] .lesson-pillola .pillola-card-body { padding: 1rem 1.1rem; }
+[data-motion] .lesson-pillola .pillola-card-body > .block { margin: 0; }
+/* CONTENUTO ("impara"): accento neutro/brand, bordo sinistro sobrio. */
+[data-motion] .lesson-pillola .pillola-card--content { border-left: 4px solid color-mix(in srgb, var(--ix-primary) 60%, var(--ix-border)); }
+[data-motion] .lesson-pillola .pillola-card--content .pillola-card-badge { background: color-mix(in srgb, var(--ix-primary) 70%, var(--ix-on-surface)); }
+/* AZIONE ("mettiti alla prova"): accento vivo, stacco visivo netto. */
+[data-motion] .lesson-pillola .pillola-card--action { border-left: 4px solid var(--ix-accent); background: color-mix(in srgb, var(--ix-accent) 4%, var(--ix-surface)); }
+[data-motion] .lesson-pillola .pillola-card--action .pillola-card-head { background: color-mix(in srgb, var(--ix-accent) 10%, var(--ix-surface)); }
+[data-motion] .lesson-pillola .pillola-card--action .pillola-card-badge { background: var(--ix-accent); }
 `;
