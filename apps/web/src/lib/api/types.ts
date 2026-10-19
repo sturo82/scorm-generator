@@ -216,6 +216,15 @@ export interface CreateCourseFromRssResult {
   briefDrafted: boolean;
 }
 
+/** Esito della creazione di un corso DAL MIO MATERIALE (knowledge selezionata). */
+export interface CreateCourseFromKnowledgeResult {
+  courseId: string;
+  /** Documenti knowledge collegati come fonti del corso. */
+  importedCount: number;
+  /** True se è stata generata una bozza di brief. */
+  briefDrafted: boolean;
+}
+
 /** Pre-sommario del corso mostrato prima della generazione. */
 export interface RssPreviewResult {
   proposedTitle: string;
@@ -364,6 +373,10 @@ export interface ApiClient {
     /** Anteprima congelata approvata dall'autore (coerenza con il wizard). */
     preview?: RssPreviewResult;
     maxArticles: number;
+    /** Formato per-lezione di DEFAULT scelto nell'onboarding. */
+    lessonFormatDefault?: LessonFormatValue;
+    /** Eccezioni di formato per-lezione per titolo (onboarding). */
+    lessonFormatHints?: Record<string, LessonFormatValue>;
   }): Promise<CreateCourseFromRssResult>;
   /** Anteprima (pre-sommario) del corso da un argomento, senza crearlo. */
   previewCourseFromRss(input: {
@@ -375,6 +388,28 @@ export interface ApiClient {
     tone?: string;
     scope?: string;
   }): Promise<RssPreviewResult>;
+  /** Anteprima del corso DAL MIO MATERIALE (knowledge selezionata), senza crearlo. */
+  previewCourseFromKnowledge(input: {
+    documentIds: string[];
+    language: string;
+    topic?: string;
+    audience?: string;
+    tone?: string;
+    scope?: string;
+  }): Promise<RssPreviewResult>;
+  /** Crea un corso DAL MIO MATERIALE (documenti knowledge scelti come fonti). */
+  createCourseFromKnowledge(input: {
+    documentIds: string[];
+    language: string;
+    topic?: string;
+    title?: string;
+    audience?: string;
+    tone?: string;
+    scope?: string;
+    preview?: RssPreviewResult;
+    lessonFormatDefault?: LessonFormatValue;
+    lessonFormatHints?: Record<string, LessonFormatValue>;
+  }): Promise<CreateCourseFromKnowledgeResult>;
   deleteCourse(id: string): Promise<void>;
 
   // Feed RSS personalizzati del tenant (per la creazione corsi da argomento).

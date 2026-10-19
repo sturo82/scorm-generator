@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Id, LanguageCode } from './primitives.js';
+import { LessonFormat } from './course.js';
 
 /**
  * Brief iniziale del corso (Requisito 2). Input strutturato che guida la
@@ -92,8 +93,27 @@ export const Brief = z.object({
    * generazione: 'video_first' → lezioni incentrate su video; 'pillole' →
    * libro-game di scene/scelte/conseguenze. Retro-compat: se assente ma
    * videoFirst==true, va trattato come 'video_first'.
+   *
+   * NB: con il formato PER-LEZIONE (lessonFormatDefault/lessonFormatHints), il
+   * valore 'completo' qui significa "nessun formato globale forzato": l'outline
+   * decide il formato lezione per lezione. 'video_first'/'pillole' restano come
+   * forzatura globale (tutte le lezioni ricevono quel formato).
    */
   format: CourseFormat.default('completo'),
+  /**
+   * Formato PER-LEZIONE consigliato di DEFAULT (onboarding unificato): l'outline
+   * assegna questo formato alle lezioni per cui non c'è un hint specifico, salvo
+   * che il modello ritenga chiaramente più adatto un altro formato. Se assente,
+   * l'LLM sceglie liberamente il mix. Ignorato se `format` forza un formato globale.
+   */
+  lessonFormatDefault: LessonFormat.optional(),
+  /**
+   * Eccezioni di formato per-lezione, indicizzate per TITOLO (normalizzato) della
+   * lezione suggerita: { "<titolo>": "pillola"|"video_first"|"standard" }. L'outline
+   * applica questo formato alle lezioni il cui titolo combacia. Ignorato se `format`
+   * forza un formato globale.
+   */
+  lessonFormatHints: z.record(z.string(), LessonFormat).default({}),
 });
 export type Brief = z.infer<typeof Brief>;
 

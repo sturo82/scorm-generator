@@ -63,6 +63,8 @@ export function useCreateCourseFromRss() {
       scope?: string;
       preview?: import('./types').RssPreviewResult;
       maxArticles: number;
+      lessonFormatDefault?: import('./types').LessonFormatValue;
+      lessonFormatHints?: Record<string, import('./types').LessonFormatValue>;
     }) => api.createCourseFromRss(input),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.courses }),
   });
@@ -80,6 +82,40 @@ export function useRssPreview() {
       tone?: string;
       scope?: string;
     }) => api.previewCourseFromRss(input),
+  });
+}
+
+/** Anteprima del corso DAL MIO MATERIALE (knowledge selezionata). Non crea nulla. */
+export function useKnowledgePreview() {
+  return useMutation({
+    mutationFn: (input: {
+      documentIds: string[];
+      language: string;
+      topic?: string;
+      audience?: string;
+      tone?: string;
+      scope?: string;
+    }) => api.previewCourseFromKnowledge(input),
+  });
+}
+
+/** Crea un corso DAL MIO MATERIALE (documenti knowledge scelti come fonti). */
+export function useCreateCourseFromKnowledge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      documentIds: string[];
+      language: string;
+      topic?: string;
+      title?: string;
+      audience?: string;
+      tone?: string;
+      scope?: string;
+      preview?: import('./types').RssPreviewResult;
+      lessonFormatDefault?: import('./types').LessonFormatValue;
+      lessonFormatHints?: Record<string, import('./types').LessonFormatValue>;
+    }) => api.createCourseFromKnowledge(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.courses }),
   });
 }
 

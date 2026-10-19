@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { EmbeddingsProvider, FeedProvider, FeedListItem } from '@scorm/domain';
-import { DEFAULT_FEEDS, FEED_CATEGORIES, defaultFeedsForCategory, type FeedCategory } from '@scorm/contracts';
+import { DEFAULT_FEEDS, FEED_CATEGORIES, defaultFeedsForCategory, type FeedCategory, type LessonFormat } from '@scorm/contracts';
 import type { AppConfig } from '../config/configuration.js';
 import { CoursesService } from '../courses/courses.service.js';
 import { KnowledgeService } from '../knowledge/knowledge.service.js';
@@ -47,6 +47,10 @@ export interface CreateCourseFromRssInput {
   preview?: FrozenPreview;
   /** Numero di articoli pertinenti da includere (dopo filtro e dedup). */
   maxArticles: number;
+  /** Formato per-lezione di DEFAULT scelto nell'onboarding (orienta l'outline). */
+  lessonFormatDefault?: LessonFormat;
+  /** Eccezioni di formato per-lezione, indicizzate per titolo (onboarding). */
+  lessonFormatHints?: Record<string, LessonFormat>;
   correlationId?: string;
 }
 
@@ -285,6 +289,8 @@ export class RssImportService {
         scope: input.scope,
         preview,
         knowledgeDocIds,
+        lessonFormatDefault: input.lessonFormatDefault,
+        lessonFormatHints: input.lessonFormatHints,
         articles: chosen.map((c) => ({ title: c.title, summary: c.summary })),
       });
     } catch (err) {

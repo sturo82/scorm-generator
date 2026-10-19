@@ -120,16 +120,37 @@ export function outlinePrompt(brief: Brief, context: string): string {
       : brief.format === 'video_first' || brief.videoFirst
         ? 'FORMATO FORZATO: VIDEO-FIRST. Imposta "format": "video_first" su OGNI lezione: ciascuna è ' +
           'incentrata su un video portante con capitoli, verifiche intermedie e quiz affiancati.'
-        : 'FORMATO PER-LEZIONE (consiglia tu): imposta il campo "format" di OGNI lezione al valore più ' +
-          'adatto alla sua natura didattica, scegliendo tra:\n' +
-          '  - "pillola": concetto singolo e pratico, "sapere fare subito", ripasso veloce o consiglio ' +
-          'operativo (micro-lezione 2-4 min con mini-video di aggancio);\n' +
-          '  - "video_first": argomento articolato che beneficia di una dimostrazione/screencast/caso ' +
-          'reale guidato passo-passo (lezione 8-15 min con video portante);\n' +
-          '  - "standard": teoria, definizioni, normative, checklist, contenuto da studiare anche senza ' +
-          'audio/video (testo + immagini + interazioni).\n' +
-          'Usa un MIX equilibrato e coerente con la progressione: non forzare tutto a un unico formato. ' +
-          'In dubbio, scegli "standard".',
+        : [
+            'FORMATO PER-LEZIONE (consiglia tu): imposta il campo "format" di OGNI lezione al valore più ' +
+              'adatto alla sua natura didattica, scegliendo tra:',
+            '  - "pillola": concetto singolo e pratico, "sapere fare subito", ripasso veloce o consiglio ' +
+              'operativo (micro-lezione 2-4 min con mini-video di aggancio);',
+            '  - "video_first": argomento articolato che beneficia di una dimostrazione/screencast/caso ' +
+              'reale guidato passo-passo (lezione 8-15 min con video portante);',
+            '  - "standard": teoria, definizioni, normative, checklist, contenuto da studiare anche senza ' +
+              'audio/video (testo + immagini + interazioni).',
+            'Usa un MIX equilibrato e coerente con la progressione: non forzare tutto a un unico formato. ' +
+              'In dubbio, scegli "standard".',
+            // Preferenza di DEFAULT indicata dall'autore nell'onboarding: è un
+            // orientamento, non un obbligo; se una lezione è chiaramente di altra
+            // natura, scegli il formato più adatto.
+            brief.lessonFormatDefault
+              ? `L'autore preferisce come DEFAULT il formato "${brief.lessonFormatDefault}": usalo per le ` +
+                'lezioni per cui non è indicata un\'eccezione, salvo quando un altro formato è chiaramente più adatto.'
+              : '',
+            // Eccezioni per TITOLO: formato richiesto esplicitamente dall'autore
+            // per specifiche lezioni suggerite. Vanno rispettate quando il titolo
+            // della lezione dell'outline corrisponde a quello indicato.
+            Object.keys(brief.lessonFormatHints ?? {}).length > 0
+              ? 'ECCEZIONI richieste dall\'autore (formato per titolo di lezione): ' +
+                Object.entries(brief.lessonFormatHints)
+                  .map(([title, fmt]) => `«${title}» → ${fmt}`)
+                  .join('; ') +
+                '. Applica questi formati alle lezioni il cui titolo corrisponde (anche se rifinisci il titolo).'
+              : '',
+          ]
+            .filter((s) => s !== '')
+            .join('\n'),
     '',
     'Organizza il corso con una progressione didattica reale: dai fondamenti e dalle ' +
       'definizioni verso i concetti avanzati e l\'applicazione pratica. Le prime lezioni ' +

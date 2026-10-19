@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { LLMProvider } from '@scorm/domain';
-import { BriefDraft, type BriefDraft as BriefDraftType } from '@scorm/contracts';
+import { BriefDraft, type BriefDraft as BriefDraftType, type LessonFormat } from '@scorm/contracts';
 import { languageDirective } from '../generation/prompts.js';
 import { CoursesService } from '../courses/courses.service.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
@@ -40,6 +40,10 @@ export interface DraftBriefInput {
    * brief per vincolare il RAG della generazione alle SOLE fonti del corso.
    */
   knowledgeDocIds?: string[];
+  /** Formato per-lezione di DEFAULT scelto nell'onboarding (orienta l'outline). */
+  lessonFormatDefault?: LessonFormat;
+  /** Eccezioni di formato per-lezione, indicizzate per titolo (onboarding). */
+  lessonFormatHints?: Record<string, LessonFormat>;
   /** Titoli + sommari degli articoli selezionati (contesto per il brief). */
   articles: Array<{ title: string; summary: string }>;
 }
@@ -254,6 +258,12 @@ export class RssBriefService {
       knowledgeDocIds: input.knowledgeDocIds?.length ? input.knowledgeDocIds : undefined,
       // Questi documenti SONO le fonti costitutive del corso (marcatore per la UI).
       courseSourceDocIds: input.knowledgeDocIds?.length ? input.knowledgeDocIds : undefined,
+      // Preferenze di formato per-lezione scelte nell'onboarding (orientano l'outline).
+      lessonFormatDefault: input.lessonFormatDefault,
+      lessonFormatHints:
+        input.lessonFormatHints && Object.keys(input.lessonFormatHints).length > 0
+          ? input.lessonFormatHints
+          : undefined,
       language: input.language,
     });
 
@@ -306,6 +316,12 @@ export class RssBriefService {
       knowledgeDocIds: input.knowledgeDocIds?.length ? input.knowledgeDocIds : undefined,
       // Marcatore UI: questi documenti sono le fonti costitutive del corso.
       courseSourceDocIds: input.knowledgeDocIds?.length ? input.knowledgeDocIds : undefined,
+      // Preferenze di formato per-lezione scelte nell'onboarding (orientano l'outline).
+      lessonFormatDefault: input.lessonFormatDefault,
+      lessonFormatHints:
+        input.lessonFormatHints && Object.keys(input.lessonFormatHints).length > 0
+          ? input.lessonFormatHints
+          : undefined,
       language: input.language,
     });
 

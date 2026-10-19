@@ -10,6 +10,7 @@ import { RssController } from './rss.controller.js';
 import { RssImportService } from './rss-import.service.js';
 import { TenantFeedService } from './tenant-feed.service.js';
 import { RssBriefService } from './rss-brief.service.js';
+import { KnowledgeCourseService } from './knowledge-course.service.js';
 
 /**
  * Provider del recupero feed RSS. Non richiede API key: è sempre disponibile
@@ -31,7 +32,7 @@ const feedProvider = {
 @Module({
   imports: [CoursesModule, KnowledgeModule],
   controllers: [RssController],
-  providers: [RssImportService, TenantFeedService, RssBriefService, feedProvider],
+  providers: [RssImportService, TenantFeedService, RssBriefService, KnowledgeCourseService, feedProvider],
   exports: [RssImportService, TenantFeedService],
 })
 export class RssModule {}

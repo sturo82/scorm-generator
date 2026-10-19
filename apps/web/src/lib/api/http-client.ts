@@ -12,7 +12,9 @@ import type {
   ExportResultView,
   JobRef,
   CreateCourseFromRssResult,
+  CreateCourseFromKnowledgeResult,
   RssPreviewResult,
+  LessonFormatValue,
   TenantFeedView,
   JobView,
   KnowledgeDocView,
@@ -83,11 +85,17 @@ export class HttpApiClient implements ApiClient {
   createCourse(input: { title: string; description?: string; language: string }) {
     return this.request<CourseView>('/courses', { method: 'POST', body: JSON.stringify(input) });
   }
-  createCourseFromRss(input: { topic: string; title?: string; language: string; source: 'everywhere' | 'mine'; category?: FeedCategory; audience?: string; tone?: string; scope?: string; preview?: RssPreviewResult; maxArticles: number }) {
+  createCourseFromRss(input: { topic: string; title?: string; language: string; source: 'everywhere' | 'mine'; category?: FeedCategory; audience?: string; tone?: string; scope?: string; preview?: RssPreviewResult; maxArticles: number; lessonFormatDefault?: LessonFormatValue; lessonFormatHints?: Record<string, LessonFormatValue> }) {
     return this.request<CreateCourseFromRssResult>('/courses/from-rss', { method: 'POST', body: JSON.stringify(input) });
   }
   previewCourseFromRss(input: { topic: string; language: string; source: 'everywhere' | 'mine'; category?: FeedCategory; audience?: string; tone?: string; scope?: string }) {
     return this.request<RssPreviewResult>('/courses/from-rss/preview', { method: 'POST', body: JSON.stringify(input) });
+  }
+  previewCourseFromKnowledge(input: { documentIds: string[]; language: string; topic?: string; audience?: string; tone?: string; scope?: string }) {
+    return this.request<RssPreviewResult>('/courses/from-knowledge/preview', { method: 'POST', body: JSON.stringify(input) });
+  }
+  createCourseFromKnowledge(input: { documentIds: string[]; language: string; topic?: string; title?: string; audience?: string; tone?: string; scope?: string; preview?: RssPreviewResult; lessonFormatDefault?: LessonFormatValue; lessonFormatHints?: Record<string, LessonFormatValue> }) {
+    return this.request<CreateCourseFromKnowledgeResult>('/courses/from-knowledge', { method: 'POST', body: JSON.stringify(input) });
   }
   listTenantFeeds() {
     return this.request<TenantFeedView[]>('/tenant/feeds');

@@ -1,10 +1,12 @@
 import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import { z } from 'zod';
+import { LessonFormat } from '@scorm/contracts';
 import { CurrentContext, type AuthContext } from '../auth/auth-context.js';
 import { Roles } from '../auth/roles.decorator.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { RssImportService } from './rss-import.service.js';
 import { TenantFeedService } from './tenant-feed.service.js';
+import { KnowledgeCourseService } from './knowledge-course.service.js';
 
 /** Payload per creare un corso da un ARGOMENTO cercato sui feed. */
 const CreateCourseFromRss = z.object({
@@ -47,6 +49,10 @@ const CreateCourseFromRss = z.object({
     .optional(),
   /** Numero di articoli pertinenti da includere (dopo filtro e dedup). */
   maxArticles: z.number().int().min(1).max(25).default(12),
+  /** Formato per-lezione di DEFAULT (onboarding): orienta l'outline. */
+  lessonFormatDefault: LessonFormat.optional(),
+  /** Eccezioni di formato per-lezione per titolo (onboarding). */
+  lessonFormatHints: z.record(z.string(), LessonFormat).optional(),
 });
 type CreateCourseFromRssType = z.infer<typeof CreateCourseFromRss>;
 
@@ -67,6 +73,38 @@ const PreviewCourseFromRss = z.object({
 });
 type PreviewCourseFromRssType = z.infer<typeof PreviewCourseFromRss>;
 
+/** Anteprima/pre-sommario (riusato da argomento e da materiale). */
+const FrozenPreviewSchema = z.object({
+  proposedTitle: z.string().max(300).optional(),
+  description: z.string().max(4000).optional(),
+  keyConcepts: z.array(z.string().min(1).max(500)).max(20).optional(),
+  suggestedLessons: z.array(z.string().min(1).max(300)).max(20).optional(),
+  proposedAudience: z.string().max(1000).optional(),
+  proposedTone: z.string().max(1000).optional(),
+  proposedScope: z.string().max(2000).optional(),
+});
+
+/** Payload per l'ANTEPRIMA di un corso "dal mio materiale" (knowledge scelta). */
+const PreviewCourseFromKnowledge = z.object({
+  /** Documenti della knowledge GLOBAL selezionati come fonti. */
+  documentIds: z.array(z.string().min(1)).min(1).max(100),
+  language: z.string().min(2).max(8).default('it'),
+  topic: z.string().max(300).optional(),
+  audience: z.string().max(1000).optional(),
+  tone: z.string().max(1000).optional(),
+  scope: z.string().max(2000).optional(),
+});
+type PreviewCourseFromKnowledgeType = z.infer<typeof PreviewCourseFromKnowledge>;
+
+/** Payload per CREARE un corso "dal mio materiale". */
+const CreateCourseFromKnowledge = PreviewCourseFromKnowledge.extend({
+  title: z.string().max(200).optional(),
+  preview: FrozenPreviewSchema.optional(),
+  lessonFormatDefault: LessonFormat.optional(),
+  lessonFormatHints: z.record(z.string(), LessonFormat).optional(),
+});
+type CreateCourseFromKnowledgeType = z.infer<typeof CreateCourseFromKnowledge>;
+
 /** Payload per salvare un feed personalizzato del tenant. */
 const AddFeed = z.object({
   url: z.string().url(),
@@ -84,6 +122,7 @@ export class RssController {
   constructor(
     private readonly rss: RssImportService,
     private readonly tenantFeeds: TenantFeedService,
+    private readonly knowledgeCourse: KnowledgeCourseService,
   ) {}
 
   @Post('courses/from-rss')
@@ -103,6 +142,8 @@ export class RssController {
       scope: dto.scope,
       preview: dto.preview,
       maxArticles: dto.maxArticles,
+      lessonFormatDefault: dto.lessonFormatDefault,
+      lessonFormatHints: dto.lessonFormatHints,
       correlationId: ctx.correlationId,
     });
   }
@@ -122,6 +163,45 @@ export class RssController {
       audience: dto.audience,
       tone: dto.tone,
       scope: dto.scope,
+    });
+  }
+
+  // --- Corso DAL MIO MATERIALE (knowledge selezionata) ----------------------
+
+  /** Anteprima: pre-sommario dai documenti knowledge scelti, senza creare il corso. */
+  @Post('courses/from-knowledge/preview')
+  previewFromKnowledge(
+    @CurrentContext() ctx: AuthContext,
+    @Body(new ZodValidationPipe(PreviewCourseFromKnowledge)) dto: PreviewCourseFromKnowledgeType,
+  ) {
+    return this.knowledgeCourse.previewFromKnowledge({
+      tenantId: ctx.tenant.tenantId,
+      documentIds: dto.documentIds,
+      language: dto.language,
+      topic: dto.topic,
+      audience: dto.audience,
+      tone: dto.tone,
+      scope: dto.scope,
+    });
+  }
+
+  @Post('courses/from-knowledge')
+  createFromKnowledge(
+    @CurrentContext() ctx: AuthContext,
+    @Body(new ZodValidationPipe(CreateCourseFromKnowledge)) dto: CreateCourseFromKnowledgeType,
+  ) {
+    return this.knowledgeCourse.createFromKnowledge({
+      tenantId: ctx.tenant.tenantId,
+      documentIds: dto.documentIds,
+      language: dto.language,
+      topic: dto.topic,
+      title: dto.title,
+      audience: dto.audience,
+      tone: dto.tone,
+      scope: dto.scope,
+      preview: dto.preview,
+      lessonFormatDefault: dto.lessonFormatDefault,
+      lessonFormatHints: dto.lessonFormatHints,
     });
   }
 

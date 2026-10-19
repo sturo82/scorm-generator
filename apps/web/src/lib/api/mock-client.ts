@@ -11,7 +11,9 @@ import type {
   CourseQuoteView,
   CourseView,
   CreateCourseFromRssResult,
+  CreateCourseFromKnowledgeResult,
   RssPreviewResult,
+  LessonFormatValue,
   TenantFeedView,
   CreateFolder,
   EditorialStatus,
@@ -218,7 +220,7 @@ export class MockApiClient implements ApiClient {
     this.pushAudit('course.create', 'course', course.id);
     return course;
   }
-  async createCourseFromRss(input: { topic: string; title?: string; language: string; source: 'everywhere' | 'mine'; category?: string; audience?: string; tone?: string; scope?: string; preview?: RssPreviewResult; maxArticles: number }): Promise<CreateCourseFromRssResult> {
+  async createCourseFromRss(input: { topic: string; title?: string; language: string; source: 'everywhere' | 'mine'; category?: string; audience?: string; tone?: string; scope?: string; preview?: RssPreviewResult; maxArticles: number; lessonFormatDefault?: LessonFormatValue; lessonFormatHints?: Record<string, LessonFormatValue> }): Promise<CreateCourseFromRssResult> {
     await delay(900);
     const course = await this.createCourse({
       title: input.title?.trim() || (input.topic.charAt(0).toUpperCase() + input.topic.slice(1)),
@@ -244,6 +246,32 @@ export class MockApiClient implements ApiClient {
       sources: ['Google News', 'Wikipedia', 'Fonti selezionate'],
       examined: 18,
     };
+  }
+  async previewCourseFromKnowledge(input: { documentIds: string[]; language: string; topic?: string; audience?: string; tone?: string; scope?: string }): Promise<RssPreviewResult> {
+    await delay(700);
+    const t = (input.topic?.trim() || 'il tuo materiale');
+    const title = t.charAt(0).toUpperCase() + t.slice(1);
+    return {
+      proposedTitle: title,
+      description: `Corso costruito dal materiale selezionato (${input.documentIds.length} documenti) — anteprima demo.`,
+      keyConcepts: ['Concetti dal materiale', 'Punti chiave', 'Applicazioni', 'Verifica'],
+      suggestedLessons: ['Introduzione', 'Concetti principali', 'Approfondimento', 'Sintesi e verifica'],
+      proposedAudience: input.audience?.trim() || 'Chi deve studiare questo materiale',
+      proposedTone: input.tone?.trim() || 'Chiaro e didattico',
+      proposedScope: input.scope?.trim() || 'Fedele ai documenti forniti',
+      sources: ['La tua knowledge'],
+      examined: input.documentIds.length,
+    };
+  }
+  async createCourseFromKnowledge(input: { documentIds: string[]; language: string; topic?: string; title?: string; audience?: string; tone?: string; scope?: string; preview?: RssPreviewResult; lessonFormatDefault?: LessonFormatValue; lessonFormatHints?: Record<string, LessonFormatValue> }): Promise<CreateCourseFromKnowledgeResult> {
+    await delay(900);
+    const course = await this.createCourse({
+      title: input.title?.trim() || input.preview?.proposedTitle?.trim() || 'Corso dal mio materiale',
+      language: input.language,
+      description: input.preview?.description?.trim() || 'Corso costruito dal materiale selezionato (demo).',
+    });
+    this.pushAudit('course.create_from_knowledge', 'course', course.id);
+    return { courseId: course.id, importedCount: input.documentIds.length, briefDrafted: true };
   }
   private tenantFeeds: TenantFeedView[] = [];
   async listTenantFeeds(): Promise<TenantFeedView[]> {

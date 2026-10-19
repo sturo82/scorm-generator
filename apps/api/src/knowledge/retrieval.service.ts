@@ -205,6 +205,28 @@ export class RetrievalService {
     return out;
   }
 
+  /**
+   * Elenca i chunk della knowledge GLOBAL del tenant per un insieme di documenti
+   * (per id), SENZA vettori. Usato dal flusso "crea da materiale mio" per
+   * raccogliere il testo rappresentativo dei documenti scelti dall'utente e
+   * sintetizzarne un'anteprima di corso. Ritorna chunk nell'ordine del vector
+   * store, troncati a `limit`.
+   */
+  async listGlobalChunksByDocs(input: {
+    tenantId: string;
+    documentIds: string[];
+    limit?: number;
+  }): Promise<Array<{ text: string; documentName: string; section?: string }>> {
+    if (input.documentIds.length === 0) return [];
+    const limit = input.limit ?? 400;
+    const chunks = await this.vectors.listChunks(
+      { tenantId: input.tenantId },
+      { scope: 'global', documentIds: input.documentIds },
+      limit,
+    );
+    return chunks.map((c) => ({ text: c.text, documentName: c.documentName, section: c.section }));
+  }
+
   /** Unisce i match, rimuove i duplicati (per id) e ordina per score desc. */
   private dedupeAndRank(matches: VectorMatch[], minScore: number, topK: number): VectorMatch[] {
     const byId = new Map<string, VectorMatch>();
