@@ -537,4 +537,39 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
 [data-motion] .lesson-pillola .pillola-card--action { border-left: 4px solid var(--ix-accent); background: color-mix(in srgb, var(--ix-accent) 4%, var(--ix-surface)); }
 [data-motion] .lesson-pillola .pillola-card--action .pillola-card-head { background: color-mix(in srgb, var(--ix-accent) 10%, var(--ix-surface)); }
 [data-motion] .lesson-pillola .pillola-card--action .pillola-card-badge { background: var(--ix-accent); }
+
+/* ============================================================================
+   CALLOUT — box evidenziati nel testo del formato Standard: Consiglio (tip),
+   Attenzione (warning), Definizione (def). Markup generato nell'HTML del
+   rich_text: <div class="callout callout-tip|callout-warning|callout-def">…</div>.
+   Usano i token --ix-* (brand → tema web → sistema), con un colore d'accento
+   per tipo ricavato via color-mix così resta leggibile anche in dark mode.
+   ========================================================================== */
+[data-motion] .callout {
+  --cl: var(--ix-primary);
+  position: relative;
+  margin: 1rem 0;
+  padding: 0.85rem 1rem 0.85rem 2.4rem;
+  border-radius: var(--ix-radius);
+  border: 1px solid color-mix(in srgb, var(--cl) 30%, var(--ix-border));
+  border-left: 4px solid var(--cl);
+  background: color-mix(in srgb, var(--cl) 8%, var(--ix-surface));
+  color: var(--ix-on-surface);
+}
+[data-motion] .callout > :first-child { margin-top: 0; }
+[data-motion] .callout > :last-child { margin-bottom: 0; }
+/* Etichetta + icona del tipo, generata via ::before (nessun markup extra). */
+[data-motion] .callout::before {
+  position: absolute;
+  left: 0.8rem;
+  top: 0.85rem;
+  font-size: 1rem;
+  line-height: 1.3;
+}
+[data-motion] .callout-tip { --cl: var(--ix-accent); }
+[data-motion] .callout-tip::before { content: "\\1F4A1"; }      /* 💡 */
+[data-motion] .callout-warning { --cl: #d97706; }
+[data-motion] .callout-warning::before { content: "\\26A0\\FE0F"; } /* ⚠️ */
+[data-motion] .callout-def { --cl: var(--ix-primary); }
+[data-motion] .callout-def::before { content: "\\1F4D8"; }      /* 📘 */
 `;

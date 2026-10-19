@@ -163,25 +163,30 @@ export function lessonVideoFirstPrompt(input: {
       : '',
     input.toneInstruction ? `Indicazione aggiuntiva: ${input.toneInstruction}` : '',
     '',
-    'La lezione ruota attorno a UN video dimostrativo. Produci i block in questo ordine:',
+    'La lezione VIDEO-FIRST (deep dive, 8-15 min) ruota attorno a UN video PORTANTE che scompone un ' +
+      'argomento articolato, con contenuto a lato organizzato per CAPITOLI e verifiche INTERMEDIE ' +
+      '(non solo a fine lezione). Il video è UNO solo e lungo: è un segnaposto che l\'autore riempirà ' +
+      '(screencast/presentazione/dimostrazione). NON va prodotto come cartoon. Produci i block in questo ordine:',
     '1) UN block "video_checkpoint" come PRIMO block: payload { video: { kind: "video", ' +
-      `alt: "<descrizione del video in ${languageName(input.language)}>", placeholderPrompt: "<cosa mostra il video>" }, ` +
+      `alt: "<descrizione del video in ${languageName(input.language)}>", placeholderPrompt: "<cosa mostra il video portante>" }, ` +
       'checkpoints: [], transcript: [], transcriptStatus: "none", ' +
       'sections: [ { id: "<slug>", title: "<titolo tab>", content: { format: "html", html: "<p>…</p>" } }, … ] }. ' +
-      'NON inventare storageKey/URL: il video è un segnaposto vuoto che l\'autore riempirà. ' +
-      'Lascia transcript VUOTO: verrà generata automaticamente dal file caricato. ' +
-      'POPOLA invece "sections" con 2-3 TAB di contenuto affiancate al video (stile Brain Bites): ' +
-      'es. "Punti chiave" (elenco puntato dei concetti del video), "Approfondimento" (spiegazione ' +
-      'discorsiva 80-150 parole che integra il video) ed eventualmente "Risorse" o "Note". ' +
-      'Ogni section ha un title breve e content in HTML semplice (<p>, <ul><li>, <strong>). Il video è il fulcro.',
-    '2) Un block "rich_text" BREVE (60-120 parole) subito dopo: introduce il video e ne sintetizza ' +
-      'i punti chiave, con un elenco puntato dei concetti mostrati.',
-    '3) ELEMENTI DINAMICI affiancati al video (il player li mostra accanto): 1-2 tra ' +
-      '"accordion_tabs" (approfondimenti), "flashcard" (concetti da ricordare), "timeline" ' +
-      '(fasi mostrate nel video), "click_reveal" (dettagli). Devono rinforzare il contenuto del video.',
-    '4) QUIZ di verifica alla fine: 1-2 block interattivi valutativi coerenti col video ' +
-      '("dragdrop_match", "dragdrop_order", "sorting_categories" o "branching_scenario"). ' +
-      'Verificano quanto mostrato nel video; non introdurre concetti nuovi.',
+      'NON inventare storageKey/URL: il video è un segnaposto vuoto. Lascia transcript VUOTO (generata dal file). ' +
+      'POPOLA "sections" come i CAPITOLI della lezione, affiancati al video (stile Brain Bites), in questo schema: ' +
+      '(a) "Introduzione & contesto" (1 min: dove siamo nel percorso e perché conta); ' +
+      '(b) "Capitolo A — Teoria / modello mentale"; (c) "Capitolo B — Dimostrazione / esempio reale"; ' +
+      '(d) "Capitolo C — Errori da evitare / eccezioni"; (e) "Conclusione & collegamento" (sintesi + aggancio alla lezione dopo). ' +
+      'Ogni section ha un title breve e content in HTML semplice (<p>, <ul><li>, <strong>), 80-150 parole.',
+    '2) Un block "rich_text" BREVE (60-120 parole) subito dopo: introduce il video, ne dichiara gli obiettivi e ' +
+      'sintetizza i punti chiave in un elenco puntato.',
+    '3) VERIFICHE INTERMEDIE (retrieval distribuito, TRA i capitoli, non solo a fine): inserisci 1-2 micro-interazioni ' +
+      'LEGGERE che fanno riflettere su un capitolo appena visto, tra gli elementi a lato — es. una "flashcard" ' +
+      '(concetto da ricordare dopo il Capitolo A) o un "click_reveal" (una domanda-aggancio che rivela la risposta). ' +
+      'Tienile leggere: servono a consolidare, non sono il test finale.',
+    '4) ELEMENTI DINAMICI di approfondimento affiancati al video: 1-2 tra "accordion_tabs" (dettagli secondari), ' +
+      '"timeline" (fasi/procedura mostrata), "flashcard" (termini chiave). Rinforzano il contenuto dei capitoli.',
+    '5) VERIFICA FINALE: 1-2 block interattivi valutativi coerenti col video ("dragdrop_match", "dragdrop_order", ' +
+      '"sorting_categories" o "branching_scenario"). Verificano quanto mostrato; non introdurre concetti nuovi.',
     '',
     `Regole media: le immagini eventuali sono placeholder (alt + placeholderPrompt in ${languageName(input.language)}), ` +
       'MAI URL reali. Il testo resta comprensibile anche senza il video, ma è pensato per accompagnarlo.',
@@ -191,11 +196,11 @@ export function lessonVideoFirstPrompt(input: {
 }
 
 /**
- * Prompt per una "pillola" (formato libro-game): genera UN block
- * branching_scenario che rappresenta un mini-percorso interattivo a scene. Ogni
- * scena ha un VIDEO segnaposto (cartoon da produrre: lo storyboard va in
- * placeholderPrompt) e porta a dei bivi; ogni scelta ha una conseguenza
- * (feedback) e un punteggio, e instrada a una scena successiva o a un esito.
+ * Prompt per una "pillola" (micro-learning / fast track): genera una SEQUENZA
+ * di block piatti con la struttura didattica Hook → Core → (micro-richiamo) →
+ * Checkpoint → Takeaway. Mix a BASSO COSTO: UN solo mini-video (code-to-video)
+ * per l'Hook, il resto testo+immagini e interattivi leggeri. Un solo concetto.
+ * Richiamo attivo distribuito: un micro-richiamo nel mezzo, oltre al checkpoint.
  */
 export function lessonPillolePrompt(input: {
   courseTitle: string;
@@ -210,7 +215,7 @@ export function lessonPillolePrompt(input: {
   const lang = languageName(input.language);
   const parts = [
     languageDirective(input.language),
-    `Genera UNA "pillola" didattica a mini-video (cartoon) in ${lang}: PRIMA SPIEGA un concetto, POI VERIFICA l'apprendimento.`,
+    `Genera UNA "pillola" di micro-learning in ${lang}: veloce, sintetica, UN SOLO concetto, 2-4 minuti.`,
     `Corso: ${input.courseTitle}`,
     `Modulo: ${input.moduleTitle}`,
     `Pillola (lezione): ${input.lessonTitle}`,
@@ -220,50 +225,41 @@ export function lessonPillolePrompt(input: {
       : '',
     input.toneInstruction ? `Indicazione aggiuntiva: ${input.toneInstruction}` : '',
     '',
-    'STRUTTURA OBBLIGATORIA della pillola in DUE FASI:',
-    'FASE 1 — SPIEGAZIONE (scene role="teach"): 2-4 scene che spiegano il concetto passo passo. '
-      + 'Ogni scena ha UN mini-video che illustra un\'idea e UNA sola scelta "Continua" che porta alla scena '
-      + 'successiva. Le scene di spiegazione NON sono valutate (niente score). L\'ultima scena di spiegazione '
-      + 'porta alla PRIMA scena di verifica.',
-    'FASE 2 — VERIFICA (scene role="quiz"): 1-3 scene che mettono alla prova quanto spiegato con una '
-      + 'situazione concreta e 2-3 scelte VALUTATE (score + feedback) che diramano verso gli esiti. La scelta '
-      + 'corretta (score positivo) prosegue verso l\'esito positivo; quelle sbagliate (score 0 o negativo) '
-      + 'spiegano l\'errore e portano all\'esito negativo o a una scena di recupero.',
-    'ESITI (scene terminali, senza scelte): almeno un esito POSITIVO (hai capito/applicato bene) e almeno '
-      + 'uno NEGATIVO (cosa è andato storto), ciascuno con un mini-video e un testo che riepiloga cosa si è imparato.',
+    'La pillola è una SEQUENZA di block piatti (NON un libro-game, NON un branching_scenario). '
+      + 'Produci i block NELL\'ORDINE qui sotto, uno per ciascuna fase. Resta su UN SOLO concetto: '
+      + 'la pillola spiega/risolve una cosa sola, in modo essenziale.',
     '',
-    'Produci ESATTAMENTE UN block "branching_scenario" con questo payload:',
-    '{ ',
-    '  "startNodeId": "<id della prima scena di SPIEGAZIONE>", ',
-    '  "scored": true, ',
-    '  "pillole": true, ',
-    '  "gateChoicesOnMedia": true, ',
-    '  "nodes": [ ',
-    '    { ',
-    '      "id": "<slug-scena>", ',
-    '      "role": "teach" | "quiz", ',
-    '      "content": { "format": "html", "html": "<p>Testo breve (1-3 frasi). Per teach: spiega un\'idea. Per quiz: presenta la situazione e la domanda.</p>" }, ',
-    `      "media": { "kind": "video", "alt": "<descrizione breve della scena in ${lang}>", "placeholderPrompt": "<STORYBOARD: cosa mostra il mini-cartoon, personaggi, azione, stile cartoon semplice ed efficace, in ${lang}>" }, `,
-    '      "choices": [ ',
-    '        /* teach: UNA sola scelta "Continua" con nextNodeId verso la scena dopo, senza score. */ ',
-    '        /* quiz: 2-3 scelte con nextNodeId (scena/esito), score (positivo se corretta, 0/negativo se errata) e feedback. */ ',
-    '        { "id": "<slug-scelta>", "label": "<testo scelta>", "nextNodeId": "<id scena successiva o assente se esito finale>", "score": <numero, solo per quiz>, "feedback": "<solo per quiz: conseguenza 1-2 frasi>" } ',
-    '      ] ',
-    '    } ',
-    '  ] ',
-    '}',
+    'STRUTTURA OBBLIGATORIA (in questo ordine):',
+    '',
+    '1) HOOK & OBIETTIVO — UN block "video_checkpoint" come PRIMO block. È un mini-video (cartoon '
+      + 'code-to-video) breve che aggancia con il problema o la promessa di apprendimento. Payload: '
+      + `{ video: { kind: "video", alt: "<descrizione breve in ${lang}>", placeholderPrompt: "<STORYBOARD del mini-cartoon: soggetto/personaggio, azione, ambientazione, 1 sola idea, stile explainer illustrato, in ${lang}>" }, checkpoints: [], sections: [] }. `
+      + 'NON inventare storageKey/URL: il video è un SEGNAPOSTO che verrà prodotto a parte dallo storyboard. '
+      + 'Lascia sections VUOTO (l\'hook è solo il video). UN SOLO video in tutta la pillola: è l\'unico costo video.',
+    '',
+    '2) CONCETTO CORE — UN block "rich_text" (80-140 parole) che spiega il concetto in modo ultra-sintetico: '
+      + 'il "cosa" e il "perché", con un elenco puntato dei punti chiave e i termini importanti in grassetto. '
+      + 'Aggiungi UN media immagine a supporto: '
+      + `media: [{ kind: "image", alt: "<descrizione in ${lang}>", placeholderPrompt: "<scena da illustrare, senza testo nell'immagine, in ${lang}>" }]. `
+      + 'Resta su un solo concetto/step: niente digressioni.',
+    '',
+    '3) MICRO-RICHIAMO (retrieval distribuito, LEGGERO) — UN block "flashcard" con UNA sola card: '
+      + 'sul fronte una domanda-lampo sul concetto appena spiegato, sul retro la risposta sintetica. '
+      + 'Serve a fissare subito l\'idea (richiamo attivo nel mezzo, non solo alla fine). Tienilo leggero.',
+    '',
+    '4) CHECKPOINT — UN block interattivo LEGGERO di verifica, a scelta tra "flashcard" (2-3 card domanda/risposta) '
+      + 'oppure "dragdrop_match" semplice (2-3 abbinamenti) oppure "sorting_categories" con 2 categorie. '
+      + 'Verifica il concetto spiegato; NON introdurre nozioni nuove. Niente quiz pesante.',
+    '',
+    '5) TAKEAWAY — UN block "rich_text" BREVE (40-70 parole): il concetto chiave da ricordare, '
+      + 'idealmente con 1-3 bullet "da portare a casa". Chiude la pillola.',
     '',
     'REGOLE:',
-    `- Scrivi TUTTO in ${lang} (testi scena, label scelte, feedback, alt e placeholderPrompt).`,
-    '- 4-8 scene totali: PRIMA tutte le scene teach (spiegazione), POI le scene quiz (verifica), infine gli esiti terminali.',
-    '- Imposta SEMPRE "role" su ogni scena: "teach" per le scene di spiegazione, "quiz" per le scene di verifica.',
-    '- Scene teach: UNA sola scelta con label tipo "Continua" (o equivalente) e nextNodeId valorizzato; NIENTE score/feedback.',
-    '- Scene quiz: 2-3 scelte valutate; conseguenze coerenti e istruttive, senza punire gratuitamente.',
-    '- Gli esiti terminali hanno "choices": [] (nessuna scelta) e role coerente (di solito "quiz"). Almeno un esito positivo e uno negativo.',
-    '- Ogni nextNodeId DEVE puntare a un id di nodo esistente; startNodeId DEVE essere la prima scena teach.',
-    '- Il media di OGNI scena è un VIDEO SEGNAPOSTO (cartoon): NON inventare storageKey/URL; descrivi lo storyboard in placeholderPrompt. I cartoon verranno prodotti a parte.',
-    '- Mantieni i mini-video concettualmente brevi (una singola idea/azione per scena), stile cartoon semplice e chiaro.',
-    '- Gli id dei nodi e delle scelte sono slug brevi univoci (es. "spiega-1", "verifica-1", "esito-positivo", "scelta-a").',
+    `- Scrivi TUTTO in ${lang} (testi, alt, placeholderPrompt, domande/risposte).`,
+    '- ESATTAMENTE 5 block nell\'ordine indicato: video_checkpoint (hook), rich_text (core), flashcard (micro-richiamo), un interattivo leggero (checkpoint), rich_text (takeaway).',
+    '- UN SOLO block video (l\'hook). NON generare altri video: per il resto usa testo e immagini (costo basso).',
+    '- I media sono SEMPRE segnaposto descrittivi (alt + placeholderPrompt), MAI URL o storageKey reali.',
+    '- Tono diretto e pratico: la pillola fa "sapere fare subito", non è una lezione lunga.',
     '',
     input.context,
   ];
@@ -302,40 +298,35 @@ export function lessonContentPrompt(input: {
       : '',
     input.toneInstruction ? `Indicazione aggiuntiva: ${input.toneInstruction}` : '',
     '',
-    'OBIETTIVO DI FRUIZIONE: la lezione deve essere VISIVA e scorrevole, NON un lungo muro ' +
-      'di testo. Spezza il contenuto in più CONCETTI brevi, ciascuno con un supporto grafico. ' +
-      'Testi concisi e chiari (preferibilmente 60-120 parole per block di testo), con elenchi ' +
-      'puntati e grassetti sui termini chiave quando aiutano la comprensione.',
+    'FORMATO STANDARD (testuale & interattivo, self-paced): lettura + pratica attiva, pensato anche ' +
+      'per lo studio SENZA audio/video (accessibilità). NIENTE VIDEO: non inserire block "video_checkpoint". ' +
+      'La lezione deve essere VISIVA e scorrevole, NON un muro di testo: spezza il contenuto in più CONCETTI ' +
+      'brevi, ciascuno con supporto grafico. Testi concisi (60-120 parole per block), elenchi puntati e ' +
+      'grassetti strategici sui termini chiave.',
     '',
     'STRUTTURA DIDATTICA della lezione, in questo ordine:',
-    '1) SPIEGAZIONE a CONCETTI: alterna block "rich_text" BREVI (un concetto ciascuno) a ' +
-      'elementi visivi. OGNI concetto deve avere un supporto grafico: aggiungi al rich_text ' +
-      'un media immagine (campo media: [{ kind: "image", alt, placeholderPrompt }]) con un ' +
-      `placeholderPrompt descrittivo in ${languageName(input.language)} della scena da illustrare (senza testo nell'immagine). ` +
-      'Il testo spiega il "perché" e i meccanismi; l\'immagine aiuta a capire. Il lettore impara ' +
-      'da testo + immagine insieme, non da paragrafi lunghissimi.',
-    '2) ALMENO UN block "carousel_steps" usato come SEQUENZA DI SLIDE: 3-5 step, ognuno con ' +
-      'title, un testo breve (content) e un media immagine (placeholderPrompt). Ideale per ' +
-      'procedure, fasi, confronti o esempi passo-passo. Rende la lezione dinamica e visiva.',
-    '3) APPROFONDIMENTO quando utile: accordion/tabs per dettagli secondari, timeline per ' +
-      'sequenze storiche/procedurali, image_hotspot per spiegare un\'immagine con punti.',
-    '3b) VIDEO (placeholder, opzionale ma consigliato quando la lezione beneficia di una ' +
-      'DIMOSTRAZIONE pratica, una procedura da mostrare, un\'intervista o un caso reale): ' +
-      'inserisci UN block "video_checkpoint" con un video placeholder VUOTO — ' +
-      `payload: { video: { kind: "video", alt: "<descrizione del video in ${languageName(input.language)}>", ` +
-      'placeholderPrompt: "<cosa dovrebbe mostrare il video>" }, checkpoints: [] }. ' +
-      'NON inventare uno storageKey/URL: il video resta un placeholder che l\'autore riempirà ' +
-      'caricando un proprio file. Inseriscilo al massimo una volta per lezione e solo se ha ' +
-      'reale valore didattico (non forzarlo in lezioni puramente teoriche).',
-    '4) VERIFICA (solo alla fine): 1-2 block interattivi coerenti (flashcard per memorizzare, ' +
-      'dragdrop_match per abbinamenti, dragdrop_order per sequenze, sorting_categories per ' +
-      'classificare in categorie, branching_scenario a scelte) che mettono alla prova quanto ' +
-      'spiegato. Non introdurre concetti nuovi qui.',
+    '1) TESTO GUIDA a CONCETTI: alterna block "rich_text" BREVI (un concetto ciascuno) a elementi visivi. ' +
+      'OGNI concetto ha un supporto grafico: aggiungi al rich_text un media immagine ' +
+      `(media: [{ kind: "image", alt, placeholderPrompt }]) con placeholderPrompt descrittivo in ${languageName(input.language)} ` +
+      'della scena da illustrare (senza testo nell\'immagine). Usa BOX EVIDENZIATI dentro l\'HTML del rich_text per ' +
+      'richiamare l\'attenzione, con questo markup: <div class="callout callout-tip">…</div> (consiglio pratico), ' +
+      '<div class="callout callout-warning">…</div> (attenzione/errore comune), ' +
+      '<div class="callout callout-def">…</div> (definizione di un termine). Inserisci i box dove servono davvero.',
+    '2) ALMENO UN block "carousel_steps" come SEQUENZA DI SLIDE: 3-5 step, ognuno con title, testo breve (content) ' +
+      'e un media immagine (placeholderPrompt). Ideale per procedure, fasi, confronti o esempi passo-passo.',
+    '3) VISUAL & SCHEMI quando aiutano: "timeline" per sequenze/procedure, "image_hotspot" per spiegare ' +
+      'un\'immagine con punti cliccabili, "accordion_tabs" per dettagli secondari espandibili.',
+    '4) WIDGET INTERATTIVI VICINO AL CONTENUTO (non ammassati in fondo): subito dopo il concetto a cui si ' +
+      'riferiscono inserisci un richiamo attivo LEGGERO — es. una "flashcard" (termine/definizione appena vista) ' +
+      'o un "dragdrop_match" breve. È il retrieval distribuito: si ricorda meglio con richiami nel mezzo.',
+    '5) QUIZ / TEST FINALE: 1-2 block interattivi valutativi (flashcard per memorizzare, dragdrop_match per ' +
+      'abbinamenti, dragdrop_order per sequenze, sorting_categories per classificare, branching_scenario a scelte) ' +
+      'con feedback immediato. Verificano quanto spiegato; non introdurre concetti nuovi qui.',
     '',
     `Regole sui media: i media sono SEMPRE placeholder descrittivi (alt + placeholderPrompt in ` +
-      `${languageName(input.language)}), MAI URL reali. Le immagini sono illustrative: il contenuto informativo deve ` +
-      'restare comprensibile anche senza di esse. Punta ad avere più immagini distribuite nella ' +
-      'lezione (indicativamente una per concetto) oltre alle slide del carousel.',
+      `${languageName(input.language)}), MAI URL reali. NIENTE block video. Le immagini sono illustrative: il contenuto ` +
+      'informativo resta comprensibile anche senza di esse (accessibilità). Punta a più immagini distribuite ' +
+      '(indicativamente una per concetto) oltre alle slide del carousel.',
     input.context,
   ];
   return parts.filter((p) => p !== '').join('\n');

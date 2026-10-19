@@ -252,10 +252,13 @@ export class GenerationController {
   }
 
   /**
-   * Genera i mini-cartoon delle scene di una pillola (block branching_scenario)
-   * con Amazon Nova Reel. Senza :nodeId genera TUTTE le scene con video
-   * segnaposto; con :nodeId genera solo quella scena. Asincrono: le scene vanno
-   * a 'processing' e poi 'ready' (polling in background). Soggetto a quota mensile.
+   * Genera i mini-cartoon (code-to-video) delle scene di una lezione. Le scene
+   * sono raccolte da qualunque block che le ospiti: branching_scenario (una per
+   * node) o video_checkpoint (una per block). Senza :nodeId genera TUTTE le
+   * scene con video segnaposto; con :nodeId genera solo quella scena (per gli
+   * scenari :nodeId è l'id del node, per i video_checkpoint è l'id del block).
+   * Asincrono: le scene vanno a 'processing' e poi 'ready' (polling in
+   * background). Soggetto a quota mensile.
    */
   @Post('lessons/:lessonId/blocks/:blockId/cartoon')
   @HttpCode(202)

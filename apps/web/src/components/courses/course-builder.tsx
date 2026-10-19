@@ -1152,7 +1152,7 @@ function LessonCard({
                       cartoon delle scene. Mostra lo stato "in lavorazione N/M"
                       (con spinner) mentre le scene vengono prodotte sul server,
                       aggiornato dall'auto-refresh; oppure "pronti" a fine. */}
-                  {b.type === 'branching_scenario' &&
+                  {blockHasCartoonScenes(b) &&
                     (() => {
                       const prog = scenarioCartoonProgress(b);
                       if (prog.total === 0) return null;
@@ -1182,7 +1182,7 @@ function LessonCard({
                       minimo ~1 clip). Utile per testare il provider video senza
                       produrre tutte le scene. Mostrato se c'è almeno una scena
                       con cartoon segnaposto (e nessuna già in elaborazione). */}
-                  {b.type === 'branching_scenario' &&
+                  {blockHasCartoonScenes(b) &&
                     scenarioHasPendingCartoon(b) &&
                     scenarioCartoonProgress(b).processing === 0 && (
                     <Button
@@ -1213,10 +1213,10 @@ function LessonCard({
                       <Clapperboard className="size-4 text-primary" />
                     </Button>
                   )}
-                  {/* Pillole: genera i mini-cartoon di TUTTE le scene del
-                      libro-game. Mostrato se lo scenario ha scene con video
-                      segnaposto ancora da produrre (e nessuna in elaborazione). */}
-                  {b.type === 'branching_scenario' &&
+                  {/* Pillole: genera i mini-cartoon di TUTTE le scene con video
+                      segnaposto della lezione (scenari + video_checkpoint).
+                      Mostrato se ci sono scene da produrre (e nessuna in corso). */}
+                  {blockHasCartoonScenes(b) &&
                     scenarioHasPendingCartoon(b) &&
                     scenarioCartoonProgress(b).processing === 0 && (
                     <Button
@@ -1608,40 +1608,68 @@ function blockImageInfo(block: Block): { count: number; filled: number; firstPro
   return { count, filled, firstPrompt };
 }
 
-/** Etichetta e icona (emoji) leggibili per ciascun tipo di block. */
 /**
- * True se uno scenario "pillole" ha almeno una scena con video SEGNAPOSTO
- * (media video senza storageKey) ancora da generare: abilita il bottone
- * "Genera cartoon". Difensivo sul payload (block non tipizzato qui).
+ * Una "scena cartoon" normalizzata dal punto di vista della UI: l'id scena (per
+ * gli scenari è l'id del node; per i video_checkpoint è l'id del block) e la
+ * media video associata. Rispecchia l'astrazione server collectCartoonScenes.
  */
-function scenarioHasPendingCartoon(block: Block): boolean {
-  if (block.type !== 'branching_scenario') return false;
-  const payload = (block.payload ?? {}) as { nodes?: Array<{ media?: Record<string, unknown> }> };
-  const nodes = Array.isArray(payload.nodes) ? payload.nodes : [];
-  return nodes.some((n) => {
-    const m = (n.media ?? {}) as Record<string, unknown>;
-    return String(m.kind) === 'video' && !m.storageKey;
-  });
+type UiCartoonScene = { sceneId: string; media: Record<string, unknown> };
+
+/**
+ * Estrae le scene cartoon di un block, agnostico al tipo. Due sorgenti:
+ *  - branching_scenario → una scena per node con media video (sceneId = node.id)
+ *  - video_checkpoint   → una scena singola (sceneId = block.id, media=payload.video)
+ * Difensivo sul payload (block non tipizzato qui).
+ */
+function cartoonScenesOf(block: Block): UiCartoonScene[] {
+  if (block.type === 'branching_scenario') {
+    const payload = (block.payload ?? {}) as { nodes?: Array<{ id?: unknown; media?: Record<string, unknown> }> };
+    const nodes = Array.isArray(payload.nodes) ? payload.nodes : [];
+    const out: UiCartoonScene[] = [];
+    for (const n of nodes) {
+      const media = (n.media ?? {}) as Record<string, unknown>;
+      if (String(media.kind) !== 'video') continue;
+      const sceneId = typeof n.id === 'string' ? n.id : String(n.id ?? '');
+      if (!sceneId) continue;
+      out.push({ sceneId, media });
+    }
+    return out;
+  }
+  if (block.type === 'video_checkpoint') {
+    const payload = (block.payload ?? {}) as { video?: Record<string, unknown> };
+    const media = (payload.video ?? {}) as Record<string, unknown>;
+    if (String(media.kind) !== 'video') return [];
+    return [{ sceneId: block.id, media }];
+  }
+  return [];
+}
+
+/** True se il block ospita almeno una scena cartoon (scenario o video_checkpoint). */
+function blockHasCartoonScenes(block: Block): boolean {
+  return cartoonScenesOf(block).length > 0;
 }
 
 /**
- * Conta lo stato dei cartoon delle scene di una pillola: quante scene video in
+ * True se il block ha almeno una scena con video SEGNAPOSTO (media video senza
+ * storageKey) ancora da generare: abilita il bottone "Genera cartoon".
+ */
+function scenarioHasPendingCartoon(block: Block): boolean {
+  return cartoonScenesOf(block).some((s) => !s.media.storageKey);
+}
+
+/**
+ * Conta lo stato dei cartoon delle scene di un block: quante scene video in
  * totale, quante pronte (storageKey) e quante in elaborazione (videoGenStatus=
  * 'processing'). Alimenta l'indicatore di avanzamento e l'auto-refresh.
  */
 function scenarioCartoonProgress(block: Block): { total: number; ready: number; processing: number } {
-  if (block.type !== 'branching_scenario') return { total: 0, ready: 0, processing: 0 };
-  const payload = (block.payload ?? {}) as { nodes?: Array<{ media?: Record<string, unknown> }> };
-  const nodes = Array.isArray(payload.nodes) ? payload.nodes : [];
   let total = 0;
   let ready = 0;
   let processing = 0;
-  for (const n of nodes) {
-    const m = (n.media ?? {}) as Record<string, unknown>;
-    if (String(m.kind) !== 'video') continue;
+  for (const s of cartoonScenesOf(block)) {
     total += 1;
-    if (m.storageKey) ready += 1;
-    else if (m.videoGenStatus === 'processing') processing += 1;
+    if (s.media.storageKey) ready += 1;
+    else if (s.media.videoGenStatus === 'processing') processing += 1;
   }
   return { total, ready, processing };
 }
@@ -1652,16 +1680,8 @@ function scenarioCartoonProgress(block: Block): { total: number; ready: number; 
  * provider video a costo minimo, invece di produrre tutte le scene insieme.
  */
 function firstPendingCartoonNodeId(block: Block): string | null {
-  if (block.type !== 'branching_scenario') return null;
-  const payload = (block.payload ?? {}) as {
-    nodes?: Array<{ id?: unknown; media?: Record<string, unknown> }>;
-  };
-  const nodes = Array.isArray(payload.nodes) ? payload.nodes : [];
-  for (const n of nodes) {
-    const m = (n.media ?? {}) as Record<string, unknown>;
-    if (String(m.kind) === 'video' && !m.storageKey && typeof n.id === 'string' && n.id) {
-      return n.id;
-    }
+  for (const s of cartoonScenesOf(block)) {
+    if (!s.media.storageKey) return s.sceneId;
   }
   return null;
 }

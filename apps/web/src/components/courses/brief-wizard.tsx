@@ -404,8 +404,10 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
                 </div>
                 {format === 'pillole' && (
                   <p className="pl-1 text-xs text-muted-foreground">
-                    Ogni pillola è un breve percorso a scene con scelte e conseguenze. I mini-video
-                    (cartoon) sono segnaposto da caricare; la generazione ne produce lo storyboard.
+                    Ogni pillola è una micro-lezione da 2-4 minuti su un solo concetto: un breve
+                    mini-video (cartoon) di aggancio, la spiegazione sintetica con immagini, una
+                    verifica rapida e il concetto chiave da ricordare. Il mini-video è un segnaposto:
+                    la generazione ne produce lo storyboard e lo rende come cartoon.
                   </p>
                 )}
               </div>
