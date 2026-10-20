@@ -481,3 +481,44 @@ Il deploy di produzione (App Runner + RDS + S3 + Cognito, via Terraform e GitHub
 Actions) è documentato in una guida dedicata: [`DEPLOY_AWS.md`](./DEPLOY_AWS.md).
 L'infrastruttura come codice è in [`infra/`](../infra/). L'integrazione con
 piattaforme terze (catalogo + SSO) è in [`INTEGRATION_B2B.md`](./INTEGRATION_B2B.md).
+
+---
+## 9. Rendering cartoon "code-to-video" su AWS Lambda (Remotion)
+
+I mini-video delle pillole (code-to-video) sono renderizzati su **AWS Lambda**
+con Remotion. Il codice del motore vive nel package **`@scorm/video`** (Caption
+karaoke, timing scene, composizione `PillolaVideo`) e viene impacchettato in un
+**"site" su S3** (il *serve URL*) da cui la Lambda legge il bundle a ogni render.
+
+### ⚠️ Il site Lambda NON è aggiornato dal CI/CD
+La pipeline GitHub Actions deploya SOLO l'immagine API e il web. **Il site
+Remotion su Lambda è separato** e va ri-deployato a mano ogni volta che cambia
+`@scorm/video` o `@scorm/contracts/render-core` (es. fix a Caption, al timing
+delle scene, alla composizione). Se non lo rifai, la Lambda continua a
+renderizzare col bundle VECCHIO: i fix al motore video NON hanno effetto in
+produzione anche se l'API è aggiornata.
+
+### Come ri-deployare il site (overwrite in place, nessun cambio env)
+```bash
+# credenziali AWS nell'ambiente (set -a; . ./.env; set +a)
+# 1) builda i package del motore video (dist aggiornato)
+docker run --rm -e REMOTION_SKIP_CHROMIUM_DOWNLOAD=true -v "$PWD":/workspace \
+  -w /workspace node:20.11.0-bookworm bash -lc \
+  "npm run build --workspace @scorm/contracts && npm run build --workspace @scorm/video"
+# 2) deploya function + site (idempotente; serveUrl invariato → niente env da cambiare)
+export REMOTION_AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID"
+export REMOTION_AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+[ -n "$AWS_SESSION_TOKEN" ] && export REMOTION_AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN"
+CARTOON_LAMBDA_REGION=eu-west-1 node scripts/remotion-lambda.mjs
+```
+Verifica che il bundle su S3 sia aggiornato:
+```bash
+aws s3 ls s3://remotionlambda-euwest1-i9biysf0an/sites/scorm-pillole/bundle.js --region eu-west-1
+```
+
+### Checklist quando tocchi il motore video
+1. Modifica `@scorm/video` / `render-core`.
+2. Gate (build+test+lint) e deploy API come al solito.
+3. **Ri-deploya il site Lambda** (comando sopra). ← passo che sfugge facilmente.
+4. Rigenera i cartoon interessati: i video già renderizzati NON si aggiornano da
+   soli (sono MP4 su S3). Vanno rigenerati dalla UI (pellicola sul block).
