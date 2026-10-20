@@ -94,6 +94,8 @@ export interface CourseLabels {
   /** "Fine scenario. Punteggio: N" / "Scenario complete. Score: N". */
   scenarioEnd: (score: number) => string;
   scenarioRestart: string;
+  /** Tooltip/aria del pulsante schermo intero del player libro-game. */
+  scenarioFullscreen: string;
   transcript: string;
   transcriptProcessing: string;
   transcriptNone: string;
@@ -176,6 +178,7 @@ const EN: CourseLabels = {
   scenarioNoStart: 'Scenario has no start node.',
   scenarioEnd: (s) => `End of scenario. Score: ${s}`,
   scenarioRestart: 'Restart',
+  scenarioFullscreen: 'Full screen',
   transcript: 'Transcript',
   transcriptProcessing: 'Transcript in progress…',
   transcriptNone: 'No transcript available.',
@@ -256,6 +259,7 @@ const IT: CourseLabels = {
   scenarioNoStart: 'Scenario senza nodo iniziale.',
   scenarioEnd: (s) => `Fine scenario. Punteggio: ${s}`,
   scenarioRestart: 'Ricomincia',
+  scenarioFullscreen: 'Schermo intero',
   transcript: 'Trascrizione',
   transcriptProcessing: 'Trascrizione in elaborazione…',
   transcriptNone: 'Nessuna trascrizione disponibile.',

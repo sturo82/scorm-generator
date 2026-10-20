@@ -334,21 +334,34 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
 .dnd-chip.is-wrong { border-color: #dc2626; background: color-mix(in srgb, #dc2626 12%, transparent); color: #b91c1c; }
 
 /* Libro-game "pillole": PLAYER unico. Il video riempie il "palco" e gli overlay
-   (testo, scelte, esito) sono sovrapposti, così l'interazione è tutta nel player. */
+   (testo, scelte, esito) sono sovrapposti, così l'interazione è tutta nel player.
+   FULLSCREEN: va a schermo intero lo STAGE (contenitore), non il <video>: così
+   gli overlay (scelte/esito) restano sovrapposti anche in fullscreen. */
 .scenario-stage { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #000; }
-.scenario-video, .scenario-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+.scenario-stage:fullscreen { width: 100vw; height: 100vh; aspect-ratio: auto; border-radius: 0; }
+.scenario-stage:-webkit-full-screen { width: 100vw; height: 100vh; border-radius: 0; }
+.scenario-video, .scenario-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
 .scenario-preload { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; left: -9999px; }
 .scenario-video-placeholder { position: absolute; inset: 0; display: grid; place-items: center; padding: 1rem; background: color-mix(in srgb, var(--ix-accent) 10%, #111); color: #fff; font-size: 0.9rem; text-align: center; }
-/* Strato overlay a tutta area: non cattura i click dove non serve. */
+/* Strato overlay a tutta area: non cattura i click dove non serve. Un'unica
+   colonna in basso; il blocco scelte ha un tetto d'altezza e scrolla da solo. */
 .scenario-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 0.75rem; padding: 1rem clamp(1rem, 4%, 2rem) clamp(1rem, 4%, 1.75rem); pointer-events: none; background: linear-gradient(to bottom, rgba(0,0,0,0) 45%, rgba(0,0,0,0.6) 100%); }
 .scenario-overlay .scenario-text { color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,0.55); font-size: clamp(1rem, 2.4vw, 1.4rem); line-height: 1.35; max-width: 70ch; }
-/* Scelte in overlay: cliccabili (riattiva pointer-events), impilate in basso. */
-.scenario-choices--overlay { pointer-events: auto; display: grid; gap: 0.6rem; }
-.scenario-choice { display: block; width: 100%; text-align: left; padding: 0.75rem 1rem; border: 1px solid rgba(255,255,255,0.35); border-radius: 12px; background: rgba(17,24,39,0.72); color: #fff; backdrop-filter: blur(4px); font-size: clamp(0.95rem, 2vw, 1.15rem); cursor: pointer; transition: border-color var(--mo-dur) var(--mo-ease), background var(--mo-dur) var(--mo-ease), transform var(--mo-dur) var(--mo-ease); }
+/* Scelte in overlay: cliccabili (riattiva pointer-events), impilate in basso.
+   Non devono MAI sforare il player: tetto d'altezza + scroll interno elegante,
+   così con molte scelte compare uno scroll invece di essere tagliate. */
+.scenario-choices--overlay { pointer-events: auto; display: flex; flex-direction: column; gap: 0.5rem; max-height: min(60%, 18rem); overflow-y: auto; padding-right: 0.25rem; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.35) transparent; -webkit-overflow-scrolling: touch; }
+.scenario-choices--overlay::-webkit-scrollbar { width: 6px; }
+.scenario-choices--overlay::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.35); border-radius: 999px; }
+.scenario-stage:fullscreen .scenario-choices--overlay { max-height: min(50vh, 22rem); }
+.scenario-choice { display: block; width: 100%; flex: 0 0 auto; text-align: left; padding: 0.6rem 0.9rem; border: 1px solid rgba(255,255,255,0.35); border-radius: 12px; background: rgba(17,24,39,0.72); color: #fff; backdrop-filter: blur(4px); font-size: clamp(0.9rem, 1.6vw, 1.05rem); line-height: 1.3; cursor: pointer; transition: border-color var(--mo-dur) var(--mo-ease), background var(--mo-dur) var(--mo-ease), transform var(--mo-dur) var(--mo-ease); }
 .scenario-choice:hover { border-color: var(--ix-accent); background: color-mix(in srgb, var(--ix-accent) 55%, rgba(17,24,39,0.72)); transform: translateY(var(--mo-lift)); }
 .scenario-choices.is-gated[hidden] { display: none; }
+/* Pulsante FULLSCREEN custom: in alto a destra, va a schermo intero lo stage. */
+.scenario-fs-btn { position: absolute; top: 0.6rem; right: 0.6rem; z-index: 2; pointer-events: auto; display: grid; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0; border: 1px solid rgba(255,255,255,0.35); border-radius: 10px; background: rgba(17,24,39,0.6); color: #fff; backdrop-filter: blur(4px); font-size: 1.05rem; line-height: 1; cursor: pointer; transition: background var(--mo-dur) var(--mo-ease), border-color var(--mo-dur) var(--mo-ease); }
+.scenario-fs-btn:hover { border-color: var(--ix-accent); background: rgba(17,24,39,0.82); }
 /* Esito finale: pannello centrale sopra il video. */
-.scenario-outcome { pointer-events: auto; align-self: center; margin-top: auto; margin-bottom: auto; display: grid; gap: 0.75rem; justify-items: center; text-align: center; padding: 1.25rem 1.5rem; border-radius: 14px; background: rgba(17,24,39,0.82); color: #fff; backdrop-filter: blur(6px); }
+.scenario-outcome { pointer-events: auto; align-self: center; margin-top: auto; margin-bottom: auto; display: grid; gap: 0.75rem; justify-items: center; text-align: center; padding: 1.25rem 1.5rem; border-radius: 14px; background: rgba(17,24,39,0.82); color: #fff; backdrop-filter: blur(6px); max-height: 80%; overflow-y: auto; }
 .scenario-outcome .scenario-end { margin: 0; font-size: clamp(1.05rem, 2.6vw, 1.5rem); font-weight: 700; }
 .scenario-restart { pointer-events: auto; padding: 0.6rem 1.1rem; border: 1px solid rgba(255,255,255,0.4); border-radius: 999px; background: var(--ix-accent); color: var(--ix-on-primary, #fff); font-weight: 600; cursor: pointer; }
 .scenario-restart:hover { transform: scale(var(--mo-pop)); }

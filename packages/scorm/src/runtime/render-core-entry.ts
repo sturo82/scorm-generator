@@ -171,6 +171,35 @@ function applyScenarioVideoGate(host: HTMLElement): void {
     }
   }
 
+  // FULLSCREEN premium: il pulsante custom manda a schermo intero lo STAGE
+  // (contenitore video + overlay), NON il <video>, così le scelte restano
+  // sovrapposte e visibili anche in fullscreen. Idempotente per render.
+  const stage = host.querySelector<HTMLElement>('.scenario-stage');
+  const fsBtn = host.querySelector<HTMLButtonElement>('[data-scenario-fullscreen]');
+  if (stage && fsBtn && !fsBtn.getAttribute('data-fs-bound')) {
+    fsBtn.setAttribute('data-fs-bound', '1');
+    fsBtn.addEventListener('click', () => {
+      const doc = document as Document & { webkitFullscreenElement?: Element | null };
+      const el = stage as HTMLElement & {
+        webkitRequestFullscreen?: () => void;
+      };
+      const d = document as Document & { webkitExitFullscreen?: () => void };
+      const inFs = !!(document.fullscreenElement || doc.webkitFullscreenElement);
+      try {
+        if (inFs) {
+          if (document.exitFullscreen) void document.exitFullscreen();
+          else if (d.webkitExitFullscreen) d.webkitExitFullscreen();
+        } else if (el.requestFullscreen) {
+          void el.requestFullscreen();
+        } else if (el.webkitRequestFullscreen) {
+          el.webkitRequestFullscreen();
+        }
+      } catch {
+        /* Fullscreen API non disponibile o bloccata: nessuna azione */
+      }
+    });
+  }
+
   const video = host.querySelector<HTMLVideoElement>('video[data-scenario-video="gate"]');
   const choices = host.querySelector<HTMLElement>('.scenario-choices[data-choices-gated="1"]');
   if (!video || !choices) return;

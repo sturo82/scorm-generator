@@ -165,8 +165,40 @@ function StatefulView({ node, spec }: { node: VNode; spec: StatefulSpec }): Reac
   React.useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
+    // Fullscreen premium: il pulsante custom manda a schermo intero lo STAGE
+    // (video + overlay), non il <video>, così le scelte restano visibili.
+    const stage = root.querySelector<HTMLElement>('.scenario-stage');
+    const fsBtn = root.querySelector<HTMLButtonElement>('[data-scenario-fullscreen]');
+    let onFsClick: (() => void) | null = null;
+    if (stage && fsBtn && !fsBtn.getAttribute('data-fs-bound')) {
+      fsBtn.setAttribute('data-fs-bound', '1');
+      onFsClick = (): void => {
+        const doc = document as Document & { webkitFullscreenElement?: Element | null };
+        const el = stage as HTMLElement & { webkitRequestFullscreen?: () => void };
+        const d = document as Document & { webkitExitFullscreen?: () => void };
+        const inFs = !!(document.fullscreenElement || doc.webkitFullscreenElement);
+        try {
+          if (inFs) {
+            if (document.exitFullscreen) void document.exitFullscreen();
+            else if (d.webkitExitFullscreen) d.webkitExitFullscreen();
+          } else if (el.requestFullscreen) {
+            void el.requestFullscreen();
+          } else if (el.webkitRequestFullscreen) {
+            el.webkitRequestFullscreen();
+          }
+        } catch {
+          /* Fullscreen API non disponibile */
+        }
+      };
+      fsBtn.addEventListener('click', onFsClick);
+    }
+
     const video = root.querySelector<HTMLVideoElement>('video.scenario-video');
-    if (!video) return;
+    if (!video) {
+      return () => {
+        if (onFsClick && fsBtn) fsBtn.removeEventListener('click', onFsClick);
+      };
+    }
     try {
       video.currentTime = 0;
       const pr = video.play();
@@ -175,11 +207,15 @@ function StatefulView({ node, spec }: { node: VNode; spec: StatefulSpec }): Reac
       /* play() non disponibile */
     }
     const gatedChoices = root.querySelector<HTMLElement>('.scenario-choices[data-choices-gated="1"]');
-    if (!gatedChoices) return;
-    gatedChoices.setAttribute('hidden', 'hidden');
-    const reveal = (): void => gatedChoices.removeAttribute('hidden');
-    video.addEventListener('ended', reveal, { once: true });
-    return () => video.removeEventListener('ended', reveal);
+    const reveal = (): void => gatedChoices?.removeAttribute('hidden');
+    if (gatedChoices) {
+      gatedChoices.setAttribute('hidden', 'hidden');
+      video.addEventListener('ended', reveal, { once: true });
+    }
+    return () => {
+      video.removeEventListener('ended', reveal);
+      if (onFsClick && fsBtn) fsBtn.removeEventListener('click', onFsClick);
+    };
   }, [state]);
   function onClick(e: React.MouseEvent<HTMLDivElement>): void {
     const t = (e.target as HTMLElement).closest<HTMLElement>('[data-ev]');

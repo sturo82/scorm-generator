@@ -384,12 +384,29 @@ function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: Medi
       h('video', {
         class: 'block-media scenario-video',
         src: mediaSrc,
-        // controls lasciati ma l'esperienza è autoplay + gate; playsinline per iOS.
-        controls: 'true',
+        // NIENTE controls nativi: il loro pulsante fullscreen manda a schermo
+        // intero SOLO il <video>, lasciando fuori gli overlay (scelte/esito).
+        // Il fullscreen è gestito dal pulsante custom .scenario-fs-btn che manda
+        // a schermo intero lo STAGE (video + overlay insieme). playsinline per iOS.
         playsinline: 'true',
         preload: 'auto',
         'data-scenario-video': gated ? 'gate' : 'free',
       }),
+    );
+    // Pulsante fullscreen custom (il behavior runtime aggancia il click allo
+    // stage). Rendering sul server; se JS è assente resta un pulsante inerte.
+    stageChildren.push(
+      h(
+        'button',
+        {
+          class: 'scenario-fs-btn',
+          type: 'button',
+          'data-scenario-fullscreen': '1',
+          'aria-label': L.scenarioFullscreen,
+          title: L.scenarioFullscreen,
+        },
+        ['\u26F6'],
+      ),
     );
   } else if (isVideo && !mediaSrc) {
     stageChildren.push(
