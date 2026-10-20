@@ -345,6 +345,24 @@ interface ScenarioNode {
 function nodeById(spec: StatefulSpec, id: string): ScenarioNode | undefined {
   return ((spec.payload.nodes as ScenarioNode[]) || []).find((n) => n.id === id);
 }
+
+/**
+ * Punteggio massimo teorico dello scenario: per ogni nodo che ha scelte con
+ * punteggio, somma il MASSIMO tra le sue scelte. Approssimazione robusta del
+ * "percorso migliore", indipendente dalla topologia dei branch. Serve a
+ * normalizzare lo score finale in un rapporto 0..1 per l'esito qualitativo.
+ */
+function scenarioMaxScore(spec: StatefulSpec): number {
+  const nodes = (spec.payload.nodes as ScenarioNode[]) || [];
+  let max = 0;
+  for (const n of nodes) {
+    const scores = (n.choices || [])
+      .map((c) => (typeof c.score === 'number' ? c.score : 0))
+      .filter((v) => v > 0);
+    if (scores.length) max += Math.max(...scores);
+  }
+  return max;
+}
 function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: MediaResolver, L: CourseLabels): VNode {
   const node = nodeById(spec, s.currentId);
   const children: VChild[] = [];
@@ -474,12 +492,25 @@ function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: Medi
       ),
     );
   } else {
-    // Esito finale: messaggio + replay, in overlay centrale.
+    // Esito finale QUALITATIVO: una frase esplicativa (non un numero), derivata
+    // dal rapporto punteggio/massimo teorico. Se il nodo finale ha un video
+    // riproducibile, l'esito è "gated": compare DOPO la fine del video (come le
+    // scelte), così prima si guarda la scena conclusiva e poi arriva il verdetto.
+    const maxScore = scenarioMaxScore(spec);
+    const ratio = maxScore > 0 ? Math.max(0, Math.min(1, s.score / maxScore)) : s.score > 0 ? 1 : 0;
+    const outcomeGated = gateOnMedia && hasPlayableVideo;
     overlayChildren.push(
-      h('div', { class: 'scenario-outcome' }, [
-        h('p', { class: 'scenario-end' }, [L.scenarioEnd(s.score)]),
-        h('button', { class: 'scenario-restart', type: 'button', 'data-ev': 'restart' }, [L.scenarioRestart]),
-      ]),
+      h(
+        'div',
+        {
+          class: 'scenario-outcome' + (outcomeGated ? ' is-gated' : ''),
+          'data-outcome-gated': outcomeGated ? '1' : '0',
+        },
+        [
+          h('p', { class: 'scenario-end' }, [L.scenarioOutcome(ratio)]),
+          h('button', { class: 'scenario-restart', type: 'button', 'data-ev': 'restart' }, [L.scenarioRestart]),
+        ],
+      ),
     );
   }
 

@@ -206,10 +206,14 @@ function StatefulView({ node, spec }: { node: VNode; spec: StatefulSpec }): Reac
     } catch {
       /* play() non disponibile */
     }
-    const gatedChoices = root.querySelector<HTMLElement>('.scenario-choices[data-choices-gated="1"]');
-    const reveal = (): void => gatedChoices?.removeAttribute('hidden');
-    if (gatedChoices) {
-      gatedChoices.setAttribute('hidden', 'hidden');
+    const gatedEls = Array.from(
+      root.querySelectorAll<HTMLElement>(
+        '.scenario-choices[data-choices-gated="1"], .scenario-outcome[data-outcome-gated="1"]',
+      ),
+    );
+    const reveal = (): void => gatedEls.forEach((elm) => elm.removeAttribute('hidden'));
+    if (gatedEls.length) {
+      gatedEls.forEach((elm) => elm.setAttribute('hidden', 'hidden'));
       video.addEventListener('ended', reveal, { once: true });
     }
     return () => {

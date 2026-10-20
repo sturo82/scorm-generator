@@ -93,6 +93,11 @@ export interface CourseLabels {
   scenarioNoStart: string;
   /** "Fine scenario. Punteggio: N" / "Scenario complete. Score: N". */
   scenarioEnd: (score: number) => string;
+  /**
+   * Esito qualitativo del libro-game in base al rapporto punteggio/massimo
+   * (0..1): una FRASE esplicativa, non un numero. Tre fasce: alto / medio / basso.
+   */
+  scenarioOutcome: (ratio: number) => string;
   scenarioRestart: string;
   /** Tooltip/aria del pulsante schermo intero del player libro-game. */
   scenarioFullscreen: string;
@@ -177,6 +182,8 @@ const EN: CourseLabels = {
   moveDown: 'Move down',
   scenarioNoStart: 'Scenario has no start node.',
   scenarioEnd: (s) => `End of scenario. Score: ${s}`,
+  scenarioOutcome: (r) =>
+    r >= 0.8 ? 'Well done!' : r >= 0.4 ? 'Good, but you can do better.' : 'Be careful: review this topic.',
   scenarioRestart: 'Restart',
   scenarioFullscreen: 'Full screen',
   transcript: 'Transcript',
@@ -258,6 +265,8 @@ const IT: CourseLabels = {
   moveDown: 'Sposta giù',
   scenarioNoStart: 'Scenario senza nodo iniziale.',
   scenarioEnd: (s) => `Fine scenario. Punteggio: ${s}`,
+  scenarioOutcome: (r) =>
+    r >= 0.8 ? 'Ben fatto!' : r >= 0.4 ? 'Bravo, ma potevi fare meglio.' : 'Fai attenzione: rivedi questo argomento.',
   scenarioRestart: 'Ricomincia',
   scenarioFullscreen: 'Schermo intero',
   transcript: 'Trascrizione',

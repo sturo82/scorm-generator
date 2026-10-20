@@ -169,7 +169,10 @@ describe('render-core.js (bundle IIFE) nel runtime SCORM', () => {
     expect(host.textContent).toContain('Domanda');
     (host.querySelector('[data-ev="choose"]') as HTMLButtonElement).click();
     expect(host.textContent).toContain('Arrivato');
-    expect(host.textContent).toContain('Fine scenario');
+    // Esito finale QUALITATIVO (frase esplicativa, non un numero): senza
+    // punteggi lo score è 0 → esito "basso". Non deve più mostrare "Punteggio".
+    expect(host.textContent).toContain('Fai attenzione');
+    expect(host.textContent).not.toContain('Punteggio');
   });
 
   it('parità DOM: ogni tipo di block è montato dal core (nessun fallback "unknown")', () => {

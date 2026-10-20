@@ -372,6 +372,7 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
 .scenario-choice { display: block; width: 100%; flex: 0 0 auto; text-align: left; padding: 0.6rem 0.9rem; border: 1px solid rgba(255,255,255,0.35); border-radius: 12px; background: rgba(17,24,39,0.72); color: #fff; backdrop-filter: blur(4px); font-size: clamp(0.9rem, 1.6vw, 1.05rem); line-height: 1.3; cursor: pointer; transition: border-color var(--mo-dur) var(--mo-ease), background var(--mo-dur) var(--mo-ease), transform var(--mo-dur) var(--mo-ease); }
 .scenario-choice:hover { border-color: var(--ix-accent); background: color-mix(in srgb, var(--ix-accent) 55%, rgba(17,24,39,0.72)); transform: translateY(var(--mo-lift)); }
 .scenario-choices.is-gated[hidden] { display: none; }
+.scenario-outcome.is-gated[hidden] { display: none; }
 /* Pulsante FULLSCREEN custom: in alto a destra, va a schermo intero lo stage. */
 .scenario-fs-btn { position: absolute; top: 0.6rem; right: 0.6rem; z-index: 2; pointer-events: auto; display: grid; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0; border: 1px solid rgba(255,255,255,0.35); border-radius: 10px; background: rgba(17,24,39,0.6); color: #fff; backdrop-filter: blur(4px); font-size: 1.05rem; line-height: 1; cursor: pointer; transition: background var(--mo-dur) var(--mo-ease), border-color var(--mo-dur) var(--mo-ease); }
 .scenario-fs-btn:hover { border-color: var(--ix-accent); background: rgba(17,24,39,0.82); }

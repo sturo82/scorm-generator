@@ -200,13 +200,20 @@ function applyScenarioVideoGate(host: HTMLElement): void {
     });
   }
 
-  const video = host.querySelector<HTMLVideoElement>('video[data-scenario-video="gate"]');
-  const choices = host.querySelector<HTMLElement>('.scenario-choices[data-choices-gated="1"]');
-  if (!video || !choices) return;
-  // Stato iniziale: scelte nascoste finché il video non finisce.
-  choices.setAttribute('hidden', 'hidden');
-  const reveal = (): void => choices.removeAttribute('hidden');
-  video.addEventListener('ended', reveal, { once: true });
+  // Gate del VIDEO di scena: nasconde finché il video non finisce sia le scelte
+  // (nodi intermedi) sia l'esito finale (nodo terminale), così prima si guarda
+  // la clip e poi compare il contenuto sovrapposto.
+  const gateVideo = host.querySelector<HTMLVideoElement>('video[data-scenario-video="gate"]');
+  const gatedEls = Array.prototype.slice.call(
+    host.querySelectorAll<HTMLElement>(
+      '.scenario-choices[data-choices-gated="1"], .scenario-outcome[data-outcome-gated="1"]',
+    ),
+  ) as HTMLElement[];
+  if (!gateVideo || gatedEls.length === 0) return;
+  // Stato iniziale: elementi nascosti finché il video non finisce.
+  gatedEls.forEach((elm) => elm.setAttribute('hidden', 'hidden'));
+  const reveal = (): void => gatedEls.forEach((elm) => elm.removeAttribute('hidden'));
+  gateVideo.addEventListener('ended', reveal, { once: true });
 }
 
 /** video-karaoke: tab + evidenziazione cue su timeupdate + click-to-seek. */
