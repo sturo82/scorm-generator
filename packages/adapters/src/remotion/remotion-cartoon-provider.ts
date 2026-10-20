@@ -39,6 +39,12 @@ export type RenderFn = (input: {
   words: WordMark[];
 }) => Promise<{ bytes: Uint8Array; durationSec: number }>;
 
+/** Logger minimale iniettabile (default: console) per diagnostica in CloudWatch. */
+export interface CartoonLogger {
+  log: (msg: string) => void;
+  warn: (msg: string) => void;
+}
+
 export interface RemotionCartoonProviderOptions {
   generateSpec: GenerateSpecFn;
   speech: SpeechProvider;
@@ -48,6 +54,8 @@ export interface RemotionCartoonProviderOptions {
    * B). Se assente, le scene restano senza illustrazione (solo grafica/testo).
    */
   images?: ImageProvider;
+  /** Logger per diagnosticare la pipeline (default: console). */
+  logger?: CartoonLogger;
 }
 
 interface JobState {
@@ -72,6 +80,7 @@ export class RemotionCartoonProvider implements TextToVideoProvider {
   private readonly speech: SpeechProvider;
   private readonly render: RenderFn;
   private readonly images?: ImageProvider;
+  private readonly logger: CartoonLogger;
   /** Job in corso/conclusi, per jobRef. In-memory (una scena alla volta). */
   private readonly jobs = new Map<string, JobState>();
 
@@ -80,6 +89,10 @@ export class RemotionCartoonProvider implements TextToVideoProvider {
     this.speech = opts.speech;
     this.render = opts.render;
     this.images = opts.images;
+    this.logger = opts.logger ?? {
+      log: (m) => console.log(m),
+      warn: (m) => console.warn(m),
+    };
   }
 
   async startJob(input: GenerateCartoonInput): Promise<{ jobRef: string }> {
@@ -141,7 +154,20 @@ export class RemotionCartoonProvider implements TextToVideoProvider {
    * senza illustrazione (ripiega sui layer/testo), senza bloccare il video.
    */
   private async resolveIllustrations(spec: VideoSpec): Promise<void> {
-    if (!this.images) return;
+    if (!this.images) {
+      this.logger.warn(
+        '[cartoon] resolveIllustrations SALTATO: ImageProvider non iniettato ' +
+          '→ le scene resteranno senza illustrazione (solo titolo/sottotitoli).',
+      );
+      return;
+    }
+    const withPrompt = spec.scenes.filter((s) => s.illustration?.prompt && !s.illustration.src);
+    this.logger.log(
+      `[cartoon] resolveIllustrations: ${spec.scenes.length} scena/e, ` +
+        `${withPrompt.length} con prompt illustrazione da generare.`,
+    );
+    let ok = 0;
+    let fail = 0;
     for (const scene of spec.scenes) {
       const ill = scene.illustration;
       if (!ill || ill.src || !ill.prompt) continue;
@@ -153,10 +179,21 @@ export class RemotionCartoonProvider implements TextToVideoProvider {
         });
         const b64 = Buffer.from(res.bytes).toString('base64');
         ill.src = `data:${res.contentType};base64,${b64}`;
-      } catch {
+        ok += 1;
+        this.logger.log(
+          `[cartoon] illustrazione scena "${scene.id}" OK: ${res.contentType}, ` +
+            `${Math.round(b64.length / 1024)}KB base64. prompt="${ill.prompt.slice(0, 80)}"`,
+        );
+      } catch (err) {
+        fail += 1;
+        this.logger.warn(
+          `[cartoon] illustrazione scena "${scene.id}" FALLITA: ${describeError(err)}. ` +
+            `prompt="${ill.prompt.slice(0, 120)}"`,
+        );
         // scena senza illustrazione: il render userà i layer/testo.
       }
     }
+    this.logger.log(`[cartoon] resolveIllustrations esito: ${ok} ok, ${fail} falliti.`);
   }
 }
 

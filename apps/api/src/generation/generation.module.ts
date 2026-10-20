@@ -1,4 +1,4 @@
-import { Inject, Module, type OnModuleInit } from '@nestjs/common';
+import { Inject, Logger, Module, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
   JobEnvelope,
@@ -109,11 +109,16 @@ const cartoonVideoProvider = {
               const { renderPillola } = await import('@scorm/video');
               return renderPillola(args);
             };
+      const cartoonLog = new Logger('RemotionCartoon');
       return new RemotionCartoonProvider({
         speech,
         images,
         generateSpec: (input) => generateVideoSpec(llm, input),
         render,
+        logger: {
+          log: (m) => cartoonLog.log(m),
+          warn: (m) => cartoonLog.warn(m),
+        },
       });
     }
     if (cfg.provider === 'luma' && cfg.outputS3Uri) {
