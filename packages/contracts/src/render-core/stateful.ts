@@ -419,10 +419,18 @@ function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: Medi
     }
   }
 
-  // Overlay di CONTENUTO: testo della scena (in basso, leggibile sul velo).
+  // Overlay di CONTENUTO: testo della scena. UX premium: se la scena ha un
+  // VIDEO riproducibile, il parlato è GIÀ nel video (con sottotitoli karaoke
+  // incisi), quindi un velo di testo permanente sopra il player è ridondante e
+  // copre l'immagine. Lo mostriamo SOLO come fallback testuale quando NON c'è un
+  // video riproducibile (segnaposto o media immagine). Le scelte/esiti restano
+  // in overlay come prima.
   const overlayChildren: VChild[] = [];
   const html = node.content?.html || '';
-  if (html) overlayChildren.push(hHtml('div', { class: 'block-rich scenario-text' }, html));
+  const hasPlayableVideo = isVideo && !!mediaSrc;
+  if (html && !hasPlayableVideo) {
+    overlayChildren.push(hHtml('div', { class: 'block-rich scenario-text' }, html));
+  }
 
   // Overlay di SCELTE (sovrapposte al video). Se "gated" parte nascosto e il
   // behavior lo rivela a fine video (data-choices-gated="1").

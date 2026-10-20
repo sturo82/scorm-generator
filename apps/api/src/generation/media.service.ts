@@ -1635,6 +1635,10 @@ export class MediaService implements OnModuleInit {
     });
     // Engine del voiceover del cartoon: preferenza del corso → default d'ambiente.
     const speechEngine = this.resolveSpeechEngine(undefined, (course as { speechEngine?: string } | null)?.speechEngine);
+    this.logger.log(
+      `[cartoon] generazione scene per lezione ${lessonId}: voiceover engine risolto=${speechEngine} ` +
+        `(corso.speechEngine=${(course as { speechEngine?: string } | null)?.speechEngine ?? 'null'})`,
+    );
     const lesson = await this.requireLesson(tenantId, courseId, lessonId);
     const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as unknown[]) : [];
 
@@ -1837,7 +1841,14 @@ export class MediaService implements OnModuleInit {
    * registra il metering (SECONDS).
    */
   private async applyCartoonResult(
-    ctx: { tenantId: string; courseId: string; lessonId: string; blockId: string; sceneId: string },
+    ctx: {
+      tenantId: string;
+      courseId: string;
+      lessonId: string;
+      blockId: string;
+      sceneId: string;
+      speechEngine?: 'standard' | 'neural';
+    },
     bytes: Uint8Array,
     contentType: string | undefined,
     durationSec: number | undefined,
@@ -1877,6 +1888,26 @@ export class MediaService implements OnModuleInit {
       source: 'scene_cartoon',
       region: 'global',
     });
+    // Strumentazione VOCE: registra l'engine TTS EFFETTIVO usato per il
+    // voiceover del cartoon (ground truth per diagnosticare "voce non neural").
+    // Metering POLLY per-engine (polly-standard/polly-neural), così è visibile
+    // in usage; e un log esplicito con la voce di default configurata.
+    if (cfg.provider === 'remotion' && ctx.speechEngine) {
+      const voice = this.config.get('media', { infer: true }).speechDefaultVoice;
+      this.logger.log(
+        `[cartoon] voiceover scena ${ctx.sceneId}: engine=${ctx.speechEngine} voce=${voice}`,
+      );
+      void this.meter.record({
+        tenantId: ctx.tenantId,
+        courseId: ctx.courseId,
+        provider: 'POLLY',
+        model: `polly-${ctx.speechEngine}`,
+        unit: 'CALLS',
+        quantity: 1,
+        source: 'scene_cartoon_tts',
+        region: 'global',
+      });
+    }
     this.logger.log(`Cartoon scena ${ctx.sceneId} pronto (${seconds}s, ${cfg.provider}): ${key}`);
   }
 
