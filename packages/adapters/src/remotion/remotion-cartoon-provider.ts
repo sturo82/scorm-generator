@@ -113,7 +113,11 @@ export class RemotionCartoonProvider implements TextToVideoProvider {
       const { spec } = await this.generateSpec({ scenePrompt: input.prompt, language });
       // Stile B: genera le illustrazioni delle scene (Bedrock) e popola src.
       await this.resolveIllustrations(spec);
-      const tts = await this.speech.synthesizeWithMarks!({ text: spec.voiceover.text, language });
+      const tts = await this.speech.synthesizeWithMarks!({
+        text: spec.voiceover.text,
+        language,
+        engine: input.speechEngine,
+      });
       const { bytes, durationSec } = await this.render({
         spec,
         audio: tts.bytes,

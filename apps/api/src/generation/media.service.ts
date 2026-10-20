@@ -1629,7 +1629,12 @@ export class MediaService implements OnModuleInit {
   ): Promise<{ started: number; remainingThisMonth: number }> {
     if (!this.cartoonGen) throw this.cartoonNotConfigured();
     const cfg = this.config.get('cartoonVideo', { infer: true });
-    const course = await this.prisma.course.findFirst({ where: { id: courseId, tenantId }, select: { language: true } });
+    const course = await this.prisma.course.findFirst({
+      where: { id: courseId, tenantId },
+      select: { language: true, speechEngine: true },
+    });
+    // Engine del voiceover del cartoon: preferenza del corso → default d'ambiente.
+    const speechEngine = this.resolveSpeechEngine(undefined, (course as { speechEngine?: string } | null)?.speechEngine);
     const lesson = await this.requireLesson(tenantId, courseId, lessonId);
     const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as unknown[]) : [];
 
@@ -1701,6 +1706,7 @@ export class MediaService implements OnModuleInit {
         lessonId,
         language: course?.language ?? undefined,
         durationSec: cfg.sceneDurationSec,
+        speechEngine,
       },
       toStart,
     );
@@ -1721,6 +1727,7 @@ export class MediaService implements OnModuleInit {
       lessonId: string;
       language?: string;
       durationSec: number;
+      speechEngine?: 'standard' | 'neural';
     },
     scenes: Array<{ blockId: string; sceneId: string; prompt: string }>,
   ): Promise<void> {
@@ -1749,7 +1756,7 @@ export class MediaService implements OnModuleInit {
    */
   private async startCartoonJobWithRetry(
     prompt: string,
-    opts: { language?: string; durationSec: number },
+    opts: { language?: string; durationSec: number; speechEngine?: 'standard' | 'neural' },
   ): Promise<string> {
     let lastErr: unknown;
     for (let attempt = 0; attempt < CARTOON_START_MAX_ATTEMPTS; attempt++) {
@@ -1759,6 +1766,7 @@ export class MediaService implements OnModuleInit {
           durationSec: opts.durationSec,
           language: opts.language,
           aspectRatio: '16:9',
+          speechEngine: opts.speechEngine,
         });
         return jobRef;
       } catch (err) {

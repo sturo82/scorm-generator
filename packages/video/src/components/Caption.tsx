@@ -27,22 +27,36 @@ export const Caption: React.FC<ComponentProps> = (props) => {
     }
     if (words[i]!.startMs <= nowMs) activeIdx = i;
   }
+  if (activeIdx < 0) activeIdx = 0;
+
+  // FINESTRA scorrevole: mostra solo alcune parole attorno a quella attiva,
+  // così il sottotitolo resta SEMPRE dentro il box (poche righe) invece di
+  // crescere con tutto il voiceover e sfondare il frame.
+  const WINDOW_BEFORE = 5;
+  const WINDOW_AFTER = 7;
+  const from = Math.max(0, activeIdx - WINDOW_BEFORE);
+  const to = Math.min(words.length, activeIdx + WINDOW_AFTER + 1);
+  const windowWords = words.slice(from, to);
 
   return (
     <CaptionBox>
-      {words.map((w, i) => (
-        <span
-          key={i}
-          style={{
-            opacity: i === activeIdx ? 1 : 0.55,
-            fontWeight: i === activeIdx ? 800 : 500,
-            marginRight: 10,
-            transition: 'opacity 80ms linear',
-          }}
-        >
-          {w.word}
-        </span>
-      ))}
+      {windowWords.map((w, i) => {
+        const globalIdx = from + i;
+        const isActive = globalIdx === activeIdx;
+        return (
+          <span
+            key={globalIdx}
+            style={{
+              opacity: isActive ? 1 : 0.55,
+              fontWeight: isActive ? 800 : 500,
+              marginRight: 10,
+              transition: 'opacity 80ms linear',
+            }}
+          >
+            {w.word}
+          </span>
+        );
+      })}
     </CaptionBox>
   );
 };
@@ -54,6 +68,15 @@ const CaptionBox: React.FC<{ children: React.ReactNode }> = ({ children }) => (
       bottom: 64,
       left: '8%',
       right: '8%',
+      // Vincolo di altezza: il box non supera ~3 righe e taglia l'eccesso, così
+      // non esce mai dall'area del video (difesa anche se arrivano molte parole).
+      maxHeight: '28%',
+      overflow: 'hidden',
+      display: 'flex',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      alignContent: 'flex-end',
+      gap: '0 2px',
       textAlign: 'center',
       fontSize: 40,
       lineHeight: 1.3,
@@ -61,6 +84,7 @@ const CaptionBox: React.FC<{ children: React.ReactNode }> = ({ children }) => (
       borderRadius: 16,
       background: 'rgba(17,24,39,0.72)',
       color: '#fff',
+      boxSizing: 'border-box',
     }}
   >
     {children}

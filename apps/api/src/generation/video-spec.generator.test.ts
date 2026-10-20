@@ -82,4 +82,19 @@ describe('generateVideoSpec', () => {
     const { llm } = fakeLlm([JSON.stringify(bad), JSON.stringify(bad)]);
     await expect(generateVideoSpec(llm, { scenePrompt: 'x', language: 'it' })).rejects.toThrow();
   });
+
+  it('collassa a UNA scena se l\'LLM ne produce più (sync con voiceover unico)', async () => {
+    const multi = JSON.parse(validSpecJson());
+    multi.scenes = [
+      { id: 's1', durationHint: 'auto', illustration: { prompt: 'a girl studying', kenBurns: 'in' }, layers: [{ id: 't1', component: 'LowerThird', props: { text: 'Uno' }, enter: { at: { word: 0 } } }] },
+      { id: 's2', durationHint: 'auto', illustration: { prompt: 'a boy running', kenBurns: 'out' }, layers: [{ id: 'c', component: 'Caption', enter: { at: 'sceneStart' } }, { id: 't2', component: 'LowerThird', props: { text: 'Due' }, enter: { at: { word: 3 } } }] },
+    ];
+    const { llm } = fakeLlm([JSON.stringify(multi)]);
+    const r = await generateVideoSpec(llm, { scenePrompt: 'x', language: 'it' });
+    expect(r.spec.scenes).toHaveLength(1);
+    // Tiene la prima illustrazione e unisce i layer, escludendo la Caption (iniettata dal renderer).
+    expect(r.spec.scenes[0]!.illustration?.prompt).toBe('a girl studying');
+    expect(r.spec.scenes[0]!.layers.map((l) => l.component)).toEqual(['LowerThird', 'LowerThird']);
+    expect(r.spec.scenes[0]!.durationHint).toBe('auto');
+  });
 });

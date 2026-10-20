@@ -24,6 +24,12 @@ export interface GenerateCartoonInput {
   language?: string;
   /** Rapporto d'aspetto desiderato (es. "16:9"). */
   aspectRatio?: string;
+  /**
+   * Motore TTS per il voiceover del cartoon: 'neural' (qualità superiore) o
+   * 'standard' (economico). Risolto a monte (preferenza del corso → default
+   * d'ambiente). Se assente, il provider usa il proprio default.
+   */
+  speechEngine?: 'standard' | 'neural';
 }
 
 /** Esito del recupero di un job di generazione cartoon asincrono. */

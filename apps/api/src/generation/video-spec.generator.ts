@@ -1,6 +1,38 @@
-import { VideoSpec, videoSpecJsonSchema, type VideoSpec as VideoSpecType } from '@scorm/contracts';
+import { VideoSpec, videoSpecJsonSchema, type VideoSpec as VideoSpecType, type Scene } from '@scorm/contracts';
 import type { LLMProvider, TokenUsage } from '@scorm/domain';
 import { videoSpecPrompt } from './prompts.js';
+
+/**
+ * Collassa lo spec a UNA SOLA scena. Un clip pillola = una scena breve, con un
+ * UNICO voiceover: così i frame della Sequence sono assoluti (nessun re-basing)
+ * e audio/karaoke/illustrazione restano sincronizzati. Se l'LLM produce più
+ * scene (lo schema lo consente), le fondiamo in una: teniamo la prima
+ * illustrazione disponibile e uniamo i layer (esclusa la Caption, che il
+ * renderer inietta da sé), forzando durationHint 'auto' (copre tutto il
+ * voiceover). Il voiceover è già unico a livello di VideoSpec, quindi non va
+ * toccato.
+ */
+export function collapseToSingleScene(spec: VideoSpecType): VideoSpecType {
+  if (spec.scenes.length <= 1) {
+    // Anche con una sola scena, normalizza la durata a 'auto' (tutto il voiceover).
+    const only = spec.scenes[0];
+    if (only) only.durationHint = 'auto';
+    return spec;
+  }
+  const first = spec.scenes[0]!;
+  const illustration = spec.scenes.find((s) => s.illustration)?.illustration;
+  const layers = spec.scenes
+    .flatMap((s) => s.layers)
+    .filter((l) => l.component !== 'Caption');
+  const merged: Scene = {
+    id: first.id,
+    durationHint: 'auto',
+    background: first.background,
+    illustration,
+    layers,
+  };
+  return { ...spec, scenes: [merged] };
+}
 
 export interface GenerateVideoSpecInput {
   /** Storyboard della scena (placeholderPrompt/alt). */
@@ -40,7 +72,7 @@ export async function generateVideoSpec(
   });
   const parsed1 = tryParse(first.text);
   if (parsed1.success) {
-    return { spec: parsed1.data, usage: first.usage, model: first.model };
+    return { spec: collapseToSingleScene(parsed1.data), usage: first.usage, model: first.model };
   }
 
   // Tentativo 2 (self-repair): rimanda l'output errato + il motivo.
@@ -65,7 +97,7 @@ export async function generateVideoSpec(
   if (parsed2.success) {
     // Somma i token dei due tentativi per un metering onesto.
     return {
-      spec: parsed2.data,
+      spec: collapseToSingleScene(parsed2.data),
       usage: {
         inputTokens: first.usage.inputTokens + repair.usage.inputTokens,
         outputTokens: first.usage.outputTokens + repair.usage.outputTokens,

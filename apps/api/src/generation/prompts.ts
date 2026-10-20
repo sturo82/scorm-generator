@@ -403,10 +403,12 @@ export function videoSpecPrompt(input: {
   const bg = input.bg ?? '#f8fafc';
   const parts = [
     languageDirective(input.language),
-    `Progetta una breve scena di un VIDEO esplicativo ILLUSTRATO stile "explainer animato" (tipo Brain Bites), in ${lang}.`,
+    `Progetta UNA SOLA scena breve di un VIDEO esplicativo ILLUSTRATO stile "explainer animato" (tipo Brain Bites), in ${lang}.`,
     `SCENA (storyboard): ${input.scenePrompt}`,
     '',
-    'Ogni scena è un\'ILLUSTRAZIONE 2D cartoon a tutto schermo (un personaggio/soggetto in una situazione) che fa da sfondo animato, con un breve titolo e i sottotitoli sincronizzati con la voce sopra.',
+    'IMPORTANTE: l\'array "scenes" deve contenere ESATTAMENTE UN elemento (una sola scena). Il clip è breve e ' +
+      'con un UNICO voiceover: NON spezzare in più scene.',
+    'La scena è un\'ILLUSTRAZIONE 2D cartoon a tutto schermo (un personaggio/soggetto in una situazione) che fa da sfondo animato, con un breve titolo e i sottotitoli sincronizzati con la voce sopra.',
     '',
     'Restituisci ESCLUSIVAMENTE un JSON conforme allo schema VideoSpec, con questa forma:',
     '{',
@@ -425,7 +427,7 @@ export function videoSpecPrompt(input: {
     'CAMPO illustration (OBBLIGATORIO): è il cuore della scena. Nel "prompt" descrivi UN\'immagine cartoon 2D flat coerente:',
     '- il soggetto DEVE combaciare col voiceover: se la voce nomina o implica una persona (nome, genere, ruolo, età),',
     '  l\'immagine raffigura ESATTAMENTE quella persona (stesso genere e aspetto). Es.: voce "Giulia osserva..." → ragazza; "il manager..." → uomo adulto in ufficio.',
-    '- descrivi aspetto coerente e RICORRENTE del personaggio principale tra le scene (stesso genere, capelli, abbigliamento, età), così sembra lo stesso personaggio in tutta la pillola;',
+    '- descrivi un aspetto chiaro e coerente del personaggio principale (genere, capelli, abbigliamento, età);',
     '- mostra l\'AZIONE/emozione concreta della scena e un\'ambientazione riconoscibile;',
     '- scrivi il prompt dell\'immagine in INGLESE (il generatore rende meglio), conciso ma concreto;',
     '- NON includere testo/scritte/fumetti vuoti nell\'immagine.',
