@@ -384,10 +384,14 @@ function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: Medi
       h('video', {
         class: 'block-media scenario-video',
         src: mediaSrc,
-        // NIENTE controls nativi: il loro pulsante fullscreen manda a schermo
-        // intero SOLO il <video>, lasciando fuori gli overlay (scelte/esito).
-        // Il fullscreen è gestito dal pulsante custom .scenario-fs-btn che manda
-        // a schermo intero lo STAGE (video + overlay insieme). playsinline per iOS.
+        // Controlli nativi (play/pause/seek/volume): standard e accessibili.
+        // Il pulsante fullscreen NATIVO è nascosto via CSS (controlsList +
+        // ::-webkit-media-controls-fullscreen-button) perché manderebbe a schermo
+        // intero SOLO il <video>, senza gli overlay. Il fullscreen "buono" è il
+        // pulsante custom .scenario-fs-btn che fa FS dello STAGE (video+overlay).
+        controls: 'true',
+        controlslist: 'nofullscreen nodownload',
+        disablepictureinpicture: 'true',
         playsinline: 'true',
         preload: 'auto',
         'data-scenario-video': gated ? 'gate' : 'free',
