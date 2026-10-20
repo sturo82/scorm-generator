@@ -117,6 +117,10 @@ export function outlinePrompt(brief: Brief, context: string): string {
       ? 'FORMATO FORZATO: PILLOLE. Imposta "format": "pillola" su OGNI lezione. Ogni pillola è una ' +
         'micro-lezione (2-4 min) su UN singolo concetto: hook video breve, spiegazione sintetica, una ' +
         'verifica rapida, takeaway. Progetta lezioni brevi e focalizzate, non teoriche e ampie.'
+      : brief.format === 'pillole_interattive'
+      ? 'FORMATO FORZATO: PILLOLE INTERATTIVE. Imposta "format": "pillola_interattiva" su OGNI lezione. ' +
+        'Ogni lezione è un libro-game: una SITUAZIONE concreta in cui l\'utente sceglie e, per vie diverse, ' +
+        'risolve o meno il problema. Progetta situazioni decisionali focalizzate, non teoria estesa.'
       : brief.format === 'video_first' || brief.videoFirst
         ? 'FORMATO FORZATO: VIDEO-FIRST. Imposta "format": "video_first" su OGNI lezione: ciascuna è ' +
           'incentrata su un video portante con capitoli, verifiche intermedie e quiz affiancati.'
@@ -125,6 +129,9 @@ export function outlinePrompt(brief: Brief, context: string): string {
               'adatto alla sua natura didattica, scegliendo tra:',
             '  - "pillola": concetto singolo e pratico, "sapere fare subito", ripasso veloce o consiglio ' +
               'operativo (micro-lezione 2-4 min con mini-video di aggancio);',
+            '  - "pillola_interattiva": una SITUAZIONE DECISIONALE ("cosa faresti?") in cui l\'utente sceglie e, ' +
+              'per vie diverse, risolve o meno il problema (libro-game a scene con mini-video). Ideale per casi ' +
+              'pratici, dilemmi, procedure con errori tipici da evitare;',
             '  - "video_first": argomento articolato che beneficia di una dimostrazione/screencast/caso ' +
               'reale guidato passo-passo (lezione 8-15 min con video portante);',
             '  - "standard": teoria, definizioni, normative, checklist, contenuto da studiare anche senza ' +
@@ -296,6 +303,84 @@ export function lessonPillolePrompt(input: {
   return parts.filter((p) => p !== '').join('\n');
 }
 
+/**
+ * Prompt per una "pillola INTERATTIVA" (libro-game): genera UN block
+ * branching_scenario che rappresenta un mini-percorso a scene con scelte che,
+ * per vie diverse, portano alla RISOLUZIONE o meno di una situazione concreta.
+ * Ogni scena ha un mini-video (cartoon, segnaposto: lo storyboard va in
+ * placeholderPrompt); le scene di verifica hanno scelte valutate (score +
+ * feedback) che diramano verso scene/esiti. Struttura teach → quiz → esiti.
+ */
+export function lessonPillolaInterattivaPrompt(input: {
+  courseTitle: string;
+  moduleTitle: string;
+  lessonTitle: string;
+  objectives: string[];
+  language: string;
+  context: string;
+  toneInstruction?: string;
+  courseFocus?: string;
+}): string {
+  const lang = languageName(input.language);
+  const parts = [
+    languageDirective(input.language),
+    `Genera UNA "pillola INTERATTIVA" (libro-game) a mini-video in ${lang}: una SITUAZIONE concreta in cui le scelte ` +
+      'dell\'utente portano, per vie diverse, a RISOLVERE o NON risolvere la situazione.',
+    `Corso: ${input.courseTitle}`,
+    `Modulo: ${input.moduleTitle}`,
+    `Pillola (lezione): ${input.lessonTitle}`,
+    input.objectives.length > 0 ? `Obiettivi: ${input.objectives.join('; ')}` : '',
+    input.courseFocus
+      ? `TAGLIO DEL CORSO (vincolo): ${input.courseFocus}. Resta in questa angolazione.`
+      : '',
+    input.toneInstruction ? `Indicazione aggiuntiva: ${input.toneInstruction}` : '',
+    '',
+    'STRUTTURA del libro-game (un percorso a scene):',
+    'FASE 1 — SETUP/SPIEGAZIONE (scene role="teach"): 1-2 scene che presentano la situazione e il concetto. '
+      + 'Ogni scena ha UN mini-video e UNA sola scelta "Continua" (nextNodeId verso la scena dopo), NON valutata.',
+    'FASE 2 — DECISIONI (scene role="quiz"): 1-3 scene che mettono l\'utente davanti a un bivio concreto, con '
+      + '2-3 scelte VALUTATE (score + feedback) che diramano verso scene diverse o verso gli esiti. La scelta '
+      + 'giusta avvicina alla risoluzione; quelle sbagliate portano verso un esito negativo o una scena di recupero.',
+    'ESITI (scene terminali, choices: []): ALMENO un esito POSITIVO (situazione RISOLTA) e ALMENO uno NEGATIVO '
+      + '(situazione NON risolta / conseguenza), ciascuno con un mini-video e un testo che chiarisce cosa è successo e perché.',
+    '',
+    'Produci ESATTAMENTE UN block "branching_scenario" con questo payload:',
+    '{ ',
+    '  "startNodeId": "<id della prima scena>", ',
+    '  "scored": true, ',
+    '  "pillole": true, ',
+    '  "gateChoicesOnMedia": true, ',
+    '  "nodes": [ ',
+    '    { ',
+    '      "id": "<slug-scena>", ',
+    '      "role": "teach" | "quiz", ',
+    '      "content": { "format": "html", "html": "<p>Testo breve (1-3 frasi): teach presenta/spiega; quiz pone la situazione e la domanda.</p>" }, ',
+    `      "media": { "kind": "video", "alt": "<descrizione breve della scena in ${lang}>", "placeholderPrompt": "<STORYBOARD del mini-cartoon: soggetto/personaggio coerente, azione, ambientazione, 1 sola idea, stile explainer illustrato, in ${lang}>" }, `,
+    '      "choices": [ ',
+    '        /* teach: UNA scelta "Continua" con nextNodeId, senza score. */ ',
+    '        /* quiz: 2-3 scelte con nextNodeId (scena/esito), score (positivo se avvicina alla soluzione, 0/negativo se errata) e feedback. */ ',
+    '        { "id": "<slug-scelta>", "label": "<testo scelta>", "nextNodeId": "<id scena successiva; ASSENTE se porta a un esito terminale>", "score": <numero, solo quiz>, "feedback": "<solo quiz: conseguenza 1-2 frasi>" } ',
+    '      ] ',
+    '    } ',
+    '  ] ',
+    '}',
+    '',
+    'REGOLE:',
+    `- Scrivi TUTTO in ${lang} (testi scena, label scelte, feedback, alt e placeholderPrompt).`,
+    '- 4-8 scene totali: prima le scene teach, poi le quiz, infine gli esiti terminali (almeno 1 positivo e 1 negativo).',
+    '- Imposta SEMPRE "role" su ogni scena. Scene teach: UNA sola scelta "Continua" con nextNodeId; niente score/feedback.',
+    '- Scene quiz: 2-3 scelte valutate; conseguenze coerenti e istruttive. Le vie diverse DEVONO poter condurre sia all\'esito positivo sia al negativo.',
+    '- Gli esiti terminali hanno "choices": [] e un media video segnaposto con testo che spiega l\'esito.',
+    '- Ogni nextNodeId DEVE puntare a un id di nodo esistente; startNodeId DEVE essere la prima scena teach.',
+    '- Il media di OGNI scena è un VIDEO SEGNAPOSTO (cartoon): NON inventare storageKey/URL; lo storyboard va in placeholderPrompt. I cartoon verranno prodotti a parte.',
+    '- Personaggio/ambientazione COERENTI tra le scene (stesso protagonista), così il percorso sembra un\'unica storia.',
+    '- Gli id dei nodi/scelte sono slug brevi univoci (es. "intro-1", "bivio-1", "esito-ok", "esito-ko", "scelta-a").',
+    '',
+    input.context,
+  ];
+  return parts.filter((p) => p !== '').join('\n');
+}
+
 /** Prompt per generare i Block (interazioni) di una lezione (Requisito 4.2). */
 export function lessonContentPrompt(input: {
   courseTitle: string;
@@ -310,9 +395,14 @@ export function lessonContentPrompt(input: {
   videoFirst?: boolean;
   /** Taglio/scope del corso: vincola la lezione a restare dentro l'angolazione. */
   courseFocus?: string;
-  /** Formato del corso: 'pillole' genera un libro-game (branching_scenario). */
-  format?: 'completo' | 'video_first' | 'pillole';
+  /**
+   * Formato della lezione: 'pillole' = pillola lineare; 'pillola_interattiva' =
+   * libro-game (branching_scenario); 'video_first' = video portante; altrimenti
+   * standard.
+   */
+  format?: 'completo' | 'video_first' | 'pillole' | 'pillola_interattiva';
 }): string {
+  if (input.format === 'pillola_interattiva') return lessonPillolaInterattivaPrompt(input);
   if (input.format === 'pillole') return lessonPillolePrompt(input);
   if (input.videoFirst || input.format === 'video_first') return lessonVideoFirstPrompt(input);
   const parts = [

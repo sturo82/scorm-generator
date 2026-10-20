@@ -10,7 +10,7 @@ import {
   blockJsonSchema,
   assessmentJsonSchema,
   CONTRACTS_VERSION,
-  lessonFormatFromFlags,
+  resolveLessonLayout,
   type LessonFormat,
   type CourseOutline as CourseOutlineType,
   type Block as BlockType,
@@ -450,19 +450,23 @@ export class GenerationService {
     if (!lesson) throw new NotFoundException('Lezione non trovata');
 
     const brief = course.brief ? Brief.safeParse(course.brief) : null;
-    // Formato PER-LEZIONE (fonte di verità): la colonna lesson.format, con
-    // fallback ai flag storici videoFirst/pillola per le lezioni pre-migrazione.
-    const lessonFormat: LessonFormat =
-      (lesson as { format?: string | null }).format === 'pillola' ||
-      (lesson as { format?: string | null }).format === 'video_first' ||
-      (lesson as { format?: string | null }).format === 'standard'
-        ? ((lesson as { format?: string | null }).format as LessonFormat)
-        : lessonFormatFromFlags({ videoFirst: lesson.videoFirst, pillola: (lesson as { pillola?: boolean }).pillola });
+    // Formato PER-LEZIONE (fonte di verità, format-first): la colonna
+    // lesson.format, con fallback ai flag storici per le lezioni pre-migrazione.
+    const lessonFormat: LessonFormat = resolveLessonLayout({
+      format: (lesson as { format?: string | null }).format,
+      videoFirst: lesson.videoFirst,
+      pillola: (lesson as { pillola?: boolean }).pillola,
+    });
     const videoFirst = lessonFormat === 'video_first';
-    // Mappa il formato lezione al parametro atteso da lessonContentPrompt
-    // (contratto storico: 'completo' | 'video_first' | 'pillole').
-    const promptFormat: 'completo' | 'video_first' | 'pillole' =
-      lessonFormat === 'pillola' ? 'pillole' : lessonFormat === 'video_first' ? 'video_first' : 'completo';
+    // Mappa il formato lezione al parametro atteso da lessonContentPrompt.
+    const promptFormat: 'completo' | 'video_first' | 'pillole' | 'pillola_interattiva' =
+      lessonFormat === 'pillola'
+        ? 'pillole'
+        : lessonFormat === 'pillola_interattiva'
+          ? 'pillola_interattiva'
+          : lessonFormat === 'video_first'
+            ? 'video_first'
+            : 'completo';
     const voice = await this.brandVoice(
       ctx.tenant.tenantId,
       brief?.success ? brief.data.brandIds : [],

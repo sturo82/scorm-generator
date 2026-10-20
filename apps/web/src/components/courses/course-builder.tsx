@@ -1024,13 +1024,14 @@ function LessonCard({
                 setFormat.mutate({
                   moduleId,
                   lessonId: lesson.id,
-                  format: e.target.value as 'pillola' | 'video_first' | 'standard',
+                  format: e.target.value as 'pillola' | 'pillola_interattiva' | 'video_first' | 'standard',
                 })
               }
             >
               <option value="standard">Standard</option>
               <option value="video_first">Video-first</option>
               <option value="pillola">Pillola</option>
+              <option value="pillola_interattiva">Pillola interattiva</option>
             </select>
           </label>
           <StatusControls
@@ -1082,11 +1083,14 @@ function LessonCard({
         {(() => {
           const fmt = lessonFormatOf(lesson);
           if (fmt === 'standard') return null;
-          const label = fmt === 'pillola' ? 'Pillola' : 'Video-first';
+          const label =
+            fmt === 'pillola' ? 'Pillola' : fmt === 'pillola_interattiva' ? 'Pillola interattiva' : 'Video-first';
           const title =
             fmt === 'pillola'
               ? 'Micro-lezione a contenitore scorrevole (pillola)'
-              : 'Lezione incentrata su un video (video-first)';
+              : fmt === 'pillola_interattiva'
+                ? 'Libro-game a scene con scelte e mini-video (pillola interattiva)'
+                : 'Lezione incentrata su un video (video-first)';
           return (
             <span
               className="hidden items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary sm:inline-flex"
@@ -1672,8 +1676,13 @@ function blockHasCartoonScenes(block: Block): boolean {
  * lesson.format; per i corsi storici (senza format) si deriva dai flag
  * videoFirst/pillola (pillola ha precedenza), con fallback a 'standard'.
  */
-function lessonFormatOf(lesson: LessonView): 'pillola' | 'video_first' | 'standard' {
-  if (lesson.format === 'pillola' || lesson.format === 'video_first' || lesson.format === 'standard') {
+function lessonFormatOf(lesson: LessonView): 'pillola' | 'pillola_interattiva' | 'video_first' | 'standard' {
+  if (
+    lesson.format === 'pillola' ||
+    lesson.format === 'pillola_interattiva' ||
+    lesson.format === 'video_first' ||
+    lesson.format === 'standard'
+  ) {
     return lesson.format;
   }
   if (lesson.pillola) return 'pillola';

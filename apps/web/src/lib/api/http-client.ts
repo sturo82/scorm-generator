@@ -266,7 +266,7 @@ export class HttpApiClient implements ApiClient {
     courseId: string,
     moduleId: string,
     lessonId: string,
-    format: 'pillola' | 'video_first' | 'standard',
+    format: 'pillola' | 'pillola_interattiva' | 'video_first' | 'standard',
   ) {
     await this.request(
       `/courses/${courseId}/modules/${moduleId}/lessons/${lessonId}/format`,

@@ -51,6 +51,7 @@ const FORMAT_OPTIONS: Array<{ value: LessonFormatValue; label: string; hint: str
   { value: 'standard', label: 'Standard', hint: 'Testo, immagini e interazioni. Studio anche senza audio/video.' },
   { value: 'video_first', label: 'Video-first', hint: 'Lezione incentrata su un video portante con capitoli e verifiche.' },
   { value: 'pillola', label: 'Pillola', hint: 'Micro-lezione 2-4 min su un concetto, con mini-video di aggancio.' },
+  { value: 'pillola_interattiva', label: 'Pillola interattiva', hint: 'Libro-game: una situazione in cui scegli e, per vie diverse, risolvi o meno.' },
 ];
 
 const STEPS = ['Sorgente', 'Dettagli', 'Formato', 'Crea'];

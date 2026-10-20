@@ -194,9 +194,11 @@ export class ModulesService {
     const forcedLessonFormat: LessonFormatType | null =
       briefFormat === 'pillole'
         ? 'pillola'
-        : briefFormat === 'video_first' || (course.brief as { videoFirst?: boolean } | null)?.videoFirst
-          ? 'video_first'
-          : null;
+        : briefFormat === 'pillole_interattive'
+          ? 'pillola_interattiva'
+          : briefFormat === 'video_first' || (course.brief as { videoFirst?: boolean } | null)?.videoFirst
+            ? 'video_first'
+            : null;
 
     /** Formato effettivo di una lezione dell'outline (globale forzato → outline → standard). */
     const resolveLessonFormat = (lo: { format?: unknown; videoFirst?: boolean }): LessonFormatType => {

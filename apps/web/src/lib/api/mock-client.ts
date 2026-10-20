@@ -572,7 +572,7 @@ export class MockApiClient implements ApiClient {
     courseId: string,
     _moduleId: string,
     lessonId: string,
-    format: 'pillola' | 'video_first' | 'standard',
+    format: 'pillola' | 'pillola_interattiva' | 'video_first' | 'standard',
   ) {
     await delay(150);
     for (const m of this.modules[courseId] ?? []) {

@@ -604,7 +604,7 @@ export function useSetLessonVideoFirst(courseId: string) {
 export function useSetLessonFormat(courseId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { moduleId: string; lessonId: string; format: 'pillola' | 'video_first' | 'standard' }) =>
+    mutationFn: (vars: { moduleId: string; lessonId: string; format: 'pillola' | 'pillola_interattiva' | 'video_first' | 'standard' }) =>
       api.setLessonFormat(courseId, vars.moduleId, vars.lessonId, vars.format),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.modules(courseId) }),
   });

@@ -117,6 +117,20 @@
     return wrap;
   }
 
+  /**
+   * Lezione PILLOLA INTERATTIVA (libro-game): lo scenario a scene/scelte a tutto
+   * riquadro, dal renderer CONDIVISO. Fallback: impila i block.
+   */
+  function renderPillolaInterattivaLesson(blocks) {
+    var core = global.RenderCore;
+    if (core && core.renderPillolaInterattivaLessonDom) {
+      return core.renderPillolaInterattivaLessonDom(blocks || [], coreCtx());
+    }
+    var wrap = el('div', { class: 'lesson-pillola-interattiva' });
+    (blocks || []).forEach(function (b) { wrap.appendChild(renderBlock(b)); });
+    return wrap;
+  }
+
   // --- Rendering di un assessment (test) --------------------------------------
   // Costruisce il form delle domande per tutti i tipi, raccoglie le risposte in
   // una mappa questionId -> answer e, al submit, invoca onSubmit(answers). La
@@ -221,7 +235,7 @@
     return wrap;
   }
 
-  global.Renderers = { renderBlock: renderBlock, renderAssessment: renderAssessment, renderVideoFirstLesson: renderVideoFirstLesson, renderPillolaLesson: renderPillolaLesson };
+  global.Renderers = { renderBlock: renderBlock, renderAssessment: renderAssessment, renderVideoFirstLesson: renderVideoFirstLesson, renderPillolaLesson: renderPillolaLesson, renderPillolaInterattivaLesson: renderPillolaInterattivaLesson };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = global.Renderers;

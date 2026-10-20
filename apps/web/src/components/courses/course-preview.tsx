@@ -15,9 +15,11 @@ import {
   buildCourseSteps,
   renderVideoFirstLesson,
   renderPillolaLesson,
+  renderPillolaInterattivaLesson,
   imagePlaceholderSlot,
   type RenderContext,
 } from '@scorm/contracts/render-core';
+import { resolveLessonLayout } from '@scorm/contracts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EditorialStatusBadge } from '@/components/status-badge';
 import { BlockRenderer } from '@/components/courses/block-renderer';
@@ -862,9 +864,14 @@ function LessonPreview({
   // Reset del concetto quando cambia lezione.
   React.useEffect(() => setSub(0), [lesson.id]);
 
+  // DISPATCH DEL LAYOUT — FORMAT-FIRST: la fonte di verità è lesson.format.
+  // I flag storici (videoFirst/pillola) alimentano solo il fallback per i corsi
+  // senza format (resolveLessonLayout). Stesso criterio del player SCORM.
+  const layout = resolveLessonLayout(lesson);
+
   // Lezione PILLOLA: contenitore scorrevole con una card per blocco (contenuto
   // vs azioni distinti), dal renderer CONDIVISO (identico al player SCORM).
-  if (lesson.pillola) {
+  if (layout === 'pillola') {
     const blocks = lesson.blocks as Block[];
     const ctx: RenderContext = {
       resolveMedia: (m) => m.storageKey ?? null,
@@ -893,10 +900,41 @@ function LessonPreview({
     );
   }
 
+  // Lezione PILLOLA INTERATTIVA (libro-game): lo scenario a scene/scelte a tutto
+  // riquadro (mini-video + scelte in overlay), dal renderer CONDIVISO.
+  if (layout === 'pillola_interattiva') {
+    const blocks = lesson.blocks as Block[];
+    const ctx: RenderContext = {
+      resolveMedia: (m) => m.storageKey ?? null,
+      renderPlaceholder: (m) => imagePlaceholderSlot(m, labels),
+      labels,
+    };
+    const vnode = renderPillolaInterattivaLesson(
+      blocks.map((b) => ({ id: b.id, type: b.type, payload: b.payload as Record<string, unknown> })),
+      ctx,
+    );
+    return (
+      <article className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+        <header className="border-b p-5">
+          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--brand-primary, #4f46e5)' }}>
+            {labels.moduleN(step.moduleIndex + 1)} · {step.moduleTitle} · Pillola interattiva
+          </p>
+          <div className="mt-1 flex items-center gap-2">
+            <h3 className="text-xl font-bold">{lesson.title}</h3>
+            <EditorialStatusBadge status={lesson.status} />
+          </div>
+        </header>
+        <div className="brand-scope p-5" data-motion="sober">
+          <VNodeView node={vnode} labels={labels} />
+        </div>
+      </article>
+    );
+  }
+
   // Lezione VIDEO-FIRST (stile Brain Bites): in cima il video a tutta larghezza
   // con il suo pannello trascrizione/tab a fianco (gestito da VideoCheckpoint);
   // sotto, l'eventuale intro e gli elementi dinamici/quiz. Fedele al player SCORM.
-  if (lesson.videoFirst) {
+  if (layout === 'video_first') {
     const blocks = lesson.blocks as Block[];
     // Layout video-first a DUE COLONNE dal renderer CONDIVISO (stesso del player
     // SCORM): video grande a sinistra + barra tab verticale a destra con

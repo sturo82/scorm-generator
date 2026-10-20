@@ -559,17 +559,27 @@
       main.appendChild(audioWrap);
     }
 
-    // Lezione VIDEO-FIRST: layout a 2 colonne. Video (e testo introduttivo) a
-    // sinistra; elementi dinamici e quiz a destra (stile Brain-Bites).
-    if (lesson.videoFirst) {
+    // DISPATCH DEL LAYOUT — FORMAT-FIRST: la fonte di verità è lesson.format.
+    // I flag storici (videoFirst/pillola) restano solo per retro-compat e
+    // alimentano il fallback per i corsi senza format (resolveLessonLayout).
+    var layout =
+      global.RenderCore && global.RenderCore.resolveLessonLayout
+        ? global.RenderCore.resolveLessonLayout(lesson)
+        : (lesson.pillola ? 'pillola' : lesson.videoFirst ? 'video_first' : 'standard');
+
+    if (layout === 'video_first') {
+      // Layout a 2 colonne: video (e testo intro) a sinistra; dinamici/quiz a destra.
       this.renderVideoFirstLesson(step, main);
       return;
     }
-
-    // Lezione PILLOLA: contenitore scorrevole con una card per blocco (contenuto
-    // vs azioni distinti). Layout dedicato dal renderer condiviso.
-    if (lesson.pillola) {
+    if (layout === 'pillola') {
+      // Contenitore scorrevole con una card per blocco (contenuto vs azioni).
       this.renderPillolaLesson(step, main);
+      return;
+    }
+    if (layout === 'pillola_interattiva') {
+      // Libro-game: percorso a scene con scelte e mini-video (un player unico).
+      this.renderPillolaInterattivaLesson(step, main);
       return;
     }
 
@@ -659,6 +669,26 @@
     } else {
       var self = this;
       var wrap = el('div', 'lesson-pillola');
+      blocks.forEach(function (block) { wrap.appendChild(self.renderers.renderBlock(block)); });
+      main.appendChild(wrap);
+    }
+    this.markComplete(step);
+  };
+
+  /**
+   * Lezione PILLOLA INTERATTIVA (libro-game): lo scenario a scene/scelte a tutto
+   * riquadro dal renderer CONDIVISO. L'esperienza è interamente dentro il player
+   * (mini-video per scena + scelte in overlay). La lezione si completa alla
+   * visualizzazione (il punteggio dello scenario resta interno al block).
+   */
+  Player.prototype.renderPillolaInterattivaLesson = function (step, main) {
+    var lesson = step.lesson;
+    var blocks = lesson.blocks || [];
+    if (this.renderers.renderPillolaInterattivaLesson) {
+      main.appendChild(this.renderers.renderPillolaInterattivaLesson(blocks));
+    } else {
+      var self = this;
+      var wrap = el('div', 'lesson-pillola-interattiva');
       blocks.forEach(function (block) { wrap.appendChild(self.renderers.renderBlock(block)); });
       main.appendChild(wrap);
     }

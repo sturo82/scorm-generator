@@ -93,7 +93,7 @@ export interface LessonView {
    * 'pillola' | 'video_first' | 'standard'. Assente nei corsi storici → si
    * deriva dai flag videoFirst/pillola.
    */
-  format?: 'pillola' | 'video_first' | 'standard';
+  format?: 'pillola' | 'pillola_interattiva' | 'video_first' | 'standard';
   /** Lezione video-first (incentrata su un video). DERIVATO da format. */
   videoFirst?: boolean;
   /** Lezione "pillola": layout a contenitore scorrevole con card per blocco. DERIVATO da format. */
@@ -101,7 +101,7 @@ export interface LessonView {
 }
 
 /** Formato didattico per-lezione (allineato a LessonFormat dei contracts). */
-export type LessonFormatValue = 'pillola' | 'video_first' | 'standard';
+export type LessonFormatValue = 'pillola' | 'pillola_interattiva' | 'video_first' | 'standard';
 
 /** Chunk della knowledge per il widget RAG "Chiedi al corso". */
 export interface RagChunk {

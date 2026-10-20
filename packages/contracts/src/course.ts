@@ -19,10 +19,30 @@ import { EditorialMeta, Id, LanguageCode } from './primitives.js';
  *  - 'standard'    : testo + immagini + interazioni (il "completo" classico). → entrambi false.
  * Mappa con CourseFormat a livello di corso: 'standard' ↔ 'completo'.
  */
-export const LessonFormat = z.enum(['pillola', 'video_first', 'standard']);
+/**
+ * Formati lezione:
+ *  - 'pillola'            : micro-learning LINEARE (contenitore a card).
+ *  - 'pillola_interattiva': libro-game a scene con scelte e mini-video, che per
+ *                           vie diverse portano alla risoluzione o meno della
+ *                           situazione (un block branching_scenario pillole).
+ *  - 'video_first'        : incentrata su UN video portante (layout 2 colonne).
+ *  - 'standard'           : testo + immagini + interazioni.
+ *
+ * NB: `format` è la FONTE DI VERITÀ del layout (vedi resolveLessonLayout). I
+ * flag booleani `videoFirst`/`pillola` restano SOLO come derivati di
+ * compatibilità (corsi storici, export): nessuna logica nuova decide il layout
+ * dai flag. La pillola interattiva NON setta i flag (non è né il contenitore
+ * lineare né il video-first): il suo layout è scelto da `format`.
+ */
+export const LessonFormat = z.enum(['pillola', 'pillola_interattiva', 'video_first', 'standard']);
 export type LessonFormat = z.infer<typeof LessonFormat>;
 
-/** Deriva i flag booleani storici (videoFirst/pillola) dal formato lezione. */
+/**
+ * Deriva i flag booleani storici (videoFirst/pillola) dal formato lezione.
+ * 'pillola_interattiva' NON attiva nessun flag: il suo layout è pilotato solo
+ * da `format` (format-first), così il dispatch non lo confonde col contenitore
+ * lineare (pillola) né col video-first.
+ */
 export function lessonFlagsFromFormat(format: LessonFormat): { videoFirst: boolean; pillola: boolean } {
   return {
     videoFirst: format === 'video_first',
@@ -35,6 +55,23 @@ export function lessonFormatFromFlags(flags: { videoFirst?: boolean; pillola?: b
   if (flags.pillola) return 'pillola';
   if (flags.videoFirst) return 'video_first';
   return 'standard';
+}
+
+/**
+ * FONTE DI VERITÀ del layout di una lezione: ritorna il formato effettivo da
+ * usare per il rendering. Se `format` è presente lo usa; per i corsi STORICI
+ * senza `format` lo deriva dai flag. È il punto unico che player e anteprima
+ * devono interrogare per scegliere il layout (format-first), invece di guardare
+ * i flag booleani.
+ */
+export function resolveLessonLayout(lesson: {
+  format?: string | null;
+  videoFirst?: boolean;
+  pillola?: boolean;
+}): LessonFormat {
+  const parsed = LessonFormat.safeParse(lesson.format);
+  if (parsed.success) return parsed.data;
+  return lessonFormatFromFlags({ videoFirst: lesson.videoFirst, pillola: lesson.pillola });
 }
 
 export const Lesson = z.object({

@@ -372,12 +372,13 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
 
               <div className="space-y-2 rounded-lg border p-3">
                 <Label>Formato del corso</Label>
-                <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Formato del corso">
+                <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Formato del corso">
                   {([
                     ['completo', 'Completo', 'Testo, immagini, interazioni e quiz. Il formato classico.'],
                     ['video_first', 'Video-first', 'Ogni lezione è incentrata su un video, con elementi e quiz affiancati.'],
-                    ['pillole', 'Pillole', 'Mini-video interattivi in stile libro-game: scegli e scopri le conseguenze.'],
-                  ] as Array<['completo' | 'video_first' | 'pillole', string, string]>).map(
+                    ['pillole', 'Pillole', 'Micro-lezioni da 2-4 minuti su un concetto: mini-video, spiegazione, verifica.'],
+                    ['pillole_interattive', 'Pillole interattive', 'Libro-game: una situazione in cui scegli e, per vie diverse, risolvi o meno.'],
+                  ] as Array<['completo' | 'video_first' | 'pillole' | 'pillole_interattive', string, string]>).map(
                     ([val, title, desc]) => (
                       <button
                         key={val}

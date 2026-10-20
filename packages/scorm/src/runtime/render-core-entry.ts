@@ -17,13 +17,14 @@ import {
   groupConcepts,
   renderVideoFirstLesson,
   renderPillolaLesson,
+  renderPillolaInterattivaLesson,
   type VNode,
   type VChild,
   type RenderContext,
   type StatefulSpec,
   type StatefulState,
 } from '@scorm/contracts/render-core';
-import { courseLabels, type CourseLabels } from '@scorm/contracts';
+import { courseLabels, resolveLessonLayout, type CourseLabels } from '@scorm/contracts';
 
 /**
  * Etichette dei block nella lingua del corso, lette dal global __COURSE__
@@ -365,6 +366,14 @@ function renderPillolaLessonDom(
   return mount(renderPillolaLesson(blocks, ctx)) as HTMLElement;
 }
 
+/** Costruisce il nodo DOM della lezione PILLOLA INTERATTIVA (libro-game). */
+function renderPillolaInterattivaLessonDom(
+  blocks: Array<{ id?: string; type: string; payload?: Record<string, unknown> }>,
+  ctx: RenderContext,
+): HTMLElement {
+  return mount(renderPillolaInterattivaLesson(blocks, ctx)) as HTMLElement;
+}
+
 const RenderCore = {
   renderBlock,
   isHandledByCore,
@@ -374,6 +383,9 @@ const RenderCore = {
   renderVideoFirstLessonDom,
   renderPillolaLesson,
   renderPillolaLessonDom,
+  renderPillolaInterattivaLesson,
+  renderPillolaInterattivaLessonDom,
+  resolveLessonLayout,
   buildCourseSteps,
   groupConcepts,
   courseLabels,

@@ -572,4 +572,14 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
 [data-motion] .callout-warning::before { content: "\\26A0\\FE0F"; } /* ⚠️ */
 [data-motion] .callout-def { --cl: var(--ix-primary); }
 [data-motion] .callout-def::before { content: "\\1F4D8"; }      /* 📘 */
+
+/* ============================================================================
+   LEZIONE PILLOLA INTERATTIVA (libro-game): lo scenario a tutto riquadro.
+   Il player dello scenario (.scenario-stage) è già stilizzato; qui diamo al
+   contenitore larghezza piena e un po' di respiro all'eventuale intro.
+   ========================================================================== */
+[data-motion] .lesson-pillola-interattiva { display: flex; flex-direction: column; gap: 1rem; }
+[data-motion] .lesson-pillola-interattiva .pillola-interattiva-intro { max-width: 70ch; }
+[data-motion] .lesson-pillola-interattiva .pillola-interattiva-stage { width: 100%; }
+[data-motion] .lesson-pillola-interattiva .pillola-interattiva-stage .block.scenario { margin: 0; }
 `;

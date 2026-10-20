@@ -13,14 +13,19 @@ export type ProficiencyLevel = z.infer<typeof ProficiencyLevel>;
 /**
  * Formato del corso: determina la modalità di fruizione e il tipo di contenuti
  * generati.
- *  - 'completo'    : formato classico (testo, immagini, interazioni, quiz).
- *  - 'video_first' : ogni lezione è incentrata su un video (equivale a videoFirst).
- *  - 'pillole'     : mini-video interattivi in stile libro-game — scene brevi
- *                    (cartoon), scelte con conseguenze (punteggio/feedback) che
- *                    instradano alla scena successiva. Ogni pillola è una lezione
- *                    con un block branching_scenario.
+ *  - 'completo'            : formato classico (testo, immagini, interazioni, quiz).
+ *  - 'video_first'         : ogni lezione è incentrata su un video.
+ *  - 'pillole'             : micro-lezioni LINEARI (hook video + concetto +
+ *                            verifica + takeaway), contenitore a card scorrevole.
+ *  - 'pillole_interattive' : libro-game a scene con scelte e mini-video che, per
+ *                            vie diverse, portano alla risoluzione o meno della
+ *                            situazione (un block branching_scenario per lezione).
+ *
+ * È il formato GLOBALE del corso: forza lo stesso formato su tutte le lezioni.
+ * Mappa su LessonFormat: pillole→pillola, pillole_interattive→pillola_interattiva,
+ * video_first→video_first, completo→standard.
  */
-export const CourseFormat = z.enum(['completo', 'video_first', 'pillole']);
+export const CourseFormat = z.enum(['completo', 'video_first', 'pillole', 'pillole_interattive']);
 export type CourseFormat = z.infer<typeof CourseFormat>;
 
 /** Tipi di test richiesti nel corso (Requisito 2.1 / 6.3). */
