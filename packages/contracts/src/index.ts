@@ -11,6 +11,7 @@ export * from './brief.js';
 export * from './blocks.js';
 export * from './assessment.js';
 export * from './course.js';
+export * from './lesson-provenance.js';
 export * from './course-labels.js';
 export * from './json-schema.js';
 export * from './interactions-css.js';

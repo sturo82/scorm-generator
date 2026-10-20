@@ -94,6 +94,12 @@ export interface LessonView {
    * deriva dai flag videoFirst/pillola.
    */
   format?: 'pillola' | 'pillola_interattiva' | 'video_first' | 'standard';
+  /**
+   * True se i contenuti della lezione sono OBSOLETI rispetto agli input correnti
+   * (formato/obiettivi/taglio/tono/fonti cambiati dopo l'ultima generazione):
+   * la lezione è "da rigenerare". Calcolato server-side. Assente = stato noto/ok.
+   */
+  contentStale?: boolean;
   /** Lezione video-first (incentrata su un video). DERIVATO da format. */
   videoFirst?: boolean;
   /** Lezione "pillola": layout a contenitore scorrevole con card per blocco. DERIVATO da format. */

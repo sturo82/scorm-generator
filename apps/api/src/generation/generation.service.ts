@@ -11,6 +11,7 @@ import {
   assessmentJsonSchema,
   CONTRACTS_VERSION,
   resolveLessonLayout,
+  lessonContentInputHash,
   type LessonFormat,
   type CourseOutline as CourseOutlineType,
   type Block as BlockType,
@@ -569,9 +570,20 @@ export class GenerationService {
       editorial: { ...b.editorial, citations: retrieved.citations },
     }));
 
+    // Impronta di generazione: registra GLI INPUT con cui questi contenuti sono
+    // stati prodotti, così un loro cambiamento (formato, obiettivi, taglio, tono,
+    // fonti, versione prompt) marca la lezione "da rigenerare" (vedi listModules).
+    const contentInputHash = lessonContentInputHash({
+      format: lessonFormat,
+      objectives,
+      courseFocus: brief?.success ? brief.data.courseFocus : undefined,
+      tone: brief?.success ? brief.data.tone : undefined,
+      knowledgeDocIds: brief?.success ? brief.data.knowledgeDocIds : undefined,
+    });
+
     await this.prisma.lesson.update({
       where: { id: lessonId },
-      data: { blocks: withCitations as object, schemaVersion: CONTRACTS_VERSION },
+      data: { blocks: withCitations as object, schemaVersion: CONTRACTS_VERSION, contentInputHash },
     });
 
     // Immagini automatiche: scorporate dalla generazione dei contenuti e lanciate

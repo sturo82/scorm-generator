@@ -364,6 +364,12 @@ model Lesson {
   schemaVersion String      @default("0.1.0")
   // Chiave S3 della narrazione audio generata (TTS). URL firmato risolto a lettura.
   narrationKey  String?
+  // Impronta degli INPUT con cui i contenuti (blocks) sono stati generati
+  // (formato, obiettivi, taglio, tono, fonti, versione prompt). Serve a rilevare
+  // quando i contenuti sono OBSOLETI rispetto agli input correnti (lezione "da
+  // rigenerare"). Nullable: i corsi storici / lezioni mai generate restano in
+  // stato "ignoto" (nessun falso allarme).
+  contentInputHash String?
   // Formato didattico della lezione (fonte di verità per-lezione):
   // 'pillola' | 'video_first' | 'standard'. Nullable per i corsi storici, in cui
   // va derivato dai flag videoFirst/pillola (lessonFormatFromFlags).

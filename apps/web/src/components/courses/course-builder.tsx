@@ -1012,7 +1012,17 @@ function LessonCard({
   if (editableLessons) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-4 py-2">
-        <span className="text-sm font-medium">{lesson.title}</span>
+        <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
+          <span className="truncate">{lesson.title}</span>
+          {lesson.contentStale && (
+            <span
+              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+              title="Il formato o altri parametri sono cambiati dopo la generazione: rigenera i contenuti per applicarli."
+            >
+              Da rigenerare
+            </span>
+          )}
+        </span>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="Formato didattico della lezione">
             <span className="sr-only">Formato della lezione {lesson.title}</span>
@@ -1034,6 +1044,21 @@ function LessonCard({
               <option value="pillola_interattiva">Pillola interattiva</option>
             </select>
           </label>
+          {/* Rigenera i contenuti della lezione col formato/parametri CORRENTI.
+              Visibile solo se la lezione ha già contenuti (altrimenti si genera
+              dallo step Contenuti). Sovrascrive i block esistenti. */}
+          {lesson.blocks.length > 0 && (
+            <Button
+              size="sm"
+              variant={lesson.contentStale ? 'default' : 'outline'}
+              disabled={generating}
+              onClick={handleGenerate}
+              title="Rigenera i contenuti di questa lezione con il formato e i parametri correnti (sovrascrive i contenuti attuali)"
+            >
+              <Wand2 className="size-4" />
+              {generating ? 'Rigenero…' : 'Rigenera'}
+            </Button>
+          )}
           <StatusControls
             status={lesson.status}
             onChange={(s) => setStatus.mutate({ entity: 'lesson', entityId: lesson.id, status: s })}
@@ -1100,7 +1125,15 @@ function LessonCard({
             </span>
           );
         })()}
-        {blockCount > 0 && (
+        {blockCount > 0 && lesson.contentStale && (
+          <span
+            className="hidden items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 sm:inline-flex"
+            title="Il formato o altri parametri sono cambiati dopo la generazione: rigenera i contenuti per applicarli."
+          >
+            Da rigenerare
+          </span>
+        )}
+        {blockCount > 0 && !lesson.contentStale && (
           <span className="hidden items-center gap-1 text-xs text-emerald-600 sm:flex" aria-hidden>
             <span className="inline-block size-1.5 rounded-full bg-emerald-500" /> pronta
           </span>

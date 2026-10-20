@@ -8,6 +8,9 @@ import {
   CONTRACTS_VERSION,
   LessonFormat,
   lessonFlagsFromFormat,
+  resolveLessonLayout,
+  lessonContentInputHash,
+  lessonContentStale,
   type LessonFormat as LessonFormatType,
   type Block as BlockType,
   type Question as QuestionType,
@@ -58,7 +61,13 @@ export class ModulesService {
   }
 
   async listModules(tenantId: string, courseId: string) {
-    await this.requireCourse(tenantId, courseId);
+    const course = await this.requireCourse(tenantId, courseId);
+    // Input del brief che concorrono all'impronta di generazione dei contenuti.
+    const brief = (course.brief ?? {}) as {
+      courseFocus?: string | null;
+      tone?: string | null;
+      knowledgeDocIds?: string[];
+    };
     const modules = await this.prisma.module.findMany({
       where: { courseId },
       orderBy: { position: 'asc' },
@@ -79,6 +88,32 @@ export class ModulesService {
         if (Array.isArray(l.blocks)) {
           await this.signMediaUrls(l.blocks as unknown[]);
         }
+        // Stato "da rigenerare": confronta l'impronta salvata (contentInputHash)
+        // con quella CORRENTE (formato lezione + obiettivi + taglio/tono/fonti
+        // del brief + versione prompt). Solo se la lezione HA contenuti e
+        // un'impronta salvata (stato noto): i contenuti pre-impronta restano
+        // "ignoti" (nessun falso allarme).
+        const lessonAny = l as typeof l & {
+          format?: string | null;
+          videoFirst?: boolean;
+          pillola?: boolean;
+          objectives?: unknown;
+          contentInputHash?: string | null;
+          contentStale?: boolean;
+        };
+        const hasBlocks = Array.isArray(l.blocks) && (l.blocks as unknown[]).length > 0;
+        const currentHash = lessonContentInputHash({
+          format: resolveLessonLayout({
+            format: lessonAny.format,
+            videoFirst: lessonAny.videoFirst,
+            pillola: lessonAny.pillola,
+          }),
+          objectives: Array.isArray(lessonAny.objectives) ? (lessonAny.objectives as string[]) : [],
+          courseFocus: brief.courseFocus,
+          tone: brief.tone,
+          knowledgeDocIds: brief.knowledgeDocIds,
+        });
+        lessonAny.contentStale = hasBlocks && lessonContentStale(lessonAny.contentInputHash, currentHash);
         // Risolve la narrazione audio (chiave S3) in URL firmato per il player.
         const lessonWithAudio = l as typeof l & { narrationKey?: string | null; narrationUrl?: string };
         if (lessonWithAudio.narrationKey) {
