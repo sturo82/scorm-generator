@@ -14,23 +14,47 @@ import { COMPOSITION_ID } from './Root.js';
 import type { RenderPillolaInput, RenderPillolaResult } from './render.js';
 
 /**
+ * Flag: le env REMOTION_AWS_* in uso sono state popolate DA NOI dal ruolo IAM
+ * (credenziali temporanee STS) e non fornite dall'esterno. Serve a distinguere
+ * le chiavi STATICHE di sviluppo (da lasciare intatte) dalle temporanee (da
+ * rinfrescare a ogni render, perché scadono).
+ */
+let remotionCredsManagedByUs = false;
+
+/**
  * Remotion Lambda NON usa la default credential chain dell'AWS SDK: cerca le env
  * REMOTION_AWS_ACCESS_KEY_ID/SECRET(/SESSION_TOKEN). In produzione l'API gira con
- * un RUOLO IAM (App Runner instance role), senza chiavi statiche. Qui risolviamo
- * le credenziali temporanee dal ruolo (default chain) e le esponiamo come env
- * REMOTION_AWS_* appena prima della chiamata: così Remotion usa il ruolo, senza
- * chiavi lunghe nel repo. Idempotente/best-effort: se non riesce, lascia che
- * Remotion provi comunque (utile in locale con AWS_* già impostate).
+ * un RUOLO IAM (App Runner instance role), senza chiavi statiche: le credenziali
+ * sono TEMPORANEE (STS) e scadono (~1h). Per questo le RI-RISOLVIAMO dal provider
+ * a OGNI render e sovrascriviamo le env: `defaultProvider()` fa caching interno e
+ * le rinnova quando stanno per scadere, evitando l'errore "token expired" sui
+ * render successivi al primo.
+ *
+ * Caso sviluppo: se all'avvio esistono già env REMOTION_AWS_* fornite
+ * dall'ESTERNO (chiavi statiche IAM), le lasciamo intatte e non le tocchiamo.
+ * Best-effort: se la risoluzione fallisce, si lascia ciò che c'è.
  */
 async function ensureRemotionCredentials(): Promise<void> {
-  if (process.env['REMOTION_AWS_ACCESS_KEY_ID'] && process.env['REMOTION_AWS_SECRET_ACCESS_KEY']) return;
+  // Chiavi statiche fornite dall'esterno (non da noi): rispettale e non toccarle.
+  const hasEnv =
+    !!process.env['REMOTION_AWS_ACCESS_KEY_ID'] && !!process.env['REMOTION_AWS_SECRET_ACCESS_KEY'];
+  if (hasEnv && !remotionCredsManagedByUs) return;
+
   try {
+    // defaultProvider() memorizza e rinnova le credenziali temporanee vicino alla
+    // scadenza: chiamarlo a ogni render garantisce un token valido.
     const creds = await defaultProvider()();
     process.env['REMOTION_AWS_ACCESS_KEY_ID'] = creds.accessKeyId;
     process.env['REMOTION_AWS_SECRET_ACCESS_KEY'] = creds.secretAccessKey;
-    if (creds.sessionToken) process.env['REMOTION_AWS_SESSION_TOKEN'] = creds.sessionToken;
+    if (creds.sessionToken) {
+      process.env['REMOTION_AWS_SESSION_TOKEN'] = creds.sessionToken;
+    } else {
+      // Credenziali senza session token (statiche assunte dal ruolo?): niente stale.
+      delete process.env['REMOTION_AWS_SESSION_TOKEN'];
+    }
+    remotionCredsManagedByUs = true;
   } catch {
-    // best-effort: in locale potrebbero esserci già le env.
+    // best-effort: in locale potrebbero esserci già le env statiche.
   }
 }
 
