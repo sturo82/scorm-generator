@@ -382,7 +382,11 @@ function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: Medi
   if (isVideo && mediaSrc) {
     stageChildren.push(
       h('video', {
-        class: 'block-media scenario-video',
+        // NB: niente class 'block-media': quella regola globale (per immagini
+        // inline nel testo) impone height:auto + max-width/height e impedirebbe
+        // al video di riempire lo stage (apparirebbe piccolo). Lo .scenario-video
+        // ha il suo CSS (absolute inset:0, 100%).
+        class: 'scenario-video',
         src: mediaSrc,
         // Controlli nativi (play/pause/seek/volume): standard e accessibili.
         // Il pulsante fullscreen NATIVO è nascosto via CSS (controlsList +
@@ -420,7 +424,7 @@ function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: Medi
     );
   } else if (mediaSrc) {
     stageChildren.push(
-      h('img', { class: 'block-media scenario-image', src: mediaSrc, alt: String(media?.alt || ''), loading: 'lazy' }),
+      h('img', { class: 'scenario-image', src: mediaSrc, alt: String(media?.alt || ''), loading: 'lazy' }),
     );
   }
 

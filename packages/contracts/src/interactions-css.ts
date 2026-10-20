@@ -343,7 +343,10 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
    in position:absolute inset:0, riempie lo stage con object-fit:contain. */
 .scenario-stage:fullscreen { width: 100vw; height: 100vh; max-width: none; max-height: none; aspect-ratio: auto; border-radius: 0; }
 .scenario-stage:-webkit-full-screen { width: 100vw; height: 100vh; max-width: none; max-height: none; border-radius: 0; }
-.scenario-video, .scenario-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+/* Vista normale: lo stage e il video sono entrambi 16:9, quindi 'cover' riempie
+   il box senza tagliare nulla e senza bande nere. In fullscreen si passa a
+   'contain' (vedi sotto) perché lo schermo può non essere 16:9. */
+.scenario-video, .scenario-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
 /* Nasconde il pulsante fullscreen NATIVO del video (WebKit/Blink): usiamo il
    nostro, che fa fullscreen dello stage con gli overlay. */
 .scenario-video::-webkit-media-controls-fullscreen-button { display: none; }
@@ -360,9 +363,10 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
 .scenario-choices--overlay::-webkit-scrollbar { width: 6px; }
 .scenario-choices--overlay::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.35); border-radius: 999px; }
 /* In fullscreen il video riempie l'intero viewport mantenendo il rapporto
-   (contain): dimensioni ancorate a 100vw/100vh, non alla box 16:9 dello stage. */
-.scenario-stage:fullscreen .scenario-video, .scenario-stage:fullscreen .scenario-image { width: 100vw; height: 100vh; }
-.scenario-stage:-webkit-full-screen .scenario-video, .scenario-stage:-webkit-full-screen .scenario-image { width: 100vw; height: 100vh; }
+   (contain, così non si taglia su schermi non-16:9): dimensioni ancorate a
+   100vw/100vh, non alla box 16:9 dello stage. */
+.scenario-stage:fullscreen .scenario-video, .scenario-stage:fullscreen .scenario-image { width: 100vw; height: 100vh; object-fit: contain; }
+.scenario-stage:-webkit-full-screen .scenario-video, .scenario-stage:-webkit-full-screen .scenario-image { width: 100vw; height: 100vh; object-fit: contain; }
 .scenario-stage:fullscreen .scenario-overlay { padding: clamp(1rem, 3vh, 2rem) clamp(1rem, 6vw, 4rem); }
 .scenario-stage:fullscreen .scenario-choices--overlay { max-height: min(50vh, 22rem); }
 .scenario-choice { display: block; width: 100%; flex: 0 0 auto; text-align: left; padding: 0.6rem 0.9rem; border: 1px solid rgba(255,255,255,0.35); border-radius: 12px; background: rgba(17,24,39,0.72); color: #fff; backdrop-filter: blur(4px); font-size: clamp(0.9rem, 1.6vw, 1.05rem); line-height: 1.3; cursor: pointer; transition: border-color var(--mo-dur) var(--mo-ease), background var(--mo-dur) var(--mo-ease), transform var(--mo-dur) var(--mo-ease); }
