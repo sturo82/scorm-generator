@@ -252,7 +252,8 @@ export function lessonPillolePrompt(input: {
   const lang = languageName(input.language);
   const parts = [
     languageDirective(input.language),
-    `Genera UNA "pillola" di micro-learning in ${lang}: veloce, sintetica, UN SOLO concetto, 2-4 minuti.`,
+    `Genera UNA "pillola" in ${lang}: un VIDEO-LEZIONE illustrato (cartoon) di 3-5 minuti su UN SOLO argomento, `
+      + 'che spiega il tema per intero, con accanto un breve takeaway e una verifica leggera.',
     `Corso: ${input.courseTitle}`,
     `Modulo: ${input.moduleTitle}`,
     `Pillola (lezione): ${input.lessonTitle}`,
@@ -262,41 +263,35 @@ export function lessonPillolePrompt(input: {
       : '',
     input.toneInstruction ? `Indicazione aggiuntiva: ${input.toneInstruction}` : '',
     '',
-    'La pillola è una SEQUENZA di block piatti (NON un libro-game, NON un branching_scenario). '
-      + 'Produci i block NELL\'ORDINE qui sotto, uno per ciascuna fase. Resta su UN SOLO concetto: '
-      + 'la pillola spiega/risolve una cosa sola, in modo essenziale.',
+    'La pillola È UN VIDEO-LEZIONE: un unico video cartoon (explainer illustrato) che spiega da solo '
+      + 'l\'intero argomento, della durata di qualche minuto. NON è un hook breve + testo: è il video a '
+      + 'fare la lezione, dall\'inizio alla fine. Resta su UN SOLO argomento, ma trattalo per intero.',
     '',
     'STRUTTURA OBBLIGATORIA (in questo ordine):',
     '',
-    '1) HOOK & OBIETTIVO — UN block "video_checkpoint" come PRIMO block. È un mini-video (cartoon '
-      + 'code-to-video) breve che aggancia con il problema o la promessa di apprendimento. Payload: '
-      + `{ video: { kind: "video", alt: "<descrizione breve in ${lang}>", placeholderPrompt: "<STORYBOARD del mini-cartoon: soggetto/personaggio, azione, ambientazione, 1 sola idea, stile explainer illustrato, in ${lang}>" }, checkpoints: [], sections: [] }. `
+    '1) VIDEO-LEZIONE — UN block "video_checkpoint" come PRIMO e PRINCIPALE block. È il video cartoon '
+      + '(code-to-video) che insegna l\'argomento completo (introduzione, spiegazione col "perché", esempi '
+      + 'concreti/casi d\'uso aziendali, chiusura col punto chiave). Payload: '
+      + `{ video: { kind: "video", alt: "<descrizione breve in ${lang}>", placeholderPrompt: "<STORYBOARD ESTESO del video-lezione: l'ARGOMENTO completo da spiegare, il protagonista/contesto aziendale coerente, i passaggi logici dall'introduzione alla conclusione, in ${lang}. Descrivi COSA deve insegnare il video, non una singola scena: sarà sviluppato in più scene.>" }, checkpoints: [], sections: [] }. `
       + 'NON inventare storageKey/URL: il video è un SEGNAPOSTO che verrà prodotto a parte dallo storyboard. '
-      + 'Lascia sections VUOTO (l\'hook è solo il video). UN SOLO video in tutta la pillola: è l\'unico costo video.',
+      + 'Lascia sections e checkpoints VUOTI. Lo storyboard deve essere RICCO e descrivere l\'intera lezione, '
+      + 'perché da esso verrà generato un copione narrato di 3-5 minuti con più scene illustrate.',
     '',
-    '2) CONCETTO CORE — UN block "rich_text" (80-140 parole) che spiega il concetto in modo ultra-sintetico: '
-      + 'il "cosa" e il "perché", con un elenco puntato dei punti chiave e i termini importanti in grassetto. '
-      + 'Aggiungi UN media immagine a supporto: '
-      + `media: [{ kind: "image", alt: "<descrizione in ${lang}>", placeholderPrompt: "<scena da illustrare, senza testo nell'immagine, in ${lang}>" }]. `
-      + 'Resta su un solo concetto/step: niente digressioni.',
+    '2) TAKEAWAY — UN block "rich_text" BREVE (40-70 parole): il concetto chiave da ricordare dopo il video, '
+      + 'con 1-3 bullet "da portare a casa". È l\'unico contenuto testuale, a corredo del video.',
     '',
-    '3) MICRO-RICHIAMO (retrieval distribuito, LEGGERO) — UN block "flashcard" con UNA sola card: '
-      + 'sul fronte una domanda-lampo sul concetto appena spiegato, sul retro la risposta sintetica. '
-      + 'Serve a fissare subito l\'idea (richiamo attivo nel mezzo, non solo alla fine). Tienilo leggero.',
-    '',
-    '4) CHECKPOINT — UN block interattivo LEGGERO di verifica, a scelta tra "flashcard" (2-3 card domanda/risposta) '
-      + 'oppure "dragdrop_match" semplice (2-3 abbinamenti) oppure "sorting_categories" con 2 categorie. '
-      + 'Verifica il concetto spiegato; NON introdurre nozioni nuove. Niente quiz pesante.',
-    '',
-    '5) TAKEAWAY — UN block "rich_text" BREVE (40-70 parole): il concetto chiave da ricordare, '
-      + 'idealmente con 1-3 bullet "da portare a casa". Chiude la pillola.',
+    '3) CHECKPOINT (opzionale ma consigliato) — UN block interattivo LEGGERO di verifica, a scelta tra '
+      + '"flashcard" (2-3 card domanda/risposta) oppure "dragdrop_match" semplice (2-3 abbinamenti). '
+      + 'Verifica ciò che il video ha spiegato; NON introdurre nozioni nuove.',
     '',
     'REGOLE:',
     `- Scrivi TUTTO in ${lang} (testi, alt, placeholderPrompt, domande/risposte).`,
-    '- ESATTAMENTE 5 block nell\'ordine indicato: video_checkpoint (hook), rich_text (core), flashcard (micro-richiamo), un interattivo leggero (checkpoint), rich_text (takeaway).',
-    '- UN SOLO block video (l\'hook). NON generare altri video: per il resto usa testo e immagini (costo basso).',
+    '- Il PRIMO block è SEMPRE il video_checkpoint (il video-lezione). Poi il takeaway, poi al più un checkpoint leggero.',
+    '- UN SOLO block video: è la lezione. NON generare altri video.',
+    '- Lo storyboard (placeholderPrompt del video) descrive l\'INTERA lezione da insegnare, non una singola scena: '
+      + 'è il materiale da cui si genera il copione multi-scena. Più è completo e concreto, migliore è il video.',
     '- I media sono SEMPRE segnaposto descrittivi (alt + placeholderPrompt), MAI URL o storageKey reali.',
-    '- Tono diretto e pratico: la pillola fa "sapere fare subito", non è una lezione lunga.',
+    '- Tono professionale ed enterprise, chiaro e concreto, per un pubblico aziendale adulto.',
     '',
     input.context,
   ];
@@ -487,7 +482,10 @@ export function videoSpecPrompt(input: {
   /** Palette e sfondo suggeriti dal brand, se disponibili. */
   palette?: string[];
   bg?: string;
+  /** Video-lezione multi-scena (il video È la lezione, qualche minuto). */
+  multiScene?: boolean;
 }): string {
+  if (input.multiScene) return videoSpecLongFormPrompt(input);
   const lang = languageName(input.language);
   const palette = input.palette && input.palette.length > 0 ? input.palette : ['#0ea5e9', '#22c55e', '#f59e0b', '#111827'];
   const bg = input.bg ?? '#f8fafc';
@@ -533,6 +531,71 @@ export function videoSpecPrompt(input: {
     '- Ancora l\'entrata dei layer alle PAROLE del voiceover: "enter": { "at": { "word": N }, "anim": "fadeUp"|"popIn"|"slideIn"|"none", "ms": 400 }.',
     '- Mantieni "durationHint": "auto" (la durata segue il voiceover).',
     '- NON usare componenti fuori dalla lista. NON inventare campi non previsti. Restituisci SOLO il JSON.',
+  ];
+  return parts.filter((p) => p !== '').join('\n');
+}
+
+/**
+ * Prompt per un VIDEO-LEZIONE multi-scena (il video È la lezione, 3-5 minuti):
+ * UN voiceover unico e continuo (script completo che insegna l'argomento), e N
+ * scene (6-12) ciascuna con la propria ILLUSTRAZIONE e la FINESTRA DI PAROLE
+ * (`wordRange`) del voiceover che copre. La durata segue il voiceover; i
+ * sottotitoli karaoke scorrono per tutta la durata.
+ */
+function videoSpecLongFormPrompt(input: {
+  scenePrompt: string;
+  language: string;
+  palette?: string[];
+  bg?: string;
+}): string {
+  const lang = languageName(input.language);
+  const palette = input.palette && input.palette.length > 0 ? input.palette : ['#1e3a5f', '#2563eb', '#0ea5e9', '#111827'];
+  const bg = input.bg ?? '#f4f6fb';
+  const parts = [
+    languageDirective(input.language),
+    `Progetta un VIDEO-LEZIONE ILLUSTRATO completo (stile explainer professionale), in ${lang}. ` +
+      'Questo video È la lezione intera: deve SPIEGARE l\'argomento in modo autosufficiente, non essere un semplice aggancio.',
+    `ARGOMENTO/STORYBOARD della lezione: ${input.scenePrompt}`,
+    '',
+    'DURATA: il video dura 3-5 minuti. Il "voiceover.text" è UN UNICO copione continuo e discorsivo che insegna ' +
+      `l'argomento dall'inizio alla fine (indicativamente 450-750 parole in ${lang}): introduzione, spiegazione dei ` +
+      'concetti con il "perché", esempi concreti/casi d\'uso, e una chiusura con il punto chiave. Tono professionale ' +
+      'ed enterprise, chiaro e concreto, adatto a un pubblico aziendale adulto.',
+    '',
+    'SCENE: suddividi il video in 6-12 SCENE, una per ogni passaggio logico del copione. Ogni scena ha la PROPRIA ' +
+      'illustrazione e copre una PORZIONE del voiceover, indicata dal campo "wordRange" (indici di PAROLA del ' +
+      'voiceover globale, 0-based, "end" ESCLUSIVO). Le finestre devono essere CONTIGUE e coprire tutte le parole: ' +
+      'scena 1 da 0, l\'ultima arriva fino al totale delle parole. Conta le parole del voiceover per assegnarle.',
+    '',
+    'Restituisci ESCLUSIVAMENTE un JSON conforme allo schema VideoSpec:',
+    '{',
+    '  "version": 1,',
+    '  "canvas": { "width": 1920, "height": 1080, "fps": 30 },',
+    `  "theme": { "palette": ${JSON.stringify(palette)}, "bg": ${JSON.stringify(bg)}, "fontFamily": "Inter" },`,
+    `  "voiceover": { "text": "<COPIONE COMPLETO continuo in ${lang}, 450-750 parole, che spiega tutta la lezione>", "lang": "${input.language}" },`,
+    '  "scenes": [',
+    '    {',
+    '      "id": "<slug-scena>",',
+    '      "wordRange": { "start": <indice prima parola>, "end": <indice dopo l\'ultima parola di questa scena> },',
+    `      "illustration": { "prompt": "<illustrazione della scena in INGLESE: soggetto/personaggio coerente, azione, ambientazione aziendale>", "kenBurns": "in"|"out"|"left"|"right" },`,
+    '      "layers": [ /* opzionale: UN "LowerThird" col titolo della sezione */ ]',
+    '    }',
+    '    /* … altre scene, wordRange contigui che coprono tutto il voiceover … */',
+    '  ]',
+    '}',
+    '',
+    'REGOLE ILLUSTRAZIONI:',
+    '- Ogni scena ha SEMPRE un "illustration" con "prompt" in INGLESE, conciso e concreto.',
+    '- PERSONAGGIO/AMBIENTAZIONE COERENTI tra le scene (stesso protagonista e stile), così il video sembra un unico racconto.',
+    '- Il soggetto combacia col voiceover di QUELLA scena (persona, azione, luogo). Ambientazioni business credibili (ufficio moderno, laptop, dashboard).',
+    '- NON includere testo/scritte nell\'immagine.',
+    '',
+    'REGOLE GENERALI:',
+    `- Scrivi voiceover e testi dei layer in ${lang}; SOLO i prompt delle illustrazioni in INGLESE.`,
+    '- "wordRange" di scene consecutive: l\'"end" di una scena è lo "start" della successiva (contigui, nessun buco, nessuna sovrapposizione).',
+    '- Layer opzionali: al più un "LowerThird" per scena col titolo della sezione. Usa "BulletList"/"ChainDiagram"/"IconStat"/"ArrowFlow" SOLO se la scena mostra davvero dati/elenchi/processi.',
+    '- I sottotitoli karaoke (Caption) sono aggiunti automaticamente: NON serve inserirli.',
+    '- NON usare componenti fuori dalla whitelist. NON inventare campi. Restituisci SOLO il JSON.',
   ];
   return parts.filter((p) => p !== '').join('\n');
 }

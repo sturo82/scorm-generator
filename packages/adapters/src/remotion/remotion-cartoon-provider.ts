@@ -14,8 +14,11 @@ import type { VideoSpec, WordMark } from '@scorm/contracts';
  * un look "cartoon explainer" coerente tra le scene (stile Brain Bites).
  */
 const ILLUSTRATION_STYLE_SUFFIX =
-  ', flat 2D cartoon illustration, clean vector style, bold simple shapes, soft warm colors, ' +
-  'friendly character design, minimal background, no text, high quality, consistent style';
+  ', modern corporate flat vector illustration, clean professional editorial style, ' +
+  'refined muted palette (deep blues, teal, slate grey, subtle accents), ' +
+  'polished business characters (adults, smart professional attire), contemporary office setting, ' +
+  'crisp geometric shapes, soft depth, tasteful, enterprise explainer look, ' +
+  'no text, no childish or cartoonish faces, high quality, consistent style';
 
 /**
  * Funzione che genera il VideoSpec dallo storyboard di una scena. Iniettata
@@ -25,6 +28,8 @@ const ILLUSTRATION_STYLE_SUFFIX =
 export type GenerateSpecFn = (input: {
   scenePrompt: string;
   language: string;
+  /** true = video-lezione multi-scena (voiceover esteso); false = clip breve. */
+  multiScene?: boolean;
 }) => Promise<{ spec: VideoSpec; usage?: { inputTokens: number; outputTokens: number }; model?: string }>;
 
 /**
@@ -123,7 +128,11 @@ export class RemotionCartoonProvider implements TextToVideoProvider {
   private async run(jobRef: string, input: GenerateCartoonInput): Promise<void> {
     try {
       const language = input.language ?? 'it';
-      const { spec } = await this.generateSpec({ scenePrompt: input.prompt, language });
+      const { spec } = await this.generateSpec({
+        scenePrompt: input.prompt,
+        language,
+        multiScene: input.multiScene,
+      });
       // Stile B: genera le illustrazioni delle scene (Bedrock) e popola src.
       await this.resolveIllustrations(spec);
       const tts = await this.speech.synthesizeWithMarks!({

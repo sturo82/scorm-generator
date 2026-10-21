@@ -40,6 +40,13 @@ export interface GenerateVideoSpecInput {
   language: string;
   palette?: string[];
   bg?: string;
+  /**
+   * Video-LEZIONE multi-scena: se true, genera uno spec di PIÙ scene con
+   * voiceover esteso (il video È la lezione) e NON lo collassa in una scena
+   * sola. Se false/assente, resta il clip breve mono-scena (comportamento
+   * classico di scenari e hook).
+   */
+  multiScene?: boolean;
 }
 
 export interface GenerateVideoSpecResult {
@@ -61,6 +68,11 @@ export async function generateVideoSpec(
 ): Promise<GenerateVideoSpecResult> {
   const prompt = videoSpecPrompt(input);
   const schema = videoSpecJsonSchema as Record<string, unknown>;
+  // Video-lezione multi-scena: NON collassare (serve il multi-scena) e dare più
+  // token (lo spec con N scene + voiceover esteso è molto più grande).
+  const multi = input.multiScene === true;
+  const normalize = (spec: VideoSpecType): VideoSpecType => (multi ? spec : collapseToSingleScene(spec));
+  const maxTokens = multi ? 12000 : 4000;
 
   // Tentativo 1.
   const first = await llm.generate({
@@ -68,11 +80,11 @@ export async function generateVideoSpec(
     messages: [{ role: 'user', content: prompt }],
     schema,
     temperature: 0.4,
-    maxTokens: 4000,
+    maxTokens,
   });
   const parsed1 = tryParse(first.text);
   if (parsed1.success) {
-    return { spec: collapseToSingleScene(parsed1.data), usage: first.usage, model: first.model };
+    return { spec: normalize(parsed1.data), usage: first.usage, model: first.model };
   }
 
   // Tentativo 2 (self-repair): rimanda l'output errato + il motivo.
@@ -91,13 +103,13 @@ export async function generateVideoSpec(
     ],
     schema,
     temperature: 0.2,
-    maxTokens: 4000,
+    maxTokens,
   });
   const parsed2 = tryParse(repair.text);
   if (parsed2.success) {
     // Somma i token dei due tentativi per un metering onesto.
     return {
-      spec: collapseToSingleScene(parsed2.data),
+      spec: normalize(parsed2.data),
       usage: {
         inputTokens: first.usage.inputTokens + repair.usage.inputTokens,
         outputTokens: first.usage.outputTokens + repair.usage.outputTokens,

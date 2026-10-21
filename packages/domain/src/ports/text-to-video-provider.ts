@@ -30,6 +30,12 @@ export interface GenerateCartoonInput {
    * d'ambiente). Se assente, il provider usa il proprio default.
    */
   speechEngine?: 'standard' | 'neural';
+  /**
+   * Video-LEZIONE multi-scena: se true, il generatore produce un cartoon di PIÙ
+   * scene con voiceover esteso (il video È la lezione, qualche minuto). Se
+   * false/assente, produce un clip breve mono-scena (comportamento classico).
+   */
+  multiScene?: boolean;
 }
 
 /** Esito del recupero di un job di generazione cartoon asincrono. */

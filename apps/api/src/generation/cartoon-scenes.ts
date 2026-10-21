@@ -27,6 +27,13 @@ export interface CartoonScene {
   prompt: string;
   /** Riferimento VIVO al MediaRef video (mutare qui scrive nel JSON dei block). */
   media: CartoonMedia;
+  /**
+   * Video-LEZIONE multi-scena: true quando questa scena è un intero video che
+   * spiega la lezione (pillola lineare: il video_checkpoint È la lezione), così
+   * il generatore produce un cartoon di più scene con voiceover esteso invece di
+   * un singolo clip breve. False/assente = clip mono-scena (scenari, hook).
+   */
+  multiScene?: boolean;
 }
 
 type BlockLike = { id?: unknown; type?: string; payload?: unknown };
@@ -51,9 +58,14 @@ export function collectCartoonScenes(
   blocks: unknown[],
   blockId?: string,
   sceneId?: string,
+  lessonFormat?: string,
 ): CartoonScene[] {
   const list = (Array.isArray(blocks) ? blocks : []) as BlockLike[];
   const out: CartoonScene[] = [];
+  // Video-lezione multi-scena: SOLO il video_checkpoint di una lezione "pillola"
+  // lineare, che è l'intero video che spiega la lezione. Gli scenari e gli altri
+  // video restano clip mono-scena.
+  const pillolaLesson = lessonFormat === 'pillola' || lessonFormat === 'pillole';
   for (const b of list) {
     const bid = typeof b?.id === 'string' ? b.id : '';
     if (!bid) continue;
@@ -80,7 +92,7 @@ export function collectCartoonScenes(
       if (String(media.kind) !== 'video') continue;
       payload.video = media;
       b.payload = payload;
-      out.push({ blockId: bid, sceneId: bid, prompt: scenePrompt(media), media });
+      out.push({ blockId: bid, sceneId: bid, prompt: scenePrompt(media), media, multiScene: pillolaLesson });
     }
   }
   return out;

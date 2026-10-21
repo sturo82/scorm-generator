@@ -153,4 +153,19 @@ describe('video-spec-timing', () => {
     expect(all[1]!.startFrame).toBe(30); // inizia dove finisce la prima
     expect(all[1]!.endFrame).toBe(90);
   });
+
+  it('computeAllSceneBounds: multi-scena con wordRange → ogni scena copre la sua finestra di parole', () => {
+    const scenes = [
+      { id: 'a', wordRange: { start: 0, end: 2 }, layers: [] }, // parole 0..1: 0→1000ms
+      { id: 'b', wordRange: { start: 2, end: 3 }, layers: [] }, // parola 2: 1000→2000ms (ultima)
+    ] as unknown as Scene[];
+    const all = computeAllSceneBounds(scenes, WORDS, 30);
+    // Scena A: da start parola 0 (0ms=frame 0) a fine parola 1 (1000ms=frame 30).
+    expect(all[0]!.startFrame).toBe(0);
+    expect(all[0]!.endFrame).toBe(30);
+    // Scena B (ultima): da 1000ms (frame 30) estesa a fine audio 2000ms + coda 600 = 2600ms = 78 frame.
+    expect(all[1]!.startFrame).toBe(30);
+    expect(all[1]!.endFrame).toBe(78);
+    // Le scene NON si sommano: la fine della B coincide con la fine reale del voiceover.
+  });
 });

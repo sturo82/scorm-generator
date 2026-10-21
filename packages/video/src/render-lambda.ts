@@ -105,7 +105,10 @@ export async function renderPillolaOnLambda(
   });
 
   const pollInterval = opts.pollIntervalMs ?? 2000;
-  const deadline = Date.now() + (opts.timeoutMs ?? 10 * 60_000);
+  // Deadline ampio: un video-lezione di 3-5 min (molti frame + molte scene) può
+  // richiedere più del clip breve. Remotion distribuisce il render su più
+  // invocazioni, ma l'orchestrazione deve attendere abbastanza a lungo.
+  const deadline = Date.now() + (opts.timeoutMs ?? 20 * 60_000);
   for (;;) {
     if (Date.now() > deadline) throw new Error('Render Lambda: timeout');
     const progress = await getRenderProgress({ renderId, bucketName, functionName: opts.functionName, region });

@@ -87,8 +87,39 @@ export function computeSceneBounds(
 }
 
 /**
- * Calcola i confini di TUTTE le scene in sequenza: ogni scena inizia dove
- * finisce la precedente. Ritorna un array parallelo a `scenes`.
+ * Confini di una scena MULTI-SCENA ancorati a una FINESTRA di parole del
+ * voiceover globale: la scena va dall'inizio della parola `start` alla fine
+ * della parola `end-1`. Gli indici fuori range sono clampati. Così, con un
+ * UNICO voiceover condiviso, le scene NON si sommano: ognuna copre esattamente
+ * la sua porzione di parlato e resta allineata all'audio.
+ */
+function boundsFromWordRange(
+  range: { start: number; end: number },
+  words: WordMark[],
+  fps: number,
+  fallbackMs: number,
+): SceneBounds {
+  if (words.length === 0) {
+    const length = Math.max(1, msToFrame(fallbackMs, fps));
+    return { startFrame: 0, endFrame: length, length };
+  }
+  const start = Math.max(0, Math.min(range.start, words.length - 1));
+  const endIdx = Math.max(start, Math.min(range.end - 1, words.length - 1));
+  const startMs = words[start]!.startMs;
+  const endMs = words[endIdx]!.endMs;
+  const startFrame = Math.max(0, msToFrame(startMs, fps));
+  const endFrame = Math.max(startFrame + 1, msToFrame(endMs, fps));
+  return { startFrame, endFrame, length: endFrame - startFrame };
+}
+
+/**
+ * Calcola i confini di TUTTE le scene. Due modelli:
+ *  - MULTI-SCENA (scene con `wordRange`): ogni scena è ancorata alla sua
+ *    finestra di parole nel voiceover UNICO; l'ultima estende l'endFrame con
+ *    una coda così l'audio finale non viene troncato.
+ *  - SEQUENZIALE classico (nessun `wordRange`): ogni scena inizia dove finisce
+ *    la precedente, durata da `durationHint`/'auto' (clip autonome, compat.).
+ * Ritorna un array parallelo a `scenes`.
  */
 export function computeAllSceneBounds(
   scenes: Scene[],
@@ -96,6 +127,22 @@ export function computeAllSceneBounds(
   fps: number,
   fallbackMs = 3000,
 ): SceneBounds[] {
+  const usesWordRanges = scenes.some((s) => s.wordRange);
+  if (usesWordRanges) {
+    const tailFrames = msToFrame(TAIL_MS, fps);
+    const lastWordEndFrame = words.length > 0 ? msToFrame(words[words.length - 1]!.endMs, fps) + tailFrames : 0;
+    return scenes.map((scene, i) => {
+      // Scene senza wordRange in un video multi-scena: le distribuiamo in modo
+      // uniforme come fallback (raro: l'LLM dovrebbe sempre fornirle).
+      const range = scene.wordRange ?? { start: 0, end: Math.max(1, words.length) };
+      const b = boundsFromWordRange(range, words, fps, fallbackMs);
+      // L'ultima scena si estende fino alla fine reale dell'audio + coda.
+      if (i === scenes.length - 1 && lastWordEndFrame > b.endFrame) {
+        return { startFrame: b.startFrame, endFrame: lastWordEndFrame, length: lastWordEndFrame - b.startFrame };
+      }
+      return b;
+    });
+  }
   const out: SceneBounds[] = [];
   let cursor = 0;
   for (const scene of scenes) {

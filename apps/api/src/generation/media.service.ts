@@ -1641,11 +1641,13 @@ export class MediaService implements OnModuleInit {
     );
     const lesson = await this.requireLesson(tenantId, courseId, lessonId);
     const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as unknown[]) : [];
+    const lessonFormat = (lesson as { format?: string } | null)?.format;
 
     // Scene cartoon della lezione (riferimenti vivi al MediaRef), da qualunque
     // tipo di block: branching_scenario (una per node) e video_checkpoint (una
-    // per block). Se blockId/sceneId sono dati, limita l'ambito.
-    const allScenes = collectCartoonScenes(blocks, blockId, sceneId);
+    // per block). Se blockId/sceneId sono dati, limita l'ambito. Il formato
+    // lezione decide se il video_checkpoint è un video-LEZIONE multi-scena.
+    const allScenes = collectCartoonScenes(blocks, blockId, sceneId, lessonFormat);
 
     // Scene candidate: media VIDEO ancora SENZA file (placeholder) e non già in
     // elaborazione con un job attivo. Una scena 'processing' SENZA jobRef è
@@ -1676,7 +1678,7 @@ export class MediaService implements OnModuleInit {
     }
     const toStart = candidates
       .slice(0, room)
-      .map((s) => ({ blockId: s.blockId, sceneId: s.sceneId, prompt: s.prompt }))
+      .map((s) => ({ blockId: s.blockId, sceneId: s.sceneId, prompt: s.prompt, multiScene: s.multiScene === true }))
       .filter((s) => s.prompt.length > 0);
 
     if (toStart.length === 0) {
@@ -1733,12 +1735,12 @@ export class MediaService implements OnModuleInit {
       durationSec: number;
       speechEngine?: 'standard' | 'neural';
     },
-    scenes: Array<{ blockId: string; sceneId: string; prompt: string }>,
+    scenes: Array<{ blockId: string; sceneId: string; prompt: string; multiScene?: boolean }>,
   ): Promise<void> {
     if (!this.cartoonGen) return;
     for (const s of scenes) {
       const ctx = { ...base, blockId: s.blockId, sceneId: s.sceneId };
-      const jobRef = await this.startCartoonJobWithRetry(s.prompt, base).catch((err) => {
+      const jobRef = await this.startCartoonJobWithRetry(s.prompt, base, s.multiScene === true).catch((err) => {
         this.logger.warn(`Avvio cartoon scena ${s.sceneId} fallito: ${rawVideoGenError(err)}`);
         return null;
       });
@@ -1761,6 +1763,7 @@ export class MediaService implements OnModuleInit {
   private async startCartoonJobWithRetry(
     prompt: string,
     opts: { language?: string; durationSec: number; speechEngine?: 'standard' | 'neural' },
+    multiScene = false,
   ): Promise<string> {
     let lastErr: unknown;
     for (let attempt = 0; attempt < CARTOON_START_MAX_ATTEMPTS; attempt++) {
@@ -1771,6 +1774,7 @@ export class MediaService implements OnModuleInit {
           language: opts.language,
           aspectRatio: '16:9',
           speechEngine: opts.speechEngine,
+          multiScene,
         });
         return jobRef;
       } catch (err) {

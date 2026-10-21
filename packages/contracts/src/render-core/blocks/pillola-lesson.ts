@@ -36,23 +36,33 @@ function cardKind(type: string): 'content' | 'action' {
  */
 export function renderPillolaLesson(blocks: BlockLike[], ctx: RenderContext): VNode {
   const L = blockLabels(ctx);
-  const cards: VChild[] = blocks.map((b, i) => {
+  const children: VChild[] = [];
+  blocks.forEach((b, i) => {
+    // VIDEO-LEZIONE: se il PRIMO block è un video_checkpoint, è il video che È
+    // la lezione → va reso come HERO a piena larghezza (protagonista), non come
+    // una card tra le altre. I block successivi (takeaway, verifica) restano card.
+    if (i === 0 && b.type === 'video_checkpoint') {
+      children.push(h('div', { class: 'pillola-hero', 'data-block-index': '0' }, [renderBlock(b, ctx)]));
+      return;
+    }
     const kind = cardKind(b.type);
     const label = kind === 'action' ? L.tabActivities : L.tabContent;
-    return h(
-      'section',
-      {
-        class: `pillola-card pillola-card--${kind}`,
-        'data-block-kind': kind,
-        'data-block-index': String(i),
-      },
-      [
-        h('div', { class: 'pillola-card-head' }, [
-          h('span', { class: 'pillola-card-badge' }, [label]),
-        ]),
-        h('div', { class: 'pillola-card-body' }, [renderBlock(b, ctx)]),
-      ],
+    children.push(
+      h(
+        'section',
+        {
+          class: `pillola-card pillola-card--${kind}`,
+          'data-block-kind': kind,
+          'data-block-index': String(i),
+        },
+        [
+          h('div', { class: 'pillola-card-head' }, [
+            h('span', { class: 'pillola-card-badge' }, [label]),
+          ]),
+          h('div', { class: 'pillola-card-body' }, [renderBlock(b, ctx)]),
+        ],
+      ),
     );
   });
-  return h('div', { class: 'lesson-pillola' }, cards);
+  return h('div', { class: 'lesson-pillola' }, children);
 }

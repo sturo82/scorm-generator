@@ -539,6 +539,10 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
    con etichetta di ruolo e stile diverso per CONTENUTO vs AZIONI.
    ========================================================================== */
 [data-motion] .lesson-pillola { display: flex; flex-direction: column; gap: 1.1rem; }
+/* VIDEO-LEZIONE: il video_checkpoint in testa è il PROTAGONISTA, a piena
+   larghezza e senza il chrome della card. Il suo player ha già il 16:9. */
+[data-motion] .lesson-pillola .pillola-hero { width: 100%; }
+[data-motion] .lesson-pillola .pillola-hero > .block { margin: 0; }
 [data-motion] .lesson-pillola .pillola-card {
   border: 1px solid var(--ix-border);
   border-radius: calc(var(--ix-radius) + 2px);

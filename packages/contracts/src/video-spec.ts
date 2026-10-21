@@ -108,6 +108,15 @@ export const Scene = z.object({
   background: SceneBackground.optional(),
   illustration: SceneIllustration.optional(),
   layers: z.array(Layer).default([]),
+  /**
+   * Finestra di PAROLE del voiceover GLOBALE coperta da questa scena, per i
+   * video MULTI-SCENA con un unico voiceover: `start`/`end` sono indici di
+   * parola (0-based, `end` esclusivo). La durata della scena va dall'inizio
+   * della parola `start` alla fine della parola `end-1`. Se assente, la scena
+   * usa `durationHint` (compat. col vecchio modello "una scena = tutto il
+   * voiceover"). L'LLM lo valorizza suddividendo il voiceover tra le scene.
+   */
+  wordRange: z.object({ start: z.number().int().nonnegative(), end: z.number().int().positive() }).optional(),
 });
 export type Scene = z.infer<typeof Scene>;
 
