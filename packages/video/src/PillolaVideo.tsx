@@ -79,14 +79,29 @@ const SceneView: React.FC<{
             exitAnim={layer.exit?.anim}
             exitMs={layer.exit?.ms}
           >
-            <Comp {...layer.props} words={words} fps={fps} />
+            <Comp
+              {...layer.props}
+              words={words}
+              fps={fps}
+              sceneStartFrame={bounds.startFrame}
+              wordStart={scene.wordRange?.start}
+              wordEnd={scene.wordRange?.end}
+            />
           </AnimatedLayer>
         );
       })}
       {/* Scena illustrata senza un layer Caption esplicito: aggiungiamo noi i
-          sottotitoli karaoke, così la voce è sempre accompagnata dal testo. */}
+          sottotitoli karaoke, così la voce è sempre accompagnata dal testo. Il
+          frame assoluto (sceneStartFrame) e la finestra di parole della scena
+          servono a sincronizzare il karaoke col voiceover GLOBALE. */}
       {hasIllustration && !scene.layers.some((l) => l.component === 'Caption') && (
-        <Caption words={words} fps={fps} />
+        <Caption
+          words={words}
+          fps={fps}
+          sceneStartFrame={bounds.startFrame}
+          wordStart={scene.wordRange?.start}
+          wordEnd={scene.wordRange?.end}
+        />
       )}
     </AbsoluteFill>
   );

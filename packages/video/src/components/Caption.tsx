@@ -10,15 +10,27 @@ import type { ComponentProps } from '../types.js';
 export const Caption: React.FC<ComponentProps> = (props) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const words = Array.isArray(props.words) ? props.words : [];
-  const nowMs = (frame / fps) * 1000;
+  const allWords = Array.isArray(props.words) ? props.words : [];
+  // Dentro una <Sequence> il frame di Remotion riparte da 0: sommiamo l'offset
+  // assoluto della scena per confrontarci coi word-marks GLOBALI del voiceover.
+  const sceneStartFrame = typeof props.sceneStartFrame === 'number' ? props.sceneStartFrame : 0;
+  const nowMs = ((frame + sceneStartFrame) / fps) * 1000;
 
-  if (words.length === 0) {
+  if (allWords.length === 0) {
     const text = String(props.text ?? '');
     return <CaptionBox>{text}</CaptionBox>;
   }
 
-  // Indice della parola attiva: l'ultima il cui startMs <= nowMs < endMs.
+  // Multi-scena: mostra SOLO le parole di questa scena (finestra wordRange),
+  // ma l'indice attivo si calcola sul tempo assoluto. Offset della finestra.
+  const hasRange = typeof props.wordStart === 'number' && typeof props.wordEnd === 'number';
+  const winStart = hasRange ? Math.max(0, props.wordStart as number) : 0;
+  const winEnd = hasRange ? Math.min(allWords.length, props.wordEnd as number) : allWords.length;
+  const words = allWords.slice(winStart, winEnd);
+  if (words.length === 0) return <CaptionBox>{''}</CaptionBox>;
+
+  // Indice della parola attiva (relativo alla finestra della scena): l'ultima il
+  // cui startMs <= nowMs. Clamp agli estremi della finestra.
   let activeIdx = -1;
   for (let i = 0; i < words.length; i++) {
     if (words[i]!.startMs <= nowMs && nowMs < words[i]!.endMs) {
