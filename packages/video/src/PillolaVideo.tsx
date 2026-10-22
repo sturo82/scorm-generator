@@ -11,6 +11,7 @@ import { REGISTRY } from './registry.js';
 import { AnimatedLayer } from './AnimatedLayer.js';
 import { IllustratedBackground } from './components/IllustratedBackground.js';
 import { Caption } from './components/Caption.js';
+import { SceneTitleCard } from './components/SceneTitleCard.js';
 
 /**
  * Composition root del cartoon pillola: interpreta un VideoSpec + audio del
@@ -25,15 +26,33 @@ export const PillolaVideo: React.FC<{
 }> = ({ spec, audioSrc, words }) => {
   const fps = spec.canvas.fps;
   const bounds = computeAllSceneBounds(spec.scenes, words, fps);
+  // Numero di scene con titolo: per numerare le schede di sezione (NN / MM).
+  const titledTotal = spec.scenes.filter((s) => s.title && s.wordRange).length;
 
   return (
     <AbsoluteFill style={{ backgroundColor: spec.theme.bg, fontFamily: spec.theme.fontFamily }}>
       {audioSrc && <Audio src={audioSrc} />}
       {spec.scenes.map((scene, si) => {
         const b = bounds[si]!;
+        // Scheda di sezione: la mostriamo nel "respiro" iniziale della scena
+        // (gap tra la fine del parlato della scena precedente e la prima parola
+        // di questa). Frame di hold = durata del gap, con minimo e massimo.
+        const holdFrames = titleHoldFrames(spec, scene, words, fps, si);
+        // Indice 1-based della scena TITOLATA (salta eventuali scene senza titolo).
+        const titledIndex =
+          spec.scenes.slice(0, si + 1).filter((s) => s.title && s.wordRange).length;
         return (
           <Sequence key={scene.id} from={b.startFrame} durationInFrames={b.length}>
-            <SceneView scene={scene} bounds={b} words={words} fps={fps} palette={spec.theme.palette} />
+            <SceneView
+              scene={scene}
+              bounds={b}
+              words={words}
+              fps={fps}
+              palette={spec.theme.palette}
+              titleHold={holdFrames}
+              titleIndex={titledIndex}
+              titleTotal={titledTotal}
+            />
           </Sequence>
         );
       })}
@@ -41,16 +60,48 @@ export const PillolaVideo: React.FC<{
   );
 };
 
+/**
+ * Durata (in frame) della scheda di sezione all'inizio di una scena: pari al
+ * "respiro" prima della prima parola della scena (gap dal parlato precedente),
+ * con un minimo leggibile e un massimo prudente. 0 se la scena non ha titolo o
+ * non ha una finestra di parole (niente scheda).
+ */
+function titleHoldFrames(
+  spec: VideoSpec,
+  scene: VideoSpec['scenes'][number],
+  words: WordMark[],
+  fps: number,
+  sceneIdx: number,
+): number {
+  if (!scene.title || !scene.wordRange || words.length === 0) return 0;
+  const firstIdx = Math.min(scene.wordRange.start, words.length - 1);
+  const firstWordMs = words[firstIdx]!.startMs;
+  // Fine del parlato precedente: endMs della parola prima dell'inizio scena.
+  const prevEndMs = firstIdx > 0 ? words[firstIdx - 1]!.endMs : 0;
+  const gapMs = Math.max(0, firstWordMs - prevEndMs);
+  // La prima scena non ha un parlato precedente: mostra comunque una breve intro.
+  const effectiveMs = sceneIdx === 0 ? Math.max(gapMs, 1200) : gapMs;
+  const MIN_MS = 700;
+  const MAX_MS = 2200;
+  const clamped = Math.max(MIN_MS, Math.min(MAX_MS, effectiveMs));
+  return Math.round((clamped / 1000) * fps);
+}
+
 const SceneView: React.FC<{
   scene: VideoSpec['scenes'][number];
   bounds: SceneBounds;
   words: WordMark[];
   fps: number;
   palette: string[];
-}> = ({ scene, bounds, words, fps, palette }) => {
+  titleHold?: number;
+  titleIndex?: number;
+  titleTotal?: number;
+}> = ({ scene, bounds, words, fps, palette, titleHold = 0, titleIndex, titleTotal }) => {
   const bg = scene.background?.color;
   // Colore "primario" del tema come currentColor dei componenti SVG/testo.
   const primary = palette[0] ?? '#111827';
+  const accent = palette[1] ?? palette[0] ?? '#2563eb';
+  const cardBg = palette[0] ?? '#0f172a';
   const illustration = scene.illustration;
   const hasIllustration = !!illustration?.src;
   return (
@@ -101,6 +152,18 @@ const SceneView: React.FC<{
           sceneStartFrame={bounds.startFrame}
           wordStart={scene.wordRange?.start}
           wordEnd={scene.wordRange?.end}
+        />
+      )}
+      {/* Scheda di SEZIONE enterprise: compare nel respiro iniziale della scena
+          (sopra tutto), per segnare il passaggio a un nuovo micro-argomento. */}
+      {scene.title && titleHold > 0 && (
+        <SceneTitleCard
+          title={scene.title}
+          holdFrames={titleHold}
+          bg={cardBg}
+          accent={accent}
+          index={titleIndex}
+          total={titleTotal}
         />
       )}
     </AbsoluteFill>

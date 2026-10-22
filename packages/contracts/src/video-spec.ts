@@ -117,6 +117,12 @@ export const Scene = z.object({
    * voiceover"). L'LLM lo valorizza suddividendo il voiceover tra le scene.
    */
   wordRange: z.object({ start: z.number().int().nonnegative(), end: z.number().int().positive() }).optional(),
+  /**
+   * Titolo del MICRO-ARGOMENTO della scena, mostrato in una breve "scheda di
+   * sezione" (title card) con una pausa all'inizio della scena nei video
+   * multi-scena. Dà respiro e segna lo stacco tra argomenti diversi.
+   */
+  title: z.string().optional(),
 });
 export type Scene = z.infer<typeof Scene>;
 

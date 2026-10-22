@@ -135,11 +135,14 @@ export class RemotionCartoonProvider implements TextToVideoProvider {
       });
       // Stile B: genera le illustrazioni delle scene (Bedrock) e popola src.
       await this.resolveIllustrations(spec);
-      const tts = await this.speech.synthesizeWithMarks!({
-        text: spec.voiceover.text,
-        language,
-        engine: input.speechEngine,
-      });
+      // Video-lezione multi-scena: costruisci l'SSML del voiceover con pause
+      // (break) ai confini di scena e dopo i punti, per dare respiro/intonazione.
+      // Clip mono-scena: testo semplice (comportamento invariato).
+      const useSsml = input.multiScene === true && spec.scenes.some((s) => s.wordRange);
+      const voiceInput = useSsml
+        ? { text: buildVoiceoverSsml(spec), language, engine: input.speechEngine, ssml: true }
+        : { text: spec.voiceover.text, language, engine: input.speechEngine };
+      const tts = await this.speech.synthesizeWithMarks!(voiceInput);
       const { bytes, durationSec } = await this.render({
         spec,
         audio: tts.bytes,
@@ -213,4 +216,45 @@ function describeError(err: unknown): string {
     return err.message;
   }
   return typeof err === 'string' ? err : 'errore sconosciuto';
+}
+
+/** Escape dei caratteri speciali XML per inserire testo sicuro nell'SSML. */
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * Costruisce l'SSML del voiceover di un video-lezione multi-scena per dare
+ * RESPIRO e INTONAZIONE: una pausa LUNGA ai confini di scena (stacco tra
+ * micro-argomenti) e una pausa BREVE dopo i punti fermi. Mantiene l'ordine e
+ * il numero delle parole invariati (i tag non sono parole), così i word-marks
+ * restano allineati con i wordRange usati dalla Caption.
+ *
+ * Nota: inseriamo i break ai CONFINI DI PAROLA usando i wordRange delle scene;
+ * un leggero <prosody rate="97%"> dà un ritmo più pacato e naturale.
+ */
+function buildVoiceoverSsml(spec: VideoSpec): string {
+  const text = spec.voiceover.text;
+  // Tokenizza il voiceover in parole (stessa nozione usata dai word-marks).
+  const words = text.split(/\s+/).filter((w) => w.length > 0);
+  // Indici di parola dove inizia una NUOVA scena (confini): inserisci break lì.
+  const sceneStarts = new Set<number>();
+  for (const s of spec.scenes) {
+    if (s.wordRange && s.wordRange.start > 0) sceneStarts.add(s.wordRange.start);
+  }
+  const parts: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    if (sceneStarts.has(i)) parts.push('<break time="900ms"/>');
+    parts.push(escapeXml(words[i]!));
+    // Pausa breve dopo punteggiatura forte di fine frase (respiro naturale).
+    if (/[.!?:]$/.test(words[i]!) && !sceneStarts.has(i + 1)) {
+      parts.push('<break time="350ms"/>');
+    }
+  }
+  return `<speak><prosody rate="97%">${parts.join(' ')}</prosody></speak>`;
 }

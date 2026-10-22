@@ -562,23 +562,29 @@ function videoSpecLongFormPrompt(input: {
       'concetti con il "perché", esempi concreti/casi d\'uso, e una chiusura con il punto chiave. Tono professionale ' +
       'ed enterprise, chiaro e concreto, adatto a un pubblico aziendale adulto.',
     '',
-    'SCENE: suddividi il video in 6-12 SCENE, una per ogni passaggio logico del copione. Ogni scena ha la PROPRIA ' +
-      'illustrazione e copre una PORZIONE del voiceover, indicata dal campo "wordRange" (indici di PAROLA del ' +
+    'SCENE: suddividi il video in 6-12 SCENE, una per ogni passaggio logico del copione. Ogni scena ha un "title" ' +
+      '(il MICRO-ARGOMENTO della scena, 2-5 parole: comparirà in una breve scheda di sezione prima della scena), la ' +
+      'PROPRIA illustrazione e copre una PORZIONE del voiceover, indicata dal campo "wordRange" (indici di PAROLA del ' +
       'voiceover globale, 0-based, "end" ESCLUSIVO). Le finestre devono essere CONTIGUE e coprire tutte le parole: ' +
       'scena 1 da 0, l\'ultima arriva fino al totale delle parole. Conta le parole del voiceover per assegnarle.',
+    '',
+    `VOICEOVER ben scandito: scrivi frasi COMPLETE con punteggiatura chiara (punti, virgole) in ${lang}. Ogni scena ` +
+      'tratta UN micro-argomento: separa gli argomenti con frasi nette (niente periodi infiniti), così la voce ' +
+      'può respirare e fare pause naturali tra un concetto e l\'altro.',
     '',
     'Restituisci ESCLUSIVAMENTE un JSON conforme allo schema VideoSpec:',
     '{',
     '  "version": 1,',
     '  "canvas": { "width": 1920, "height": 1080, "fps": 30 },',
     `  "theme": { "palette": ${JSON.stringify(palette)}, "bg": ${JSON.stringify(bg)}, "fontFamily": "Inter" },`,
-    `  "voiceover": { "text": "<COPIONE COMPLETO continuo in ${lang}, 450-750 parole, che spiega tutta la lezione>", "lang": "${input.language}" },`,
+    `  "voiceover": { "text": "<COPIONE COMPLETO continuo in ${lang}, 450-750 parole, frasi ben scandite, che spiega tutta la lezione>", "lang": "${input.language}" },`,
     '  "scenes": [',
     '    {',
     '      "id": "<slug-scena>",',
+    `      "title": "<MICRO-ARGOMENTO della scena in ${lang}, 2-5 parole>",`,
     '      "wordRange": { "start": <indice prima parola>, "end": <indice dopo l\'ultima parola di questa scena> },',
     `      "illustration": { "prompt": "<illustrazione della scena in INGLESE: soggetto/personaggio coerente, azione, ambientazione aziendale>", "kenBurns": "in"|"out"|"left"|"right" },`,
-    '      "layers": [ /* opzionale: UN "LowerThird" col titolo della sezione */ ]',
+    '      "layers": [ ]',
     '    }',
     '    /* … altre scene, wordRange contigui che coprono tutto il voiceover … */',
     '  ]',
@@ -591,7 +597,8 @@ function videoSpecLongFormPrompt(input: {
     '- NON includere testo/scritte nell\'immagine.',
     '',
     'REGOLE GENERALI:',
-    `- Scrivi voiceover e testi dei layer in ${lang}; SOLO i prompt delle illustrazioni in INGLESE.`,
+    `- Scrivi voiceover, "title" delle scene e testi dei layer in ${lang}; SOLO i prompt delle illustrazioni in INGLESE.`,
+    '- Ogni scena ha SEMPRE un "title" breve (2-5 parole) col micro-argomento: è la scheda di sezione mostrata prima della scena.',
     '- "wordRange" di scene consecutive: l\'"end" di una scena è lo "start" della successiva (contigui, nessun buco, nessuna sovrapposizione).',
     '- Layer opzionali: al più un "LowerThird" per scena col titolo della sezione. Usa "BulletList"/"ChainDiagram"/"IconStat"/"ArrowFlow" SOLO se la scena mostra davvero dati/elenchi/processi.',
     '- I sottotitoli karaoke (Caption) sono aggiunti automaticamente: NON serve inserirli.',

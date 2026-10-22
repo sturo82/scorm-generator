@@ -19,6 +19,13 @@ export interface SpeechSynthesizeInput {
    * neural della stessa persona, riscalati sulla durata reale dell'audio.
    */
   engine?: 'standard' | 'neural' | 'generative';
+  /**
+   * Se true, `text` è markup SSML (racchiuso in <speak>…</speak>): il provider
+   * lo passa a Polly come TextType=ssml. Permette pause (<break>) e intonazione
+   * (<prosody>) per un parlato con respiro. I word-marks restano coerenti (le
+   * pause spostano i tempi); i token-tag vengono scartati dal parser.
+   */
+  ssml?: boolean;
 }
 
 export interface SpeechSynthesizeResult {

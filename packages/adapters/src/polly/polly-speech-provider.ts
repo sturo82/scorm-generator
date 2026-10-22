@@ -78,6 +78,7 @@ export class PollySpeechProvider implements SpeechProvider {
       response = await this.client.send(
         new SynthesizeSpeechCommand({
           Text: input.text,
+          TextType: input.ssml ? 'ssml' : undefined,
           OutputFormat: 'mp3',
           VoiceId: voice as never,
           Engine: engine,
@@ -112,12 +113,15 @@ export class PollySpeechProvider implements SpeechProvider {
    */
   async synthesizeWithMarks(input: SpeechSynthesizeInput): Promise<SpeechSynthesizeWithMarksResult> {
     const voice = input.voice ?? this.voiceForLanguage(input.language) ?? this.defaultVoice;
-    const engine: Engine = input.engine ?? this.engine;
-    const chunks = splitTextForTts(input.text, MAX_TTS_CHARS);
+    const engine: Engine = (input.engine as Engine) ?? this.engine;
+    const ssml = input.ssml === true;
+    // Chunking: SSML si spezza ai confini di <break> (ogni chunk resta un
+    // documento <speak> valido); testo semplice ai confini di frase.
+    const chunks = ssml ? splitSsmlForTts(input.text, MAX_TTS_CHARS) : splitTextForTts(input.text, MAX_TTS_CHARS);
 
     // Caso comune (testo breve): una sola chiamata, nessun offset. Veloce.
     if (chunks.length <= 1) {
-      const only = await this.synthesizeChunk(input.text, voice, engine);
+      const only = await this.synthesizeChunk(input.text, voice, engine, ssml);
       return {
         bytes: only.audio,
         contentType: 'audio/mpeg',
@@ -138,7 +142,7 @@ export class PollySpeechProvider implements SpeechProvider {
     let offsetMs = 0;
     let reportedEngine: 'standard' | 'neural' | 'generative' = 'neural';
     for (const chunk of chunks) {
-      const res = await this.synthesizeChunk(chunk, voice, engine);
+      const res = await this.synthesizeChunk(chunk, voice, engine, ssml);
       reportedEngine = res.reportedEngine;
       audioParts.push(res.audio);
       for (const m of res.marks) {
@@ -176,12 +180,14 @@ export class PollySpeechProvider implements SpeechProvider {
     text: string,
     voice: string,
     engine: Engine,
+    ssml = false,
   ): Promise<{ audio: Buffer; marks: SpeechWordMark[]; reportedEngine: 'standard' | 'neural' | 'generative' }> {
+    const textType = ssml ? ('ssml' as const) : undefined;
     let effectiveEngine: Engine = engine;
     let audioResponse;
     try {
       audioResponse = await this.client.send(
-        new SynthesizeSpeechCommand({ Text: text, OutputFormat: 'mp3', VoiceId: voice as never, Engine: engine }),
+        new SynthesizeSpeechCommand({ Text: text, TextType: textType, OutputFormat: 'mp3', VoiceId: voice as never, Engine: engine }),
       );
     } catch (err) {
       // Fallback difensivo: se la voce non supporta 'generative' (dipende dalla
@@ -190,7 +196,7 @@ export class PollySpeechProvider implements SpeechProvider {
         effectiveEngine = 'neural' as Engine;
         try {
           audioResponse = await this.client.send(
-            new SynthesizeSpeechCommand({ Text: text, OutputFormat: 'mp3', VoiceId: voice as never, Engine: effectiveEngine }),
+            new SynthesizeSpeechCommand({ Text: text, TextType: textType, OutputFormat: 'mp3', VoiceId: voice as never, Engine: effectiveEngine }),
           );
         } catch (err2) {
           throw new ProviderUnavailableError('polly', err2);
@@ -207,6 +213,7 @@ export class PollySpeechProvider implements SpeechProvider {
       marksResponse = await this.client.send(
         new SynthesizeSpeechCommand({
           Text: text,
+          TextType: textType,
           OutputFormat: 'json',
           SpeechMarkTypes: ['word'],
           VoiceId: voice as never,
@@ -382,6 +389,9 @@ export function parsePollySpeechMarks(ndjson: string): SpeechWordMark[] {
     const time = typeof obj.time === 'number' ? obj.time : Number(obj.time);
     const value = typeof obj.value === 'string' ? obj.value : '';
     if (!Number.isFinite(time)) continue;
+    // Con SSML, Polly emette anche "word" per i TAG (es. value "<break …/>"):
+    // sono pause, non parole da mostrare nel karaoke → scartali.
+    if (value.startsWith('<') || value.trim().length === 0) continue;
     marks.push({ word: value, startMs: time, endMs: time });
   }
   // endMs = start della parola successiva (ultima parola: resta uguale a start).
@@ -389,4 +399,42 @@ export function parsePollySpeechMarks(ndjson: string): SpeechWordMark[] {
     marks[i]!.endMs = marks[i + 1]!.startMs;
   }
   return marks;
+}
+
+/**
+ * Spezza un documento SSML (<speak>…</speak>) in chunk <= maxChars, ciascuno
+ * un <speak> valido. Taglia ai confini dei tag <break …/> (pause naturali),
+ * mai dentro un altro tag. Robusto: se non trova punti di taglio sotto il
+ * limite, ritorna l'SSML intero (meglio una chiamata grande che un markup
+ * rotto). Funzione pura: testabile.
+ */
+export function splitSsmlForTts(ssml: string, maxChars = MAX_TTS_CHARS): string[] {
+  const trimmed = (ssml ?? '').trim();
+  if (trimmed.length === 0) return [];
+  if (trimmed.length <= maxChars) return [trimmed];
+
+  // Estrae il contenuto interno di <speak>…</speak> (se presente).
+  const open = trimmed.match(/^<speak[^>]*>/i);
+  const openTag = open ? open[0] : '<speak>';
+  const inner = trimmed
+    .replace(/^<speak[^>]*>/i, '')
+    .replace(/<\/speak>\s*$/i, '')
+    .trim();
+
+  // Segmenta ai confini dei <break .../> mantenendo il tag col segmento che lo precede.
+  const segments = inner.split(/(?<=<break\b[^>]*\/>)/i).filter((s) => s.trim().length > 0);
+  const wrap = (body: string): string => `${openTag}${body}</speak>`;
+  const chunks: string[] = [];
+  let current = '';
+  for (const seg of segments) {
+    // +15 circa per i tag <speak></speak> di wrapping.
+    if (current && wrap(current + seg).length > maxChars) {
+      chunks.push(wrap(current.trim()));
+      current = seg;
+    } else {
+      current += seg;
+    }
+  }
+  if (current.trim().length > 0) chunks.push(wrap(current.trim()));
+  return chunks.length > 0 ? chunks : [trimmed];
 }
