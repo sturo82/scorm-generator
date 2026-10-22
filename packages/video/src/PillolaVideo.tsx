@@ -79,10 +79,12 @@ function titleHoldFrames(
   // Fine del parlato precedente: endMs della parola prima dell'inizio scena.
   const prevEndMs = firstIdx > 0 ? words[firstIdx - 1]!.endMs : 0;
   const gapMs = Math.max(0, firstWordMs - prevEndMs);
-  // La prima scena non ha un parlato precedente: mostra comunque una breve intro.
-  const effectiveMs = sceneIdx === 0 ? Math.max(gapMs, 1200) : gapMs;
-  const MIN_MS = 700;
-  const MAX_MS = 2200;
+  // La scheda di sezione deve restare abbastanza a lungo da essere LETTA. Il gap
+  // audio ai confini di scena è ~2.5s (break SSML), ma garantiamo comunque una
+  // finestra leggibile. La prima scena non ha parlato precedente: intro piena.
+  const effectiveMs = sceneIdx === 0 ? Math.max(gapMs, 2500) : gapMs;
+  const MIN_MS = 2000;
+  const MAX_MS = 3500;
   const clamped = Math.max(MIN_MS, Math.min(MAX_MS, effectiveMs));
   return Math.round((clamped / 1000) * fps);
 }

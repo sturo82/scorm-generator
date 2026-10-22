@@ -249,7 +249,10 @@ function buildVoiceoverSsml(spec: VideoSpec): string {
   }
   const parts: string[] = [];
   for (let i = 0; i < words.length; i++) {
-    if (sceneStarts.has(i)) parts.push('<break time="900ms"/>');
+    // Pausa LUNGA ai confini di scena: dà tempo alla "scheda di sezione" di
+    // essere letta (la card dura quanto questo silenzio) prima che riparta la
+    // voce. Deve stare allineata a SCENE_BREAK_MS del timing (video-spec-timing).
+    if (sceneStarts.has(i)) parts.push('<break time="2500ms"/>');
     parts.push(escapeXml(words[i]!));
     // Pausa breve dopo punteggiatura forte di fine frase (respiro naturale).
     if (/[.!?:]$/.test(words[i]!) && !sceneStarts.has(i + 1)) {
