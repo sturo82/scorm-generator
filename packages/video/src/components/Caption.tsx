@@ -29,28 +29,27 @@ export const Caption: React.FC<ComponentProps> = (props) => {
   }
   if (activeIdx < 0) activeIdx = 0;
 
-  // FINESTRA scorrevole: mostra solo alcune parole attorno a quella attiva,
-  // così il sottotitolo resta SEMPRE dentro il box (poche righe) invece di
-  // crescere con tutto il voiceover e sfondare il frame.
-  const WINDOW_BEFORE = 5;
-  const WINDOW_AFTER = 7;
-  const from = Math.max(0, activeIdx - WINDOW_BEFORE);
-  const to = Math.min(words.length, activeIdx + WINDOW_AFTER + 1);
-  const windowWords = words.slice(from, to);
+  // Raggruppa le parole in FRASI (chunk a lunghezza limitata, tagliati sulla
+  // punteggiatura). Il sottotitolo mostra UNA frase alla volta, FERMA: le
+  // parole non scorrono. Cambia blocco solo quando si passa alla frase
+  // successiva, e dentro la frase si sposta SOLO l'evidenziazione.
+  const groups = groupWordsIntoLines(words);
+  const activeGroup = groups.find((g) => activeIdx >= g.from && activeIdx < g.to) ?? groups[0]!;
 
   return (
     <CaptionBox>
-      {windowWords.map((w, i) => {
-        const globalIdx = from + i;
+      {words.slice(activeGroup.from, activeGroup.to).map((w, i) => {
+        const globalIdx = activeGroup.from + i;
         const isActive = globalIdx === activeIdx;
         return (
           <span
             key={globalIdx}
             style={{
-              opacity: isActive ? 1 : 0.55,
+              opacity: isActive ? 1 : 0.6,
               fontWeight: isActive ? 800 : 500,
+              color: isActive ? '#ffe27a' : '#fff',
               marginRight: 10,
-              transition: 'opacity 80ms linear',
+              transition: 'opacity 80ms linear, color 80ms linear',
             }}
           >
             {w.word}
@@ -60,6 +59,28 @@ export const Caption: React.FC<ComponentProps> = (props) => {
     </CaptionBox>
   );
 };
+
+/**
+ * Raggruppa le parole in "righe di sottotitolo" STABILI: una riga finisce su
+ * una parola con punteggiatura di chiusura (., !, ?, :, ;) oppure al più dopo
+ * MAX_WORDS parole. Così ogni riga sta nel box senza scorrere e cambia solo al
+ * passaggio alla riga successiva. Ritorna gli indici [from, to) di ogni gruppo.
+ */
+function groupWordsIntoLines(words: Array<{ word: string }>): Array<{ from: number; to: number }> {
+  const MAX_WORDS = 9;
+  const groups: Array<{ from: number; to: number }> = [];
+  let from = 0;
+  for (let i = 0; i < words.length; i++) {
+    const endsSentence = /[.!?:;]$/.test(words[i]!.word);
+    const reachedMax = i - from + 1 >= MAX_WORDS;
+    if (endsSentence || reachedMax || i === words.length - 1) {
+      groups.push({ from, to: i + 1 });
+      from = i + 1;
+    }
+  }
+  if (groups.length === 0) groups.push({ from: 0, to: words.length });
+  return groups;
+}
 
 const CaptionBox: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div

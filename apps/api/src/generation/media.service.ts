@@ -416,7 +416,7 @@ export class MediaService implements OnModuleInit {
     tenantId: string,
     courseId: string,
     lessonId: string,
-    engineOverride?: 'standard' | 'neural',
+    engineOverride?: 'standard' | 'neural' | 'generative',
   ): Promise<GenerateNarrationResult> {
     const lesson = await this.requireLesson(tenantId, courseId, lessonId);
     const course = await this.prisma.course.findFirst({ where: { id: courseId, tenantId } });
@@ -464,9 +464,9 @@ export class MediaService implements OnModuleInit {
   private resolveSpeechEngine(
     override?: string | null,
     coursePref?: string | null,
-  ): 'standard' | 'neural' {
-    const valid = (v?: string | null): 'standard' | 'neural' | undefined =>
-      v === 'standard' || v === 'neural' ? v : undefined;
+  ): 'standard' | 'neural' | 'generative' {
+    const valid = (v?: string | null): 'standard' | 'neural' | 'generative' | undefined =>
+      v === 'standard' || v === 'neural' || v === 'generative' ? v : undefined;
     return (
       valid(override) ??
       valid(coursePref) ??
@@ -1733,7 +1733,7 @@ export class MediaService implements OnModuleInit {
       lessonId: string;
       language?: string;
       durationSec: number;
-      speechEngine?: 'standard' | 'neural';
+      speechEngine?: 'standard' | 'neural' | 'generative';
     },
     scenes: Array<{ blockId: string; sceneId: string; prompt: string; multiScene?: boolean }>,
   ): Promise<void> {
@@ -1762,7 +1762,7 @@ export class MediaService implements OnModuleInit {
    */
   private async startCartoonJobWithRetry(
     prompt: string,
-    opts: { language?: string; durationSec: number; speechEngine?: 'standard' | 'neural' },
+    opts: { language?: string; durationSec: number; speechEngine?: 'standard' | 'neural' | 'generative' },
     multiScene = false,
   ): Promise<string> {
     let lastErr: unknown;
@@ -1851,7 +1851,7 @@ export class MediaService implements OnModuleInit {
       lessonId: string;
       blockId: string;
       sceneId: string;
-      speechEngine?: 'standard' | 'neural';
+      speechEngine?: 'standard' | 'neural' | 'generative';
     },
     bytes: Uint8Array,
     contentType: string | undefined,

@@ -35,8 +35,8 @@ export interface CourseView {
   interactionStyle: InteractionStyle;
   /** Posizione del menu di navigazione: 'side' (default) | 'top'. */
   navPosition: 'side' | 'top';
-  /** Preferenza motore TTS della narrazione: 'standard' | 'neural' (assente = default ambiente). */
-  speechEngine?: 'standard' | 'neural';
+  /** Preferenza motore TTS: 'standard' | 'neural' | 'generative' (assente = default ambiente). */
+  speechEngine?: 'standard' | 'neural' | 'generative';
   /** Brand primario del corso (colori/logo/accenti). */
   primaryBrandId?: string;
   /** Docente/relatore del corso (nome, ruolo, URL foto firmato). */
@@ -129,7 +129,7 @@ export class CoursesService {
     settings: {
       interactionStyle?: InteractionStyle;
       navPosition?: 'side' | 'top';
-      speechEngine?: 'standard' | 'neural';
+      speechEngine?: 'standard' | 'neural' | 'generative';
       coverPosition?: number;
       primaryBrandId?: string | null;
       instructor?: { name?: string | null; role?: string | null; avatarKey?: string | null } | null;
@@ -325,7 +325,7 @@ export class CoursesService {
       interactionStyle: course.interactionStyle === 'lively' ? 'lively' : 'sober',
       navPosition: course.navPosition === 'top' ? 'top' : 'side',
       speechEngine:
-        course.speechEngine === 'standard' || course.speechEngine === 'neural'
+        course.speechEngine === 'standard' || course.speechEngine === 'neural' || course.speechEngine === 'generative'
           ? course.speechEngine
           : undefined,
       primaryBrandId: course.primaryBrandId ?? undefined,

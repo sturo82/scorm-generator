@@ -11,11 +11,14 @@ export interface SpeechSynthesizeInput {
   /** Voce specifica del provider (es. "Bianca"); prevale su language. */
   voice?: string;
   /**
-   * Motore di sintesi: 'standard' (economico) o 'neural' (qualità superiore, più
-   * costoso). Se assente, il provider usa il proprio default. Per-richiesta:
-   * consente di scegliere la qualità a livello di corso o di singola generazione.
+   * Motore di sintesi: 'standard' (economico), 'neural' (qualità superiore) o
+   * 'generative' (voce iper-realistica, quasi umana). Se assente, il provider
+   * usa il proprio default. Per-richiesta: consente di scegliere la qualità a
+   * livello di corso o di singola generazione. NB: l'engine 'generative' NON
+   * fornisce speech marks; per il karaoke il provider deriva i tempi dalla voce
+   * neural della stessa persona, riscalati sulla durata reale dell'audio.
    */
-  engine?: 'standard' | 'neural';
+  engine?: 'standard' | 'neural' | 'generative';
 }
 
 export interface SpeechSynthesizeResult {
@@ -26,7 +29,7 @@ export interface SpeechSynthesizeResult {
   /** Voce usata (per audit). */
   voice: string;
   /** Engine effettivamente usato (per audit/metering). */
-  engine?: 'standard' | 'neural';
+  engine?: 'standard' | 'neural' | 'generative';
 }
 
 /**

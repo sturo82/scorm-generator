@@ -29,7 +29,7 @@ export interface GenerateCartoonInput {
    * 'standard' (economico). Risolto a monte (preferenza del corso → default
    * d'ambiente). Se assente, il provider usa il proprio default.
    */
-  speechEngine?: 'standard' | 'neural';
+  speechEngine?: 'standard' | 'neural' | 'generative';
   /**
    * Video-LEZIONE multi-scena: se true, il generatore produce un cartoon di PIÙ
    * scene con voiceover esteso (il video È la lezione, qualche minuto). Se

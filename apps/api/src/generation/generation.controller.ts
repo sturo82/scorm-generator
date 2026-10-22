@@ -51,8 +51,8 @@ class GenerateNarrationDto {
    * default dell'ambiente.
    */
   @IsOptional()
-  @IsIn(['standard', 'neural'])
-  engine?: 'standard' | 'neural';
+  @IsIn(['standard', 'neural', 'generative'])
+  engine?: 'standard' | 'neural' | 'generative';
 }
 
 /** Opzioni per la generazione del video avatar di un concetto. */

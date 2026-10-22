@@ -54,7 +54,7 @@ export interface CourseView {
   /** Posizione del menu di navigazione: 'side' (default) | 'top'. */
   navPosition?: 'side' | 'top';
   /** Preferenza motore TTS narrazione: 'standard' | 'neural' (assente = default). */
-  speechEngine?: 'standard' | 'neural';
+  speechEngine?: 'standard' | 'neural' | 'generative';
   /** Brand primario del corso (colori/logo/accenti in anteprima + export). */
   primaryBrandId?: string;
   /** Docente/relatore del corso (header sempre visibile). */
@@ -429,7 +429,7 @@ export interface ApiClient {
     settings: {
       interactionStyle?: 'sober' | 'lively';
       navPosition?: 'side' | 'top';
-      speechEngine?: 'standard' | 'neural';
+      speechEngine?: 'standard' | 'neural' | 'generative';
       coverPosition?: number;
       primaryBrandId?: string;
       instructor?: { name?: string; role?: string; avatarKey?: string };

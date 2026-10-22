@@ -70,9 +70,8 @@ export class PollySpeechProvider implements SpeechProvider {
   async synthesize(input: SpeechSynthesizeInput): Promise<SpeechSynthesizeResult> {
     const voice = input.voice ?? this.voiceForLanguage(input.language) ?? this.defaultVoice;
     // Engine per-richiesta (scelta del corso/generazione) con fallback al default
-    // del provider. Le voci usate (Bianca, Joanna, Amy, Lucia, Lea, Vicki, Ines)
-    // supportano sia 'standard' sia 'neural' su Polly.
-    const engine: Engine = input.engine ?? this.engine;
+    // del provider: 'standard' | 'neural' | 'generative' (voce iper-realistica).
+    const engine: Engine = (input.engine as Engine) ?? this.engine;
 
     let response;
     try {
@@ -92,17 +91,11 @@ export class PollySpeechProvider implements SpeechProvider {
     if (!stream) throw new ProviderUnavailableError('polly', new Error('AudioStream vuoto'));
     const bytes = await (stream as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray();
 
-    // Riporta l'engine effettivo ai fini del metering. Il port espone solo le
-    // due classi di costo rilevanti ('standard'|'neural'); gli engine Polly più
-    // nuovi (generative/long-form) non sono usati qui, ma se lo fossero li
-    // riconduciamo a 'neural' (classe di costo premium) per sicurezza.
-    const reportedEngine: 'standard' | 'neural' = engine === 'standard' ? 'standard' : 'neural';
-
     return {
       bytes: Buffer.from(bytes),
       contentType: 'audio/mpeg',
       voice,
-      engine: reportedEngine,
+      engine: reportEngine(engine),
     };
   }
 
@@ -135,10 +128,15 @@ export class PollySpeechProvider implements SpeechProvider {
     }
 
     // Testo lungo: sintetizza ogni chunk e concatena audio + marks (offset).
+    // CRUCIALE per il sync: l'offset di ciascun chunk è la DURATA REALE dell'MP3
+    // dei chunk precedenti (sommando i frame MP3), NON una stima dai word-marks
+    // — l'ultima parola di ogni chunk ha endMs==startMs e stimare dall'ultimo
+    // mark lascia l'offset INDIETRO, ammassando tutte le parole all'inizio
+    // (il karaoke sembrerebbe "ripetere la prima parte").
     const audioParts: Buffer[] = [];
     const allMarks: SpeechWordMark[] = [];
     let offsetMs = 0;
-    let reportedEngine: 'standard' | 'neural' = 'neural';
+    let reportedEngine: 'standard' | 'neural' | 'generative' = 'neural';
     for (const chunk of chunks) {
       const res = await this.synthesizeChunk(chunk, voice, engine);
       reportedEngine = res.reportedEngine;
@@ -146,12 +144,9 @@ export class PollySpeechProvider implements SpeechProvider {
       for (const m of res.marks) {
         allMarks.push({ word: m.word, startMs: m.startMs + offsetMs, endMs: m.endMs + offsetMs });
       }
-      // Avanza l'offset della durata stimata di questo chunk: fine dell'ultima
-      // parola + una piccola coda (pausa di frase). Senza decodificare l'MP3,
-      // l'ultimo mark è la stima migliore della durata del chunk.
-      const lastMark = res.marks[res.marks.length - 1];
-      const chunkEndMs = lastMark ? Math.max(lastMark.startMs, lastMark.endMs) : 0;
-      offsetMs += chunkEndMs + CHUNK_GAP_MS;
+      // Durata reale dell'MP3 di questo chunk (dai frame): è quanto dura davvero
+      // l'audio, quindi l'offset del chunk successivo è esatto.
+      offsetMs += mp3DurationMs(res.audio);
     }
     // Ricalcola endMs come start della parola successiva (coerente con la
     // semantica di parsePollySpeechMarks), così il karaoke scorre senza buchi.
@@ -168,30 +163,54 @@ export class PollySpeechProvider implements SpeechProvider {
     };
   }
 
-  /** Sintesi di UN chunk: MP3 + word-marks, con una coppia di chiamate Polly. */
+  /**
+   * Sintesi di UN chunk: MP3 + word-marks.
+   * - standard/neural: audio e marks dallo stesso engine (word-marks nativi).
+   * - generative (voce iper-realistica): Polly NON fornisce speech marks per
+   *   questo engine. Quindi l'AUDIO è generative, ma i WORD-MARKS si derivano
+   *   dalla voce NEURAL della stessa persona e si RISCALANO linearmente sulla
+   *   durata reale dell'MP3 generative: il karaoke resta agganciato alla voce
+   *   vera (precisione molto alta, il ritmo neural↔generative è quasi identico).
+   */
   private async synthesizeChunk(
     text: string,
     voice: string,
     engine: Engine,
-  ): Promise<{ audio: Buffer; marks: SpeechWordMark[]; reportedEngine: 'standard' | 'neural' }> {
+  ): Promise<{ audio: Buffer; marks: SpeechWordMark[]; reportedEngine: 'standard' | 'neural' | 'generative' }> {
+    let effectiveEngine: Engine = engine;
     let audioResponse;
-    let marksResponse;
     try {
       audioResponse = await this.client.send(
-        new SynthesizeSpeechCommand({
-          Text: text,
-          OutputFormat: 'mp3',
-          VoiceId: voice as never,
-          Engine: engine,
-        }),
+        new SynthesizeSpeechCommand({ Text: text, OutputFormat: 'mp3', VoiceId: voice as never, Engine: engine }),
       );
+    } catch (err) {
+      // Fallback difensivo: se la voce non supporta 'generative' (dipende dalla
+      // lingua), ricade su 'neural' invece di fallire tutto il job.
+      if (engine === ('generative' as Engine)) {
+        effectiveEngine = 'neural' as Engine;
+        try {
+          audioResponse = await this.client.send(
+            new SynthesizeSpeechCommand({ Text: text, OutputFormat: 'mp3', VoiceId: voice as never, Engine: effectiveEngine }),
+          );
+        } catch (err2) {
+          throw new ProviderUnavailableError('polly', err2);
+        }
+      } else {
+        throw new ProviderUnavailableError('polly', err);
+      }
+    }
+    // Speech marks: 'generative' non li fornisce → sempre da 'neural'.
+    const isGenerative = effectiveEngine === ('generative' as Engine);
+    const marksEngine: Engine = isGenerative ? ('neural' as Engine) : effectiveEngine;
+    let marksResponse;
+    try {
       marksResponse = await this.client.send(
         new SynthesizeSpeechCommand({
           Text: text,
           OutputFormat: 'json',
           SpeechMarkTypes: ['word'],
           VoiceId: voice as never,
-          Engine: engine,
+          Engine: marksEngine,
         }),
       );
     } catch (err) {
@@ -201,14 +220,25 @@ export class PollySpeechProvider implements SpeechProvider {
     const audioStream = audioResponse.AudioStream;
     if (!audioStream) throw new ProviderUnavailableError('polly', new Error('AudioStream vuoto'));
     const audioBytes = await (audioStream as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray();
+    const audio = Buffer.from(audioBytes);
 
     const marksStream = marksResponse.AudioStream;
     if (!marksStream) throw new ProviderUnavailableError('polly', new Error('SpeechMarks vuoti'));
     const marksRaw = await (marksStream as { transformToByteArray(): Promise<Uint8Array> }).transformToByteArray();
-    const marks = parsePollySpeechMarks(Buffer.from(marksRaw).toString('utf8'));
+    let marks = parsePollySpeechMarks(Buffer.from(marksRaw).toString('utf8'));
 
-    const reportedEngine: 'standard' | 'neural' = engine === 'standard' ? 'standard' : 'neural';
-    return { audio: Buffer.from(audioBytes), marks, reportedEngine };
+    // Generative: riscala i marks (ricavati da neural) sulla durata REALE
+    // dell'audio generative, così l'ultima parola cade alla fine dell'audio vero.
+    if (isGenerative && marks.length > 0) {
+      const genMs = mp3DurationMs(audio);
+      const neuralEndMs = marks[marks.length - 1]!.startMs;
+      if (genMs > 0 && neuralEndMs > 0) {
+        const k = genMs / neuralEndMs;
+        marks = marks.map((m) => ({ word: m.word, startMs: Math.round(m.startMs * k), endMs: Math.round(m.endMs * k) }));
+      }
+    }
+
+    return { audio, marks, reportedEngine: reportEngine(effectiveEngine) };
   }
 
   private voiceForLanguage(language?: string): string | undefined {
@@ -223,8 +253,68 @@ export class PollySpeechProvider implements SpeechProvider {
  */
 export const MAX_TTS_CHARS = 2800;
 
-/** Coda (ms) aggiunta tra un chunk e il successivo (pausa naturale di frase). */
-const CHUNK_GAP_MS = 150;
+/** Engine effettivo per audit/metering (classi di costo rilevanti). */
+function reportEngine(engine: Engine): 'standard' | 'neural' | 'generative' {
+  if (engine === ('standard' as Engine)) return 'standard';
+  if (engine === ('generative' as Engine)) return 'generative';
+  return 'neural';
+}
+
+// Tabelle MPEG audio per il calcolo della durata reale di un MP3 (vedi mp3DurationMs).
+const MP3_BITRATES_V1_L3 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
+const MP3_BITRATES_V2_L3 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0];
+const MP3_SAMPLE_RATES: Record<number, number[]> = {
+  3: [44100, 48000, 32000], // MPEG1
+  2: [22050, 24000, 16000], // MPEG2
+  0: [11025, 12000, 8000], // MPEG2.5
+};
+
+/**
+ * Durata REALE (ms) di un buffer MP3, sommando la durata di ogni frame audio.
+ * Legge gli header dei frame MPEG (sync 0xFFE) e per ciascuno calcola
+ * campioni/bitrate; robusto a CBR e VBR, salta tag ID3v2 iniziali. Serve a
+ * offsettare con precisione i chunk concatenati del TTS (sync karaoke esatto).
+ * Se non riconosce frame validi, ritorna 0 (il chiamante non avanza l'offset).
+ */
+export function mp3DurationMs(buf: Buffer): number {
+  let i = 0;
+  // Salta un eventuale tag ID3v2 in testa: "ID3" + ver(2) + flags(1) + size(4, synchsafe).
+  if (buf.length > 10 && buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) {
+    const size = ((buf[6]! & 0x7f) << 21) | ((buf[7]! & 0x7f) << 14) | ((buf[8]! & 0x7f) << 7) | (buf[9]! & 0x7f);
+    i = 10 + size;
+  }
+  let durationMs = 0;
+  while (i + 4 <= buf.length) {
+    // Sync word: 11 bit a 1 (0xFF seguito da 0xE_).
+    if (buf[i] !== 0xff || (buf[i + 1]! & 0xe0) !== 0xe0) {
+      i += 1;
+      continue;
+    }
+    const verBits = (buf[i + 1]! >> 3) & 0x03; // 3=MPEG1, 2=MPEG2, 0=MPEG2.5
+    const layerBits = (buf[i + 1]! >> 1) & 0x03; // 1=Layer III
+    const bitrateIdx = (buf[i + 2]! >> 4) & 0x0f;
+    const sampleIdx = (buf[i + 2]! >> 2) & 0x03;
+    const padding = (buf[i + 2]! >> 1) & 0x01;
+    const rates = MP3_SAMPLE_RATES[verBits];
+    if (layerBits !== 1 || !rates || sampleIdx === 3 || bitrateIdx === 0 || bitrateIdx === 15) {
+      i += 1;
+      continue;
+    }
+    const sampleRate = rates[sampleIdx]!;
+    const bitrateKbps = (verBits === 3 ? MP3_BITRATES_V1_L3 : MP3_BITRATES_V2_L3)[bitrateIdx]!;
+    const bitrate = bitrateKbps * 1000;
+    // Campioni per frame: 1152 per MPEG1 L3, 576 per MPEG2/2.5 L3.
+    const samplesPerFrame = verBits === 3 ? 1152 : 576;
+    const frameLen = Math.floor((samplesPerFrame / 8 * bitrate) / sampleRate) + padding;
+    if (frameLen <= 0) {
+      i += 1;
+      continue;
+    }
+    durationMs += (samplesPerFrame / sampleRate) * 1000;
+    i += frameLen;
+  }
+  return Math.round(durationMs);
+}
 
 /**
  * Spezza un testo in chunk <= maxChars tagliando ai confini di FRASE (., !, ?,

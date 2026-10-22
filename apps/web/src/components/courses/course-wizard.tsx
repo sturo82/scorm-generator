@@ -178,12 +178,16 @@ export function CourseWizard({ courseId }: { courseId: string }) {
     }
   }
 
-  async function handleSetSpeechEngine(engine: 'standard' | 'neural') {
+  async function handleSetSpeechEngine(engine: 'standard' | 'neural' | 'generative') {
     if ((course.data?.speechEngine ?? 'neural') === engine) return;
     try {
       await updateSettings.mutateAsync({ speechEngine: engine });
       toast.show(
-        engine === 'neural' ? 'Voce neurale (qualità alta) applicata' : 'Voce standard (economica) applicata',
+        engine === 'generative'
+          ? 'Voce generativa (iper-realistica) applicata'
+          : engine === 'neural'
+            ? 'Voce neurale (qualità alta) applicata'
+            : 'Voce standard (economica) applicata',
         'success',
       );
     } catch {
@@ -808,13 +812,14 @@ function SpeechEnginePicker({
   onChange,
   saving,
 }: {
-  value: 'standard' | 'neural';
-  onChange: (engine: 'standard' | 'neural') => void;
+  value: 'standard' | 'neural' | 'generative';
+  onChange: (engine: 'standard' | 'neural' | 'generative') => void;
   saving?: boolean;
 }) {
-  const options: Array<{ id: 'standard' | 'neural'; title: string; desc: string }> = [
+  const options: Array<{ id: 'standard' | 'neural' | 'generative'; title: string; desc: string }> = [
     { id: 'standard', title: 'Standard', desc: 'Voce sintetica più semplice. Costo contenuto: ideale per bozze o grandi volumi.' },
     { id: 'neural', title: 'Neurale', desc: 'Voce molto più naturale e fluida. Costa circa 4× la standard. Consigliata per la pubblicazione.' },
+    { id: 'generative', title: 'Generativa', desc: 'Voce iper-realistica, quasi umana (massima qualità). Per i video-lezione i sottotitoli restano sincronizzati.' },
   ];
   return (
     <fieldset className="rounded-xl border bg-card p-4" disabled={saving}>
@@ -823,7 +828,7 @@ function SpeechEnginePicker({
         Qualità della voce per l&apos;audio generato dal testo delle lezioni. Puoi comunque
         scegliere un&apos;altra voce al momento di generare la singola narrazione.
       </p>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-3">
         {options.map((opt) => {
           const selected = value === opt.id;
           return (

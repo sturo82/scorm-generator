@@ -113,7 +113,7 @@ export class HttpApiClient implements ApiClient {
   saveBriefDraft(courseId: string, draft: BriefDraft) {
     return this.request<CourseView>(`/courses/${courseId}/brief/draft`, { method: 'PUT', body: JSON.stringify(draft) });
   }
-  updateCourseSettings(courseId: string, settings: { interactionStyle?: 'sober' | 'lively'; navPosition?: 'side' | 'top'; speechEngine?: 'standard' | 'neural'; coverPosition?: number; primaryBrandId?: string; instructor?: { name?: string; role?: string; avatarKey?: string } }) {
+  updateCourseSettings(courseId: string, settings: { interactionStyle?: 'sober' | 'lively'; navPosition?: 'side' | 'top'; speechEngine?: 'standard' | 'neural' | 'generative'; coverPosition?: number; primaryBrandId?: string; instructor?: { name?: string; role?: string; avatarKey?: string } }) {
     return this.request<CourseView>(`/courses/${courseId}/settings`, { method: 'PUT', body: JSON.stringify(settings) });
   }
   setCourseShareable(courseId: string, shareable: boolean) {
