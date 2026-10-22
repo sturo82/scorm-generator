@@ -133,7 +133,43 @@ jobs:
       - name: Deploy API (App Runner)
         env:
           API_ARN: ${{ vars.APPRUNNER_API_ARN }}
-        run: aws apprunner start-deployment --service-arn "$API_ARN"
+        run: |
+          set -euo pipefail
+          # App Runner NON consente operazioni concorrenti: se il servizio è in
+          # OPERATION_IN_PROGRESS (es. un deploy precedente ancora in corso),
+          # start-deployment fallisce con InvalidStateException. Attendiamo che
+          # torni RUNNING (o uno stato stabile) prima di avviare il deploy.
+          wait_stable() {
+            local tries=0
+            while true; do
+              STATUS=$(aws apprunner describe-service --service-arn "$API_ARN" --query 'Service.Status' --output text)
+              echo "App Runner status: $STATUS"
+              case "$STATUS" in
+                RUNNING) return 0 ;;
+                CREATE_FAILED|DELETE_FAILED|DELETED) echo "Stato non deployabile: $STATUS"; exit 1 ;;
+                *) : ;; # OPERATION_IN_PROGRESS o transitori: attendi
+              esac
+              tries=$((tries+1))
+              if [ "$tries" -gt 120 ]; then echo "Timeout attesa stato stabile"; exit 1; fi
+              sleep 10
+            done
+          }
+
+          wait_stable
+          echo "Avvio deployment…"
+          OP_ID=$(aws apprunner start-deployment --service-arn "$API_ARN" --query 'OperationId' --output text)
+          echo "OperationId: $OP_ID"
+
+          # Attendi il completamento del deploy: il servizio torna RUNNING.
+          tries=0
+          while true; do
+            STATUS=$(aws apprunner describe-service --service-arn "$API_ARN" --query 'Service.Status' --output text)
+            echo "Deploy in corso, status: $STATUS"
+            if [ "$STATUS" = "RUNNING" ]; then echo "Deploy completato"; break; fi
+            tries=$((tries+1))
+            if [ "$tries" -gt 120 ]; then echo "Timeout attesa completamento deploy"; exit 1; fi
+            sleep 10
+          done
 
       # --- Web: build statico, sync su S3, invalidazione CloudFront -----------
       - name: Setup Node for web build

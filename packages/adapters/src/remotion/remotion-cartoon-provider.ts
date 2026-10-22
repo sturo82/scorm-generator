@@ -256,5 +256,10 @@ function buildVoiceoverSsml(spec: VideoSpec): string {
       parts.push('<break time="350ms"/>');
     }
   }
-  return `<speak><prosody rate="97%">${parts.join(' ')}</prosody></speak>`;
+  // NB: niente <prosody> wrapper qui. Il voiceover lungo viene spezzato in più
+  // <speak> da splitSsmlForTts (al confine dei <break>): un tag <prosody> che
+  // avvolge tutto resterebbe aperto a cavallo dei chunk → "Invalid SSML
+  // request". Il respiro è dato dai soli <break>; l'intonazione la mette
+  // l'engine. Ogni chunk è così un <speak> autosufficiente e valido.
+  return `<speak>${parts.join(' ')}</speak>`;
 }
