@@ -55,7 +55,15 @@ jobs:
           key: npm-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             npm-${{ runner.os }}-
-      - run: npm ci
+      # sharp: il prebuilt è scaricato da GitHub releases, che può dare 504
+      # (interruzioni del CDN release). Forziamo la BUILD da sorgente contro il
+      # libvips di sistema (installato sopra) e usiamo un mirror per il tarball
+      # libvips: così npm ci NON dipende dagli asset GitHub di sharp.
+      - name: Install deps (npm ci, sharp from source)
+        env:
+          npm_config_build_from_source: 'true'
+          npm_config_sharp_libvips_binary_host: 'https://registry.npmmirror.com/-/binary/sharp-libvips'
+        run: npm ci
       - run: npx prisma generate --schema apps/api/prisma/schema.prisma
       - run: npm run build
       - run: node_modules/.bin/vitest run
