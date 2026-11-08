@@ -74,13 +74,14 @@ export function AppBrand({
         />
       ) : (
         // Default di prodotto: wordmark K Coach (già comprensivo del nome) +
-        // tagline d'ecosistema persistente.
+        // tagline d'ecosistema persistente. Il PNG è ritagliato sul testo
+        // (niente padding), quindi l'altezza CSS corrisponde al testo visibile.
         <span className="flex flex-col gap-0.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/brand/kcoach-wordmark-white.png"
             alt={appName}
-            style={{ height: Math.round(size * 0.62) }}
+            style={{ height: Math.round(size * 0.6) }}
             className="w-auto object-contain"
           />
           {showEcosystem && (
