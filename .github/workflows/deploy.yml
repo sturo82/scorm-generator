@@ -46,7 +46,8 @@ jobs:
       - name: Install libvips (sharp build fallback)
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libvips-dev build-essential python3
+          apt-get install -y --no-install-recommends \
+            libvips-dev libglib2.0-dev libexpat1-dev pkg-config build-essential python3
       - name: Cache npm
         uses: actions/cache@v4
         with:
