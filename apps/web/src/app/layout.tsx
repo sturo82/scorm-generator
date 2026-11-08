@@ -5,9 +5,9 @@ import { QueryProvider } from '@/lib/query-provider';
 import { ToastProvider } from '@/components/ui/toast';
 
 export const metadata: Metadata = {
-  title: 'K Scorm',
+  title: 'K Coach',
   description:
-    'K Scorm — genera corsi e-learning SCORM professionali con AI, knowledge base e branding multiplo. Parte dell’ecosistema Knowkube.',
+    'K Coach — genera corsi e-learning SCORM professionali con AI, knowledge base e branding multiplo. Parte dell’ecosistema Knowkube.',
   icons: {
     icon: [
       { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },

@@ -24,7 +24,7 @@ export default function LoginPage() {
 
   // "Torna indietro" dinamico: la destinazione dipende da dove si proviene.
   // Priorità: parametro ?return_to= (passato dalla piattaforma di origine) →
-  // referrer esterno → home di K Scorm. Solo URL assolute http(s) sono accettate
+  // referrer esterno → home di K Coach. Solo URL assolute http(s) sono accettate
   // per evitare open-redirect verso schemi arbitrari.
   const [backHref, setBackHref] = React.useState('/');
   const [backLabel, setBackLabel] = React.useState('Torna alla home');
@@ -94,13 +94,21 @@ export default function LoginPage() {
     <main className="grid min-h-dvh place-items-center p-6">
       <Card className="w-full max-w-md">
         <CardHeader className="items-center text-center">
+          {/* Logo K Coach (wordmark scuro) sulla card chiara del login. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/brand/kscorm-icon.png"
-            alt="K Scorm"
-            className="mb-2 size-14 rounded-xl object-contain"
+            src="/brand/kcoach-wordmark-dark.png"
+            alt="K Coach"
+            className="mb-2 h-10 w-auto object-contain dark:hidden"
           />
-          <CardTitle className="text-xl">Accedi a K Scorm</CardTitle>
+          {/* In dark mode la card è scura: usa il wordmark bianco. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/kcoach-wordmark-white.png"
+            alt="K Coach"
+            className="mb-2 hidden h-10 w-auto object-contain dark:block"
+          />
+          <CardTitle className="text-xl">Accedi a K Coach</CardTitle>
           <CardDescription>
             {oidc
               ? 'Accedi con il tuo provider aziendale (SSO).'

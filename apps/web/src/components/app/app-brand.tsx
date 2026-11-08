@@ -24,7 +24,7 @@ interface AppBrandProps {
  * Knowkube sempre presente.
  *
  * - Tenant con logo caricato → logo del tenant + nome (white-label rispettato).
- * - Default di prodotto → wordmark "K. Scorm" (immagine che include già il nome).
+ * - Default di prodotto → wordmark "K Coach" (immagine che include già il nome).
  * - "by Knowkube" → tagline persistente, non white-label, per mantenere evidente
  *   l'ecosistema anche quando un tenant applica i propri colori/logo.
  */
@@ -64,21 +64,21 @@ export function AppBrand({
           )}
         </>
       ) : iconOnly ? (
-        // Compatto (mobile): solo l'icona di prodotto.
+        // Compatto (mobile): il wordmark K Coach scalato in altezza.
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src="/brand/kscorm-icon-white.png"
+          src="/brand/kcoach-wordmark-white.png"
           alt={appName}
-          style={{ width: size, height: size }}
-          className="shrink-0 rounded-lg object-contain"
+          style={{ height: size }}
+          className="w-auto shrink-0 object-contain"
         />
       ) : (
-        // Default di prodotto: wordmark K Scorm (già comprensivo del nome) +
+        // Default di prodotto: wordmark K Coach (già comprensivo del nome) +
         // tagline d'ecosistema persistente.
         <span className="flex flex-col gap-0.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/brand/kscorm-wordmark-white-trim.png"
+            src="/brand/kcoach-wordmark-white.png"
             alt={appName}
             style={{ height: Math.round(size * 0.62) }}
             className="w-auto object-contain"

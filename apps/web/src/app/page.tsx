@@ -12,13 +12,13 @@ export default function HomePage() {
     <main className="min-h-dvh">
       {/* Header d'ecosistema: misure allineate a manager.knowkube.com — barra
           full-width sticky, padding X 32px, logo alto 30px a sinistra, CTA sm a
-          destra. Accenti = verde K Scorm. */}
+          destra. Accenti = verde K Coach. */}
       <header className="eco-header sticky top-0 z-30">
         <div className="flex h-[63px] items-center justify-between px-8">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/brand/kscorm-wordmark-white-trim.png"
-            alt="K Scorm"
+            src="/brand/kcoach-wordmark-white.png"
+            alt="K Coach"
             className="h-[30px] w-auto object-contain"
           />
           <Button asChild size="xs">

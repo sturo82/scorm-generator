@@ -152,9 +152,9 @@ export default function BrandingSettingsPage() {
               <div className="flex items-center gap-2.5 rounded-lg border bg-card p-3 font-semibold">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={data?.logoUrl ?? '/brand/kscorm-icon-white.png'}
+                  src={data?.logoUrl ?? '/brand/kcoach-wordmark-dark.png'}
                   alt=""
-                  className="size-8 rounded-lg object-contain"
+                  className={data?.logoUrl ? 'size-8 rounded-lg object-contain' : 'h-8 w-auto object-contain'}
                 />
                 <span className="flex flex-col leading-tight">
                   <span className="truncate">{displayName}</span>

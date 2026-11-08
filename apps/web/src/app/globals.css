@@ -6,7 +6,7 @@
  * Token del design system (HSL). Modello a due livelli dell'ecosistema Knowkube:
  *  1) Brand globale Knowkube: 4 accenti ambra condivisi da tutti i prodotti,
  *     usati come sistema di accenti soft su base neutra.
- *  2) Identità di piattaforma: UN colore distintivo per prodotto. Per K Scorm è
+ *  2) Identità di piattaforma: UN colore distintivo per prodotto. Per K Coach è
  *     il verde #22b573, che guida il primario, gli stati attivi, l'header e il
  *     glow. Replicabile sugli altri prodotti cambiando solo --platform-accent*.
  * Supporto dark/light tramite classe .dark.
@@ -22,7 +22,7 @@
     --brand-accent: 37 74% 49%;
     --brand-accent-dark: 35 79% 37%;
 
-    /* ── Identità di piattaforma: K Scorm (verde #22b573) ──────────────────
+    /* ── Identità di piattaforma: K Coach (verde #22b573) ──────────────────
        È il colore identificativo del prodotto: stati attivi, icone, dettagli.
        `--platform-accent` è il verde brillante del brand, usato per ACCENTI
        decorativi (glow, bordi tenui, ring, superfici soft) dove NON c'è testo
@@ -101,7 +101,7 @@
     --brand-accent: 38 85% 58%;
     --brand-accent-dark: 36 79% 46%;
 
-    /* Identità K Scorm su fondo scuro: verde più luminoso. In dark i bottoni
+    /* Identità K Coach su fondo scuro: verde più luminoso. In dark i bottoni
        usano il verde brillante con testo SCURO (--primary-foreground), che dà
        contrasto AA (9:1), quindi --platform-accent-strong = verde brillante. */
     --platform-accent: 153 62% 52%;
@@ -204,7 +204,7 @@
      inferiore sottile (stile coerente con manager.knowkube.com), NON una barra a
      colore pieno. Sempre scura (anche in light) così il wordmark bianco è sempre
      leggibile e tutte le piattaforme condividono la stessa barra d'ecosistema.
-     Il colore di piattaforma (verde K Scorm) resta un ACCENTE (CTA, hover). */
+     Il colore di piattaforma (verde K Coach) resta un ACCENTE (CTA, hover). */
   .eco-header,
   .brand-header {
     background-color: hsl(160 24% 7% / 0.82);
@@ -280,7 +280,7 @@
   }
 
   /* Area logo della sidebar/drawer: striscia SCURA d'ecosistema (coerente in
-     dark e light), così il wordmark bianco K Scorm è sempre leggibile e la
+     dark e light), così il wordmark bianco K Coach è sempre leggibile e la
      sidebar richiama la barra scura dell'header. Un velo verde di piattaforma
      tenue sul fondo scuro mantiene l'accento di prodotto. */
   .sidebar-logo-area {

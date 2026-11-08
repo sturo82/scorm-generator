@@ -5,7 +5,7 @@
  *
  * Centralizzato qui così un eventuale rebranding si fa in un punto solo.
  */
-export const APP_NAME = 'K Scorm';
+export const APP_NAME = 'K Coach';
 
 /**
  * Compone il titolo della scheda del browser: "<nome tenant> · <nome app>".
