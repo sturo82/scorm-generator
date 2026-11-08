@@ -9,6 +9,15 @@ ENV NODE_ENV=production
 # ---- Dependencies (incluse dev, per build) ----
 FROM base AS deps
 ENV NODE_ENV=development
+# 'sharp' scarica il prebuilt (libvips + binding) da GitHub releases, che può
+# dare 504. Compiliamo sharp DA SORGENTE contro il libvips di sistema (niente
+# download da GitHub) e usiamo un mirror per il tarball libvips. Serve la
+# toolchain di build (libvips-dev, glib, pkg-config, build-essential, python3).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libvips-dev libglib2.0-dev libexpat1-dev pkg-config build-essential python3 \
+  && rm -rf /var/lib/apt/lists/*
+ENV npm_config_build_from_source=true \
+    npm_config_sharp_libvips_binary_host=https://registry.npmmirror.com/-/binary/sharp-libvips
 COPY package.json package-lock.json* ./
 COPY packages/contracts/package.json packages/contracts/
 COPY packages/domain/package.json packages/domain/
@@ -59,9 +68,14 @@ ARG APP_VERSION=dev
 ARG BUILD_TIME=""
 ENV APP_VERSION=$APP_VERSION
 ENV BUILD_TIME=$BUILD_TIME
-# Prisma richiede OpenSSL a runtime.
-RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+# Prisma richiede OpenSSL a runtime. Inoltre, come nello stage deps, 'sharp'
+# (installato anche qui con --omit=dev) va compilato da sorgente per evitare il
+# 504 di GitHub sul prebuilt: servono libvips-dev + toolchain e il mirror.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssl libvips-dev libglib2.0-dev libexpat1-dev pkg-config build-essential python3 \
   && rm -rf /var/lib/apt/lists/*
+ENV npm_config_build_from_source=true \
+    npm_config_sharp_libvips_binary_host=https://registry.npmmirror.com/-/binary/sharp-libvips
 # Utente non-root
 RUN groupadd --system --gid 1001 nodejs \
   && useradd --system --uid 1001 --gid nodejs appuser
