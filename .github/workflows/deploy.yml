@@ -39,6 +39,14 @@ jobs:
       - uses: actions/checkout@v4
       # Cache della cache di npm (~/.npm): npm ci la riusa, evitando di riscaricare
       # i pacchetti a ogni run. Invalidata quando cambia package-lock.json.
+      # 'sharp' scarica un binario prebuilt di libvips da GitHub; quando quel
+      # download fallisce (es. 504), fa fallback alla COMPILAZIONE da sorgente,
+      # che richiede libvips-dev + toolchain. Li installiamo così 'npm ci' è
+      # resiliente ai problemi di rete del prebuilt (il container è Debian).
+      - name: Install libvips (sharp build fallback)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libvips-dev build-essential python3
       - name: Cache npm
         uses: actions/cache@v4
         with:
