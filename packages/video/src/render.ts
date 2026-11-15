@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { bundle } from '@remotion/bundler';
 import { renderMedia, selectComposition } from '@remotion/renderer';
-import type { VideoSpec, WordMark } from '@scorm/contracts';
-import { COMPOSITION_ID } from './Root.js';
+import type { SlideVideoSpec, VideoSpec, WordMark } from '@scorm/contracts';
+import { COMPOSITION_ID, SLIDE_COMPOSITION_ID } from './Root.js';
 
 export interface RenderPillolaInput {
   spec: VideoSpec;
@@ -51,6 +51,30 @@ export async function renderPillola(input: RenderPillolaInput): Promise<RenderPi
     const bytes = await readFile(outPath);
     const durationSec = composition.durationInFrames / composition.fps;
     return { bytes: new Uint8Array(bytes), durationSec };
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+export interface RenderSlideVideoResult {
+  bytes: Uint8Array;
+  durationSec: number;
+}
+
+/**
+ * Rende uno SlideVideoSpec (slide + clip avatar via URL http/https) in MP4 h264,
+ * in-process. Usato per verifiche locali e come fallback senza Lambda.
+ */
+export async function renderSlideVideo(spec: SlideVideoSpec): Promise<RenderSlideVideoResult> {
+  const serveUrl = await getBundle();
+  const dir = await mkdtemp(join(tmpdir(), 'slidevideo-'));
+  const outPath = join(dir, 'out.mp4');
+  try {
+    const inputProps = { spec };
+    const composition = await selectComposition({ serveUrl, id: SLIDE_COMPOSITION_ID, inputProps });
+    await renderMedia({ composition, serveUrl, codec: 'h264', outputLocation: outPath, inputProps });
+    const bytes = await readFile(outPath);
+    return { bytes: new Uint8Array(bytes), durationSec: composition.durationInFrames / composition.fps };
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }

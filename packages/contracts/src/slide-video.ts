@@ -1,0 +1,165 @@
+import { z } from 'zod';
+
+/**
+ * SlideVideoSpec — descrizione di un video-lezione "slide + avatar": una
+ * sequenza di slide (immagini) ciascuna accompagnata da una clip dell'avatar che
+ * la racconta. Condiviso tra l'API (che assembla clip, durate e trascrizione) e
+ * il motore Remotion (che monta il video): la matematica della timeline vive qui
+ * una volta sola, così trascrizione e video restano allineati per costruzione.
+ *
+ * Il timing è guidato dalla DURATA REALE di ogni clip avatar: ogni slide resta a
+ * schermo esattamente quanto dura la sua clip, quindi il cambio slide è
+ * sincronizzato con la voce senza stime.
+ */
+
+/** Disposizione del video: slide affiancata all'avatar, oppure avatar in cerchio sopra la slide. */
+export const SlideVideoLayout = z.enum(['split', 'pip']);
+export type SlideVideoLayout = z.infer<typeof SlideVideoLayout>;
+
+/** Riga di sottotitolo, con tempi in secondi RELATIVI all'inizio della clip della slide. */
+export const SlideCue = z.object({
+  start: z.number().nonnegative(),
+  end: z.number().nonnegative(),
+  text: z.string(),
+});
+export type SlideCue = z.infer<typeof SlideCue>;
+
+export const SlideVideoSlide = z.object({
+  id: z.string().min(1),
+  /** URL (firmato) dell'immagine della slide. */
+  imageUrl: z.string().min(1),
+  /** URL (firmato) della clip avatar che narra la slide. */
+  clipUrl: z.string().min(1),
+  /** Durata reale della clip in secondi. */
+  durationSec: z.number().positive(),
+  /** Titolo breve della slide (opzionale, per accessibilità/indice). */
+  title: z.string().optional(),
+  /** Testo narrato: usato come unica cue se la clip non ha sottotitoli propri. */
+  narration: z.string().optional(),
+  /** Sottotitoli della clip (da SRT HeyGen), tempi relativi alla clip. */
+  cues: z.array(SlideCue).default([]),
+});
+export type SlideVideoSlide = z.infer<typeof SlideVideoSlide>;
+
+export const SlideVideoTheme = z.object({
+  bg: z.string().default('#0b0f14'),
+  accent: z.string().default('#f5b700'),
+  text: z.string().default('#ffffff'),
+});
+export type SlideVideoTheme = z.infer<typeof SlideVideoTheme>;
+
+export const SlideVideoSpec = z.object({
+  version: z.literal(1).default(1),
+  canvas: z
+    .object({
+      width: z.number().int().positive().default(1920),
+      height: z.number().int().positive().default(1080),
+      fps: z.number().int().positive().max(60).default(30),
+    })
+    .default({}),
+  layout: SlideVideoLayout.default('split'),
+  theme: SlideVideoTheme.default({}),
+  /** Titolo del modulo/sezione, mostrato nel pannello laterale. */
+  sectionTitle: z.string().optional(),
+  slides: z.array(SlideVideoSlide).min(1),
+});
+export type SlideVideoSpec = z.infer<typeof SlideVideoSpec>;
+
+/** Posizione di una slide sulla timeline del video finale. */
+export interface SlideTimelineEntry {
+  index: number;
+  /** Frame di inizio (assoluto). */
+  startFrame: number;
+  /** Durata in frame (>= 1). */
+  durationFrames: number;
+  /** Secondi di inizio (assoluto). */
+  startSec: number;
+  /** Secondi di fine (assoluto). */
+  endSec: number;
+}
+
+export interface SlideTimeline {
+  entries: SlideTimelineEntry[];
+  totalFrames: number;
+  totalSec: number;
+}
+
+/**
+ * Calcola la timeline concatenando le slide in sequenza. Gli estremi in frame
+ * si ottengono arrotondando i secondi CUMULATIVI (non le singole durate), così
+ * l'errore di arrotondamento non si accumula lungo decine di slide e la durata
+ * totale resta fedele alla somma delle clip.
+ */
+export function computeSlideTimeline(
+  slides: Array<{ durationSec: number }>,
+  fps: number,
+): SlideTimeline {
+  const entries: SlideTimelineEntry[] = [];
+  let cursorSec = 0;
+  let prevEndFrame = 0;
+  slides.forEach((s, index) => {
+    const startSec = cursorSec;
+    const endSec = cursorSec + s.durationSec;
+    const startFrame = prevEndFrame;
+    const endFrame = Math.max(startFrame + 1, Math.round(endSec * fps));
+    entries.push({ index, startFrame, durationFrames: endFrame - startFrame, startSec, endSec });
+    cursorSec = endSec;
+    prevEndFrame = endFrame;
+  });
+  return { entries, totalFrames: prevEndFrame, totalSec: cursorSec };
+}
+
+/** Cue con tempi GLOBALI (secondi dall'inizio del video), per trascrizione e sottotitoli. */
+export interface GlobalCue {
+  id: string;
+  start: number;
+  end: number;
+  text: string;
+  /** Indice della slide a cui appartiene. */
+  slideIndex: number;
+}
+
+/**
+ * Converte le cue di ogni slide (relative alla clip) in cue globali sommando
+ * l'offset di inizio della slide. Le cue vengono tagliate alla finestra della
+ * propria slide, così un sottotitolo non invade mai la slide successiva. Se una
+ * slide non ha cue ma ha `narration`, genera un'unica cue sull'intera durata.
+ */
+export function globalCues(
+  slides: Array<Pick<SlideVideoSlide, 'durationSec' | 'cues' | 'narration'>>,
+  timeline: SlideTimeline,
+): GlobalCue[] {
+  const out: GlobalCue[] = [];
+  slides.forEach((s, i) => {
+    const entry = timeline.entries[i];
+    if (!entry) return;
+    const windowStart = entry.startSec;
+    const windowEnd = entry.endSec;
+    const cues = s.cues && s.cues.length > 0
+      ? s.cues
+      : s.narration && s.narration.trim()
+        ? [{ start: 0, end: s.durationSec, text: s.narration.trim() }]
+        : [];
+    cues.forEach((c) => {
+      const start = Math.min(windowEnd, windowStart + Math.max(0, c.start));
+      const rawEnd = windowStart + (c.end > c.start ? c.end : s.durationSec);
+      const end = Math.min(windowEnd, Math.max(start, rawEnd));
+      if (!c.text.trim()) return;
+      out.push({ id: `cue-${out.length}`, start, end, text: c.text.trim(), slideIndex: i });
+    });
+  });
+  return out;
+}
+
+/**
+ * Cue attiva al tempo `tSec` (globale): l'ultima il cui start è <= t e il cui
+ * end è > t. Ritorna null nei vuoti tra una cue e l'altra.
+ */
+export function activeCueAt(cues: GlobalCue[], tSec: number): GlobalCue | null {
+  let found: GlobalCue | null = null;
+  for (const c of cues) {
+    if (c.start <= tSec && tSec < c.end) found = c;
+    if (c.start > tSec) break;
+  }
+  return found;
+}

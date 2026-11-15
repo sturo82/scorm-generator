@@ -9,8 +9,14 @@ import {
   type AwsRegion,
 } from '@remotion/lambda';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
-import { computeAllSceneBounds, type VideoSpec, type WordMark } from '@scorm/contracts';
-import { COMPOSITION_ID } from './Root.js';
+import {
+  computeAllSceneBounds,
+  computeSlideTimeline,
+  type SlideVideoSpec,
+  type VideoSpec,
+  type WordMark,
+} from '@scorm/contracts';
+import { COMPOSITION_ID, SLIDE_COMPOSITION_ID } from './Root.js';
 import type { RenderPillolaInput, RenderPillolaResult } from './render.js';
 
 /**
@@ -127,6 +133,51 @@ export async function renderPillolaOnLambda(
     await downloadMedia({ region, bucketName, renderId, outPath });
     const bytes = await readFile(outPath);
     return { bytes: new Uint8Array(bytes), durationSec: durationFromSpec(input.spec, input.words) };
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/**
+ * Render su Lambda del video "slide + avatar". Gli asset (PNG slide, clip MP4)
+ * NON sono negli inputProps: lo spec contiene solo URL presigned, che devono
+ * restare validi per tutta la durata del render (TTL consigliato >= 1 h).
+ */
+export async function renderSlideVideoOnLambda(
+  spec: SlideVideoSpec,
+  opts: LambdaRenderOptions,
+): Promise<RenderPillolaResult> {
+  await ensureRemotionCredentials();
+  const region = opts.region as AwsRegion;
+  const timeline = computeSlideTimeline(spec.slides, spec.canvas.fps);
+
+  const { renderId, bucketName } = await renderMediaOnLambda({
+    region,
+    functionName: opts.functionName,
+    serveUrl: opts.serveUrl,
+    composition: SLIDE_COMPOSITION_ID,
+    inputProps: { spec },
+    codec: 'h264',
+  });
+
+  const pollInterval = opts.pollIntervalMs ?? 2000;
+  const deadline = Date.now() + (opts.timeoutMs ?? 30 * 60_000);
+  for (;;) {
+    if (Date.now() > deadline) throw new Error('Render Lambda: timeout');
+    const progress = await getRenderProgress({ renderId, bucketName, functionName: opts.functionName, region });
+    if (progress.fatalErrorEncountered) {
+      throw new Error(`Render Lambda fallito: ${progress.errors?.[0]?.message ?? 'errore sconosciuto'}`);
+    }
+    if (progress.done) break;
+    await sleep(pollInterval);
+  }
+
+  const dir = await mkdtemp(join(tmpdir(), 'slidevideo-lambda-'));
+  const outPath = join(dir, 'out.mp4');
+  try {
+    await downloadMedia({ region, bucketName, renderId, outPath });
+    const bytes = await readFile(outPath);
+    return { bytes: new Uint8Array(bytes), durationSec: timeline.totalSec };
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }

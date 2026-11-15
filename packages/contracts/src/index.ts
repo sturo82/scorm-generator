@@ -26,3 +26,4 @@ export * from './video-asset.js';
 export * from './stock-image.js';
 export * from './video-spec.js';
 export * from './video-spec-timing.js';
+export * from './slide-video.js';

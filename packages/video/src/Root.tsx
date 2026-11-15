@@ -1,7 +1,15 @@
 import React from 'react';
 import { Composition } from 'remotion';
 import { computeAllSceneBounds, type VideoSpec, type WordMark } from '@scorm/contracts';
+import {
+  SlideVideoSpec,
+  computeSlideTimeline,
+  type SlideVideoSpec as SlideVideoSpecT,
+} from '@scorm/contracts';
 import { PillolaVideo } from './PillolaVideo.js';
+import { SlideAvatarVideo } from './SlideAvatarVideo.js';
+
+export const SLIDE_COMPOSITION_ID = 'SlideAvatarVideo';
 
 /** Id della composizione, usato dal renderer in fase di selezione. */
 export const COMPOSITION_ID = 'PillolaVideo';
@@ -32,6 +40,28 @@ function totalDuration(spec: VideoSpec | undefined, words: WordMark[]): { fps: n
  */
 export const RemotionRoot: React.FC = () => {
   return (
+    <>
+    <Composition
+      id={SLIDE_COMPOSITION_ID}
+      component={SlideAvatarVideo as React.FC<Record<string, unknown>>}
+      durationInFrames={30}
+      fps={30}
+      width={1920}
+      height={1080}
+      defaultProps={{ spec: undefined as unknown as SlideVideoSpecT }}
+      calculateMetadata={({ props }) => {
+        const raw = (props as unknown as { spec?: unknown }).spec;
+        if (!raw) return { durationInFrames: 30, fps: 30, width: 1920, height: 1080 };
+        const spec = SlideVideoSpec.parse(raw);
+        const t = computeSlideTimeline(spec.slides, spec.canvas.fps);
+        return {
+          durationInFrames: Math.max(1, t.totalFrames),
+          fps: spec.canvas.fps,
+          width: spec.canvas.width,
+          height: spec.canvas.height,
+        };
+      }}
+    />
     <Composition
       id={COMPOSITION_ID}
       component={PillolaVideo as React.FC<Record<string, unknown>>}
@@ -49,5 +79,6 @@ export const RemotionRoot: React.FC = () => {
         return { durationInFrames, fps, width, height };
       }}
     />
+    </>
   );
 };

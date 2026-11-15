@@ -5,6 +5,13 @@ export * from './types.js';
 export { REGISTRY } from './registry.js';
 export { AnimatedLayer } from './AnimatedLayer.js';
 export { PillolaVideo } from './PillolaVideo.js';
-export { RemotionRoot, COMPOSITION_ID } from './Root.js';
-export { renderPillola, type RenderPillolaInput, type RenderPillolaResult } from './render.js';
-export { renderPillolaOnLambda, type LambdaRenderOptions } from './render-lambda.js';
+export { SlideAvatarVideo } from './SlideAvatarVideo.js';
+export { RemotionRoot, COMPOSITION_ID, SLIDE_COMPOSITION_ID } from './Root.js';
+export {
+  renderPillola,
+  renderSlideVideo,
+  type RenderPillolaInput,
+  type RenderPillolaResult,
+  type RenderSlideVideoResult,
+} from './render.js';
+export { renderPillolaOnLambda, renderSlideVideoOnLambda, type LambdaRenderOptions } from './render-lambda.js';
