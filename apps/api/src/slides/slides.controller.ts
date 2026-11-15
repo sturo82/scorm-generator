@@ -12,12 +12,15 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  BuildSlideLesson as BuildSlideLessonSchema,
   StartSlideClips as StartSlideClipsSchema,
   UpdateSlideScripts as UpdateSlideScriptsSchema,
+  type BuildSlideLesson as BuildSlideLessonType,
   type StartSlideClips as StartSlideClipsType,
   type UpdateSlideScripts as UpdateSlideScriptsType,
 } from '@scorm/contracts';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import { SlideLessonService, type SlideLessonView } from './slide-lesson.service.js';
 import { SlideClipsService, type SlideClipsEstimate, type SlideClipsView } from './slide-clips.service.js';
 import { SlideScriptsService, type SlideScriptsDoc } from './slide-scripts.service.js';
 import { CurrentContext, type AuthContext } from '../auth/auth-context.js';
@@ -38,6 +41,7 @@ export class SlidesController {
     private readonly slides: SlidesService,
     private readonly scripts: SlideScriptsService,
     private readonly clips: SlideClipsService,
+    private readonly lessons: SlideLessonService,
   ) {}
 
   @Post('import')
@@ -119,6 +123,27 @@ export class SlidesController {
     @Body(new ZodValidationPipe(StartSlideClipsSchema)) body: StartSlideClipsType,
   ): Promise<SlideClipsView> {
     return this.clips.start(ctx.tenant.tenantId, courseId, importId, body);
+  }
+
+  @Get('imports/:importId/lesson')
+  async getLesson(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+  ): Promise<SlideLessonView | { status: 'none' }> {
+    return (await this.lessons.status(ctx.tenant.tenantId, courseId, importId)) ?? { status: 'none' };
+  }
+
+  /** Monta il video e crea modulo + lezione video-first con riepilogo e quiz. */
+  @Post('imports/:importId/lesson')
+  @Roles('EDITOR')
+  buildLesson(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+    @Body(new ZodValidationPipe(BuildSlideLessonSchema)) body: BuildSlideLessonType,
+  ): Promise<SlideLessonView> {
+    return this.lessons.start(ctx.tenant.tenantId, courseId, importId, body);
   }
 
   @Get('imports/:importId')

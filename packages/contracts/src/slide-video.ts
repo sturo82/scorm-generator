@@ -192,3 +192,11 @@ export const StartSlideClips = z.object({
   resolution: z.enum(['720p', '1080p']).optional(),
 });
 export type StartSlideClips = z.infer<typeof StartSlideClips>;
+
+/** Montaggio del video finale e creazione della lezione. */
+export const BuildSlideLesson = z.object({
+  layout: SlideVideoLayout.default('split'),
+  /** Titolo del modulo e della lezione creati. */
+  moduleTitle: z.string().trim().min(1).max(200).optional(),
+});
+export type BuildSlideLesson = z.infer<typeof BuildSlideLesson>;

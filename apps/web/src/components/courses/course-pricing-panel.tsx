@@ -21,6 +21,9 @@ const SOURCE_LABEL: Record<string, string> = {
   video_script: 'Copione video',
   slide_script: 'Copioni video da slide',
   slide_clip: 'Clip avatar da slide (HeyGen)',
+  slide_video: 'Montaggio video da slide',
+  slide_summary: 'Riepilogo video da slide',
+  slide_quiz: 'Quiz video da slide',
   concept_video: 'Video avatar (HeyGen)',
 };
 
