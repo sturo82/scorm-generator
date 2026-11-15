@@ -163,3 +163,18 @@ export function activeCueAt(cues: GlobalCue[], tSec: number): GlobalCue | null {
   }
   return found;
 }
+
+/** Copione di una slide (testo che l'avatar pronuncerà). `skip` esclude la slide dal video. */
+export const SlideScriptItem = z.object({
+  index: z.number().int().positive(),
+  script: z.string().max(4000),
+  skip: z.boolean().default(false),
+});
+export type SlideScriptItem = z.infer<typeof SlideScriptItem>;
+
+/** Aggiornamento dei copioni da parte del revisore. `approved` = via libera alla generazione clip. */
+export const UpdateSlideScripts = z.object({
+  slides: z.array(SlideScriptItem).min(1).max(200),
+  approved: z.boolean().default(false),
+});
+export type UpdateSlideScripts = z.infer<typeof UpdateSlideScripts>;

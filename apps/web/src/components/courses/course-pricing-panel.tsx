@@ -19,6 +19,7 @@ const SOURCE_LABEL: Record<string, string> = {
   narration: 'Narrazione audio',
   video_transcript: 'Trascrizione video',
   video_script: 'Copione video',
+  slide_script: 'Copioni video da slide',
   concept_video: 'Video avatar (HeyGen)',
 };
 
