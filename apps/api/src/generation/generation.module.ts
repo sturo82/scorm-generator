@@ -155,7 +155,8 @@ const cartoonVideoProvider = {
   imports: [KnowledgeModule, CoursesModule],
   controllers: [GenerationController, AvatarsController, JobsController, ActiveJobsController],
   providers: [GenerationService, MediaService, videoGenProvider, cartoonVideoProvider],
-  exports: [GenerationService, MediaService],
+  // VIDEO_GEN_PROVIDER è esportato per la pipeline "video da slide" (SlidesModule).
+  exports: [GenerationService, MediaService, VIDEO_GEN_PROVIDER],
 })
 export class GenerationModule implements OnModuleInit {
   constructor(
