@@ -87,6 +87,8 @@ export function CourseBuilder({
   const [outlineJobId, setOutlineJobId] = React.useState<string | null>(null);
   // Accordion moduli (modalità struttura): uno aperto per volta.
   const [openStructModuleId, setOpenStructModuleId] = React.useState<string | null>(null);
+  // Flusso "video-lezione da slide con avatar": disponibile anche con corso vuoto.
+  const [slideVideoOpen, setSlideVideoOpen] = React.useState(false);
 
   // Polling del job di generazione struttura: alla fine ricarica i moduli.
   const outlineJob = useJobStatus(courseId, outlineJobId);
@@ -128,28 +130,56 @@ export function CourseBuilder({
   if (mode === 'structure') {
     return (
       <div className="space-y-6">
-        <Card className="border-primary/20 bg-accent/30">
-          <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-3">
-              <div className="grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground">
-                <Sparkles className="size-5" />
+        <div>
+          <h3 className="text-lg font-semibold">Come vuoi costruire il corso?</h3>
+          <p className="text-sm text-muted-foreground">
+            Scegli una o entrambe le strade: i moduli si sommano nello stesso corso. Puoi sempre
+            aggiungerne altri in seguito.
+          </p>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card className="border-primary/20 bg-accent/30">
+            <CardContent className="flex h-full flex-col gap-3 p-5">
+              <div className="flex items-start gap-3">
+                <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
+                  <Sparkles className="size-5" />
+                </div>
+                <div>
+                  <p className="font-medium">Moduli di testo dal brief</p>
+                  <p className="text-sm text-muted-foreground">
+                    Dal brief (e dalle fonti) genero l’outline e creo moduli e lezioni con contenuti
+                    interattivi. Richiede un brief compilato.
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="font-medium">Struttura assistita</p>
-                <p className="text-sm text-muted-foreground">
-                  Dal brief genero l’outline e creo automaticamente moduli e lezioni. Potrai
-                  modificarli subito dopo.
-                </p>
+              {!generatingStructure && (
+                <Button className="mt-auto self-start" onClick={handleGenerateStructure} disabled={genOutline.isPending}>
+                  <Wand2 className="size-4" />
+                  {hasStructure ? 'Rigenera struttura' : 'Genera struttura'}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+          <Card className="border-primary/20 bg-accent/30">
+            <CardContent className="flex h-full flex-col gap-3 p-5">
+              <div className="flex items-start gap-3">
+                <div className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
+                  <Clapperboard className="size-5" />
+                </div>
+                <div>
+                  <p className="font-medium">Video-lezione da slide</p>
+                  <p className="text-sm text-muted-foreground">
+                    Carica le slide in PDF: un avatar le racconta in video. Aggiunge un modulo con video,
+                    trascrizione, riepilogo e quiz. Non serve il brief.
+                  </p>
+                </div>
               </div>
-            </div>
-            {!generatingStructure && (
-              <Button onClick={handleGenerateStructure} disabled={genOutline.isPending}>
-                <Wand2 className="size-4" />
-                {hasStructure ? 'Rigenera struttura' : 'Genera struttura'}
+              <Button className="mt-auto self-start" variant="outline" onClick={() => setSlideVideoOpen(true)} disabled={generatingStructure}>
+                <Clapperboard className="size-4" /> Crea da slide
               </Button>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
 
         {generatingStructure && (
           <AiWorking
@@ -158,7 +188,7 @@ export function CourseBuilder({
           />
         )}
 
-        {/* La struttura compare solo quando esiste (dopo la generazione) */}
+        {/* La struttura compare solo quando esiste */}
         {hasStructure && (
           <div>
             <h3 className="mb-3 text-lg font-semibold">Struttura del corso</h3>
@@ -175,24 +205,27 @@ export function CourseBuilder({
                 />
               ))}
             </div>
-            <form onSubmit={handleAddModule} className="mt-4 flex gap-2">
-              <Input
-                value={newModuleTitle}
-                onChange={(e) => setNewModuleTitle(e.target.value)}
-                placeholder="Aggiungi un modulo a mano"
-              />
-              <Button type="submit" variant="outline" disabled={addModule.isPending || !newModuleTitle.trim()}>
-                <Plus className="size-4" /> Modulo
-              </Button>
-            </form>
           </div>
         )}
 
+        <form onSubmit={handleAddModule} className="flex gap-2">
+          <Input
+            value={newModuleTitle}
+            onChange={(e) => setNewModuleTitle(e.target.value)}
+            placeholder="Oppure aggiungi a mano un modulo vuoto"
+          />
+          <Button type="submit" variant="outline" disabled={addModule.isPending || !newModuleTitle.trim()}>
+            <Plus className="size-4" /> Modulo
+          </Button>
+        </form>
+
         {!hasStructure && !generatingStructure && (
           <p className="text-sm text-muted-foreground">
-            Nessuna struttura ancora. Premi «Genera struttura» per crearla dal brief.
+            Nessun modulo ancora. Scegli una delle due strade qui sopra, oppure aggiungi un modulo a mano.
           </p>
         )}
+
+        <SlideVideoDialog courseId={courseId} open={slideVideoOpen} onClose={() => setSlideVideoOpen(false)} />
       </div>
     );
   }
@@ -303,7 +336,8 @@ function ContentBuilder({ courseId, highlightTests = false }: { courseId: string
   if (!modules.data || modules.data.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Nessuna struttura. Torna allo step «Struttura» e genera moduli e lezioni.
+        Nessun modulo. Torna allo step «Struttura»: puoi generare i moduli dal brief oppure creare una
+        video-lezione da slide.
       </p>
     );
   }
