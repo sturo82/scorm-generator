@@ -73,6 +73,7 @@ ENV BUILD_TIME=$BUILD_TIME
 # 504 di GitHub sul prebuilt: servono libvips-dev + toolchain e il mirror.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl libvips-dev libglib2.0-dev libexpat1-dev pkg-config build-essential python3 \
+    poppler-utils \
   && rm -rf /var/lib/apt/lists/*
 ENV npm_config_build_from_source=true \
     npm_config_sharp_libvips_binary_host=https://registry.npmmirror.com/-/binary/sharp-libvips

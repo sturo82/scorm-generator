@@ -24,6 +24,7 @@ import { RssModule } from './rss/rss.module.js';
 import { IntegrationModule } from './integration/integration.module.js';
 import { SsoModule } from './sso/sso.module.js';
 import { EcosystemModule } from './ecosystem/ecosystem.module.js';
+import { SlidesModule } from './slides/slides.module.js';
 import { HealthController } from './health/health.controller.js';
 
 @Module({
@@ -55,6 +56,7 @@ import { HealthController } from './health/health.controller.js';
     IntegrationModule,
     SsoModule,
     EcosystemModule,
+    SlidesModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
