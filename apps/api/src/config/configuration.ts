@@ -207,6 +207,8 @@ export interface AppConfig {
     engine: string;
     /** Numero massimo di video generabili per tenant al mese (piano Free: 3). */
     monthlyQuota: number;
+    /** Tetto di minuti di parlato stimati per una singola esecuzione "slide + avatar". */
+    slideClipMaxMinutes: number;
   };
   /**
    * Generazione cartoon delle scene "pillole". `provider`:
@@ -397,6 +399,7 @@ export function loadConfiguration(): AppConfig {
       resolution: env('HEYGEN_RESOLUTION', '720p'),
       engine: env('HEYGEN_ENGINE', ''),
       monthlyQuota: Number(env('HEYGEN_MONTHLY_QUOTA', '3')),
+      slideClipMaxMinutes: Number(env('HEYGEN_SLIDE_CLIP_MAX_MINUTES', '25')),
     },
     cartoonVideo: {
       provider: env('PROVIDER_CARTOON_VIDEO', 'none') as AppConfig['cartoonVideo']['provider'],

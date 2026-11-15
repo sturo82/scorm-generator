@@ -178,3 +178,17 @@ export const UpdateSlideScripts = z.object({
   approved: z.boolean().default(false),
 });
 export type UpdateSlideScripts = z.infer<typeof UpdateSlideScripts>;
+
+/** Avvio della generazione delle clip avatar (una per slide). */
+export const StartSlideClips = z.object({
+  /** Id del LOOK HeyGen (non del gruppo). */
+  avatarId: z.string().min(1),
+  /** Tipo di avatar per la tariffa: il digital twin costa diversamente da photo/studio. */
+  avatarType: z.enum(['photo', 'studio', 'digital_twin']).default('digital_twin'),
+  /** Voce TTS; se assente HeyGen usa quella dell'avatar. */
+  voiceId: z.string().min(1).optional(),
+  /** Engine di rendering; se assente il default del server (il più economico). */
+  engine: z.enum(['avatar_iii', 'avatar_iv', 'avatar_v']).optional(),
+  resolution: z.enum(['720p', '1080p']).optional(),
+});
+export type StartSlideClips = z.infer<typeof StartSlideClips>;

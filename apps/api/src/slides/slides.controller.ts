@@ -5,16 +5,20 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Put,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  StartSlideClips as StartSlideClipsSchema,
   UpdateSlideScripts as UpdateSlideScriptsSchema,
+  type StartSlideClips as StartSlideClipsType,
   type UpdateSlideScripts as UpdateSlideScriptsType,
 } from '@scorm/contracts';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import { SlideClipsService, type SlideClipsEstimate, type SlideClipsView } from './slide-clips.service.js';
 import { SlideScriptsService, type SlideScriptsDoc } from './slide-scripts.service.js';
 import { CurrentContext, type AuthContext } from '../auth/auth-context.js';
 import { Roles } from '../auth/roles.decorator.js';
@@ -33,6 +37,7 @@ export class SlidesController {
   constructor(
     private readonly slides: SlidesService,
     private readonly scripts: SlideScriptsService,
+    private readonly clips: SlideClipsService,
   ) {}
 
   @Post('import')
@@ -81,6 +86,39 @@ export class SlidesController {
     @Body(new ZodValidationPipe(UpdateSlideScriptsSchema)) body: UpdateSlideScriptsType,
   ): Promise<SlideScriptsDoc> {
     return this.scripts.update(ctx.tenant.tenantId, courseId, importId, body);
+  }
+
+  @Get('imports/:importId/clips/estimate')
+  estimateClips(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+    @Query('engine') engine?: string,
+    @Query('avatarType') avatarType?: string,
+  ): Promise<SlideClipsEstimate> {
+    const type = avatarType === 'photo' || avatarType === 'studio' ? avatarType : 'digital_twin';
+    return this.clips.estimate(ctx.tenant.tenantId, courseId, importId, engine, type);
+  }
+
+  @Get('imports/:importId/clips')
+  async getClips(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+  ): Promise<SlideClipsView | { status: 'none' }> {
+    return (await this.clips.status(ctx.tenant.tenantId, courseId, importId)) ?? { status: 'none' };
+  }
+
+  /** Avvia o riprende la generazione delle clip avatar (a copioni approvati). */
+  @Post('imports/:importId/clips')
+  @Roles('EDITOR')
+  startClips(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+    @Body(new ZodValidationPipe(StartSlideClipsSchema)) body: StartSlideClipsType,
+  ): Promise<SlideClipsView> {
+    return this.clips.start(ctx.tenant.tenantId, courseId, importId, body);
   }
 
   @Get('imports/:importId')
