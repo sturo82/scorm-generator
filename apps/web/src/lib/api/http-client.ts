@@ -45,6 +45,13 @@ import type {
   CreateAvatarResult,
   AvatarLookStatus,
   Page,
+  SlideImportView,
+  SlideScriptsDoc,
+  SlideClipsEstimate,
+  SlideClipsView,
+  StartSlideClipsInput,
+  SlideLessonView,
+  SlideAvatarType,
 } from './types';
 
 /**
@@ -553,6 +560,61 @@ export class HttpApiClient implements ApiClient {
     return this.request<SsoRedeemResult>('/sso/redeem', {
       method: 'POST',
       body: JSON.stringify({ ticket }),
+    });
+  }
+
+  // Video-lezione da slide (PDF + avatar)
+  async importSlides(courseId: string, file: File) {
+    const session = getSession();
+    const form = new FormData();
+    form.append('file', file);
+    const headers = new Headers();
+    if (session) headers.set('Authorization', `Bearer ${session.token}`);
+    const res = await fetch(`${this.baseUrl}/courses/${courseId}/slides/import`, { method: 'POST', headers, body: form });
+    if (res.status === 401) void handleSessionExpired();
+    if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    return (await res.json()) as SlideImportView;
+  }
+  getSlideImport(courseId: string, importId: string) {
+    return this.request<SlideImportView>(`/courses/${courseId}/slides/imports/${importId}`);
+  }
+  getSlideScripts(courseId: string, importId: string) {
+    return this.request<SlideScriptsDoc | { status: 'none' }>(`/courses/${courseId}/slides/imports/${importId}/scripts`);
+  }
+  generateSlideScripts(courseId: string, importId: string) {
+    return this.request<SlideScriptsDoc>(`/courses/${courseId}/slides/imports/${importId}/scripts/generate`, { method: 'POST' });
+  }
+  saveSlideScripts(
+    courseId: string,
+    importId: string,
+    input: { slides: Array<{ index: number; script: string; skip: boolean }>; approved: boolean },
+  ) {
+    return this.request<SlideScriptsDoc>(`/courses/${courseId}/slides/imports/${importId}/scripts`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+  }
+  estimateSlideClips(courseId: string, importId: string, engine: string | undefined, avatarType: SlideAvatarType) {
+    const qs = new URLSearchParams({ avatarType });
+    if (engine) qs.set('engine', engine);
+    return this.request<SlideClipsEstimate>(`/courses/${courseId}/slides/imports/${importId}/clips/estimate?${qs.toString()}`);
+  }
+  getSlideClips(courseId: string, importId: string) {
+    return this.request<SlideClipsView | { status: 'none' }>(`/courses/${courseId}/slides/imports/${importId}/clips`);
+  }
+  startSlideClips(courseId: string, importId: string, input: StartSlideClipsInput) {
+    return this.request<SlideClipsView>(`/courses/${courseId}/slides/imports/${importId}/clips`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+  getSlideLesson(courseId: string, importId: string) {
+    return this.request<SlideLessonView | { status: 'none' }>(`/courses/${courseId}/slides/imports/${importId}/lesson`);
+  }
+  buildSlideLesson(courseId: string, importId: string, input: { layout: 'split' | 'pip'; moduleTitle?: string }) {
+    return this.request<SlideLessonView>(`/courses/${courseId}/slides/imports/${importId}/lesson`, {
+      method: 'POST',
+      body: JSON.stringify(input),
     });
   }
 }

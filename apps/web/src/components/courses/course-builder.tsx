@@ -22,6 +22,7 @@ import { EditorialStatusBadge } from '@/components/status-badge';
 import { BlockPreview } from '@/components/courses/block-preview';
 import { BlockEditorDialog } from '@/components/courses/block-editor-dialog';
 import { StockPhotoPicker } from '@/components/courses/stock-photo-picker';
+import { SlideVideoDialog } from '@/components/courses/slide-video-dialog';
 import { useToast } from '@/components/ui/toast';
 import {
   useModules,
@@ -213,6 +214,8 @@ function ContentBuilder({ courseId, highlightTests = false }: { courseId: string
   const toast = useToast();
   // Accordion moduli: uno aperto per volta (null = tutti chiusi).
   const [openModuleId, setOpenModuleId] = React.useState<string | null>(null);
+  // Flusso "video-lezione da slide con avatar" (PDF → copioni → clip → lezione).
+  const [slideVideoOpen, setSlideVideoOpen] = React.useState(false);
 
   // Job batch "genera tutti": vive sul server. Il jobId è idratato dai job
   // attivi del corso, così dopo un reload/navigazione lo stato viene ripreso.
@@ -325,6 +328,14 @@ function ContentBuilder({ courseId, highlightTests = false }: { courseId: string
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Button
               variant="outline"
+              onClick={() => setSlideVideoOpen(true)}
+              disabled={batchActive}
+              title="Crea una video-lezione da un PDF di slide, narrata da un avatar"
+            >
+              <Clapperboard className="size-4" /> Video da slide
+            </Button>
+            <Button
+              variant="outline"
               onClick={handleApproveAll}
               disabled={approveAll.isPending || batchActive || allApproved}
               title={allApproved ? 'Tutti i moduli e le lezioni sono già approvati' : 'Approva in blocco moduli, lezioni e test'}
@@ -362,6 +373,8 @@ function ContentBuilder({ courseId, highlightTests = false }: { courseId: string
       </div>
 
       <AssessmentManager courseId={courseId} modules={modules.data} highlight={highlightTests} />
+
+      <SlideVideoDialog courseId={courseId} open={slideVideoOpen} onClose={() => setSlideVideoOpen(false)} />
     </div>
   );
 }

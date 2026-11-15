@@ -3,7 +3,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Block, Brief, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
 import { getApiClient } from './client';
-import type { BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole, AttachStockImageInput, AttachStockCoverInput } from './types';
+import type { SlideAvatarType, StartSlideClipsInput, BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole, AttachStockImageInput, AttachStockCoverInput } from './types';
 
 const api = getApiClient();
 
@@ -939,3 +939,90 @@ export function useUploadModuleCover(courseId: string) {
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.modules(courseId) }),
   });
 }
+
+// --- Video-lezione da slide (PDF + avatar) ----------------------------------
+
+
+export const useImportSlides = (courseId: string) =>
+  useMutation({ mutationFn: (file: File) => api.importSlides(courseId, file) });
+
+export const useSlideScripts = (courseId: string, importId: string | null) =>
+  useQuery({
+    queryKey: ['courses', courseId, 'slides', importId, 'scripts'],
+    queryFn: () => api.getSlideScripts(courseId, importId as string),
+    enabled: !!courseId && !!importId,
+  });
+
+export function useGenerateSlideScripts(courseId: string, importId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.generateSlideScripts(courseId, importId as string),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, 'scripts'] }),
+  });
+}
+
+export function useSaveSlideScripts(courseId: string, importId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { slides: Array<{ index: number; script: string; skip: boolean }>; approved: boolean }) =>
+      api.saveSlideScripts(courseId, importId as string, input),
+    onSuccess: (doc) => qc.setQueryData(['courses', courseId, 'slides', importId, 'scripts'], doc),
+  });
+}
+
+export const useSlideClipsEstimate = (
+  courseId: string,
+  importId: string | null,
+  engine: string | undefined,
+  avatarType: SlideAvatarType,
+  enabled: boolean,
+) =>
+  useQuery({
+    queryKey: ['courses', courseId, 'slides', importId, 'estimate', engine ?? 'default', avatarType],
+    queryFn: () => api.estimateSlideClips(courseId, importId as string, engine, avatarType),
+    enabled: !!courseId && !!importId && enabled,
+  });
+
+/** Stato delle clip: polling mentre il lavoro è in corso (la lettura riprende i lavori orfani). */
+export const useSlideClips = (courseId: string, importId: string | null) =>
+  useQuery({
+    queryKey: ['courses', courseId, 'slides', importId, 'clips'],
+    queryFn: () => api.getSlideClips(courseId, importId as string),
+    enabled: !!courseId && !!importId,
+    refetchInterval: (query) => (query.state.data?.status === 'running' ? 5000 : false),
+  });
+
+export function useStartSlideClips(courseId: string, importId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: StartSlideClipsInput) => api.startSlideClips(courseId, importId as string, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, 'clips'] }),
+  });
+}
+
+export const useSlideLesson = (courseId: string, importId: string | null) =>
+  useQuery({
+    queryKey: ['courses', courseId, 'slides', importId, 'lesson'],
+    queryFn: () => api.getSlideLesson(courseId, importId as string),
+    enabled: !!courseId && !!importId,
+    refetchInterval: (query) => (query.state.data?.status === 'running' ? 5000 : false),
+  });
+
+export function useBuildSlideLesson(courseId: string, importId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { layout: 'split' | 'pip'; moduleTitle?: string }) =>
+      api.buildSlideLesson(courseId, importId as string, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, 'lesson'] });
+    },
+  });
+}
+
+export const useSlideImport = (courseId: string, importId: string | null) =>
+  useQuery({
+    queryKey: ['courses', courseId, 'slides', importId, 'import'],
+    queryFn: () => api.getSlideImport(courseId, importId as string),
+    enabled: !!courseId && !!importId,
+    staleTime: 60 * 60_000,
+  });

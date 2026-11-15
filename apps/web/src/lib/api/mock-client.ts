@@ -1132,6 +1132,21 @@ export class MockApiClient implements ApiClient {
     }
     throw new Error('Lezione non trovata');
   }
+  // Video-lezione da slide: richiede l'API reale (PDF, HeyGen, Remotion).
+  private slidesUnavailable(): never {
+    throw new Error('Funzione disponibile solo con API reale (NEXT_PUBLIC_API_MODE=real)');
+  }
+  async importSlides(): Promise<never> { return this.slidesUnavailable(); }
+  async getSlideImport(): Promise<never> { return this.slidesUnavailable(); }
+  async getSlideScripts(): Promise<never> { return this.slidesUnavailable(); }
+  async generateSlideScripts(): Promise<never> { return this.slidesUnavailable(); }
+  async saveSlideScripts(): Promise<never> { return this.slidesUnavailable(); }
+  async estimateSlideClips(): Promise<never> { return this.slidesUnavailable(); }
+  async getSlideClips(): Promise<never> { return this.slidesUnavailable(); }
+  async startSlideClips(): Promise<never> { return this.slidesUnavailable(); }
+  async getSlideLesson(): Promise<never> { return this.slidesUnavailable(); }
+  async buildSlideLesson(): Promise<never> { return this.slidesUnavailable(); }
+
   private pushAudit(action: string, resourceType: string, resourceId: string) {
     this.audit.push({ id: id('aud'), action, resourceType, resourceId, userId: 'u-dev', createdAt: new Date().toISOString() });
   }

@@ -357,6 +357,27 @@ export interface AdminUserView {
   createdAt: string;
 }
 
+import type {
+  SlideScriptEntry,
+  SlideImportView,
+  SlideScriptsDoc,
+  SlideClipsEstimate,
+  SlideClipsView,
+  StartSlideClipsInput,
+  SlideLessonView,
+  SlideAvatarType,
+} from './slides-types';
+export type {
+  SlideScriptEntry,
+  SlideImportView,
+  SlideScriptsDoc,
+  SlideClipsEstimate,
+  SlideClipsView,
+  StartSlideClipsInput,
+  SlideLessonView,
+  SlideAvatarType,
+};
+
 export interface ApiClient {
   // Corsi
   listCourses(filter?: { folderId?: string | 'root'; q?: string }): Promise<CourseView[]>;
@@ -633,6 +654,22 @@ export interface ApiClient {
   uploadModuleCover(courseId: string, moduleId: string, file: File): Promise<{ attached: true; url: string }>;
   /** Scambia un ticket SSO monouso con una sessione utente (Scenario 2). */
   redeemSso(ticket: string): Promise<SsoRedeemResult>;
+
+  // Video-lezione da slide (PDF + avatar)
+  importSlides(courseId: string, file: File): Promise<SlideImportView>;
+  getSlideImport(courseId: string, importId: string): Promise<SlideImportView>;
+  getSlideScripts(courseId: string, importId: string): Promise<SlideScriptsDoc | { status: 'none' }>;
+  generateSlideScripts(courseId: string, importId: string): Promise<SlideScriptsDoc>;
+  saveSlideScripts(
+    courseId: string,
+    importId: string,
+    input: { slides: Array<{ index: number; script: string; skip: boolean }>; approved: boolean },
+  ): Promise<SlideScriptsDoc>;
+  estimateSlideClips(courseId: string, importId: string, engine: string | undefined, avatarType: SlideAvatarType): Promise<SlideClipsEstimate>;
+  getSlideClips(courseId: string, importId: string): Promise<SlideClipsView | { status: 'none' }>;
+  startSlideClips(courseId: string, importId: string, input: StartSlideClipsInput): Promise<SlideClipsView>;
+  getSlideLesson(courseId: string, importId: string): Promise<SlideLessonView | { status: 'none' }>;
+  buildSlideLesson(courseId: string, importId: string, input: { layout: 'split' | 'pip'; moduleTitle?: string }): Promise<SlideLessonView>;
 }
 
 /** Esito del redeem di un ticket SSO: token di sessione + dati utente/tenant. */
