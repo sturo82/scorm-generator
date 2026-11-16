@@ -88,3 +88,171 @@ export class HtmlExtractor implements DocumentExtractor {
     return { text: joinSections(sections), sections };
   }
 }
+
+/**
+ * Estrattore di sottotitoli (SRT e WebVTT): scarta numeri di riga, timestamp,
+ * intestazioni e tag, e unisce le righe in paragrafi di testo continuo. Pensato
+ * per le trascrizioni di registrazioni, che arrivano spesso in questi formati.
+ * Le righe del parlato vengono riunite in paragrafi (circa ogni 8 righe o a ogni
+ * pausa lunga) per dare al chunking un testo scorrevole e non una riga per cue.
+ */
+export class SubtitleExtractor implements DocumentExtractor {
+  readonly id = 'subtitles';
+  private readonly mimes = new Set(['application/x-subrip', 'text/vtt']);
+  supports(mimeType: string): boolean {
+    return this.mimes.has(mimeType);
+  }
+  async extract(file: FileRef): Promise<ExtractedDoc> {
+    const raw = file.content
+      .toString('utf8')
+      .replace(/^\uFEFF/, '')
+      .replace(/\r\n?/g, '\n');
+    const cues: Array<{ start: number; text: string }> = [];
+    for (const block of raw.split(/\n{2,}/)) {
+      const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+      const t = lines.findIndex((l) => l.includes('-->'));
+      if (t === -1) continue; // intestazione WEBVTT, NOTE, STYLE, numeri isolati
+      const m = /(?:(\d{1,2}):)?(\d{1,2}):(\d{2})[.,](\d{1,3})/.exec(lines[t]!);
+      const start = m ? Number(m[1] ?? 0) * 3600 + Number(m[2]) * 60 + Number(m[3]) : 0;
+      const text = lines
+        .slice(t + 1)
+        .join(' ')
+        .replace(/<[^>]+>/g, '') // tag VTT/SRT (<i>, <c>, <00:00:01.000>)
+        .replace(/\{\\[^}]*\}/g, '') // stili ASS/SSA
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (text) cues.push({ start, text });
+    }
+    const paragraphs: string[] = [];
+    let buf: string[] = [];
+    let last = cues[0]?.start ?? 0;
+    for (const c of cues) {
+      if (buf.length >= 8 || (buf.length > 0 && c.start - last > 4)) {
+        paragraphs.push(buf.join(' '));
+        buf = [];
+      }
+      buf.push(c.text);
+      last = c.start;
+    }
+    if (buf.length) paragraphs.push(buf.join(' '));
+    const text = paragraphs.join('\n\n');
+    const sections = sectionizePlainText(text);
+    return { text: joinSections(sections), sections };
+  }
+}
+
+/**
+ * Estrattore RTF: converte il testo in chiaro ignorando tabelle di font/colori e
+ * gruppi di controllo, gestendo gli escape `\'hh` (Windows-1252) e `\uN`. Copre i
+ * documenti RTF comuni (Word, TextEdit); non interpreta immagini né tabelle.
+ */
+export class RtfExtractor implements DocumentExtractor {
+  readonly id = 'rtf';
+  private readonly mimes = new Set(['application/rtf', 'text/rtf']);
+  supports(mimeType: string): boolean {
+    return this.mimes.has(mimeType);
+  }
+  async extract(file: FileRef): Promise<ExtractedDoc> {
+    const text = rtfToText(file.content.toString('latin1'));
+    const sections = sectionizePlainText(text);
+    return { text: joinSections(sections), sections };
+  }
+}
+
+const CP1252: Record<number, string> = {
+  0x80: '€', 0x82: '‚', 0x83: 'ƒ', 0x84: '„', 0x85: '…', 0x86: '†', 0x87: '‡', 0x88: 'ˆ', 0x89: '‰',
+  0x8a: 'Š', 0x8b: '‹', 0x8c: 'Œ', 0x8e: 'Ž', 0x91: '‘', 0x92: '’', 0x93: '“', 0x94: '”', 0x95: '•',
+  0x96: '–', 0x97: '—', 0x98: '˜', 0x99: '™', 0x9a: 'š', 0x9b: '›', 0x9c: 'œ', 0x9e: 'ž', 0x9f: 'Ÿ',
+};
+
+/** Gruppi RTF il cui contenuto non è testo del documento. */
+const RTF_SKIP_DESTINATIONS = new Set([
+  'fonttbl', 'colortbl', 'stylesheet', 'info', 'pict', 'header', 'footer', 'headerl', 'headerr',
+  'footerl', 'footerr', 'themedata', 'colorschememapping', 'latentstyles', 'datastore', 'listtable',
+  'listoverridetable', 'rsidtbl', 'generator', 'xmlnstbl', 'object', 'fldinst',
+]);
+
+export function rtfToText(rtf: string): string {
+  const out: string[] = [];
+  // Stack di gruppi: true = il gruppo corrente è da ignorare.
+  const skipStack: boolean[] = [];
+  let skip = false;
+  let ucSkip = 1; // caratteri sostitutivi dopo \uN
+  let pendingSkip = 0;
+  let i = 0;
+  const n = rtf.length;
+  while (i < n) {
+    const ch = rtf[i]!;
+    if (ch === '{') {
+      skipStack.push(skip);
+      i++;
+      // Destinazione speciale: {\*\xxx ...} o {\fonttbl ...}
+      const m = /^\\(\*\\)?([a-zA-Z]+)/.exec(rtf.slice(i, i + 40));
+      if (m && (m[1] || RTF_SKIP_DESTINATIONS.has(m[2]!))) skip = true;
+      continue;
+    }
+    if (ch === '}') {
+      skip = skipStack.pop() ?? false;
+      i++;
+      continue;
+    }
+    if (ch === '\\') {
+      const next = rtf[i + 1] ?? '';
+      if (next === "'") {
+        const code = parseInt(rtf.slice(i + 2, i + 4), 16);
+        i += 4;
+        if (pendingSkip > 0) { pendingSkip--; continue; }
+        if (!skip && Number.isFinite(code)) out.push(CP1252[code] ?? String.fromCharCode(code));
+        continue;
+      }
+      if (next === '\\' || next === '{' || next === '}') {
+        if (!skip) out.push(next);
+        i += 2;
+        continue;
+      }
+      // Backslash + a capo = fine paragrafo (TextEdit/Cocoa).
+      if (next === '\n' || next === '\r') {
+        if (!skip) out.push('\n');
+        i += next === '\r' && rtf[i + 2] === '\n' ? 3 : 2;
+        continue;
+      }
+      if (next === '~') { if (!skip) out.push(' '); i += 2; continue; }
+      if (next === '-' || next === '_') { if (!skip && next === '_') out.push('-'); i += 2; continue; }
+      const w = /^\\([a-zA-Z]+)(-?\d+)? ?/.exec(rtf.slice(i, i + 40));
+      if (w) {
+        i += w[0].length;
+        const word = w[1]!;
+        const arg = w[2] !== undefined ? Number(w[2]) : undefined;
+        if (word === 'par' || word === 'line' || word === 'row') { if (!skip) out.push('\n'); }
+        else if (word === 'tab') { if (!skip) out.push(' '); }
+        else if (word === 'endash') { if (!skip) out.push('–'); }
+        else if (word === 'emdash') { if (!skip) out.push('—'); }
+        else if (word === 'bullet') { if (!skip) out.push('•'); }
+        else if (word === 'lquote') { if (!skip) out.push('‘'); }
+        else if (word === 'rquote') { if (!skip) out.push('’'); }
+        else if (word === 'ldblquote') { if (!skip) out.push('“'); }
+        else if (word === 'rdblquote') { if (!skip) out.push('”'); }
+        else if (word === 'uc' && arg !== undefined) ucSkip = arg;
+        else if (word === 'u' && arg !== undefined) {
+          const cp = arg < 0 ? arg + 65536 : arg;
+          if (!skip) out.push(String.fromCharCode(cp));
+          pendingSkip = ucSkip;
+        }
+        continue;
+      }
+      i += 2;
+      continue;
+    }
+    if (ch === '\n' || ch === '\r') { i++; continue; }
+    i++;
+    if (ch === '\t') { if (!skip && pendingSkip === 0) out.push(' '); continue; }
+    if (pendingSkip > 0) { pendingSkip--; continue; }
+    if (!skip) out.push(ch);
+  }
+  return out
+    .join('')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}

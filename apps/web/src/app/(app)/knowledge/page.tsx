@@ -15,9 +15,12 @@ import {
   useDeleteKnowledge,
   useReprocessKnowledge,
 } from '@/lib/api/hooks';
+import { StructureKnowledgeDialog } from '@/components/knowledge/structure-knowledge-dialog';
+import { Button } from '@/components/ui/button';
+import { Wand2 } from 'lucide-react';
 
 const ACCEPT =
-  '.pdf,.docx,.pptx,.xlsx,.txt,.md,.html,.csv,application/pdf,text/plain,text/markdown,text/html,text/csv';
+  '.pdf,.docx,.pptx,.xlsx,.txt,.md,.html,.csv,.srt,.vtt,.rtf,application/pdf,text/plain,text/markdown,text/html,text/csv';
 
 export default function KnowledgePage() {
   const toast = useToast();
@@ -30,6 +33,7 @@ export default function KnowledgePage() {
   const [courseFilter, setCourseFilter] = React.useState('');
   const isCourseView = courseFilter !== '';
 
+  const [structureOpen, setStructureOpen] = React.useState(false);
   const courses = useCourses();
   const docs = useKnowledge(isCourseView ? 'COURSE' : 'GLOBAL', isCourseView ? courseFilter : undefined);
 
@@ -106,9 +110,18 @@ export default function KnowledgePage() {
         </div>
       )}
 
-      <h2 className="mb-3 text-lg font-semibold">
-        {isCourseView ? 'Fonti del corso' : 'Documenti'}
-      </h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">{isCourseView ? 'Fonti del corso' : 'Documenti'}</h2>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setStructureOpen(true)}
+          disabled={!docs.data?.some((d) => d.status === 'READY')}
+          title="Crea un documento ordinato (sintesi, argomenti, glossario) a partire dai documenti o dalle trascrizioni caricati"
+        >
+          <Wand2 className="size-4" /> Crea knowledge strutturata
+        </Button>
+      </div>
 
       {docs.isLoading && (
         <div className="space-y-2">
@@ -140,6 +153,14 @@ export default function KnowledgePage() {
           </li>
         ))}
       </ul>
+      <StructureKnowledgeDialog
+        key={structureOpen ? 'open' : 'closed'}
+        open={structureOpen}
+        onClose={() => setStructureOpen(false)}
+        docs={(docs.data ?? []).filter((d) => d.status === 'READY')}
+        scope={isCourseView ? 'COURSE' : 'GLOBAL'}
+        courseId={isCourseView ? courseFilter : undefined}
+      />
     </>
   );
 }

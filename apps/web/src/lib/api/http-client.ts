@@ -309,6 +309,9 @@ export class HttpApiClient implements ApiClient {
     if (!res.ok) throw new Error(`Upload fallito: ${res.status}`);
     return (await res.json()) as KnowledgeDocView;
   }
+  structureKnowledge(input: { documentIds: string[]; title: string; scope: KnowledgeScope; courseId?: string; language?: string }) {
+    return this.request<KnowledgeDocView>('/knowledge/structure', { method: 'POST', body: JSON.stringify(input) });
+  }
   async deleteKnowledge(id: string) { await this.request(`/knowledge/${id}`, { method: 'DELETE' }); }
   reprocessKnowledge(id: string) { return this.request<KnowledgeDocView>(`/knowledge/${id}/reprocess`, { method: 'POST' }); }
   async getKnowledgeDownloadUrl(id: string) {

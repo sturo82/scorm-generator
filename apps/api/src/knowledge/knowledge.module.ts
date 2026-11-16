@@ -4,6 +4,7 @@ import { JOB_QUEUE } from '../providers/provider.constants.js';
 import { KnowledgeService } from './knowledge.service.js';
 import { KnowledgeController } from './knowledge.controller.js';
 import { IngestionService } from './ingestion.service.js';
+import { KnowledgeStructureService } from './knowledge-structure.service.js';
 import { RetrievalService } from './retrieval.service.js';
 
 export interface IngestJobPayload {
@@ -17,8 +18,8 @@ export interface IngestJobPayload {
  */
 @Module({
   controllers: [KnowledgeController],
-  providers: [KnowledgeService, IngestionService, RetrievalService],
-  exports: [KnowledgeService, IngestionService, RetrievalService],
+  providers: [KnowledgeService, IngestionService, RetrievalService, KnowledgeStructureService],
+  exports: [KnowledgeService, IngestionService, RetrievalService, KnowledgeStructureService],
 })
 export class KnowledgeModule implements OnModuleInit {
   constructor(

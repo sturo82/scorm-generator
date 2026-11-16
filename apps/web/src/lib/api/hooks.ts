@@ -659,6 +659,16 @@ export function useUploadKnowledge() {
   });
 }
 
+/** Crea una knowledge strutturata (documento AI) da documenti già caricati. */
+export function useStructureKnowledge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { documentIds: string[]; title: string; scope: KnowledgeScope; courseId?: string; language?: string }) =>
+      api.structureKnowledge(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['knowledge'] }),
+  });
+}
+
 export function useDeleteKnowledge() {
   const qc = useQueryClient();
   return useMutation({

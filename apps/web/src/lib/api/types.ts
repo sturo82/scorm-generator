@@ -512,6 +512,7 @@ export interface ApiClient {
   // Knowledge
   listKnowledge(scope?: KnowledgeScope, courseId?: string): Promise<KnowledgeDocView[]>;
   uploadKnowledge(file: File, scope: KnowledgeScope, courseId?: string): Promise<KnowledgeDocView>;
+  structureKnowledge(input: { documentIds: string[]; title: string; scope: KnowledgeScope; courseId?: string; language?: string }): Promise<KnowledgeDocView>;
   deleteKnowledge(id: string): Promise<void>;
   /** Ri-processa un documento (es. dopo FAILED): ri-accoda l'ingestion. */
   reprocessKnowledge(id: string): Promise<KnowledgeDocView>;

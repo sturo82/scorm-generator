@@ -1132,6 +1132,10 @@ export class MockApiClient implements ApiClient {
     }
     throw new Error('Lezione non trovata');
   }
+  async structureKnowledge(): Promise<never> {
+    throw new Error('Funzione disponibile solo con API reale (NEXT_PUBLIC_API_MODE=real)');
+  }
+
   // Video-lezione da slide: richiede l'API reale (PDF, HeyGen, Remotion).
   private slidesUnavailable(): never {
     throw new Error('Funzione disponibile solo con API reale (NEXT_PUBLIC_API_MODE=real)');

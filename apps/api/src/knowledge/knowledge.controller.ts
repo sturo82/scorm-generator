@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Delete,
   Get,
@@ -12,6 +13,10 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentContext, type AuthContext } from '../auth/auth-context.js';
 import { Roles } from '../auth/roles.decorator.js';
+import { StructureKnowledge as StructureKnowledgeSchema, type StructureKnowledge as StructureKnowledgeType } from '@scorm/contracts';
+import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import { KnowledgeStructureService } from './knowledge-structure.service.js';
+import { resolveUploadMime } from './supported-formats.js';
 import { KnowledgeService, type KnowledgeDocView } from './knowledge.service.js';
 
 /** File caricato da multer (sottoinsieme usato). */
@@ -28,7 +33,10 @@ interface UploadedMulterFile {
  */
 @Controller('knowledge')
 export class KnowledgeController {
-  constructor(private readonly knowledge: KnowledgeService) {}
+  constructor(
+    private readonly knowledge: KnowledgeService,
+    private readonly structure: KnowledgeStructureService,
+  ) {}
 
   @Post('upload')
   @Roles('EDITOR')
@@ -50,10 +58,24 @@ export class KnowledgeController {
       scope: normalizedScope,
       courseId,
       filename: file.originalname,
-      mimeType: file.mimetype,
+      mimeType: resolveUploadMime(file.originalname, file.mimetype),
       content: file.buffer,
       correlationId: ctx.correlationId,
     });
+  }
+
+  /**
+   * Crea una knowledge strutturata (sintesi, argomenti, glossario, punti da chiarire)
+   * da documenti già caricati, ad esempio trascrizioni. Ritorna subito il nuovo
+   * documento in elaborazione; compare tra le fonti quando è pronto.
+   */
+  @Post('structure')
+  @Roles('EDITOR')
+  async structured(
+    @CurrentContext() ctx: AuthContext,
+    @Body(new ZodValidationPipe(StructureKnowledgeSchema)) body: StructureKnowledgeType,
+  ): Promise<KnowledgeDocView> {
+    return this.structure.start(ctx.tenant.tenantId, body, ctx.correlationId);
   }
 
   @Get()
