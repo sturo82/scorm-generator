@@ -13,6 +13,7 @@ import {
   FileText,
   FolderOpen,
   Wand2,
+  Clapperboard,
 } from 'lucide-react';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,7 @@ import { Select } from '@/components/ui/select';
 import { Dropzone } from '@/components/knowledge/dropzone';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
+import { slidesAutoOpenKey } from '@/lib/slides-autoopen';
 import type { LessonFormatValue, RssPreviewResult } from '@/lib/api/types';
 import {
   useCreateCourseFromRss,
@@ -30,6 +32,7 @@ import {
   useCreateCourseFromKnowledge,
   useKnowledge,
   useUploadKnowledge,
+  useCreateCourse,
 } from '@/lib/api/hooks';
 
 const LANGUAGES = [
@@ -44,7 +47,7 @@ const LANGUAGES = [
 const KNOWLEDGE_ACCEPT =
   '.pdf,.docx,.pptx,.xlsx,.txt,.md,.html,.csv,.srt,.vtt,.rtf,.json,application/pdf,text/plain,text/markdown,text/html,text/csv';
 
-type Origin = 'topic' | 'material';
+type Origin = 'topic' | 'material' | 'slides';
 type Source = 'everywhere' | 'mine';
 
 const FORMAT_OPTIONS: Array<{ value: LessonFormatValue; label: string; hint: string }> = [
@@ -55,6 +58,9 @@ const FORMAT_OPTIONS: Array<{ value: LessonFormatValue; label: string; hint: str
 ];
 
 const STEPS = ['Sorgente', 'Dettagli', 'Formato', 'Crea'];
+/** Percorso "da slide": scelta della sorgente e titolo; il resto si fa nel dialog del corso. */
+const STEPS_SLIDES = ['Sorgente', 'Dettagli'];
+
 
 export default function NewCoursePage() {
   const router = useRouter();
@@ -67,6 +73,7 @@ export default function NewCoursePage() {
   const createKnow = useCreateCourseFromKnowledge();
   const globalDocs = useKnowledge('GLOBAL');
   const uploadKnowledge = useUploadKnowledge();
+  const createBlank = useCreateCourse();
 
   // Stato wizard.
   const [step, setStep] = React.useState(0);
@@ -238,9 +245,30 @@ export default function NewCoursePage() {
   }
 
   // Avanzamento consentito per step.
+  const steps = origin === 'slides' ? STEPS_SLIDES : STEPS;
   const canLeaveSource = origin !== null;
   const canLeaveDetails =
-    origin === 'topic' ? topic.trim().length >= 2 : selectedDocs.length > 0;
+    origin === 'topic'
+      ? topic.trim().length >= 2
+      : origin === 'slides'
+        ? title.trim().length >= 2
+        : selectedDocs.length > 0;
+
+  /** Crea un corso vuoto e apre il flusso "Video da slide" (PDF, copioni, avatar, montaggio). */
+  async function handleCreateFromSlides() {
+    try {
+      const course = await createBlank.mutateAsync({ title: title.trim(), language });
+      try {
+        window.localStorage.setItem(slidesAutoOpenKey(course.id), '1');
+      } catch {
+        /* storage non disponibile: l'utente userà il pulsante "Crea da slide" */
+      }
+      router.push(`/courses/${course.id}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message.replace(/^API \d+:\s*/, '') : '';
+      toast.show(msg || 'Creazione non riuscita', 'error');
+    }
+  }
 
   return (
     <>
@@ -252,7 +280,7 @@ export default function NewCoursePage() {
       <div className="mx-auto max-w-2xl">
         {/* Stepper */}
         <ol className="mb-6 flex items-center gap-2 text-sm">
-          {STEPS.map((label, i) => (
+          {steps.map((label, i) => (
             <li key={label} className="flex flex-1 items-center gap-2">
               <span
                 className={cn(
@@ -265,7 +293,7 @@ export default function NewCoursePage() {
               <span className={cn('hidden sm:inline', i === step ? 'font-medium' : 'text-muted-foreground')}>
                 {label}
               </span>
-              {i < STEPS.length - 1 && <span className="h-px flex-1 bg-border" />}
+              {i < steps.length - 1 && <span className="h-px flex-1 bg-border" />}
             </li>
           ))}
         </ol>
@@ -275,6 +303,13 @@ export default function NewCoursePage() {
             {/* STEP 1 — Sorgente */}
             {step === 0 && (
               <div className="grid gap-3 sm:grid-cols-2">
+                <OriginCard
+                  active={origin === 'slides'}
+                  icon={<Clapperboard className="size-5" />}
+                  title="Da slide (PDF)"
+                  desc="Carica le slide: un avatar le racconta in video. Puoi arricchirle con la tua knowledge. Nessun modulo di prova da cancellare."
+                  onClick={() => setOrigin('slides')}
+                />
                 <OriginCard
                   active={origin === 'topic'}
                   icon={<Globe className="size-5" />}
@@ -293,7 +328,43 @@ export default function NewCoursePage() {
             )}
 
             {/* STEP 2 — Dettagli + anteprima */}
-            {step === 1 && (
+            {step === 1 && origin === 'slides' && (
+              <div className="flex flex-col gap-5">
+                <div className="space-y-2">
+                  <Label htmlFor="slides-title" className="text-base">Titolo del corso</Label>
+                  <Input
+                    id="slides-title"
+                    value={title}
+                    maxLength={200}
+                    autoFocus
+                    className="h-12 text-base"
+                    placeholder="Es. Child Safeguarding Policy"
+                    onChange={(e) => setTitle(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="slides-lang">Lingua del corso</Label>
+                  <Select id="slides-lang" value={language} onChange={(e) => setLanguage(e.target.value)}>
+                    {LANGUAGES.map((l) => (
+                      <option key={l.value} value={l.value}>{l.label}</option>
+                    ))}
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    I copioni dell&apos;avatar sono scritti in questa lingua, anche se le slide sono in un&apos;altra.
+                  </p>
+                </div>
+                <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
+                  <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+                  Creo il corso vuoto e apro subito il caricamento delle slide. Se hai documenti o trascrizioni da usare
+                  come knowledge, caricali prima dalla pagina Knowledge: potrai sceglierli al passo dei copioni.
+                </div>
+                <Button type="button" size="lg" disabled={!canLeaveDetails || createBlank.isPending} onClick={() => void handleCreateFromSlides()}>
+                  {createBlank.isPending ? <Loader2 className="size-4 animate-spin" /> : <Clapperboard className="size-4" />}
+                  {createBlank.isPending ? 'Creazione…' : 'Crea il corso e carica le slide'}
+                </Button>
+              </div>
+            )}
+            {step === 1 && origin !== 'slides' && (
               <div className="flex flex-col gap-5">
                 {origin === 'topic' ? (
                   <div className="space-y-2">
@@ -575,7 +646,7 @@ export default function NewCoursePage() {
               <Button type="button" variant="ghost" disabled={step === 0} onClick={() => setStep((s) => Math.max(0, s - 1))}>
                 Indietro
               </Button>
-              {step < STEPS.length - 1 ? (
+              {step < steps.length - 1 ? (
                 <Button
                   type="button"
                   disabled={(step === 0 && !canLeaveSource) || (step === 1 && !canLeaveDetails)}
@@ -584,7 +655,7 @@ export default function NewCoursePage() {
                       toast.show('Genera prima l’anteprima', 'info');
                       return;
                     }
-                    setStep((s) => Math.min(STEPS.length - 1, s + 1));
+                    setStep((s) => Math.min(steps.length - 1, s + 1));
                   }}
                 >
                   Continua

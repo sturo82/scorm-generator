@@ -72,9 +72,12 @@ export function CourseBuilder({
   courseId,
   mode = 'content',
   highlightTests = false,
+  autoOpenSlides = false,
 }: {
   courseId: string;
   mode?: 'structure' | 'content';
+  /** Apre subito il dialog "Video da slide" (corso creato dal percorso "Da slide"). */
+  autoOpenSlides?: boolean;
   /** Evidenzia la card dei test (navigazione dal banner "test da generare"). */
   highlightTests?: boolean;
 }) {
@@ -88,7 +91,7 @@ export function CourseBuilder({
   // Accordion moduli (modalità struttura): uno aperto per volta.
   const [openStructModuleId, setOpenStructModuleId] = React.useState<string | null>(null);
   // Flusso "video-lezione da slide con avatar": disponibile anche con corso vuoto.
-  const [slideVideoOpen, setSlideVideoOpen] = React.useState(false);
+  const [slideVideoOpen, setSlideVideoOpen] = React.useState(autoOpenSlides);
 
   // Polling del job di generazione struttura: alla fine ricarica i moduli.
   const outlineJob = useJobStatus(courseId, outlineJobId);

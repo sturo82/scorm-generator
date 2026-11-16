@@ -29,6 +29,7 @@ import { StockPhotoPicker } from '@/components/courses/stock-photo-picker';
 import { CoverFramer, COVER_ASPECT } from '@/components/courses/cover-framer';
 import { usePendingAssessments } from '@/lib/use-pending-assessments';
 import { cn } from '@/lib/cn';
+import { slidesAutoOpenKey } from '@/lib/slides-autoopen';
 import { ClipboardCheck } from 'lucide-react';
 
 type StepId = 'brief' | 'sources' | 'structure' | 'content' | 'cover' | 'review';
@@ -67,6 +68,20 @@ export function CourseWizard({ courseId }: { courseId: string }) {
   const activeJobs = useActiveJobs(courseId);
   const toast = useToast();
   const [active, setActive] = React.useState<StepId>('brief');
+  // Corso creato dal percorso "Da slide": apre il passo Struttura con il dialog già aperto.
+  const [autoOpenSlides, setAutoOpenSlides] = React.useState(false);
+  React.useEffect(() => {
+    try {
+      const key = slidesAutoOpenKey(courseId);
+      if (window.localStorage.getItem(key) === '1') {
+        window.localStorage.removeItem(key);
+        setActive('structure');
+        setAutoOpenSlides(true);
+      }
+    } catch {
+      /* storage non disponibile */
+    }
+  }, [courseId]);
   const [coverStockOpen, setCoverStockOpen] = React.useState(false);
   // Punto focale verticale della copertina (0-100): stato locale per uno slider
   // fluido; il salvataggio avviene al rilascio (onPointerUp/change).
@@ -369,7 +384,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
           nextLabel="Vai ai contenuti"
           blockedHint={!hasStructure ? 'Genera la struttura (o aggiungi un modulo) per procedere.' : undefined}
         >
-          <CourseBuilder courseId={courseId} mode="structure" />
+          <CourseBuilder courseId={courseId} mode="structure" autoOpenSlides={autoOpenSlides} />
         </StepShell>
       )}
 
