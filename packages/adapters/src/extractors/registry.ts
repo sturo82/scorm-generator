@@ -4,7 +4,7 @@ import {
   type FileRef,
   UnsupportedFormatError,
 } from '@scorm/domain';
-import { CsvExtractor, HtmlExtractor, PlainTextExtractor, RtfExtractor, SubtitleExtractor } from './text-extractors.js';
+import { CsvExtractor, HtmlExtractor, PlainTextExtractor, RtfExtractor, SubtitleExtractor, TranscriptJsonExtractor } from './text-extractors.js';
 import { PdfExtractor } from './pdf-extractor.js';
 import { DocxExtractor } from './docx-extractor.js';
 import { XlsxExtractor } from './xlsx-extractor.js';
@@ -34,6 +34,7 @@ export function createDefaultExtractors(): DocumentExtractor[] {
     new PlainTextExtractor(),
     new SubtitleExtractor(),
     new RtfExtractor(),
+    new TranscriptJsonExtractor(),
     new CsvExtractor(),
     new HtmlExtractor(),
     new PdfExtractor(),

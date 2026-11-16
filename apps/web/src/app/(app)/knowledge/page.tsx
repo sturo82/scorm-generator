@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Wand2 } from 'lucide-react';
 
 const ACCEPT =
-  '.pdf,.docx,.pptx,.xlsx,.txt,.md,.html,.csv,.srt,.vtt,.rtf,application/pdf,text/plain,text/markdown,text/html,text/csv';
+  '.pdf,.docx,.pptx,.xlsx,.txt,.md,.html,.csv,.srt,.vtt,.rtf,.json,application/pdf,text/plain,text/markdown,text/html,text/csv';
 
 export default function KnowledgePage() {
   const toast = useToast();

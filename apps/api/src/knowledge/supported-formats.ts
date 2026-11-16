@@ -16,6 +16,7 @@ export const SUPPORTED_MIME_TYPES: Record<string, string> = {
   'application/x-subrip': 'srt',
   'text/vtt': 'vtt',
   'application/rtf': 'rtf',
+  'application/json': 'json',
 };
 
 /** Estensioni → MIME canonico, per i formati che i browser dichiarano male (o non dichiarano). */
@@ -23,6 +24,7 @@ const EXTENSION_MIME: Record<string, string> = {
   srt: 'application/x-subrip',
   vtt: 'text/vtt',
   rtf: 'application/rtf',
+  json: 'application/json',
   md: 'text/markdown',
   txt: 'text/plain',
   csv: 'text/csv',

@@ -256,3 +256,71 @@ export function rtfToText(rtf: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+
+/**
+ * Estrattore di trascrizioni in JSON. Riconosce:
+ *  - Amazon Transcribe (`results.audio_segments[].transcript` oppure
+ *    `results.transcripts[0].transcript`);
+ *  - formati "stile Whisper" con `segments[].text` o un `text`/`transcript` di primo livello.
+ * Un JSON di altra forma viene rifiutato con un messaggio esplicito: non si indovina il
+ * contenuto di strutture arbitrarie.
+ */
+export class TranscriptJsonExtractor implements DocumentExtractor {
+  readonly id = 'transcript-json';
+  supports(mimeType: string): boolean {
+    return mimeType === 'application/json';
+  }
+  async extract(file: FileRef): Promise<ExtractedDoc> {
+    let data: unknown;
+    try {
+      data = JSON.parse(file.content.toString('utf8').replace(/^\uFEFF/, ''));
+    } catch {
+      throw new Error('JSON non valido');
+    }
+    const parts = transcriptPartsFromJson(data);
+    if (parts.length === 0) {
+      throw new Error(
+        'JSON non riconosciuto: è supportato solo l\'output di trascrizione (Amazon Transcribe o simili con "text"/"segments")',
+      );
+    }
+    // Unisce i segmenti in paragrafi di circa 6 frasi per un chunking scorrevole.
+    const paragraphs: string[] = [];
+    for (let i = 0; i < parts.length; i += 6) paragraphs.push(parts.slice(i, i + 6).join(' '));
+    const text = paragraphs.join('\n\n');
+    const sections = sectionizePlainText(text);
+    return { text: joinSections(sections), sections };
+  }
+}
+
+function asRecord(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+}
+function str(v: unknown): string {
+  return typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '';
+}
+
+/** Frammenti di testo (in ordine) estratti da un JSON di trascrizione noto; [] se non riconosciuto. */
+export function transcriptPartsFromJson(data: unknown): string[] {
+  const root = asRecord(data);
+  if (!root) return [];
+  // Amazon Transcribe.
+  const results = asRecord(root['results']);
+  if (results) {
+    const segs = Array.isArray(results['audio_segments']) ? results['audio_segments'] : [];
+    const fromSegs = segs.map((s) => str(asRecord(s)?.['transcript'])).filter(Boolean);
+    if (fromSegs.length > 0) return fromSegs;
+    const tr = Array.isArray(results['transcripts']) ? results['transcripts'] : [];
+    const full = tr.map((t) => str(asRecord(t)?.['transcript'])).filter(Boolean).join(' ');
+    if (full) return splitSentences(full);
+  }
+  // Stile Whisper e simili.
+  const segments = Array.isArray(root['segments']) ? root['segments'] : [];
+  const fromSegments = segments.map((s) => str(asRecord(s)?.['text'])).filter(Boolean);
+  if (fromSegments.length > 0) return fromSegments;
+  const full = str(root['text']) || str(root['transcript']);
+  return full ? splitSentences(full) : [];
+}
+
+function splitSentences(text: string): string[] {
+  return text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
+}

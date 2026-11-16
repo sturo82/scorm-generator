@@ -42,7 +42,7 @@ const LANGUAGES = [
 
 /** Formati accettati per l'upload knowledge inline (coerente con /knowledge). */
 const KNOWLEDGE_ACCEPT =
-  '.pdf,.docx,.pptx,.xlsx,.txt,.md,.html,.csv,.srt,.vtt,.rtf,application/pdf,text/plain,text/markdown,text/html,text/csv';
+  '.pdf,.docx,.pptx,.xlsx,.txt,.md,.html,.csv,.srt,.vtt,.rtf,.json,application/pdf,text/plain,text/markdown,text/html,text/csv';
 
 type Origin = 'topic' | 'material';
 type Source = 'everywhere' | 'mine';
