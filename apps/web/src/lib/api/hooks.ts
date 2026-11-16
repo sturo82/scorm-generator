@@ -1018,10 +1018,13 @@ export const useSlideLesson = (courseId: string, importId: string | null) =>
     refetchInterval: (query) => (query.state.data?.status === 'running' ? 5000 : false),
   });
 
+export const useProposeSlideSections = (courseId: string, importId: string | null) =>
+  useMutation({ mutationFn: () => api.proposeSlideSections(courseId, importId as string) });
+
 export function useBuildSlideLesson(courseId: string, importId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { layout: 'split' | 'pip'; moduleTitle?: string }) =>
+    mutationFn: (input: { layout: 'split' | 'pip'; moduleTitle?: string; sections?: Array<{ title: string; from: number }> }) =>
       api.buildSlideLesson(courseId, importId as string, input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, 'lesson'] });

@@ -366,8 +366,10 @@ import type {
   StartSlideClipsInput,
   SlideLessonView,
   SlideAvatarType,
+  SlideSection,
 } from './slides-types';
 export type {
+  SlideSection,
   SlideScriptEntry,
   SlideImportView,
   SlideScriptsDoc,
@@ -670,7 +672,8 @@ export interface ApiClient {
   getSlideClips(courseId: string, importId: string): Promise<SlideClipsView | { status: 'none' }>;
   startSlideClips(courseId: string, importId: string, input: StartSlideClipsInput): Promise<SlideClipsView>;
   getSlideLesson(courseId: string, importId: string): Promise<SlideLessonView | { status: 'none' }>;
-  buildSlideLesson(courseId: string, importId: string, input: { layout: 'split' | 'pip'; moduleTitle?: string }): Promise<SlideLessonView>;
+  proposeSlideSections(courseId: string, importId: string): Promise<{ sections: SlideSection[] }>;
+  buildSlideLesson(courseId: string, importId: string, input: { layout: 'split' | 'pip'; moduleTitle?: string; sections?: SlideSection[] }): Promise<SlideLessonView>;
 }
 
 /** Esito del redeem di un ticket SSO: token di sessione + dati utente/tenant. */

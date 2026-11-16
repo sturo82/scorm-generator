@@ -52,6 +52,7 @@ import type {
   StartSlideClipsInput,
   SlideLessonView,
   SlideAvatarType,
+  SlideSection,
 } from './types';
 
 /**
@@ -617,7 +618,10 @@ export class HttpApiClient implements ApiClient {
   getSlideLesson(courseId: string, importId: string) {
     return this.request<SlideLessonView | { status: 'none' }>(`/courses/${courseId}/slides/imports/${importId}/lesson`);
   }
-  buildSlideLesson(courseId: string, importId: string, input: { layout: 'split' | 'pip'; moduleTitle?: string }) {
+  proposeSlideSections(courseId: string, importId: string) {
+    return this.request<{ sections: SlideSection[] }>(`/courses/${courseId}/slides/imports/${importId}/sections/propose`, { method: 'POST' });
+  }
+  buildSlideLesson(courseId: string, importId: string, input: { layout: 'split' | 'pip'; moduleTitle?: string; sections?: SlideSection[] }) {
     return this.request<SlideLessonView>(`/courses/${courseId}/slides/imports/${importId}/lesson`, {
       method: 'POST',
       body: JSON.stringify(input),

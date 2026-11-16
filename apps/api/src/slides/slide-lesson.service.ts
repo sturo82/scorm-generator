@@ -30,20 +30,25 @@ import { SlidesService } from './slides.service.js';
 const MEDIA_URL_TTL_SEC = 3 * 3600;
 const LEASE_MS = 90_000;
 const HEARTBEAT_MS = 30_000;
+/** Indice oltre ogni slide reale: l'ultima parte include anche le slide "extra" (indici alti). */
+const OPEN_END = 1_000_000;
 
-type Step = 'render' | 'summary' | 'lesson' | 'quiz' | 'done';
+type Step = 'render' | 'summary' | 'lesson' | 'quiz' | 'final_quiz' | 'done';
 
-export interface SlideLessonDoc {
-  importId: string;
-  courseId: string;
-  status: 'running' | 'completed' | 'failed';
-  step: Step;
-  error?: string;
-  layout: SlideVideoLayout;
-  moduleTitle: string;
+/**
+ * Una "parte" è una lezione video con il suo modulo: nel caso "una sola lezione" ce n'è
+ * una che copre tutte le slide; con le sezioni ce n'è una per sezione.
+ */
+export interface LessonPart {
+  id: string;
+  title: string;
+  /** Intervallo di slide (indici inclusi). L'ultima parte arriva a OPEN_END. */
+  from: number;
+  to: number;
   /** Avanzamento persistito: ogni passo completato non si ripete dopo un riavvio. */
   videoKey?: string;
   videoDurationSec?: number;
+  transcriptKey?: string;
   summaryHtml?: string;
   keyPointsHtml?: string;
   moduleId?: string;
@@ -53,13 +58,50 @@ export interface SlideLessonDoc {
   assessmentId?: string;
   /** True quando tutte le domande del quiz sono state salvate. */
   quizReady?: boolean;
+}
+
+export interface SlideLessonDoc {
+  importId: string;
+  courseId: string;
+  status: 'running' | 'completed' | 'failed';
+  step: Step;
+  error?: string;
+  layout: SlideVideoLayout;
+  /** Titolo del corso/modulo (modalità "una lezione") o del gruppo di sezioni. */
+  moduleTitle: string;
+  mode: 'single' | 'sections';
+  parts: LessonPart[];
+  /** Indice (0-based) della parte in lavorazione. */
+  currentPart: number;
+  finalAssessmentId?: string;
+  finalQuizReady?: boolean;
   createdAt: string;
   updatedAt: string;
   owner?: string;
   leaseUntil?: number;
 }
 
-export type SlideLessonView = Omit<SlideLessonDoc, 'owner' | 'leaseUntil'>;
+export interface SlideLessonView {
+  importId: string;
+  courseId: string;
+  status: SlideLessonDoc['status'];
+  step: Step;
+  error?: string;
+  layout: SlideVideoLayout;
+  moduleTitle: string;
+  mode: SlideLessonDoc['mode'];
+  currentPart: number;
+  parts: Array<{ id: string; title: string; done: boolean; moduleId?: string; lessonId?: string }>;
+  /** Primo modulo/lezione creati (compatibilità con la modalità "una lezione"). */
+  moduleId?: string;
+  lessonId?: string;
+}
+
+export interface SectionInput {
+  title: string;
+  /** Prima slide della sezione (1-based). */
+  from: number;
+}
 
 const SUMMARY_SCHEMA = {
   type: 'object',
@@ -71,6 +113,22 @@ const SUMMARY_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const SECTIONS_SCHEMA = {
+  type: 'object',
+  properties: {
+    sections: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { title: { type: 'string' }, startIndex: { type: 'integer' } },
+        required: ['title', 'startIndex'],
+      },
+    },
+  },
+  required: ['sections'],
+  additionalProperties: false,
+} as const;
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -78,9 +136,11 @@ function escapeHtml(s: string): string {
 /**
  * Fase finale della pipeline "slide + avatar": monta il video (Remotion), scrive
  * riepilogo e quiz a partire dai copioni approvati e crea modulo + lezione
- * video-first con trascrizione. Lo stato (con i passi già completati) vive in
- * `lesson.json` accanto all'import: dopo un riavvio si riprende dal passo
- * successivo senza rifare render o chiamate LLM già fatte.
+ * video-first con trascrizione. Può creare UNA lezione con tutte le slide oppure UN
+ * MODULO PER SEZIONE (un video, un riepilogo e un quiz per sezione, più un quiz
+ * finale). Lo stato (con i passi già completati) vive in `lesson.json` accanto
+ * all'import: dopo un riavvio si riprende dal passo successivo senza rifare render
+ * o chiamate LLM già fatte.
  */
 @Injectable()
 export class SlideLessonService {
@@ -106,12 +166,61 @@ export class SlideLessonService {
   private runKey(tenantId: string, importId: string): string {
     return `${tenantId}:${importId}`;
   }
+  private prefix(tenantId: string, doc: { courseId: string; importId: string }): string {
+    return `media/${tenantId}/${doc.courseId}/slides/${doc.importId}`;
+  }
+
+  // --- Sezioni ---------------------------------------------------------------
+
+  /** Propone la divisione in sezioni (titoli e slide di inizio) leggendo il testo delle slide. */
+  async proposeSections(tenantId: string, courseId: string, importId: string): Promise<SectionInput[]> {
+    const manifest = await this.slides.loadManifest(tenantId, courseId, importId);
+    const language = await this.courseLanguage(tenantId, courseId);
+    const deck = manifest.slides
+      .map((s) => `Slide ${s.index}: ${s.text.replace(/\s+/g, ' ').trim().slice(0, 160) || '(solo grafica)'}`)
+      .join('\n');
+    const result = await this.llm.generate({
+      system: systemPrompt(),
+      messages: [
+        {
+          role: 'user',
+          content: [
+            `Lingua dei titoli: ${language}.`,
+            'Dividi questa presentazione in SEZIONI tematiche coerenti, ciascuna destinata a diventare un modulo di corso con un video.',
+            'Se ci sono slide divisorie o titoli di capitolo ("Introduction 1", "Abuse 2"…), usale come confini. Di norma 2-8 sezioni, ciascuna con almeno 3 slide quando possibile.',
+            'Per ogni sezione dai un titolo breve e l\'indice della sua PRIMA slide. La prima sezione parte dalla slide 1; gli indici sono crescenti.',
+            '',
+            deck,
+          ].join('\n'),
+        },
+      ],
+      schema: SECTIONS_SCHEMA as unknown as Record<string, unknown>,
+      temperature: 0.2,
+      maxTokens: 1500,
+    });
+    await this.recordLlm(tenantId, courseId, result, 'slide_sections');
+    const parsed = JSON.parse(result.text) as { sections?: Array<{ title?: string; startIndex?: number }> };
+    const max = manifest.slides.length;
+    const out: SectionInput[] = [];
+    for (const s of parsed.sections ?? []) {
+      const from = Number(s.startIndex);
+      const title = (s.title ?? '').trim();
+      if (!title || !Number.isInteger(from) || from < 1 || from > max) continue;
+      if (out.length > 0 && from <= out[out.length - 1]!.from) continue;
+      out.push({ title, from });
+    }
+    if (out.length === 0) return [{ title: 'Sezione 1', from: 1 }];
+    out[0]!.from = 1;
+    return out;
+  }
+
+  // --- Avvio e stato -----------------------------------------------------------
 
   async start(
     tenantId: string,
     courseId: string,
     importId: string,
-    input: { layout?: SlideVideoLayout; moduleTitle?: string },
+    input: { layout?: SlideVideoLayout; moduleTitle?: string; sections?: SectionInput[] },
   ): Promise<SlideLessonView> {
     const clipsView = await this.clips.status(tenantId, courseId, importId);
     if (!clipsView || clipsView.status !== 'completed') {
@@ -124,23 +233,51 @@ export class SlideLessonService {
     if (existing?.status === 'completed') {
       throw new ConflictException('La lezione è già stata creata da questo import.');
     }
+
     const now = new Date().toISOString();
-    // Dopo un fallimento si riprende dal passo interrotto, mantenendo scelte e risultati.
-    const doc: SlideLessonDoc = existing
-      ? { ...existing, status: 'running', error: undefined, updatedAt: now }
-      : {
-          importId,
-          courseId,
-          status: 'running',
-          step: 'render',
-          layout: input.layout ?? 'split',
-          moduleTitle: (input.moduleTitle ?? '').trim() || 'Video-lezione',
-          createdAt: now,
-          updatedAt: now,
-        };
+    let doc: SlideLessonDoc;
+    if (existing) {
+      // Dopo un fallimento si riprende dal passo interrotto, mantenendo scelte e risultati.
+      doc = { ...existing, status: 'running', error: undefined, updatedAt: now };
+    } else {
+      const moduleTitle = (input.moduleTitle ?? '').trim() || 'Video-lezione';
+      const sections = input.sections && input.sections.length > 0 ? input.sections : null;
+      const parts = sections
+        ? this.partsFromSections(sections, clipsView.clips.map((c) => c.index))
+        : [{ id: randomUUID().slice(0, 8), title: moduleTitle, from: 1, to: OPEN_END }];
+      doc = {
+        importId,
+        courseId,
+        status: 'running',
+        step: 'render',
+        layout: input.layout ?? 'split',
+        moduleTitle,
+        mode: sections ? 'sections' : 'single',
+        parts,
+        currentPart: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+    }
     await this.save(tenantId, doc);
     this.launch(tenantId, courseId, importId);
     return this.view(doc);
+  }
+
+  /** Valida le sezioni e ne calcola gli intervalli; ogni sezione deve avere almeno una clip. */
+  private partsFromSections(sections: SectionInput[], clipIndexes: number[]): LessonPart[] {
+    const sorted = [...sections].sort((a, b) => a.from - b.from);
+    if (sorted[0]!.from !== 1) throw new BadRequestException('La prima sezione deve iniziare dalla slide 1');
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i]!.from <= sorted[i - 1]!.from) throw new BadRequestException('Le sezioni devono avere slide di inizio diverse');
+    }
+    return sorted.map((s, i) => {
+      const to = i < sorted.length - 1 ? sorted[i + 1]!.from - 1 : OPEN_END;
+      if (!clipIndexes.some((n) => n >= s.from && n <= to)) {
+        throw new BadRequestException(`La sezione «${s.title}» non contiene slide incluse nel video`);
+      }
+      return { id: randomUUID().slice(0, 8), title: s.title.trim() || `Sezione ${i + 1}`, from: s.from, to };
+    });
   }
 
   async status(tenantId: string, courseId: string, importId: string): Promise<SlideLessonView | null> {
@@ -172,16 +309,24 @@ export class SlideLessonService {
     if (!doc || doc.status !== 'running') return;
     const heartbeat = setInterval(() => void this.save(tenantId, doc).catch(() => undefined), HEARTBEAT_MS);
     try {
-      if (!doc.videoKey) await this.stepRender(tenantId, doc);
-      if (!doc.summaryHtml) await this.stepSummary(tenantId, doc);
-      if (!doc.lessonReady) await this.stepLesson(tenantId, doc);
-      if (!doc.quizReady) await this.stepQuiz(tenantId, doc);
+      for (let i = 0; i < doc.parts.length; i++) {
+        doc.currentPart = i;
+        const part = doc.parts[i]!;
+        const isLast = i === doc.parts.length - 1;
+        if (!part.videoKey) await this.stepRender(tenantId, doc, part);
+        if (!part.summaryHtml) await this.stepSummary(tenantId, doc, part);
+        if (!part.lessonReady) await this.stepLesson(tenantId, doc, part, isLast);
+        if (!part.quizReady) await this.stepQuiz(tenantId, doc, part);
+      }
+      if (doc.mode === 'sections' && doc.parts.length > 1 && !doc.finalQuizReady) {
+        await this.stepFinalQuiz(tenantId, doc);
+      }
       doc.step = 'done';
       doc.status = 'completed';
       doc.owner = undefined;
       doc.leaseUntil = undefined;
       await this.save(tenantId, doc, false);
-      this.logger.log(`Lezione video da slide creata (import ${importId}, lezione ${doc.lessonId})`);
+      this.logger.log(`Video-lezione da slide creata (import ${importId}, ${doc.parts.length} parti)`);
     } catch (err) {
       doc.status = 'failed';
       doc.error = errMsg(err);
@@ -196,7 +341,7 @@ export class SlideLessonService {
 
   // --- Passo 1: render ------------------------------------------------------
 
-  private async stepRender(tenantId: string, doc: SlideLessonDoc): Promise<void> {
+  private async stepRender(tenantId: string, doc: SlideLessonDoc, part: LessonPart): Promise<void> {
     doc.step = 'render';
     await this.save(tenantId, doc);
     const { courseId, importId } = doc;
@@ -206,11 +351,15 @@ export class SlideLessonService {
     const imageByIndex = new Map(manifest.slides.map((s) => [s.index, s.imageKey]));
     const scripts = await this.scripts.get(tenantId, courseId, importId);
     const scriptByIndex = new Map((scripts?.slides ?? []).map((s) => [s.index, s.script]));
-
     const scriptEntry = new Map((scripts?.slides ?? []).map((s) => [s.index, s]));
 
+    const partClips = clipsView.clips
+      .filter((c) => c.index >= part.from && c.index <= part.to)
+      .sort((a, b) => a.index - b.index);
+    if (partClips.length === 0) throw new Error(`Nessuna clip per «${part.title}»`);
+
     const assembly = [];
-    for (const c of [...clipsView.clips].sort((a, b) => a.index - b.index)) {
+    for (const c of partClips) {
       const imageKey = imageByIndex.get(c.index);
       const extra = scriptEntry.get(c.index)?.extra;
       if ((!imageKey && !extra) || !c.clipKey || !c.durationSec) throw new Error(`Slide ${c.index}: asset mancanti`);
@@ -227,7 +376,7 @@ export class SlideLessonService {
         srt,
       });
     }
-    const spec = buildSlideVideoSpec({ slides: assembly, layout: doc.layout, sectionTitle: doc.moduleTitle });
+    const spec = buildSlideVideoSpec({ slides: assembly, layout: doc.layout, sectionTitle: part.title });
 
     const cfg = this.config.get('cartoonVideo', { infer: true });
     const video = await import('@scorm/video');
@@ -259,22 +408,23 @@ export class SlideLessonService {
     });
     // Trascrizione globale pronta per la lezione (stessa timeline del render).
     const timeline = computeSlideTimeline(spec.slides, spec.canvas.fps);
-    doc.videoKey = key;
-    doc.videoDurationSec = result.durationSec;
+    part.transcriptKey = `${this.prefix(tenantId, doc)}/transcript-${part.id}.json`;
     await this.storage.putObject(
-      `${this.prefix(tenantId, doc)}/transcript.json`,
+      part.transcriptKey,
       Buffer.from(JSON.stringify(globalCues(spec.slides, timeline))),
       { contentType: 'application/json' },
     );
+    part.videoKey = key;
+    part.videoDurationSec = result.durationSec;
     await this.save(tenantId, doc);
   }
 
   // --- Passo 2: riepilogo e punti chiave ------------------------------------
 
-  private async stepSummary(tenantId: string, doc: SlideLessonDoc): Promise<void> {
+  private async stepSummary(tenantId: string, doc: SlideLessonDoc, part: LessonPart): Promise<void> {
     doc.step = 'summary';
     await this.save(tenantId, doc);
-    const narration = await this.narrationText(tenantId, doc);
+    const narration = await this.narrationText(tenantId, doc, part);
     const language = await this.courseLanguage(tenantId, doc.courseId);
     const result = await this.llm.generate({
       system: systemPrompt(),
@@ -301,57 +451,58 @@ export class SlideLessonService {
     if (!parsed.summary?.trim() || !Array.isArray(parsed.keyPoints) || parsed.keyPoints.length === 0) {
       throw new Error('Riepilogo non valido');
     }
-    doc.summaryHtml = parsed.summary.trim();
-    doc.keyPointsHtml = `<ul>${parsed.keyPoints.map((p) => `<li>${escapeHtml(p.trim())}</li>`).join('')}</ul>`;
+    part.summaryHtml = parsed.summary.trim();
+    part.keyPointsHtml = `<ul>${parsed.keyPoints.map((p) => `<li>${escapeHtml(p.trim())}</li>`).join('')}</ul>`;
     await this.save(tenantId, doc);
   }
 
   // --- Passo 3: modulo + lezione --------------------------------------------
 
-  private async stepLesson(tenantId: string, doc: SlideLessonDoc): Promise<void> {
+  private async stepLesson(tenantId: string, doc: SlideLessonDoc, part: LessonPart, isLast: boolean): Promise<void> {
     doc.step = 'lesson';
     await this.save(tenantId, doc);
-    const cues = JSON.parse(
-      (await this.storage.getObject(`${this.prefix(tenantId, doc)}/transcript.json`)).toString('utf8'),
-    ) as Array<{ id: string; start: number; end: number; text: string }>;
+    const cues = JSON.parse((await this.storage.getObject(part.transcriptKey!)).toString('utf8')) as Array<{
+      id: string;
+      start: number;
+      end: number;
+      text: string;
+    }>;
 
-    const mod = doc.moduleId
-      ? { id: doc.moduleId }
-      : await this.modules.addModule(tenantId, doc.courseId, { title: doc.moduleTitle });
-    doc.moduleId = mod.id;
+    const mod = part.moduleId
+      ? { id: part.moduleId }
+      : await this.modules.addModule(tenantId, doc.courseId, { title: part.title });
+    part.moduleId = mod.id;
     await this.save(tenantId, doc);
 
     // Riusa la lezione creata in un tentativo interrotto, invece di duplicarla.
-    const lesson = doc.lessonId
-      ? { id: doc.lessonId }
-      : await this.modules.addLesson(tenantId, doc.courseId, mod.id, { title: doc.moduleTitle });
-    doc.lessonId = lesson.id;
+    const lesson = part.lessonId
+      ? { id: part.lessonId }
+      : await this.modules.addLesson(tenantId, doc.courseId, mod.id, { title: part.title });
+    part.lessonId = lesson.id;
     await this.save(tenantId, doc);
     await this.modules.setLessonFormat(tenantId, doc.courseId, mod.id, lesson.id, 'video_first');
 
-    // Argomenti della knowledge non coperti dalle slide e non narrati: parte scritta della lezione.
-    const scripts = await this.scripts.get(tenantId, doc.courseId, doc.importId);
-    const writtenTopics = (scripts?.slides ?? []).filter((s) => s.extra && s.skip);
     const sections: Array<{ id: string; title: string; content: { format: 'html'; html: string } }> = [
       {
         id: `sec-${randomUUID().slice(0, 8)}`,
         title: 'Punti chiave',
-        content: { format: 'html', html: doc.keyPointsHtml ?? '' },
+        content: { format: 'html', html: part.keyPointsHtml ?? '' },
       },
     ];
-    if (writtenTopics.length > 0) {
-      const html = writtenTopics
-        .map((t) => {
-          const e = t.extra!;
-          const bullets = e.bullets.length ? `<ul>${e.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join('')}</ul>` : '';
-          return `<h4>${escapeHtml(e.title)}</h4><p>${escapeHtml(e.summary)}</p>${bullets}`;
-        })
-        .join('');
-      sections.push({
-        id: `sec-${randomUUID().slice(0, 8)}`,
-        title: 'Approfondimenti',
-        content: { format: 'html', html },
-      });
+    // Argomenti della knowledge non coperti dalle slide e non narrati: parte scritta dell'ultima lezione.
+    if (isLast) {
+      const scripts = await this.scripts.get(tenantId, doc.courseId, doc.importId);
+      const writtenTopics = (scripts?.slides ?? []).filter((s) => s.extra && s.skip);
+      if (writtenTopics.length > 0) {
+        const html = writtenTopics
+          .map((t) => {
+            const e = t.extra!;
+            const bullets = e.bullets.length ? `<ul>${e.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join('')}</ul>` : '';
+            return `<h4>${escapeHtml(e.title)}</h4><p>${escapeHtml(e.summary)}</p>${bullets}`;
+          })
+          .join('');
+        sections.push({ id: `sec-${randomUUID().slice(0, 8)}`, title: 'Approfondimenti', content: { format: 'html', html } });
+      }
     }
 
     const blocks: Block[] = [
@@ -360,7 +511,7 @@ export class SlideLessonService {
         type: 'video_checkpoint',
         editorial: { status: 'draft', citations: [] },
         payload: {
-          video: { kind: 'video', storageKey: doc.videoKey, alt: doc.moduleTitle, source: 'upload' },
+          video: { kind: 'video', storageKey: part.videoKey, alt: part.title, source: 'upload' },
           checkpoints: [],
           transcript: cues.map((c) => ({ id: c.id, start: c.start, end: c.end, text: c.text })),
           transcriptStatus: 'ready',
@@ -371,29 +522,79 @@ export class SlideLessonService {
         id: `riepilogo-${randomUUID().slice(0, 8)}`,
         type: 'rich_text',
         editorial: { status: 'draft', citations: [] },
-        payload: { content: { format: 'html', html: doc.summaryHtml ?? '' }, media: [] },
+        payload: { content: { format: 'html', html: part.summaryHtml ?? '' }, media: [] },
       },
     ];
     await this.modules.setLessonBlocks(tenantId, doc.courseId, mod.id, lesson.id, blocks);
-    doc.lessonReady = true;
+    part.lessonReady = true;
     await this.save(tenantId, doc);
   }
 
-  // --- Passo 4: quiz ---------------------------------------------------------
+  // --- Passo 4: quiz di modulo ------------------------------------------------
 
-  private async stepQuiz(tenantId: string, doc: SlideLessonDoc): Promise<void> {
+  private async stepQuiz(tenantId: string, doc: SlideLessonDoc, part: LessonPart): Promise<void> {
     doc.step = 'quiz';
     await this.save(tenantId, doc);
+    const narration = await this.narrationText(tenantId, doc, part);
+    // Un quiz salvato a metà in un tentativo interrotto si scarta e si ricrea.
+    if (part.assessmentId) {
+      await this.modules.deleteAssessment(tenantId, doc.courseId, part.assessmentId).catch(() => undefined);
+      part.assessmentId = undefined;
+    }
+    const assessment = await this.generateAssessment(tenantId, doc, part.title, narration, 'intermediate');
+    const created = await this.modules.addAssessment(tenantId, doc.courseId, {
+      title: `Verifica: ${part.title}`,
+      scope: 'INTERMEDIATE',
+      moduleId: part.moduleId,
+    });
+    part.assessmentId = created.id;
+    await this.save(tenantId, doc);
+    for (const q of assessment.questions) {
+      await this.modules.addQuestion(tenantId, doc.courseId, created.id, q);
+    }
+    part.quizReady = true;
+    await this.save(tenantId, doc);
+  }
+
+  // --- Passo 5: quiz finale (solo con più sezioni) ---------------------------
+
+  private async stepFinalQuiz(tenantId: string, doc: SlideLessonDoc): Promise<void> {
+    doc.step = 'final_quiz';
+    await this.save(tenantId, doc);
     const narration = await this.narrationText(tenantId, doc);
+    if (doc.finalAssessmentId) {
+      await this.modules.deleteAssessment(tenantId, doc.courseId, doc.finalAssessmentId).catch(() => undefined);
+      doc.finalAssessmentId = undefined;
+    }
+    const assessment = await this.generateAssessment(tenantId, doc, doc.moduleTitle, narration, 'final');
+    const created = await this.modules.addAssessment(tenantId, doc.courseId, {
+      title: `Test finale: ${doc.moduleTitle}`,
+      scope: 'FINAL',
+    });
+    doc.finalAssessmentId = created.id;
+    await this.save(tenantId, doc);
+    for (const q of assessment.questions) {
+      await this.modules.addQuestion(tenantId, doc.courseId, created.id, q);
+    }
+    doc.finalQuizReady = true;
+    await this.save(tenantId, doc);
+  }
+
+  private async generateAssessment(
+    tenantId: string,
+    doc: SlideLessonDoc,
+    focus: string,
+    narration: string,
+    scope: 'intermediate' | 'final',
+  ): Promise<ReturnType<typeof Assessment.parse>> {
     const language = await this.courseLanguage(tenantId, doc.courseId);
     const course = await this.prisma.course.findFirst({
       where: { id: doc.courseId, tenantId },
       select: { title: true },
     });
-
-    let assessment: ReturnType<typeof Assessment.parse> | undefined;
+    const count = scope === 'final' ? 'da 8 a 12' : 'da 5 a 8';
     let lastErr: unknown;
-    for (let i = 0; i < 3 && !assessment; i++) {
+    for (let i = 0; i < 3; i++) {
       try {
         const result = await this.llm.generate({
           system: systemPrompt(),
@@ -402,12 +603,12 @@ export class SlideLessonService {
               role: 'user',
               content: assessmentPrompt({
                 courseTitle: course?.title ?? doc.moduleTitle,
-                scope: 'intermediate',
-                focus: doc.moduleTitle,
+                scope,
+                focus,
                 language,
                 context: [
                   '',
-                  'Scrivi da 5 a 8 domande basate ESCLUSIVAMENTE sul testo seguente (la narrazione della video-lezione).',
+                  `Scrivi ${count} domande basate ESCLUSIVAMENTE sul testo seguente (la narrazione della video-lezione).`,
                   'Non usare conoscenze esterne. Ogni domanda deve avere una sola risposta inequivocabilmente corretta secondo il testo.',
                   '',
                   'TESTO:',
@@ -418,49 +619,27 @@ export class SlideLessonService {
           ],
           schema: assessmentJsonSchema as Record<string, unknown>,
           temperature: i === 0 ? 0.4 : 0.2,
-          maxTokens: 8000,
+          maxTokens: scope === 'final' ? 12000 : 8000,
         });
         await this.recordLlm(tenantId, doc.courseId, result, 'slide_quiz');
         if (result.finishReason === 'max_tokens') throw new Error('Quiz troncato');
-        assessment = Assessment.parse(JSON.parse(result.text));
+        return Assessment.parse(JSON.parse(result.text));
       } catch (err) {
         lastErr = err;
         this.logger.warn(`Quiz tentativo ${i + 1}/3 fallito: ${errMsg(err)}`);
       }
     }
-    if (!assessment) throw lastErr ?? new Error('Generazione quiz non riuscita');
-
-    // Un quiz salvato a metà in un tentativo interrotto si scarta e si ricrea.
-    if (doc.assessmentId) {
-      await this.modules.deleteAssessment(tenantId, doc.courseId, doc.assessmentId).catch(() => undefined);
-      doc.assessmentId = undefined;
-    }
-    const created = await this.modules.addAssessment(tenantId, doc.courseId, {
-      title: `Verifica: ${doc.moduleTitle}`,
-      scope: 'INTERMEDIATE',
-      moduleId: doc.moduleId,
-    });
-    doc.assessmentId = created.id;
-    await this.save(tenantId, doc);
-    for (const q of assessment.questions) {
-      await this.modules.addQuestion(tenantId, doc.courseId, created.id, q);
-    }
-    doc.quizReady = true;
-    await this.save(tenantId, doc);
+    throw lastErr ?? new Error('Generazione quiz non riuscita');
   }
 
   // --- Utilità ---------------------------------------------------------------
 
-  private prefix(tenantId: string, doc: SlideLessonDoc): string {
-    return `media/${tenantId}/${doc.courseId}/slides/${doc.importId}`;
-  }
-
-  /** Testo narrato (copioni delle slide incluse), in ordine di slide. */
-  private async narrationText(tenantId: string, doc: SlideLessonDoc): Promise<string> {
+  /** Testo narrato (copioni delle slide incluse), in ordine; con `part` solo il suo intervallo. */
+  private async narrationText(tenantId: string, doc: SlideLessonDoc, part?: LessonPart): Promise<string> {
     const scripts = await this.scripts.get(tenantId, doc.courseId, doc.importId);
     if (!scripts) throw new Error('Copioni non trovati');
     return scripts.slides
-      .filter((s) => !s.skip)
+      .filter((s) => !s.skip && (!part || (s.index >= part.from && s.index <= part.to)))
       .map((s) => s.script.trim())
       .join('\n\n');
   }
@@ -489,10 +668,34 @@ export class SlideLessonService {
     }
   }
 
+  /** Legge lo stato, migrando i documenti salvati prima delle "parti" (campi piatti → una parte). */
   private async load(tenantId: string, courseId: string, importId: string): Promise<SlideLessonDoc | null> {
     const key = this.docKey(tenantId, courseId, importId);
     if (!(await this.storage.exists(key))) return null;
-    return JSON.parse((await this.storage.getObject(key)).toString('utf8')) as SlideLessonDoc;
+    const raw = JSON.parse((await this.storage.getObject(key)).toString('utf8')) as SlideLessonDoc & Partial<LessonPart>;
+    if (!raw.parts) {
+      raw.parts = [
+        {
+          id: 'main',
+          title: raw.moduleTitle,
+          from: 1,
+          to: OPEN_END,
+          videoKey: raw.videoKey,
+          videoDurationSec: raw.videoDurationSec,
+          transcriptKey: raw.videoKey ? `${this.prefix(tenantId, raw)}/transcript.json` : undefined,
+          summaryHtml: raw.summaryHtml,
+          keyPointsHtml: raw.keyPointsHtml,
+          moduleId: raw.moduleId,
+          lessonId: raw.lessonId,
+          lessonReady: raw.lessonReady,
+          assessmentId: raw.assessmentId,
+          quizReady: raw.quizReady,
+        },
+      ];
+      raw.mode = 'single';
+      raw.currentPart = 0;
+    }
+    return raw;
   }
 
   private save(tenantId: string, doc: SlideLessonDoc, lease = true): Promise<void> {
@@ -509,8 +712,26 @@ export class SlideLessonService {
   }
 
   private view(doc: SlideLessonDoc): SlideLessonView {
-    const { owner: _o, leaseUntil: _l, ...rest } = doc;
-    return rest;
+    return {
+      importId: doc.importId,
+      courseId: doc.courseId,
+      status: doc.status,
+      step: doc.step,
+      error: doc.error,
+      layout: doc.layout,
+      moduleTitle: doc.moduleTitle,
+      mode: doc.mode,
+      currentPart: doc.currentPart,
+      parts: doc.parts.map((p) => ({
+        id: p.id,
+        title: p.title,
+        done: p.quizReady === true,
+        moduleId: p.moduleId,
+        lessonId: p.lessonId,
+      })),
+      moduleId: doc.parts[0]?.moduleId,
+      lessonId: doc.parts[0]?.lessonId,
+    };
   }
 }
 

@@ -11,12 +11,13 @@ import { Dialog } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { AiWorking, AiWorkingInline } from '@/components/courses/ai-working';
-import type { SlideAvatarType, SlideScriptEntry } from '@/lib/api/types';
+import type { SlideAvatarType, SlideScriptEntry, SlideSection } from '@/lib/api/types';
 import {
   qk,
   useBuildSlideLesson,
   useGenerateSlideScripts,
   useImportSlides,
+  useProposeSlideSections,
   useKnowledge,
   useSaveSlideScripts,
   useSlideClips,
@@ -213,6 +214,7 @@ function Pipeline({
           courseId={courseId}
           importId={importId}
           view={lessonView}
+          clips={clipsView!}
           defaultTitle={imp.data?.filename.replace(/\.pdf$/i, '') ?? 'Video-lezione'}
           onClose={onClose}
         />
@@ -721,29 +723,71 @@ function StepLesson({
   courseId,
   importId,
   view,
+  clips,
   defaultTitle,
   onClose,
 }: {
   courseId: string;
   importId: string;
   view: import('@/lib/api/types').SlideLessonView | null;
+  clips: import('@/lib/api/types').SlideClipsView;
   defaultTitle: string;
   onClose: () => void;
 }) {
   const toast = useToast();
   const build = useBuildSlideLesson(courseId, importId);
+  const propose = useProposeSlideSections(courseId, importId);
   const [layout, setLayout] = React.useState<'split' | 'pip'>('split');
   const [title, setTitle] = React.useState(defaultTitle);
+  const [mode, setMode] = React.useState<'single' | 'sections'>('single');
+  const [sections, setSections] = React.useState<SlideSection[]>([]);
+
+  const clipIdx = React.useMemo(() => clips.clips.map((c) => c.index).sort((a, b) => a - b), [clips.clips]);
+  const lastIdx = clipIdx[clipIdx.length - 1] ?? 1;
+  /** Slide incluse e durata del video per la sezione `i` (fino alla successiva). */
+  function sectionStats(i: number): { slides: number; sec: number } {
+    const from = sections[i]?.from ?? 1;
+    const to = i < sections.length - 1 ? (sections[i + 1]?.from ?? lastIdx + 1) - 1 : Number.MAX_SAFE_INTEGER;
+    const inRange = clips.clips.filter((c) => c.index >= from && c.index <= to);
+    return { slides: inRange.length, sec: inRange.reduce((n, c) => n + (c.durationSec ?? 0), 0) };
+  }
+  const sectionsValid =
+    sections.length > 0 &&
+    sections[0]?.from === 1 &&
+    sections.every((s, i) => s.title.trim() && (i === 0 || s.from > sections[i - 1]!.from)) &&
+    sections.every((_, i) => sectionStats(i).slides > 0);
+
+  async function handlePropose() {
+    try {
+      const res = await propose.mutateAsync();
+      setSections(res.sections);
+    } catch {
+      toast.show('Non sono riuscito a proporre le sezioni: aggiungile a mano', 'error');
+      setSections([{ title: 'Sezione 1', from: 1 }]);
+    }
+  }
+
+  function chooseMode(m: 'single' | 'sections') {
+    setMode(m);
+    if (m === 'sections' && sections.length === 0) void handlePropose();
+  }
 
   async function handleBuild() {
     try {
-      await build.mutateAsync({ layout, moduleTitle: title.trim() || undefined });
+      await build.mutateAsync({
+        layout,
+        moduleTitle: title.trim() || undefined,
+        sections: mode === 'sections' ? sections.map((s) => ({ title: s.title.trim(), from: s.from })) : undefined,
+      });
       toast.show('Montaggio avviato: richiede alcuni minuti', 'success');
     } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
       toast.show(
-        err instanceof Error && /501|non configurat|CARTOON_LAMBDA/i.test(err.message)
+        /501|non configurat|CARTOON_LAMBDA/i.test(msg)
           ? 'Render video non configurato sul server'
-          : 'Avvio del montaggio non riuscito',
+          : /non contiene slide|inizio diverse|prima sezione/i.test(msg)
+            ? 'Sezioni non valide: controlla le slide di inizio'
+            : 'Avvio del montaggio non riuscito',
         'error',
       );
     }
@@ -754,12 +798,13 @@ function StepLesson({
     summary: 'Scrivo il riepilogo e i punti chiave…',
     lesson: 'Creo modulo e lezione…',
     quiz: 'Preparo il quiz di verifica…',
+    final_quiz: 'Preparo il test finale…',
     done: 'Completato',
   };
 
   return (
     <section className="space-y-3">
-      <Heading n={3} title="Montaggio e lezione" done={view?.status === 'completed'} />
+      <Heading n={3} title="Montaggio e lezioni" done={view?.status === 'completed'} />
       {(!view || view.status === 'failed') && (
         <div className="space-y-3">
           {view?.status === 'failed' && (
@@ -769,10 +814,101 @@ function StepLesson({
           )}
           {!view && (
             <>
-              <label className="block space-y-1 text-sm">
-                <span className="font-medium">Titolo del modulo e della lezione</span>
-                <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
-              </label>
+              <fieldset className="space-y-1 text-sm">
+                <legend className="font-medium">Come vuoi organizzare il corso?</legend>
+                {([
+                  ['single', 'Una sola lezione con tutte le slide (un video, un riepilogo, un quiz)'],
+                  ['sections', 'Un modulo per sezione (un video, un riepilogo e un quiz per sezione, più un test finale)'],
+                ] as const).map(([id, label]) => (
+                  <label key={id} className="flex items-center gap-2">
+                    <input type="radio" name="slide-mode" checked={mode === id} onChange={() => chooseMode(id)} />
+                    {label}
+                  </label>
+                ))}
+              </fieldset>
+
+              {mode === 'single' ? (
+                <label className="block space-y-1 text-sm">
+                  <span className="font-medium">Titolo del modulo e della lezione</span>
+                  <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
+                </label>
+              ) : (
+                <div className="space-y-2">
+                  <label className="block space-y-1 text-sm">
+                    <span className="font-medium">Titolo del corso (usato nel test finale)</span>
+                    <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
+                  </label>
+                  <p className="text-sm font-medium">Sezioni</p>
+                  {propose.isPending ? (
+                    <AiWorkingInline label="Propongo le sezioni dalle slide…" />
+                  ) : (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Proposte dall&apos;AI leggendo le slide: modifica titoli e slide di inizio come preferisci. Ogni
+                        sezione diventa un modulo con il suo video.
+                      </p>
+                      <ul className="space-y-2">
+                        {sections.map((sec, i) => {
+                          const st = sectionStats(i);
+                          return (
+                            <li key={i} className="grid items-center gap-2 rounded-md border p-2 sm:grid-cols-[1fr_110px_auto_auto]">
+                              <Input
+                                value={sec.title}
+                                maxLength={200}
+                                onChange={(e) => setSections((cur) => cur.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))}
+                              />
+                              <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                                da slide
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={lastIdx}
+                                  value={sec.from}
+                                  disabled={i === 0}
+                                  className="h-9 w-16 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+                                  onChange={(e) => setSections((cur) => cur.map((x, j) => (j === i ? { ...x, from: Number(e.target.value) || 1 } : x)))}
+                                />
+                              </label>
+                              <span className="text-xs text-muted-foreground">
+                                {st.slides} slide · {fmtMin(st.sec)}
+                              </span>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={sections.length <= 1}
+                                onClick={() => setSections((cur) => cur.filter((_, j) => j !== i))}
+                                aria-label="Rimuovi sezione"
+                              >
+                                ✕
+                              </Button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            setSections((cur) => [...cur, { title: `Sezione ${cur.length + 1}`, from: Math.min(lastIdx, (cur[cur.length - 1]?.from ?? 0) + 1) }])
+                          }
+                        >
+                          + Sezione
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={handlePropose}>
+                          Riproponi
+                        </Button>
+                      </div>
+                      {!sectionsValid && sections.length > 0 && (
+                        <p className="text-xs text-destructive">
+                          La prima sezione parte dalla slide 1, le slide di inizio devono crescere e ogni sezione deve avere almeno una slide inclusa.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
               <fieldset className="space-y-1 text-sm">
                 <legend className="font-medium">Disposizione</legend>
                 {([
@@ -788,19 +924,58 @@ function StepLesson({
             </>
           )}
           <div className="flex justify-end">
-            <Button onClick={handleBuild} disabled={build.isPending || !title.trim()}>
-              {build.isPending ? <AiWorkingInline label="Avvio…" /> : (<><Clapperboard className="size-4" /> {view ? 'Riprova il montaggio' : 'Crea la video-lezione'}</>)}
+            <Button
+              onClick={handleBuild}
+              disabled={build.isPending || !title.trim() || (!view && mode === 'sections' && !sectionsValid)}
+            >
+              {build.isPending ? (
+                <AiWorkingInline label="Avvio…" />
+              ) : (
+                <>
+                  <Clapperboard className="size-4" />{' '}
+                  {view ? 'Riprova il montaggio' : mode === 'sections' ? `Crea ${sections.length} moduli` : 'Crea la video-lezione'}
+                </>
+              )}
             </Button>
           </div>
         </div>
       )}
-      {view?.status === 'running' && <AiWorking label={STEP_LABEL[view.step] ?? 'Elaborazione…'} hint="Prosegue sul server: puoi chiudere questa finestra e tornare più tardi." />}
+      {view?.status === 'running' && (
+        <div className="space-y-2">
+          <AiWorking
+            label={
+              (view.mode === 'sections' && view.step !== 'final_quiz'
+                ? `Modulo ${view.currentPart + 1} di ${view.parts.length} — `
+                : '') + (STEP_LABEL[view.step] ?? 'Elaborazione…')
+            }
+            hint="Prosegue sul server: puoi chiudere questa finestra e tornare più tardi."
+          />
+          {view.mode === 'sections' && (
+            <ul className="space-y-1 text-sm">
+              {view.parts.map((p) => (
+                <li key={p.id} className="flex items-center gap-2">
+                  <span className={cn('grid size-4 place-items-center rounded-full text-[10px]', p.done ? 'bg-primary text-primary-foreground' : 'border')}>
+                    {p.done ? '✓' : ''}
+                  </span>
+                  {p.title}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {view?.status === 'completed' && (
         <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
-          <p className="font-medium">La video-lezione «{view.moduleTitle}» è pronta.</p>
+          <p className="font-medium">
+            {view.mode === 'sections'
+              ? `${view.parts.length} moduli creati: ${view.parts.map((p) => `«${p.title}»`).join(', ')}.`
+              : `La video-lezione «${view.moduleTitle}» è pronta.`}
+          </p>
           <p className="text-muted-foreground">
-            Trovi il nuovo modulo tra i contenuti del corso, con video, trascrizione, riepilogo scritto e quiz di
-            verifica. I contenuti sono in bozza: vanno validati prima della pubblicazione.
+            Trovi {view.mode === 'sections' ? 'i nuovi moduli' : 'il nuovo modulo'} tra i contenuti del corso, con video,
+            trascrizione, riepilogo scritto e quiz di verifica
+            {view.mode === 'sections' ? ' (più il test finale del corso)' : ''}. I contenuti sono in bozza: vanno
+            validati prima della pubblicazione.
           </p>
           <div className="flex justify-end">
             <Button onClick={onClose}>Chiudi</Button>

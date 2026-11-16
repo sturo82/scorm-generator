@@ -21,7 +21,7 @@ import {
   type UpdateSlideScripts as UpdateSlideScriptsType,
 } from '@scorm/contracts';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
-import { SlideLessonService, type SlideLessonView } from './slide-lesson.service.js';
+import { SlideLessonService, type SectionInput, type SlideLessonView } from './slide-lesson.service.js';
 import { SlideClipsService, type SlideClipsEstimate, type SlideClipsView } from './slide-clips.service.js';
 import { SlideScriptsService, type SlideScriptsDoc } from './slide-scripts.service.js';
 import { CurrentContext, type AuthContext } from '../auth/auth-context.js';
@@ -128,6 +128,17 @@ export class SlidesController {
     @Body(new ZodValidationPipe(StartSlideClipsSchema)) body: StartSlideClipsType,
   ): Promise<SlideClipsView> {
     return this.clips.start(ctx.tenant.tenantId, courseId, importId, body);
+  }
+
+  /** Propone la divisione in sezioni (titoli e slide di inizio), modificabile dall'utente. */
+  @Post('imports/:importId/sections/propose')
+  @Roles('EDITOR')
+  async proposeSections(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+  ): Promise<{ sections: SectionInput[] }> {
+    return { sections: await this.lessons.proposeSections(ctx.tenant.tenantId, courseId, importId) };
   }
 
   @Get('imports/:importId/lesson')

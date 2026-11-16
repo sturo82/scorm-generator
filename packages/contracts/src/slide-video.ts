@@ -200,8 +200,17 @@ export type StartSlideClips = z.infer<typeof StartSlideClips>;
 /** Montaggio del video finale e creazione della lezione. */
 export const BuildSlideLesson = z.object({
   layout: SlideVideoLayout.default('split'),
-  /** Titolo del modulo e della lezione creati. */
+  /** Titolo del modulo e della lezione creati (o del corso, con più sezioni). */
   moduleTitle: z.string().trim().min(1).max(200).optional(),
+  /**
+   * Se presente, crea UN MODULO PER SEZIONE (video, riepilogo e quiz per ciascuna, più un
+   * quiz finale). `from` è la prima slide della sezione; la prima parte da 1.
+   */
+  sections: z
+    .array(z.object({ title: z.string().trim().min(1).max(200), from: z.number().int().min(1) }))
+    .min(1)
+    .max(12)
+    .optional(),
 });
 export type BuildSlideLesson = z.infer<typeof BuildSlideLesson>;
 

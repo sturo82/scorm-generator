@@ -82,13 +82,22 @@ export interface StartSlideClipsInput {
   engine?: SlideEngine;
 }
 
+export interface SlideSection {
+  title: string;
+  /** Prima slide della sezione (1-based). */
+  from: number;
+}
+
 export interface SlideLessonView {
   importId: string;
   status: 'running' | 'completed' | 'failed';
-  step: 'render' | 'summary' | 'lesson' | 'quiz' | 'done';
+  step: 'render' | 'summary' | 'lesson' | 'quiz' | 'final_quiz' | 'done';
   error?: string;
   layout: 'split' | 'pip';
   moduleTitle: string;
+  mode: 'single' | 'sections';
+  currentPart: number;
+  parts: Array<{ id: string; title: string; done: boolean; moduleId?: string; lessonId?: string }>;
   moduleId?: string;
   lessonId?: string;
 }
