@@ -17,6 +17,7 @@ import {
   useBuildSlideLesson,
   useGenerateSlideScripts,
   useImportSlides,
+  useKnowledge,
   useSaveSlideScripts,
   useSlideClips,
   useSlideClipsEstimate,
@@ -241,25 +242,51 @@ function StepScripts({
   const toast = useToast();
   const generate = useGenerateSlideScripts(courseId, importId);
   const save = useSaveSlideScripts(courseId, importId);
+  const courseDocs = useKnowledge('COURSE', courseId);
+  const globalDocs = useKnowledge('GLOBAL');
   const [draft, setDraft] = React.useState<SlideScriptEntry[]>([]);
+  const [kbIds, setKbIds] = React.useState<Set<string>>(new Set());
   React.useEffect(() => {
     if (doc) setDraft(doc.slides.map((s) => ({ ...s })));
+  }, [doc?.updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+  React.useEffect(() => {
+    if (doc?.knowledgeDocIds?.length) setKbIds(new Set(doc.knowledgeDocIds));
   }, [doc?.updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const thumbByIndex = React.useMemo(() => new Map(thumbs.map((t) => [t.index, t.imageUrl])), [thumbs]);
   const approved = doc?.status === 'approved';
-  const dirty = doc ? JSON.stringify(draft.map((d) => [d.index, d.script, d.skip])) !==
-    JSON.stringify(doc.slides.map((d) => [d.index, d.script, d.skip])) : false;
+  const dirty = doc
+    ? JSON.stringify(draft.map((d) => [d.index, d.script, d.skip])) !==
+      JSON.stringify(doc.slides.map((d) => [d.index, d.script, d.skip]))
+    : false;
+  const readyCourse = (courseDocs.data ?? []).filter((d) => d.status === 'READY');
+  const readyGlobal = (globalDocs.data ?? []).filter((d) => d.status === 'READY');
+  const realSlides = draft.filter((d) => !d.extra);
+  const extras = draft.filter((d) => d.extra);
+
+  function toggleKb(id: string) {
+    setKbIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else if (next.size < 10) next.add(id);
+      return next;
+    });
+  }
 
   async function handleGenerate() {
     try {
-      await generate.mutateAsync();
+      await generate.mutateAsync([...kbIds]);
       toast.show('Copioni generati: rivedili prima di approvarli', 'success');
     } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
       toast.show(
-        err instanceof Error && /409/.test(err.message)
+        /409/.test(msg)
           ? 'I copioni sono già approvati: riapri la revisione per rigenerarli'
-          : 'Generazione dei copioni non riuscita',
+          : /troppo lunga/i.test(msg)
+            ? 'Knowledge troppo lunga: crea prima una «knowledge strutturata» e usa quella'
+            : /non ancora pronti/i.test(msg)
+              ? 'Alcuni documenti di knowledge non sono ancora pronti'
+              : 'Generazione dei copioni non riuscita',
         'error',
       );
     }
@@ -282,7 +309,48 @@ function StepScripts({
     }
   }
 
+  function patch(index: number, change: Partial<SlideScriptEntry>) {
+    setDraft((cur) => cur.map((x) => (x.index === index ? { ...x, ...change } : x)));
+  }
+
   const totalSec = draft.filter((d) => !d.skip).reduce((n, d) => n + d.estSec, 0);
+  const totalWords = draft.filter((d) => !d.skip).reduce((n, d) => n + d.words, 0);
+  const kbPicker = (
+    <div className="space-y-2 rounded-lg border p-3">
+      <p className="text-sm font-medium">Knowledge (facoltativa)</p>
+      <p className="text-xs text-muted-foreground">
+        Se scegli dei documenti, i copioni confrontano slide e knowledge: spiegano ogni slide con i contenuti
+        pertinenti, segnalano le contraddizioni (nel parlato prevale la slide) e mettono da parte gli argomenti che
+        nessuna slide copre. Il parlato risulta più lungo: durata e costo si vedono nel passo 2.
+      </p>
+      {readyCourse.length + readyGlobal.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Nessun documento pronto. Caricali dalla pagina Knowledge.</p>
+      ) : (
+        <div className="max-h-44 space-y-2 overflow-y-auto">
+          {[
+            ['Fonti del corso', readyCourse],
+            ['Knowledge globale', readyGlobal],
+          ].map(([label, list]) =>
+            (list as typeof readyCourse).length === 0 ? null : (
+              <div key={label as string}>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label as string}</p>
+                <ul>
+                  {(list as typeof readyCourse).map((d) => (
+                    <li key={d.id}>
+                      <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-accent/30">
+                        <input type="checkbox" checked={kbIds.has(d.id)} onChange={() => toggleKb(d.id)} />
+                        <span className="truncate">{d.filename}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ),
+          )}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <section className="space-y-3">
@@ -291,43 +359,64 @@ function StepScripts({
       {!loading && !doc && (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Scrivo per ogni slide il testo che l&apos;avatar pronuncerà, fedele al contenuto delle slide.
-            Poi lo rivedi e lo approvi: le clip (a pagamento) partono solo dopo la tua approvazione.
+            Scrivo per ogni slide il testo che l&apos;avatar pronuncerà. Poi lo rivedi e lo approvi: le clip (a
+            pagamento) partono solo dopo la tua approvazione. Ogni slide resta a schermo finché l&apos;avatar non ha
+            finito di parlare.
           </p>
+          {kbPicker}
           <Button onClick={handleGenerate} disabled={generate.isPending}>
-            {generate.isPending ? <AiWorkingInline label="Scrivo i copioni…" /> : (<><Wand2 className="size-4" /> Genera i copioni</>)}
+            {generate.isPending ? (
+              <AiWorkingInline label={kbIds.size ? 'Confronto slide e knowledge…' : 'Scrivo i copioni…'} />
+            ) : (
+              <>
+                <Wand2 className="size-4" /> Genera i copioni{kbIds.size ? ` con ${kbIds.size} documento/i di knowledge` : ''}
+              </>
+            )}
           </Button>
         </div>
       )}
       {doc && (
         <>
           <p className="text-xs text-muted-foreground">
-            {draft.filter((d) => !d.skip).length} slide incluse · circa {fmtMin(totalSec)} di parlato.
-            {approved ? ' Copioni approvati.' : ' Controlla soprattutto che nulla sia stato aggiunto o cambiato rispetto alle slide.'}
+            {draft.filter((d) => !d.skip).length} slide incluse · {totalWords} parole · circa {fmtMin(totalSec)} di parlato.
+            {doc.knowledgeNames?.length ? ` Knowledge usata: ${doc.knowledgeNames.join(', ')}.` : ''}
+            {approved
+              ? ' Copioni approvati.'
+              : ' Controlla soprattutto che nulla sia stato aggiunto o cambiato rispetto alle slide.'}
           </p>
+          {!approved && !locked && kbPicker}
           <ul className="space-y-3">
-            {draft.map((d, i) => (
+            {realSlides.map((d) => (
               <li key={d.index} className={cn('grid gap-3 rounded-lg border p-3 sm:grid-cols-[180px_1fr]', d.skip && 'opacity-60')}>
                 <div className="space-y-1">
                   {thumbByIndex.get(d.index) && (
                     // eslint-disable-next-line @next/next/no-img-element -- URL firmato dinamico
                     <img src={thumbByIndex.get(d.index)} alt={`Slide ${d.index}`} className="w-full rounded border" />
                   )}
-                  <p className="text-xs text-muted-foreground">Slide {d.index}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Slide {d.index}
+                    {d.usedKnowledge ? ' · arricchita dalla knowledge' : ''}
+                  </p>
                 </div>
                 <div className="space-y-2">
+                  {d.conflicts && d.conflicts.length > 0 && (
+                    <div className="rounded-md border border-amber-300/60 bg-amber-50 p-2 text-xs text-amber-900">
+                      <p className="font-semibold">Contraddizione tra slide e knowledge (nel copione prevale la slide):</p>
+                      <ul className="list-disc pl-4">
+                        {d.conflicts.map((c, i) => (
+                          <li key={i}>{c}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <textarea
                     className={TEXTAREA}
-                    rows={4}
+                    rows={d.words > 120 ? 8 : 4}
                     value={d.script}
                     maxLength={4000}
                     disabled={approved || locked || d.skip}
                     onChange={(e) =>
-                      setDraft((cur) =>
-                        cur.map((x, j) =>
-                          j === i ? { ...x, script: e.target.value, words: e.target.value.split(/\s+/).filter(Boolean).length } : x,
-                        ),
-                      )
+                      patch(d.index, { script: e.target.value, words: e.target.value.split(/\s+/).filter(Boolean).length })
                     }
                   />
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -336,7 +425,7 @@ function StepScripts({
                         type="checkbox"
                         checked={d.skip}
                         disabled={approved || locked}
-                        onChange={(e) => setDraft((cur) => cur.map((x, j) => (j === i ? { ...x, skip: e.target.checked } : x)))}
+                        onChange={(e) => patch(d.index, { skip: e.target.checked })}
                       />
                       Escludi questa slide dal video
                     </label>
@@ -346,6 +435,46 @@ function StepScripts({
               </li>
             ))}
           </ul>
+
+          {extras.length > 0 && (
+            <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
+              <p className="text-sm font-medium">Argomenti della knowledge non coperti dalle slide</p>
+              <p className="text-xs text-muted-foreground">
+                Di default finiscono nella parte scritta della lezione («Approfondimenti»). Spunta quelli che vuoi
+                far raccontare dall&apos;avatar come slide aggiuntiva: aggiungono minuti di video e quindi costo.
+              </p>
+              <ul className="space-y-3">
+                {extras.map((d) => (
+                  <li key={d.index} className="space-y-2 rounded-md border bg-background p-3">
+                    <p className="text-sm font-medium">{d.extra?.title}</p>
+                    <p className="text-xs text-muted-foreground">{d.extra?.summary}</p>
+                    <label className="flex items-center gap-2 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={!d.skip}
+                        disabled={approved || locked}
+                        onChange={(e) => patch(d.index, { skip: !e.target.checked })}
+                      />
+                      Aggiungi come slide narrata ({d.words} parole, circa {fmtMin(d.estSec)})
+                    </label>
+                    {!d.skip && (
+                      <textarea
+                        className={TEXTAREA}
+                        rows={5}
+                        value={d.script}
+                        maxLength={4000}
+                        disabled={approved || locked}
+                        onChange={(e) =>
+                          patch(d.index, { script: e.target.value, words: e.target.value.split(/\s+/).filter(Boolean).length })
+                        }
+                      />
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {!locked && (
             <div className="flex flex-wrap justify-end gap-2">
               {approved ? (

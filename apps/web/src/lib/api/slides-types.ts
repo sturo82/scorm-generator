@@ -14,12 +14,23 @@ export interface SlideImportView {
   slides: SlideImportSlide[];
 }
 
+export interface SlideExtraTopic {
+  title: string;
+  summary: string;
+  bullets: string[];
+}
 export interface SlideScriptEntry {
   index: number;
   script: string;
   skip: boolean;
   words: number;
   estSec: number;
+  /** Il copione integra contenuti della knowledge assenti dalla slide. */
+  usedKnowledge?: boolean;
+  /** Contraddizioni slide/knowledge (nel copione prevale la slide). */
+  conflicts?: string[];
+  /** Presente per le slide "extra": argomenti della knowledge non coperti dalle slide. */
+  extra?: SlideExtraTopic;
 }
 export interface SlideScriptsDoc {
   importId: string;
@@ -27,6 +38,8 @@ export interface SlideScriptsDoc {
   language: string;
   status: 'draft' | 'approved';
   model: string;
+  knowledgeDocIds?: string[];
+  knowledgeNames?: string[];
   updatedAt: string;
   slides: SlideScriptEntry[];
   totalWords: number;

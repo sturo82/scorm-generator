@@ -660,7 +660,7 @@ export interface ApiClient {
   importSlides(courseId: string, file: File): Promise<SlideImportView>;
   getSlideImport(courseId: string, importId: string): Promise<SlideImportView>;
   getSlideScripts(courseId: string, importId: string): Promise<SlideScriptsDoc | { status: 'none' }>;
-  generateSlideScripts(courseId: string, importId: string): Promise<SlideScriptsDoc>;
+  generateSlideScripts(courseId: string, importId: string, knowledgeDocIds?: string[]): Promise<SlideScriptsDoc>;
   saveSlideScripts(
     courseId: string,
     importId: string,

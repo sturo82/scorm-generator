@@ -966,7 +966,7 @@ export const useSlideScripts = (courseId: string, importId: string | null) =>
 export function useGenerateSlideScripts(courseId: string, importId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.generateSlideScripts(courseId, importId as string),
+    mutationFn: (knowledgeDocIds?: string[]) => api.generateSlideScripts(courseId, importId as string, knowledgeDocIds),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, 'scripts'] }),
   });
 }

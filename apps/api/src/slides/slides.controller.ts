@@ -13,6 +13,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   BuildSlideLesson as BuildSlideLessonSchema,
+  GenerateSlideScripts as GenerateSlideScriptsSchema,
   StartSlideClips as StartSlideClipsSchema,
   UpdateSlideScripts as UpdateSlideScriptsSchema,
   type BuildSlideLesson as BuildSlideLessonType,
@@ -77,8 +78,12 @@ export class SlidesController {
     @CurrentContext() ctx: AuthContext,
     @Param('courseId') courseId: string,
     @Param('importId') importId: string,
+    @Body() raw: unknown,
   ): Promise<SlideScriptsDoc> {
-    return this.scripts.generate(ctx.tenant.tenantId, courseId, importId);
+    // Il body è opzionale (compatibilità con chi non passa la knowledge).
+    const parsed = GenerateSlideScriptsSchema.safeParse(raw ?? {});
+    if (!parsed.success) throw new BadRequestException('Richiesta non valida: knowledgeDocIds');
+    return this.scripts.generate(ctx.tenant.tenantId, courseId, importId, parsed.data);
   }
 
   @Put('imports/:importId/scripts')

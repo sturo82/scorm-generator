@@ -3,7 +3,9 @@ import { SlideVideoSpec, type SlideCue, type SlideVideoLayout, type SlideVideoTh
 /** Una slide pronta per il montaggio: asset già risolti in URL e sottotitoli SRT grezzi. */
 export interface AssemblySlide {
   id: string;
-  imageUrl: string;
+  /** URL dell'immagine; assente per le slide "extra", disegnate dal renderer da `textSlide`. */
+  imageUrl?: string;
+  textSlide?: { title: string; bullets: string[] };
   clipUrl: string;
   durationSec: number;
   title?: string;
@@ -78,6 +80,7 @@ export function buildSlideVideoSpec(input: BuildSpecInput): SlideVideoSpec {
     return {
       id: s.id,
       imageUrl: s.imageUrl,
+      textSlide: s.textSlide,
       clipUrl: s.clipUrl,
       durationSec: s.durationSec,
       title: s.title,

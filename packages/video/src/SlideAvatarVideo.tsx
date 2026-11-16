@@ -106,6 +106,38 @@ const boxStyle = (b: Box): React.CSSProperties => ({
   height: b.height,
 });
 
+/* ------------------------- Slide testuale (extra) --------------------------- */
+/** Slide disegnata dal testo: titolo e punti, nei colori del tema. Usata per le slide "extra" senza immagine. */
+const TextSlide: React.FC<{ title: string; bullets: string[]; spec: SlideVideoSpec; g: Geometry }> = ({
+  title,
+  bullets,
+  spec,
+  g,
+}) => (
+  <div
+    style={{
+      width: '100%',
+      height: '100%',
+      boxSizing: 'border-box',
+      padding: `${72 * g.s}px ${88 * g.s}px`,
+      background: `linear-gradient(135deg, #000 0%, ${spec.theme.bg} 100%)`,
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      gap: 36 * g.s,
+    }}
+  >
+    <div style={{ width: 96 * g.s, height: 8 * g.s, background: spec.theme.accent, borderRadius: 4 * g.s }} />
+    <div style={{ fontSize: 68 * g.s, fontWeight: 800, lineHeight: 1.1, color: spec.theme.text }}>{title}</div>
+    <ul style={{ margin: 0, paddingLeft: 40 * g.s, display: 'flex', flexDirection: 'column', gap: 20 * g.s }}>
+      {bullets.slice(0, 6).map((b, i) => (
+        <li key={i} style={{ fontSize: 38 * g.s, lineHeight: 1.3, color: spec.theme.text, opacity: 0.92 }}>
+          {b}
+        </li>
+      ))}
+    </ul>
+  </div>
+);
 /* -------------------------------- Scena ------------------------------------ */
 
 const SlideScene: React.FC<{ spec: SlideVideoSpec; slideIndex: number; g: Geometry }> = ({
@@ -131,7 +163,11 @@ const SlideScene: React.FC<{ spec: SlideVideoSpec; slideIndex: number; g: Geomet
           boxShadow: pip ? 'none' : '0 12px 40px rgba(0,0,0,0.45)',
         }}
       >
-        <Img src={slide.imageUrl} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        {slide.imageUrl ? (
+          <Img src={slide.imageUrl} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        ) : (
+          <TextSlide title={slide.textSlide?.title ?? slide.title ?? ''} bullets={slide.textSlide?.bullets ?? []} spec={spec} g={g} />
+        )}
       </div>
 
       <div

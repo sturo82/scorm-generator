@@ -207,15 +207,20 @@ export class SlideLessonService {
     const scripts = await this.scripts.get(tenantId, courseId, importId);
     const scriptByIndex = new Map((scripts?.slides ?? []).map((s) => [s.index, s.script]));
 
+    const scriptEntry = new Map((scripts?.slides ?? []).map((s) => [s.index, s]));
+
     const assembly = [];
     for (const c of [...clipsView.clips].sort((a, b) => a.index - b.index)) {
       const imageKey = imageByIndex.get(c.index);
-      if (!imageKey || !c.clipKey || !c.durationSec) throw new Error(`Slide ${c.index}: asset mancanti`);
+      const extra = scriptEntry.get(c.index)?.extra;
+      if ((!imageKey && !extra) || !c.clipKey || !c.durationSec) throw new Error(`Slide ${c.index}: asset mancanti`);
       let srt: string | undefined;
       if (c.srtKey) srt = (await this.storage.getObject(c.srtKey)).toString('utf8');
       assembly.push({
         id: `slide-${c.index}`,
-        imageUrl: await this.storage.getSignedUrl(imageKey, { expiresInSec: MEDIA_URL_TTL_SEC }),
+        // Le slide "extra" (argomenti della knowledge narrati) non hanno immagine: le disegna il renderer.
+        imageUrl: imageKey ? await this.storage.getSignedUrl(imageKey, { expiresInSec: MEDIA_URL_TTL_SEC }) : undefined,
+        textSlide: !imageKey && extra ? { title: extra.title, bullets: extra.bullets } : undefined,
         clipUrl: await this.storage.getSignedUrl(c.clipKey, { expiresInSec: MEDIA_URL_TTL_SEC }),
         durationSec: c.durationSec,
         narration: scriptByIndex.get(c.index),
@@ -324,6 +329,31 @@ export class SlideLessonService {
     await this.save(tenantId, doc);
     await this.modules.setLessonFormat(tenantId, doc.courseId, mod.id, lesson.id, 'video_first');
 
+    // Argomenti della knowledge non coperti dalle slide e non narrati: parte scritta della lezione.
+    const scripts = await this.scripts.get(tenantId, doc.courseId, doc.importId);
+    const writtenTopics = (scripts?.slides ?? []).filter((s) => s.extra && s.skip);
+    const sections: Array<{ id: string; title: string; content: { format: 'html'; html: string } }> = [
+      {
+        id: `sec-${randomUUID().slice(0, 8)}`,
+        title: 'Punti chiave',
+        content: { format: 'html', html: doc.keyPointsHtml ?? '' },
+      },
+    ];
+    if (writtenTopics.length > 0) {
+      const html = writtenTopics
+        .map((t) => {
+          const e = t.extra!;
+          const bullets = e.bullets.length ? `<ul>${e.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join('')}</ul>` : '';
+          return `<h4>${escapeHtml(e.title)}</h4><p>${escapeHtml(e.summary)}</p>${bullets}`;
+        })
+        .join('');
+      sections.push({
+        id: `sec-${randomUUID().slice(0, 8)}`,
+        title: 'Approfondimenti',
+        content: { format: 'html', html },
+      });
+    }
+
     const blocks: Block[] = [
       {
         id: `video-${randomUUID().slice(0, 8)}`,
@@ -334,13 +364,7 @@ export class SlideLessonService {
           checkpoints: [],
           transcript: cues.map((c) => ({ id: c.id, start: c.start, end: c.end, text: c.text })),
           transcriptStatus: 'ready',
-          sections: [
-            {
-              id: `sec-${randomUUID().slice(0, 8)}`,
-              title: 'Punti chiave',
-              content: { format: 'html', html: doc.keyPointsHtml ?? '' },
-            },
-          ],
+          sections,
         },
       },
       {

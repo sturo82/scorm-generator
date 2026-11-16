@@ -26,8 +26,12 @@ export type SlideCue = z.infer<typeof SlideCue>;
 
 export const SlideVideoSlide = z.object({
   id: z.string().min(1),
-  /** URL (firmato) dell'immagine della slide. */
-  imageUrl: z.string().min(1),
+  /** URL (firmato) dell'immagine della slide. Assente per le slide "extra" create dal testo. */
+  imageUrl: z.string().min(1).optional(),
+  /** Slide testuale (titolo + punti) disegnata dal renderer quando non c'è un'immagine. */
+  textSlide: z
+    .object({ title: z.string().min(1), bullets: z.array(z.string()).default([]) })
+    .optional(),
   /** URL (firmato) della clip avatar che narra la slide. */
   clipUrl: z.string().min(1),
   /** Durata reale della clip in secondi. */
@@ -200,3 +204,10 @@ export const BuildSlideLesson = z.object({
   moduleTitle: z.string().trim().min(1).max(200).optional(),
 });
 export type BuildSlideLesson = z.infer<typeof BuildSlideLesson>;
+
+/** Generazione dei copioni, opzionalmente arricchiti da documenti di knowledge. */
+export const GenerateSlideScripts = z.object({
+  /** Documenti di knowledge (pronti) con cui confrontare e arricchire le slide. */
+  knowledgeDocIds: z.array(z.string().min(1)).max(10).default([]),
+});
+export type GenerateSlideScripts = z.infer<typeof GenerateSlideScripts>;
