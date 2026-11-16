@@ -16,6 +16,18 @@ const WORDS_PER_SEC = 2.4;
 /** Tetto di parole di knowledge passate al confronto con le slide (circa 35k token). */
 const MAX_KNOWLEDGE_WORDS = 25000;
 
+const JOB_LEASE_MS = 5 * 60_000;
+
+/** Stato della generazione in background dei copioni (file `scripts-job.json`). */
+export interface ScriptsGenerationState {
+  status: 'running' | 'failed' | 'completed';
+  error?: string;
+  startedAt: string;
+  updatedAt: string;
+  /** Scadenza del lease: oltre, un lavoro 'running' non attivo in questo processo è considerato interrotto. */
+  leaseUntil?: number;
+}
+
 /** Argomento della knowledge non coperto dalle slide (slide "extra" opzionale). */
 export interface ExtraTopic {
   title: string;
@@ -167,6 +179,7 @@ interface LlmUncovered {
 export class SlideScriptsService {
   private readonly logger = new Logger(SlideScriptsService.name);
   private readonly registry: DocumentExtractorRegistry;
+  private readonly active = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -183,6 +196,34 @@ export class SlideScriptsService {
     return `media/${tenantId}/${courseId}/slides/${importId}/scripts.json`;
   }
 
+  private jobKey(tenantId: string, courseId: string, importId: string): string {
+    return `media/${tenantId}/${courseId}/slides/${importId}/scripts-job.json`;
+  }
+
+  /** Stato della generazione in background (null se non è mai partita). Un lavoro orfano diventa 'failed'. */
+  async generationState(tenantId: string, courseId: string, importId: string): Promise<ScriptsGenerationState | null> {
+    const key = this.jobKey(tenantId, courseId, importId);
+    if (!(await this.storage.exists(key))) return null;
+    const st = JSON.parse((await this.storage.getObject(key)).toString('utf8')) as ScriptsGenerationState;
+    if (st.status === 'running' && !this.active.has(`${tenantId}:${importId}`) && (st.leaseUntil ?? 0) < Date.now()) {
+      const failed: ScriptsGenerationState = {
+        ...st,
+        status: 'failed',
+        error: 'Generazione interrotta (riavvio del server): riprova.',
+        updatedAt: new Date().toISOString(),
+      };
+      await this.storage.putObject(key, Buffer.from(JSON.stringify(failed)), { contentType: 'application/json' });
+      return failed;
+    }
+    return st;
+  }
+
+  private async saveGenerationState(tenantId: string, courseId: string, importId: string, st: ScriptsGenerationState): Promise<void> {
+    await this.storage.putObject(this.jobKey(tenantId, courseId, importId), Buffer.from(JSON.stringify(st)), {
+      contentType: 'application/json',
+    });
+  }
+
   async get(tenantId: string, courseId: string, importId: string): Promise<SlideScriptsDoc | null> {
     await this.slides.loadManifest(tenantId, courseId, importId);
     const key = this.key(tenantId, courseId, importId);
@@ -194,25 +235,70 @@ export class SlideScriptsService {
     return doc;
   }
 
-  /** Genera (o rigenera) i copioni. Rifiuta se i copioni correnti sono già approvati. */
-  async generate(
+  /**
+   * Avvia in background la generazione (o rigenerazione) dei copioni e ritorna subito.
+   * Con la knowledge la chiamata LLM dura oltre i 120 s concessi a una richiesta HTTP,
+   * quindi il client interroga lo stato (`generationState`) finché non termina. Le
+   * validazioni (copioni già approvati, knowledge non pronta o troppo lunga) restano
+   * sincrone, così gli errori d'input tornano subito.
+   */
+  async startGenerate(
     tenantId: string,
     courseId: string,
     importId: string,
     input: GenerateSlideScripts = { knowledgeDocIds: [] },
-  ): Promise<SlideScriptsDoc> {
+  ): Promise<ScriptsGenerationState> {
     const manifest = await this.slides.loadManifest(tenantId, courseId, importId);
     const existing = await this.get(tenantId, courseId, importId);
     if (existing?.status === 'approved') {
       throw new ConflictException('I copioni sono già approvati: modificali per riaprire la revisione.');
     }
+    const current = await this.generationState(tenantId, courseId, importId);
+    if (current?.status === 'running') throw new ConflictException('Generazione dei copioni già in corso.');
+    const knowledge = await this.loadKnowledge(tenantId, input.knowledgeDocIds);
     const course = await this.prisma.course.findFirst({
       where: { id: courseId, tenantId },
       select: { language: true },
     });
     const language = languageName(course?.language ?? 'it');
-    const knowledge = await this.loadKnowledge(tenantId, input.knowledgeDocIds);
 
+    const now = new Date().toISOString();
+    const state: ScriptsGenerationState = { status: 'running', startedAt: now, updatedAt: now, leaseUntil: Date.now() + JOB_LEASE_MS };
+    await this.saveGenerationState(tenantId, courseId, importId, state);
+    const runKey = `${tenantId}:${importId}`;
+    this.active.add(runKey);
+    void (async () => {
+      const heartbeat = setInterval(() => {
+        state.leaseUntil = Date.now() + JOB_LEASE_MS;
+        state.updatedAt = new Date().toISOString();
+        void this.saveGenerationState(tenantId, courseId, importId, state).catch(() => undefined);
+      }, 60_000);
+      try {
+        await this.runGenerate(tenantId, courseId, importId, manifest, language, knowledge);
+        state.status = 'completed';
+      } catch (err) {
+        state.status = 'failed';
+        state.error = err instanceof Error ? err.message.slice(0, 300) : 'errore sconosciuto';
+        this.logger.error(`Generazione copioni fallita (import ${importId}): ${state.error}`);
+      } finally {
+        clearInterval(heartbeat);
+        this.active.delete(runKey);
+        state.updatedAt = new Date().toISOString();
+        state.leaseUntil = undefined;
+        await this.saveGenerationState(tenantId, courseId, importId, state).catch(() => undefined);
+      }
+    })();
+    return state;
+  }
+
+  private async runGenerate(
+    tenantId: string,
+    courseId: string,
+    importId: string,
+    manifest: SlideImportManifest,
+    language: string,
+    knowledge: { text: string; ids: string[]; names: string[] } | null,
+  ): Promise<SlideScriptsDoc> {
     const out = await this.callLlm(tenantId, courseId, manifest, language, knowledge?.text ?? null);
     const entries: SlideScriptEntry[] = manifest.slides.map((s) => {
       const r = out.slides.get(s.index)!;

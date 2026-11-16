@@ -53,6 +53,8 @@ import type {
   SlideLessonView,
   SlideAvatarType,
   SlideSection,
+  SlideScriptsGeneration,
+  SlideScriptsResponse,
 } from './types';
 
 /**
@@ -583,10 +585,10 @@ export class HttpApiClient implements ApiClient {
     return this.request<SlideImportView>(`/courses/${courseId}/slides/imports/${importId}`);
   }
   getSlideScripts(courseId: string, importId: string) {
-    return this.request<SlideScriptsDoc | { status: 'none' }>(`/courses/${courseId}/slides/imports/${importId}/scripts`);
+    return this.request<SlideScriptsResponse>(`/courses/${courseId}/slides/imports/${importId}/scripts`);
   }
   generateSlideScripts(courseId: string, importId: string, knowledgeDocIds?: string[]) {
-    return this.request<SlideScriptsDoc>(`/courses/${courseId}/slides/imports/${importId}/scripts/generate`, {
+    return this.request<SlideScriptsGeneration>(`/courses/${courseId}/slides/imports/${importId}/scripts/generate`, {
       method: 'POST',
       body: JSON.stringify({ knowledgeDocIds: knowledgeDocIds ?? [] }),
     });

@@ -961,6 +961,8 @@ export const useSlideScripts = (courseId: string, importId: string | null) =>
     queryKey: ['courses', courseId, 'slides', importId, 'scripts'],
     queryFn: () => api.getSlideScripts(courseId, importId as string),
     enabled: !!courseId && !!importId,
+    // La generazione gira in background sul server: finché è in corso si interroga lo stato.
+    refetchInterval: (query) => (query.state.data?.generation?.status === 'running' ? 4000 : false),
   });
 
 export function useGenerateSlideScripts(courseId: string, importId: string | null) {

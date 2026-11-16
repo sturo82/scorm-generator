@@ -167,6 +167,7 @@ function Pipeline({
   const lesson = useSlideLesson(courseId, importId);
 
   const scriptsDoc = scripts.data && 'slides' in scripts.data ? scripts.data : null;
+  const scriptsGeneration = scripts.data?.generation;
   const approved = scriptsDoc?.status === 'approved';
   const clipsView = clips.data && 'clips' in clips.data ? clips.data : null;
   const clipsDone = clipsView?.status === 'completed';
@@ -200,6 +201,7 @@ function Pipeline({
         courseId={courseId}
         importId={importId}
         doc={scriptsDoc}
+        generation={scriptsGeneration}
         loading={scripts.isLoading}
         thumbs={imp.data?.slides ?? []}
         locked={Boolean(clipsView) && clipsView?.status !== 'failed'}
@@ -229,6 +231,7 @@ function StepScripts({
   courseId,
   importId,
   doc,
+  generation,
   loading,
   thumbs,
   locked,
@@ -236,6 +239,7 @@ function StepScripts({
   courseId: string;
   importId: string;
   doc: import('@/lib/api/types').SlideScriptsDoc | null;
+  generation?: import('@/lib/api/types').SlideScriptsGeneration;
   loading: boolean;
   thumbs: Array<{ index: number; imageUrl: string }>;
   /** True quando le clip sono già in lavorazione: i copioni non si modificano più. */
@@ -255,8 +259,20 @@ function StepScripts({
     if (doc?.knowledgeDocIds?.length) setKbIds(new Set(doc.knowledgeDocIds));
   }, [doc?.updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Notifica una volta sola quando la generazione in background termina.
+  const prevGen = React.useRef<string | undefined>(generation?.status);
+  React.useEffect(() => {
+    if (prevGen.current === 'running' && generation?.status === 'completed') {
+      toast.show('Copioni generati: rivedili prima di approvarli', 'success');
+    }
+    prevGen.current = generation?.status;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generation?.status]);
+
   const thumbByIndex = React.useMemo(() => new Map(thumbs.map((t) => [t.index, t.imageUrl])), [thumbs]);
   const approved = doc?.status === 'approved';
+  const generating = generate.isPending || generation?.status === 'running';
+  const generationError = generation?.status === 'failed' ? generation.error : undefined;
   const dirty = doc
     ? JSON.stringify(draft.map((d) => [d.index, d.script, d.skip])) !==
       JSON.stringify(doc.slides.map((d) => [d.index, d.script, d.skip]))
@@ -278,7 +294,7 @@ function StepScripts({
   async function handleGenerate() {
     try {
       await generate.mutateAsync([...kbIds]);
-      toast.show('Copioni generati: rivedili prima di approvarli', 'success');
+      toast.show('Generazione avviata: prosegue sul server, ci vuole circa un paio di minuti', 'success');
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       toast.show(
@@ -366,7 +382,18 @@ function StepScripts({
             finito di parlare.
           </p>
           {kbPicker}
-          <Button onClick={handleGenerate} disabled={generate.isPending}>
+          {generationError && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
+              Generazione non riuscita: {generationError}
+            </p>
+          )}
+          {generating && (
+            <AiWorking
+              label={kbIds.size ? 'Confronto slide e knowledge…' : 'Scrivo i copioni…'}
+              hint="Gira sul server e richiede uno o due minuti: puoi chiudere la finestra e tornare più tardi."
+            />
+          )}
+          <Button onClick={handleGenerate} disabled={generating}>
             {generate.isPending ? (
               <AiWorkingInline label={kbIds.size ? 'Confronto slide e knowledge…' : 'Scrivo i copioni…'} />
             ) : (
@@ -386,6 +413,14 @@ function StepScripts({
               ? ' Copioni approvati.'
               : ' Controlla soprattutto che nulla sia stato aggiunto o cambiato rispetto alle slide.'}
           </p>
+          {generating && (
+            <AiWorking label="Rigenero i copioni…" hint="Gira sul server: i copioni qui sotto sono quelli precedenti finché non finisce." />
+          )}
+          {generationError && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
+              Generazione non riuscita: {generationError}
+            </p>
+          )}
           {!approved && !locked && kbPicker}
           <ul className="space-y-3">
             {realSlides.map((d) => (
@@ -485,8 +520,8 @@ function StepScripts({
                 </Button>
               ) : (
                 <>
-                  <Button variant="outline" onClick={handleGenerate} disabled={generate.isPending || save.isPending}>
-                    {generate.isPending ? <AiWorkingInline label="Rigenero…" /> : 'Rigenera tutti'}
+                  <Button variant="outline" onClick={handleGenerate} disabled={generating || save.isPending}>
+                    {generating ? <AiWorkingInline label="Rigenero…" /> : 'Rigenera tutti'}
                   </Button>
                   <Button variant="outline" onClick={() => handleSave(false)} disabled={!dirty || save.isPending}>
                     Salva bozza

@@ -23,7 +23,7 @@ import {
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { SlideLessonService, type SectionInput, type SlideLessonView } from './slide-lesson.service.js';
 import { SlideClipsService, type SlideClipsEstimate, type SlideClipsView } from './slide-clips.service.js';
-import { SlideScriptsService, type SlideScriptsDoc } from './slide-scripts.service.js';
+import { SlideScriptsService, type ScriptsGenerationState, type SlideScriptsDoc } from './slide-scripts.service.js';
 import { CurrentContext, type AuthContext } from '../auth/auth-context.js';
 import { Roles } from '../auth/roles.decorator.js';
 import { SLIDES_MAX_PDF_BYTES, SlidesService, type SlideImportView } from './slides.service.js';
@@ -63,13 +63,19 @@ export class SlidesController {
     });
   }
 
+  /** Copioni correnti (o `status: 'none'`) con lo stato dell'eventuale generazione in background. */
   @Get('imports/:importId/scripts')
   async getScripts(
     @CurrentContext() ctx: AuthContext,
     @Param('courseId') courseId: string,
     @Param('importId') importId: string,
-  ): Promise<SlideScriptsDoc | { status: 'none' }> {
-    return (await this.scripts.get(ctx.tenant.tenantId, courseId, importId)) ?? { status: 'none' };
+  ): Promise<(SlideScriptsDoc | { status: 'none' }) & { generation?: ScriptsGenerationState }> {
+    const [doc, generation] = await Promise.all([
+      this.scripts.get(ctx.tenant.tenantId, courseId, importId),
+      this.scripts.generationState(ctx.tenant.tenantId, courseId, importId),
+    ]);
+    const base = doc ?? { status: 'none' as const };
+    return generation ? { ...base, generation } : base;
   }
 
   @Post('imports/:importId/scripts/generate')
@@ -79,11 +85,12 @@ export class SlidesController {
     @Param('courseId') courseId: string,
     @Param('importId') importId: string,
     @Body() raw: unknown,
-  ): Promise<SlideScriptsDoc> {
+  ): Promise<ScriptsGenerationState> {
     // Il body è opzionale (compatibilità con chi non passa la knowledge).
     const parsed = GenerateSlideScriptsSchema.safeParse(raw ?? {});
     if (!parsed.success) throw new BadRequestException('Richiesta non valida: knowledgeDocIds');
-    return this.scripts.generate(ctx.tenant.tenantId, courseId, importId, parsed.data);
+    // Parte in background e ritorna subito: il client interroga GET .../scripts.
+    return this.scripts.startGenerate(ctx.tenant.tenantId, courseId, importId, parsed.data);
   }
 
   @Put('imports/:importId/scripts')

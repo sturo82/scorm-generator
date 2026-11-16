@@ -101,3 +101,11 @@ export interface SlideLessonView {
   moduleId?: string;
   lessonId?: string;
 }
+
+/** Stato della generazione dei copioni, che gira in background sul server. */
+export interface SlideScriptsGeneration {
+  status: 'running' | 'failed' | 'completed';
+  error?: string;
+  startedAt?: string;
+}
+export type SlideScriptsResponse = (SlideScriptsDoc | { status: 'none' }) & { generation?: SlideScriptsGeneration };

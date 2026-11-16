@@ -367,8 +367,12 @@ import type {
   SlideLessonView,
   SlideAvatarType,
   SlideSection,
+  SlideScriptsGeneration,
+  SlideScriptsResponse,
 } from './slides-types';
 export type {
+  SlideScriptsGeneration,
+  SlideScriptsResponse,
   SlideSection,
   SlideScriptEntry,
   SlideImportView,
@@ -661,8 +665,8 @@ export interface ApiClient {
   // Video-lezione da slide (PDF + avatar)
   importSlides(courseId: string, file: File): Promise<SlideImportView>;
   getSlideImport(courseId: string, importId: string): Promise<SlideImportView>;
-  getSlideScripts(courseId: string, importId: string): Promise<SlideScriptsDoc | { status: 'none' }>;
-  generateSlideScripts(courseId: string, importId: string, knowledgeDocIds?: string[]): Promise<SlideScriptsDoc>;
+  getSlideScripts(courseId: string, importId: string): Promise<SlideScriptsResponse>;
+  generateSlideScripts(courseId: string, importId: string, knowledgeDocIds?: string[]): Promise<SlideScriptsGeneration>;
   saveSlideScripts(
     courseId: string,
     importId: string,
