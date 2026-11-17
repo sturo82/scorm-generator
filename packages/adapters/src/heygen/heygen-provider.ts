@@ -101,27 +101,19 @@ interface VoiceItem {
   gender?: string;
   preview_audio_url?: string;
 }
-/** Risposta di GET /v2/avatar_group.list: gruppi avatar (miei o pubblici). */
-interface AvatarGroup {
-  id?: string;
-  name?: string;
-  preview_image?: string;
-  group_type?: string;
-  num_looks?: number;
-}
-interface AvatarGroupListResponse {
-  data?: { avatar_group_list?: AvatarGroup[] };
-}
-/** Risposta di GET /v2/avatar_group/{group_id}/avatars: i look del gruppo. */
-interface GroupAvatarItem {
+/** Risposta di GET /v3/avatars/looks?group_id=…: TUTTI i look del gruppo, digital twin inclusi. */
+interface V3LookItem {
   id?: string;
   name?: string;
   status?: string;
-  image_url?: string;
+  avatar_type?: string;
+  preview_image_url?: string;
   gender?: string;
 }
-interface GroupAvatarListResponse {
-  data?: { avatar_list?: GroupAvatarItem[] };
+interface V3LooksResponse {
+  data?: V3LookItem[];
+  has_more?: boolean;
+  next_token?: string | null;
 }
 interface ListVoicesResponse {
   data?: VoiceItem[] | { voices?: VoiceItem[] };
@@ -361,17 +353,24 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
       return this.mineCache.promise;
     }
     const promise = (async (): Promise<AvatarOption[]> => {
-      const json = await this.getPage<AvatarGroupListResponse>('/v2/avatar_group.list', undefined, {
-        include_public: 'false',
-      });
-      const groups = (json.data?.avatar_group_list ?? []).filter((g) => g.id);
+      // API v3: la v2 (/v2/avatar_group/{id}/avatars) NON restituisce i look "digital twin"
+      // creati da video, che quindi non comparivano tra le scelte.
+      const groups: AvatarItem[] = [];
+      let token: string | undefined;
+      for (let page = 0; page < 10; page++) {
+        const json = await this.getPage<ListAvatarsResponse>('/v3/avatars', token, { ownership: 'private', limit: '50' });
+        const raw = (Array.isArray(json.data) ? json.data : json.data?.avatars ?? []) as AvatarItem[];
+        groups.push(...raw.filter((g) => g.id));
+        if (!json.has_more || !json.next_token) break;
+        token = json.next_token;
+      }
 
       // Per ogni gruppo, risolve i look in parallelo. Un errore su un gruppo non
       // deve far fallire l'intera lista: in quel caso il gruppo viene saltato.
       const perGroup = await Promise.all(
         groups.map(async (g): Promise<AvatarOption[]> => {
           try {
-            const looks = await this.fetchGroupLooks(g.id as string);
+            const looks = await this.fetchGroupLooksV3(g.id as string);
             const ready = looks.filter((l) => l.id && (l.status ?? '').toLowerCase() === 'completed');
             // Se non ci sono look pronti risolvibili, salta il gruppo: esporre il
             // group id non sarebbe utilizzabile per la generazione.
@@ -379,32 +378,48 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
             const multi = ready.length > 1;
             return ready.map((l): AvatarOption => ({
               id: l.id as string,
-              name: multi && l.name ? `${g.name ?? 'Avatar'} — ${l.name}` : g.name ?? l.name ?? (l.id as string),
-              previewUrl: l.image_url ?? g.preview_image,
-              gender: l.gender,
+              name:
+                multi && l.name
+                  ? g.name && l.name.includes(g.name)
+                    ? l.name
+                    : `${g.name ?? 'Avatar'} — ${l.name}`
+                  : g.name ?? l.name ?? (l.id as string),
+              previewUrl: l.preview_image_url ?? g.preview_image_url,
+              gender: l.gender ?? g.gender,
               source: 'mine',
               group: g.name,
-              groupType: g.group_type,
+              // Tipo del LOOK (es. PHOTO_AVATAR, DIGITAL_TWIN): determina etichetta e tariffa.
+              groupType: (l.avatar_type ?? 'photo_avatar').toUpperCase(),
             }));
           } catch {
             return [];
           }
         }),
       );
-      return perGroup.flat();
+      // I digital twin per primi: sono gli avatar "veri" della persona.
+      return perGroup
+        .flat()
+        .sort((x, y) => Number((y.groupType ?? '').includes('TWIN')) - Number((x.groupType ?? '').includes('TWIN')));
     })();
     if (this.cacheTtlMs > 0) this.mineCache = { expires: now + this.cacheTtlMs, promise };
     else this.mineCache = undefined;
     return promise;
   }
 
-  /** Look di un gruppo avatar (/v2/avatar_group/{id}/avatars). */
-  private async fetchGroupLooks(groupId: string): Promise<GroupAvatarItem[]> {
-    const json = await this.getPage<GroupAvatarListResponse>(
-      `/v2/avatar_group/${encodeURIComponent(groupId)}/avatars`,
-    );
-    return json.data?.avatar_list ?? [];
+  /** Tutti i look di un gruppo (API v3, digital twin inclusi), con paginazione. */
+  private async fetchGroupLooksV3(groupId: string): Promise<V3LookItem[]> {
+    const out: V3LookItem[] = [];
+    let token: string | undefined;
+    for (let page = 0; page < 5; page++) {
+      const json = await this.getPage<V3LooksResponse>('/v3/avatars/looks', token, { group_id: groupId, limit: '50' });
+      out.push(...(json.data ?? []));
+      if (!json.has_more || !json.next_token) break;
+      token = json.next_token;
+    }
+    return out;
   }
+
+
 
   async listAvatarsPage(input?: ListAvatarsInput): Promise<Page<AvatarOption>> {
     const source = input?.source ?? 'stock';
