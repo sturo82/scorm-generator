@@ -142,8 +142,14 @@ export class SlidesService {
         .filter((x) => !x.extra && x.index > pages.length && !x.skip)
         .map((x) => x.index);
       if (stillUsed.length > 0) {
+        const missing = findMissingPages(manifest.slides.map((x) => x.text), pages.map((x) => x.text));
+        const hint = missing.length > 0
+          ? ` Sembra mancare la pagina ${missing.join(', ')} (${missing
+              .map((i) => `«${firstLine(manifest.slides[i - 1]!.text)}»`)
+              .join(', ')}): se è una slide nascosta, riesporta il PDF includendo le slide nascoste.`
+          : '';
         throw new BadRequestException(
-          `Il nuovo PDF ha ${pages.length} pagine ma le slide ${stillUsed.slice(0, 8).join(', ')}${stillUsed.length > 8 ? '…' : ''} dell'import sono ancora incluse nel video: servono le stesse pagine.`,
+          `Il nuovo PDF ha ${pages.length} pagine ma il video usa ${Math.max(...stillUsed)} slide: servono le stesse pagine.${hint}`,
         );
       }
     }
@@ -222,4 +228,40 @@ export function textSimilarity(a: string, b: string): number {
   let inter = 0;
   for (const g of A) if (B.has(g)) inter++;
   return inter / (A.size + B.size - inter || 1);
+}
+
+/** Prima riga leggibile di una slide (per indicarla nei messaggi). */
+function firstLine(text: string): string {
+  const line = text.split('\n').map((l) => l.trim()).find((l) => l.length > 3) ?? '';
+  return line.length > 60 ? `${line.slice(0, 57)}…` : line;
+}
+
+/**
+ * Pagine (1-based) dell'import che non compaiono nel nuovo PDF, allineando le due sequenze
+ * per testo: individua i "salti" in cui la pagina nuova i corrisponde alla vecchia i+k.
+ */
+export function findMissingPages(oldTexts: string[], newTexts: string[]): number[] {
+  const missing: number[] = [];
+  let o = 0;
+  for (let n = 0; n < newTexts.length && o < oldTexts.length; n++) {
+    if (textSimilarity(oldTexts[o]!, newTexts[n]!) >= 0.5) {
+      o++;
+      continue;
+    }
+    // Cerca la pagina nuova poco più avanti tra le vecchie: le intermedie mancano.
+    let found = -1;
+    for (let k = 1; k <= 3 && o + k < oldTexts.length; k++) {
+      if (textSimilarity(oldTexts[o + k]!, newTexts[n]!) >= 0.5) {
+        found = o + k;
+        break;
+      }
+    }
+    if (found === -1) {
+      o++;
+      continue;
+    }
+    for (let m = o; m < found; m++) missing.push(m + 1);
+    o = found + 1;
+  }
+  return missing;
 }

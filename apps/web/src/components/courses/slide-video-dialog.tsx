@@ -167,6 +167,8 @@ function Pipeline({
   const replace = useReplaceSlides(courseId, importId);
   const replaceRef = React.useRef<HTMLInputElement>(null);
   const toast = useToast();
+  // Errore della sostituzione mostrato in modo persistente (un toast di pochi secondi si perde).
+  const [replaceError, setReplaceError] = React.useState<string | null>(null);
   const scripts = useSlideScripts(courseId, importId);
   const clips = useSlideClips(courseId, importId);
   const lesson = useSlideLesson(courseId, importId);
@@ -192,6 +194,7 @@ function Pipeline({
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    setReplaceError(null);
     try {
       const res = await replace.mutateAsync(file);
       toast.show(
@@ -203,14 +206,7 @@ function Pipeline({
         res.warnings.length > 0 ? 'info' : 'success',
       );
     } catch (err) {
-      const msg = err instanceof Error ? err.message.replace(/^API \d+:\s*/, '') : '';
-      let detail = msg;
-      try {
-        detail = (JSON.parse(msg) as { message?: string }).message ?? msg;
-      } catch {
-        /* messaggio non JSON */
-      }
-      toast.show(detail.slice(0, 220) || 'Sostituzione del PDF non riuscita', 'error');
+      setReplaceError(apiErrorMessage(err) || 'Sostituzione del PDF non riuscita');
     }
   }
 
@@ -239,6 +235,16 @@ function Pipeline({
           )}
         </div>
       </div>
+      {replaceError && (
+        <div className="flex items-start justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          <p>
+            <strong>PDF non sostituito.</strong> {replaceError}
+          </p>
+          <Button size="sm" variant="ghost" onClick={() => setReplaceError(null)} aria-label="Chiudi">
+            ✕
+          </Button>
+        </div>
+      )}
 
       <StepScripts
         courseId={courseId}
@@ -1098,4 +1104,18 @@ function Heading({ n, title, done }: { n: number; title: string; done?: boolean 
       {title}
     </h3>
   );
+}
+
+/** Messaggio leggibile da un errore dell'API ("API 400: {json}" oppure testo semplice). */
+function apiErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message.replace(/^API \d+:\s*/, '') : '';
+  try {
+    const parsed = JSON.parse(raw) as { message?: string | string[] };
+    const m = Array.isArray(parsed.message) ? parsed.message.join(' ') : parsed.message;
+    if (m) return m;
+  } catch {
+    /* non JSON o troncato */
+  }
+  const m = /"message"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(raw);
+  return (m ? m[1]!.replace(/\\"/g, '"') : raw).slice(0, 400);
 }

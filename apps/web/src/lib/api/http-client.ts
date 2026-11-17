@@ -628,7 +628,7 @@ export class HttpApiClient implements ApiClient {
     if (session) headers.set('Authorization', `Bearer ${session.token}`);
     const res = await fetch(`${this.baseUrl}/courses/${courseId}/slides/imports/${importId}/replace`, { method: 'POST', headers, body: form });
     if (res.status === 401) void handleSessionExpired();
-    if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 400)}`);
+    if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 2000)}`);
     return (await res.json()) as SlideImportView & { warnings: string[] };
   }
   remasterSlideLesson(courseId: string, importId: string) {
