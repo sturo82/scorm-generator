@@ -113,6 +113,39 @@ export class VideosService {
     return this.toView(row);
   }
 
+  /** Imposta l'immagine di anteprima (poster) del video; sostituisce la precedente. */
+  async setThumbnail(
+    tenantId: string,
+    id: string,
+    file: { mimeType: string; content: Buffer },
+  ): Promise<VideoAssetView> {
+    const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[file.mimeType];
+    if (!ext) throw new BadRequestException('Formato immagine non supportato (usa JPG, PNG o WebP).');
+    if (file.content.byteLength === 0) throw new BadRequestException('File vuoto');
+    if (file.content.byteLength > 5 * 1024 * 1024) throw new BadRequestException('Immagine troppo grande (max 5MB).');
+    const current = await this.prisma.videoAsset.findFirst({ where: { id, tenantId } });
+    if (!current) throw new NotFoundException('Video non trovato');
+    const key = `videos/${tenantId}/thumbs/${randomUUID()}.${ext}`;
+    await this.storage.putObject(key, file.content, { contentType: file.mimeType });
+    const row = await this.prisma.videoAsset.update({ where: { id }, data: { thumbnailKey: key } });
+    await this.removeFile(current.thumbnailKey);
+    return this.toView(row);
+  }
+
+  /** Toglie l'anteprima personalizzata (torna al primo fotogramma del video). */
+  async clearThumbnail(tenantId: string, id: string): Promise<VideoAssetView> {
+    const current = await this.prisma.videoAsset.findFirst({ where: { id, tenantId } });
+    if (!current) throw new NotFoundException('Video non trovato');
+    const row = await this.prisma.videoAsset.update({ where: { id }, data: { thumbnailKey: null } });
+    await this.removeFile(current.thumbnailKey);
+    return this.toView(row);
+  }
+
+  private async removeFile(key: string | null): Promise<void> {
+    if (!key) return;
+    await this.storage.deleteObject(key).catch(() => undefined);
+  }
+
   async update(tenantId: string, id: string, input: UpdateVideoAsset): Promise<VideoAssetView> {
     await this.get(tenantId, id);
     const row = await this.prisma.videoAsset.update({
@@ -137,6 +170,7 @@ export class VideosService {
         /* file non rimovibile: si procede comunque con la cancellazione del record */
       }
     }
+    await this.removeFile(row.thumbnailKey);
     await this.prisma.videoAsset.delete({ where: { id } });
   }
 
@@ -170,6 +204,7 @@ export class VideosService {
     description: string;
     source: string;
     storageKey: string | null;
+    mimeType?: string | null;
     externalUrl: string | null;
     externalId: string | null;
     channel: string | null;
@@ -179,10 +214,10 @@ export class VideosService {
     transcriptStatus: string;
     createdAt: Date;
   }): Promise<VideoAssetView> {
-    const sign = async (key: string | null): Promise<string | null> => {
+    const sign = async (key: string | null, downloadFilename?: string): Promise<string | null> => {
       if (!key) return null;
       try {
-        return await this.storage.getSignedUrl(key, { expiresInSec: VIDEO_URL_TTL_SEC });
+        return await this.storage.getSignedUrl(key, { expiresInSec: VIDEO_URL_TTL_SEC, downloadFilename });
       } catch {
         return null;
       }
@@ -194,6 +229,10 @@ export class VideosService {
       description: row.description,
       source: row.source.toLowerCase() as VideoAssetView['source'],
       url,
+      downloadUrl:
+        row.source === 'UPLOAD' && row.storageKey
+          ? await sign(row.storageKey, `${row.title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'video'}.${row.mimeType === 'video/webm' ? 'webm' : 'mp4'}`)
+          : null,
       externalUrl: row.externalUrl,
       externalId: row.externalId,
       channel: row.channel,

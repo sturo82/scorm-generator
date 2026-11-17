@@ -588,6 +588,8 @@ export interface ApiClient {
   uploadVideoAsset(file: File, meta?: { title?: string; channel?: string }): Promise<VideoAssetView>;
   updateVideoAsset(id: string, input: UpdateVideoAsset): Promise<VideoAssetView>;
   deleteVideoAsset(id: string): Promise<void>;
+  setVideoThumbnail(id: string, file: Blob): Promise<VideoAssetView>;
+  clearVideoThumbnail(id: string): Promise<VideoAssetView>;
   /** Collega un video della libreria a un block video_checkpoint di una lezione. */
   attachVideoFromLibrary(courseId: string, lessonId: string, blockId: string, videoAssetId: string): Promise<void>;
   /** Salva/corregge a mano la trascrizione (cue con timestamp) di un block video. */

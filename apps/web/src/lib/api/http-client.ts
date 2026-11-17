@@ -417,6 +417,20 @@ export class HttpApiClient implements ApiClient {
     if (!res.ok) throw new Error(`Upload video fallito: ${res.status}`);
     return (await res.json()) as VideoAssetView;
   }
+  async setVideoThumbnail(id: string, file: Blob) {
+    const session = getSession();
+    const form = new FormData();
+    form.append('file', file, 'thumbnail');
+    const headers = new Headers();
+    if (session) headers.set('Authorization', `Bearer ${session.token}`);
+    const res = await fetch(`${this.baseUrl}/videos/${id}/thumbnail`, { method: 'PUT', headers, body: form });
+    if (res.status === 401) void handleSessionExpired();
+    if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    return (await res.json()) as VideoAssetView;
+  }
+  clearVideoThumbnail(id: string) {
+    return this.request<VideoAssetView>(`/videos/${id}/thumbnail`, { method: 'DELETE' });
+  }
   updateVideoAsset(id: string, input: UpdateVideoAsset) {
     return this.request<VideoAssetView>(`/videos/${id}`, { method: 'PUT', body: JSON.stringify(input) });
   }

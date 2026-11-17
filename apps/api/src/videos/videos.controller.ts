@@ -80,6 +80,23 @@ export class VideosController {
     );
   }
 
+  /** Imposta l'immagine di anteprima (multipart, campo "file": JPG/PNG/WebP, max 5MB). */
+  @Put(':id/thumbnail')
+  @Roles('EDITOR')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  setThumbnail(
+    @CurrentContext() ctx: AuthContext,
+    @Param('id') id: string,
+    @UploadedFile() file: { mimetype: string; buffer: Buffer } | undefined,
+  ) {
+    if (!file) throw new BadRequestException('Nessun file ricevuto (campo "file")');
+    return this.videos.setThumbnail(ctx.tenant.tenantId, id, { mimeType: file.mimetype, content: file.buffer });
+  }
+  @Delete(':id/thumbnail')
+  @Roles('EDITOR')
+  clearThumbnail(@CurrentContext() ctx: AuthContext, @Param('id') id: string) {
+    return this.videos.clearThumbnail(ctx.tenant.tenantId, id);
+  }
   @Put(':id')
   @Roles('EDITOR')
   update(

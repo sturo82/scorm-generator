@@ -823,6 +823,7 @@ export class MockApiClient implements ApiClient {
       description: input.description ?? '',
       source: input.source,
       url: input.externalUrl,
+      downloadUrl: null,
       externalUrl: input.externalUrl,
       externalId: null,
       channel: input.channel ?? null,
@@ -843,6 +844,7 @@ export class MockApiClient implements ApiClient {
       description: '',
       source: 'upload',
       url: URL.createObjectURL(file),
+      downloadUrl: URL.createObjectURL(file),
       externalUrl: null,
       externalId: null,
       channel: meta?.channel ?? null,
@@ -862,6 +864,20 @@ export class MockApiClient implements ApiClient {
     if (input.title !== undefined) v.title = input.title;
     if (input.description !== undefined) v.description = input.description;
     if (input.channel !== undefined) v.channel = input.channel;
+    return { ...v };
+  }
+  async setVideoThumbnail(vid: string, file: Blob): Promise<VideoAssetView> {
+    await delay();
+    const v = this.videos.find((x) => x.id === vid);
+    if (!v) throw new Error('Video non trovato');
+    v.thumbnailUrl = URL.createObjectURL(file);
+    return { ...v };
+  }
+  async clearVideoThumbnail(vid: string): Promise<VideoAssetView> {
+    await delay();
+    const v = this.videos.find((x) => x.id === vid);
+    if (!v) throw new Error('Video non trovato');
+    v.thumbnailUrl = null;
     return { ...v };
   }
   async deleteVideoAsset(vid: string): Promise<void> {

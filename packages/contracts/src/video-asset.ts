@@ -46,6 +46,8 @@ export const VideoAssetView = z.object({
   source: MediaSource,
   /** URL firmato del file (video caricati) o URL esterno (embed). */
   url: z.string().nullable(),
+  /** URL firmato che forza il download del file (solo video caricati o creati in piattaforma). */
+  downloadUrl: z.string().nullable().default(null),
   externalUrl: z.string().nullable(),
   externalId: z.string().nullable(),
   channel: z.string().nullable(),

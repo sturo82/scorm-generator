@@ -838,6 +838,20 @@ export function useUpdateVideoAsset() {
   });
 }
 
+export function useSetVideoThumbnail() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; file: Blob }) => api.setVideoThumbnail(vars.id, vars.file),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.videos }),
+  });
+}
+export function useClearVideoThumbnail() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.clearVideoThumbnail(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.videos }),
+  });
+}
 export function useDeleteVideoAsset() {
   const qc = useQueryClient();
   return useMutation({

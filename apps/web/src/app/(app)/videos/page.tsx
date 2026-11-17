@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Upload, Plus, Trash2, Loader2, Video as VideoIcon, X, Youtube, Clapperboard } from 'lucide-react';
+import { Upload, Plus, Trash2, Loader2, Video as VideoIcon, X, Youtube, Clapperboard, Download, Play, Camera, ImageUp } from 'lucide-react';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -17,6 +17,8 @@ import {
   useUploadVideoAsset,
   useCreateExternalVideo,
   useDeleteVideoAsset,
+  useSetVideoThumbnail,
+  useClearVideoThumbnail,
 } from '@/lib/api/hooks';
 import type { VideoAssetView } from '@/lib/api/types';
 
@@ -52,6 +54,8 @@ export default function VideosPage() {
   const fileInput = React.useRef<HTMLInputElement>(null);
   const [externalOpen, setExternalOpen] = React.useState(false);
   const [slidesOpen, setSlidesOpen] = React.useState(false);
+  const [playingId, setPlayingId] = React.useState<string | null>(null);
+  const playing = videos.data?.find((v) => v.id === playingId) ?? null;
 
   async function handleUpload(file: File | undefined) {
     if (!file) return;
@@ -163,8 +167,35 @@ export default function VideosPage() {
             <Card key={v.id} className="group overflow-hidden transition-all hover:border-primary/40 hover:shadow-elevate">
               <div className="relative aspect-video w-full bg-black">
                 {v.source === 'upload' && v.url ? (
-                  // eslint-disable-next-line jsx-a11y/media-has-caption
-                  <video src={v.url} preload="metadata" className="size-full object-contain" />
+                  <button
+                    type="button"
+                    aria-label={`Riproduci ${v.title}`}
+                    onClick={() => setPlayingId(v.id)}
+                    className="group/play relative block size-full"
+                  >
+                    {v.thumbnailUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={v.thumbnailUrl} alt="" className="size-full object-cover" />
+                    ) : (
+                      // eslint-disable-next-line jsx-a11y/media-has-caption
+                      <video src={`${v.url}#t=0.1`} preload="metadata" className="size-full object-contain" />
+                    )}
+                    <span className="absolute inset-0 grid place-items-center bg-black/10 transition-colors group-hover/play:bg-black/30">
+                      <span className="grid size-12 place-items-center rounded-full bg-black/60 text-white">
+                        <Play className="size-5 translate-x-0.5" />
+                      </span>
+                    </span>
+                  </button>
+                ) : v.url ? (
+                  <a
+                    href={v.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Apri ${v.title}`}
+                    className="flex size-full items-center justify-center bg-gradient-to-br from-primary/10 to-accent/40"
+                  >
+                    <Play className="size-10 text-primary/60" />
+                  </a>
                 ) : (
                   <div className="flex size-full items-center justify-center bg-gradient-to-br from-primary/10 to-accent/40">
                     <VideoIcon className="size-10 text-primary/40" />
@@ -177,6 +208,16 @@ export default function VideosPage() {
               <CardContent className="p-3">
                 <div className="flex items-start justify-between gap-2">
                   <p className="line-clamp-2 text-sm font-semibold">{v.title}</p>
+                  {v.downloadUrl && (
+                    <a
+                      href={v.downloadUrl}
+                      aria-label="Scarica video"
+                      title="Scarica video"
+                      className="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                    >
+                      <Download className="size-4" />
+                    </a>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -197,6 +238,7 @@ export default function VideosPage() {
         </div>
       )}
 
+      <VideoPlayerDialog video={playing} onClose={() => setPlayingId(null)} />
       <ExternalVideoDialog
         open={externalOpen}
         saving={createExternal.isPending}
@@ -215,6 +257,108 @@ export default function VideosPage() {
   );
 }
 
+function VideoPlayerDialog({ video, onClose }: { video: VideoAssetView | null; onClose: () => void }) {
+  const toast = useToast();
+  const setThumb = useSetVideoThumbnail();
+  const clearThumb = useClearVideoThumbnail();
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const imageInput = React.useRef<HTMLInputElement>(null);
+  const busy = setThumb.isPending || clearThumb.isPending;
+
+  async function save(file: Blob | null) {
+    if (!video || !file) return;
+    try {
+      await setThumb.mutateAsync({ id: video.id, file });
+      toast.show('Anteprima aggiornata', 'success');
+    } catch (e) {
+      toast.show(e instanceof Error ? cleanErr(e.message) : 'Impostazione dell\u2019anteprima non riuscita', 'error');
+    }
+  }
+
+  /** Usa il fotogramma mostrato adesso dal player come anteprima. */
+  function captureFrame() {
+    const el = videoRef.current;
+    if (!el || !el.videoWidth) {
+      toast.show('Il video non è ancora pronto', 'error');
+      return;
+    }
+    el.pause();
+    const scale = Math.min(1, 1280 / el.videoWidth);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(el.videoWidth * scale);
+    canvas.height = Math.round(el.videoHeight * scale);
+    try {
+      canvas.getContext('2d')!.drawImage(el, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => void save(blob), 'image/jpeg', 0.9);
+    } catch {
+      toast.show('Non riesco a leggere il fotogramma: carica un\u2019immagine', 'error');
+    }
+  }
+
+  return (
+    <Dialog open={video !== null} onClose={onClose} title={video?.title ?? 'Video'} size="xl">
+      {video && video.url && (
+        <div className="space-y-3">
+          <div className="overflow-hidden rounded-lg bg-black">
+            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+            <video
+              ref={videoRef}
+              key={video.id}
+              src={video.url}
+              poster={video.thumbnailUrl ?? undefined}
+              crossOrigin="anonymous"
+              controls
+              autoPlay
+              playsInline
+              className="aspect-video max-h-[65vh] w-full object-contain"
+            />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">
+              Anteprima: metti in pausa sul fotogramma che preferisci, oppure carica un&apos;immagine.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={captureFrame} disabled={busy}>
+                <Camera className="size-4" /> Usa questo fotogramma
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => imageInput.current?.click()} disabled={busy}>
+                <ImageUp className="size-4" /> Carica immagine
+              </Button>
+              {video.thumbnailUrl && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => clearThumb.mutate(video.id, { onError: () => toast.show('Rimozione non riuscita', 'error') })}
+                >
+                  Rimuovi anteprima
+                </Button>
+              )}
+              {video.downloadUrl && (
+                <a
+                  href={video.downloadUrl}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm font-medium hover:bg-accent"
+                >
+                  <Download className="size-4" /> Scarica
+                </a>
+              )}
+            </div>
+          </div>
+          <input
+            ref={imageInput}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={(e) => {
+              void save(e.target.files?.[0] ?? null);
+              e.target.value = '';
+            }}
+          />
+        </div>
+      )}
+    </Dialog>
+  );
+}
 function TranscriptBadge({ status }: { status: string }) {
   if (status === 'ready') return <span className="rounded bg-success/15 px-1.5 py-0.5 text-success">Trascrizione ✓</span>;
   if (status === 'processing') return <span className="inline-flex items-center gap-1 rounded bg-warning/15 px-1.5 py-0.5 text-warning"><Loader2 className="size-3 animate-spin" /> Trascrizione…</span>;
