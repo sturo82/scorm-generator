@@ -470,6 +470,8 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
    mentre il corpo del pannello scorre verticalmente accanto al video. */
 .block.video.lesson-videofirst-vnext .vf-tabs-vertical { flex-wrap: nowrap; overflow-x: auto; }
 .block.video.lesson-videofirst-vnext .video-panel-body { flex: 1 1 auto; min-height: 0; }
+/* Barra tab con overflow-x:auto: senza flex-shrink:0 il flexbox la schiaccerebbe. */
+.block.video .video-tabs { flex-shrink: 0; }
 /* Il pannello è alto quanto il video: la trascrizione scorre dentro il pannello, non la pagina. */
 .block.video.lesson-videofirst-vnext .video-panel { height: 0; min-height: max(100%, 320px); }
 @media (max-width: 720px) { .block.video.lesson-videofirst-vnext .video-panel { height: auto; min-height: 0; max-height: 60vh; } }

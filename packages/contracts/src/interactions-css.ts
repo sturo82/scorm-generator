@@ -499,6 +499,9 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
 [data-motion] .block.video.lesson-videofirst-vnext .video-panel { height: 0; min-height: max(100%, 320px); }
 @media (max-width: 720px) { [data-motion] .block.video.lesson-videofirst-vnext .video-panel { height: auto; min-height: 0; max-height: 60vh; } }
 [data-motion] .block.video.lesson-videofirst-vnext .video-panel-body { min-height: 0; }
+/* La barra delle tab ha overflow-x:auto, quindi per il flexbox la sua altezza minima è 0: senza
+   flex-shrink:0 verrebbe schiacciata dal contenuto lungo del pannello. */
+[data-motion] .block.video .video-tabs { flex-shrink: 0; }
 [data-motion] .block.video .video-tabs {
   display: flex; gap: 0.25rem; padding: 0.4rem 0.4rem 0;
   border-bottom: 1px solid var(--ix-border);
