@@ -23,6 +23,7 @@ import {
   type StatefulSpec,
   type StatefulState,
   createTranscriptFollower,
+  attachCaptionTrack,
 } from '@scorm/contracts/render-core';
 import type { CourseLabels } from '@scorm/contracts';
 
@@ -287,6 +288,11 @@ function VideoKaraokeView({ node }: { node: VNode }): React.ReactElement {
     video.addEventListener('timeupdate', onTime);
     return () => video.removeEventListener('timeupdate', onTime);
   }, [activeTab]);
+  // Traccia sottotitoli (CC) costruita dalla trascrizione: spenta di default, attivabile dal player.
+  React.useEffect(() => {
+    if (!rootRef.current) return;
+    return attachCaptionTrack(rootRef.current);
+  }, [node]);
   // La riga attiva resta alla stessa altezza del pannello: scorre il testo, non la pagina.
   const followerRef = React.useRef<ReturnType<typeof createTranscriptFollower> | null>(null);
   React.useEffect(() => {

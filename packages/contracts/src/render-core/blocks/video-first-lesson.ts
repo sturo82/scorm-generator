@@ -98,6 +98,8 @@ export function renderVideoFirstLesson(blocks: BlockLike[], ctx: RenderContext):
           playsinline: 'playsinline',
           src,
           'data-video-el': '',
+          'data-captions-label': L.captions,
+          'data-captions-lang': L.captionsLang,
         }),
       ]),
     );
@@ -212,7 +214,15 @@ function transcriptPanel(
       cells.push(cue.text);
       return h(
         'button',
-        { class: 'transcript-cue', type: 'button', 'data-cue': String(i), 'data-seek': String(cue.start) },
+        {
+          class: 'transcript-cue',
+          type: 'button',
+          'data-cue': String(i),
+          'data-seek': String(cue.start),
+          // Fine e testo puro: servono a costruire la traccia sottotitoli (CC) del player.
+          'data-end': cue.end !== undefined ? String(cue.end) : undefined,
+          'data-text': cue.text,
+        },
         cells,
       );
     });

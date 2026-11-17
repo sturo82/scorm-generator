@@ -66,6 +66,7 @@ export interface BuildSpecInput {
   slides: AssemblySlide[];
   layout?: SlideVideoLayout;
   pipPosition?: PipPosition;
+  burnCaptions?: boolean;
   sectionTitle?: string;
   theme?: Partial<SlideVideoTheme>;
 }
@@ -96,6 +97,7 @@ export function buildSlideVideoSpec(input: BuildSpecInput): SlideVideoSpec {
     version: 1,
     layout: input.layout ?? 'split',
     pipPosition: input.pipPosition ?? 'bottom-right',
+    burnCaptions: input.burnCaptions ?? false,
     theme: input.theme ?? {},
     sectionTitle: input.sectionTitle,
     slides,

@@ -73,6 +73,8 @@ export interface SlideLessonDoc {
   /** Posizione di default del cerchio avatar (layout pip) e override per slide (indice → posizione). */
   pipPosition?: PipPosition;
   slidePositions?: Record<string, PipPosition>;
+  /** Sottotitoli incisi nel video. Assente nei documenti precedenti, che li avevano: vale true. */
+  burnCaptions?: boolean;
   /** Titolo del corso/modulo (modalità "una lezione") o del gruppo di sezioni. */
   moduleTitle: string;
   mode: 'single' | 'sections';
@@ -98,6 +100,7 @@ export interface SlideLessonView {
   layout: SlideVideoLayout;
   pipPosition: PipPosition;
   slidePositions: Record<string, PipPosition>;
+  burnCaptions: boolean;
   moduleTitle: string;
   mode: SlideLessonDoc['mode'];
   remaster: boolean;
@@ -237,6 +240,7 @@ export class SlideLessonService {
       sections?: SectionInput[];
       pipPosition?: PipPosition;
       slidePositions?: Record<string, PipPosition>;
+      burnCaptions?: boolean;
     },
   ): Promise<SlideLessonView> {
     const clipsView = await this.clips.status(tenantId, courseId, importId);
@@ -270,6 +274,7 @@ export class SlideLessonService {
         layout: input.layout ?? 'split',
         pipPosition: input.pipPosition ?? 'bottom-right',
         slidePositions: input.slidePositions ?? {},
+        burnCaptions: input.burnCaptions ?? false,
         moduleTitle,
         mode: sections ? 'sections' : 'single',
         parts,
@@ -308,7 +313,12 @@ export class SlideLessonService {
     tenantId: string,
     courseId: string,
     importId: string,
-    input: { layout?: SlideVideoLayout; pipPosition?: PipPosition; slidePositions?: Record<string, PipPosition> } = {},
+    input: {
+      layout?: SlideVideoLayout;
+      pipPosition?: PipPosition;
+      slidePositions?: Record<string, PipPosition>;
+      burnCaptions?: boolean;
+    } = {},
   ): Promise<SlideLessonView> {
     const existing = await this.load(tenantId, courseId, importId);
     if (!existing || existing.status !== 'completed') {
@@ -323,6 +333,7 @@ export class SlideLessonService {
       layout: input.layout ?? existing.layout,
       pipPosition: input.pipPosition ?? existing.pipPosition ?? 'bottom-right',
       slidePositions: input.slidePositions ?? existing.slidePositions ?? {},
+      burnCaptions: input.burnCaptions ?? existing.burnCaptions ?? true,
       currentPart: 0,
       parts: existing.parts.map((p) => ({ ...p, remasterDone: false })),
       updatedAt: new Date().toISOString(),
@@ -453,6 +464,7 @@ export class SlideLessonService {
       slides: assembly,
       layout: doc.layout,
       pipPosition: doc.pipPosition,
+      burnCaptions: doc.burnCaptions ?? true,
       sectionTitle: part.title,
     });
 
@@ -814,6 +826,7 @@ export class SlideLessonService {
       layout: doc.layout,
       pipPosition: doc.pipPosition ?? 'bottom-right',
       slidePositions: doc.slidePositions ?? {},
+      burnCaptions: doc.burnCaptions ?? true,
       moduleTitle: doc.moduleTitle,
       mode: doc.mode,
       remaster: doc.remaster === true,

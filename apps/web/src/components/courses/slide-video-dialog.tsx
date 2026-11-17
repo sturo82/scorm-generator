@@ -3,7 +3,13 @@
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Check, Clapperboard, FileUp, Wand2 } from 'lucide-react';
-import { HEYGEN_ENGINES, heygenCostPerMinUsd, heygenEngineSupports } from '@scorm/contracts';
+import {
+  HEYGEN_ENGINES,
+  heygenAvatarTypeLabel,
+  heygenBillingTypeFor,
+  heygenCostPerMinUsd,
+  heygenEngineSupports,
+} from '@scorm/contracts';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -622,6 +628,10 @@ function StepClips({
 
   const estimate = useSlideClipsEstimate(courseId, importId, engine, avatarType, !started);
   const selected = avatarItems.find((a) => a.id === avatarId);
+  // Il tipo (e quindi la tariffa) segue l'avatar scelto: digital twin, da foto o del catalogo.
+  React.useEffect(() => {
+    if (selected) setAvatarType(heygenBillingTypeFor({ source: selected.source, groupType: selected.groupType }));
+  }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleStart() {
     try {
@@ -684,7 +694,10 @@ function StepClips({
                       // eslint-disable-next-line @next/next/no-img-element -- anteprima remota
                       <img src={a.previewUrl} alt="" className="aspect-square w-full object-cover" />
                     )}
-                    <span className="block truncate px-1 py-0.5 text-[11px]">{a.name}</span>
+                    <span className="block truncate px-1 pt-0.5 text-[11px]">{a.name}</span>
+                    <span className="block truncate px-1 pb-0.5 text-[10px] text-muted-foreground">
+                      {heygenAvatarTypeLabel({ source: a.source, groupType: a.groupType })}
+                    </span>
                     {avatarId === a.id && <Check className="absolute right-1 top-1 size-4 rounded-full bg-primary p-0.5 text-primary-foreground" />}
                   </button>
                 ))}
@@ -705,7 +718,7 @@ function StepClips({
                   <option key={t.id} value={t.id}>{t.label}</option>
                 ))}
               </select>
-              <span className="block text-[11px] text-muted-foreground">Determina la tariffa HeyGen.</span>
+              <span className="block text-[11px] text-muted-foreground">Impostato dall&apos;avatar scelto; determina la tariffa HeyGen.</span>
             </label>
             <label className="space-y-1 text-sm">
               <span className="font-medium">Qualità (engine)</span>
@@ -831,6 +844,7 @@ function StepLesson({
   const [layout, setLayout] = React.useState<'split' | 'pip'>(view?.layout ?? 'split');
   const [pipPosition, setPipPosition] = React.useState<PipPosition>(view?.pipPosition ?? 'bottom-right');
   const [slidePositions, setSlidePositions] = React.useState<Record<string, PipPosition>>(view?.slidePositions ?? {});
+  const [burnCaptions, setBurnCaptions] = React.useState<boolean>(view?.burnCaptions ?? false);
   const [editLayout, setEditLayout] = React.useState(false);
   // Allinea le scelte a quelle salvate quando arriva lo stato dal server.
   React.useEffect(() => {
@@ -838,6 +852,7 @@ function StepLesson({
     setLayout(view.layout);
     setPipPosition(view.pipPosition ?? 'bottom-right');
     setSlidePositions(view.slidePositions ?? {});
+    setBurnCaptions(view.burnCaptions ?? true);
   }, [view?.status]); // eslint-disable-line react-hooks/exhaustive-deps
   const [title, setTitle] = React.useState(defaultTitle);
   const [mode, setMode] = React.useState<'single' | 'sections'>('single');
@@ -879,6 +894,7 @@ function StepLesson({
         layout,
         pipPosition,
         slidePositions: layout === 'pip' ? slidePositions : {},
+        burnCaptions,
         moduleTitle: title.trim() || undefined,
         sections: mode === 'sections' ? sections.map((s) => ({ title: s.title.trim(), from: s.from })) : undefined,
       });
@@ -899,7 +915,7 @@ function StepLesson({
   async function handleRemaster() {
     try {
       await remaster.mutateAsync(
-        editLayout ? { layout, pipPosition, slidePositions: layout === 'pip' ? slidePositions : {} } : undefined,
+        editLayout ? { layout, pipPosition, slidePositions: layout === 'pip' ? slidePositions : {}, burnCaptions } : undefined,
       );
       setEditLayout(false);
       toast.show('Rimontaggio avviato: le clip avatar non vengono rigenerate', 'success');
@@ -1031,6 +1047,8 @@ function StepLesson({
                 setPipPosition={setPipPosition}
                 slidePositions={slidePositions}
                 setSlidePositions={setSlidePositions}
+                burnCaptions={burnCaptions}
+                setBurnCaptions={setBurnCaptions}
                 clipIndexes={clipIdx}
                 thumbs={thumbs}
                 extraTitles={extraTitles}
@@ -1106,6 +1124,8 @@ function StepLesson({
                 setPipPosition={setPipPosition}
                 slidePositions={slidePositions}
                 setSlidePositions={setSlidePositions}
+                burnCaptions={burnCaptions}
+                setBurnCaptions={setBurnCaptions}
                 clipIndexes={clipIdx}
                 thumbs={thumbs}
                 extraTitles={extraTitles}
@@ -1193,10 +1213,14 @@ function LayoutEditor({
   setPipPosition,
   slidePositions,
   setSlidePositions,
+  burnCaptions,
+  setBurnCaptions,
   clipIndexes,
   thumbs,
   extraTitles,
 }: {
+  burnCaptions: boolean;
+  setBurnCaptions: (v: boolean) => void;
   layout: 'split' | 'pip';
   setLayout: (l: 'split' | 'pip') => void;
   pipPosition: PipPosition;
@@ -1224,6 +1248,17 @@ function LayoutEditor({
           </label>
         ))}
       </fieldset>
+      <label className="flex items-start gap-2">
+        <input type="checkbox" className="mt-1" checked={burnCaptions} onChange={(e) => setBurnCaptions(e.target.checked)} />
+        <span>
+          Sottotitoli incisi nel video
+          <span className="block text-xs text-muted-foreground">
+            Di solito non servono: nella lezione c&apos;è la trascrizione a fianco e il pulsante CC del player mostra i
+            sottotitoli quando servono (anche a schermo intero). Attivali solo se il file video verrà usato fuori dal
+            corso.
+          </span>
+        </span>
+      </label>
       {layout === 'pip' && (
         <div className="space-y-3 rounded-md border p-3">
           <div className="flex flex-wrap items-center gap-4">

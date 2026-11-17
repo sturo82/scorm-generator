@@ -74,6 +74,11 @@ export const SlideVideoSpec = z.object({
   layout: SlideVideoLayout.default('split'),
   /** Posizione di default del cerchio avatar nel layout pip (vale per tutte le slide). */
   pipPosition: PipPosition.default('bottom-right'),
+  /**
+   * Sottotitoli incisi nel video. Default false: nella lezione c'è la trascrizione a fianco e
+   * una traccia CC attivabile dal player; incisi servono solo se l'MP4 si usa fuori dal corso.
+   */
+  burnCaptions: z.boolean().default(false),
   theme: SlideVideoTheme.default({}),
   /** Titolo del modulo/sezione, mostrato nel pannello laterale. */
   sectionTitle: z.string().optional(),
@@ -225,6 +230,7 @@ export const BuildSlideLesson = z.object({
     .optional(),
   pipPosition: PipPosition.default('bottom-right'),
   slidePositions: SlidePipPositions.default({}),
+  burnCaptions: z.boolean().default(false),
 });
 
 /** Rimontaggio dei video con le slide attuali; consente di cambiare disposizione e posizioni. */
@@ -232,6 +238,7 @@ export const RemasterSlideLesson = z.object({
   layout: SlideVideoLayout.optional(),
   pipPosition: PipPosition.optional(),
   slidePositions: SlidePipPositions.optional(),
+  burnCaptions: z.boolean().optional(),
 });
 export type RemasterSlideLesson = z.infer<typeof RemasterSlideLesson>;
 export type BuildSlideLesson = z.infer<typeof BuildSlideLesson>;

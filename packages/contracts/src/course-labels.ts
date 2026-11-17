@@ -102,6 +102,9 @@ export interface CourseLabels {
   /** Tooltip/aria del pulsante schermo intero del player libro-game. */
   scenarioFullscreen: string;
   transcript: string;
+  /** Etichetta e lingua (BCP-47) della traccia sottotitoli attivabile dal pulsante CC del player. */
+  captions: string;
+  captionsLang: string;
   transcriptProcessing: string;
   transcriptNone: string;
   videoComing: string;
@@ -187,6 +190,8 @@ const EN: CourseLabels = {
   scenarioRestart: 'Restart',
   scenarioFullscreen: 'Full screen',
   transcript: 'Transcript',
+  captions: 'Captions',
+  captionsLang: 'en',
   transcriptProcessing: 'Transcript in progress…',
   transcriptNone: 'No transcript available.',
   videoComing: 'Video coming soon',
@@ -270,6 +275,8 @@ const IT: CourseLabels = {
   scenarioRestart: 'Ricomincia',
   scenarioFullscreen: 'Schermo intero',
   transcript: 'Trascrizione',
+  captions: 'Sottotitoli',
+  captionsLang: 'it',
   transcriptProcessing: 'Trascrizione in elaborazione…',
   transcriptNone: 'Nessuna trascrizione disponibile.',
   videoComing: 'Video in arrivo',

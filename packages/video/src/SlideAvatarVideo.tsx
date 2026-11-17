@@ -46,7 +46,7 @@ export const SlideAvatarVideo: React.FC<{ spec: SlideVideoSpec }> = ({ spec: raw
           </Sequence>
         );
       })}
-      <Captions cues={cues} spec={spec} timeline={timeline} />
+      {spec.burnCaptions && <Captions cues={cues} spec={spec} timeline={timeline} />}
       <SidePanel spec={spec} timeline={timeline} g={g} />
     </AbsoluteFill>
   );
@@ -111,12 +111,16 @@ function geometry(spec: SlideVideoSpec, pos?: PipPosition): Geometry {
   const slideH = 720 * s;
   const gap = 32 * s;
   const rightLeft = M + slideW + gap;
+  // Senza sottotitoli incisi la fascia sotto la slide resterebbe vuota: il blocco slide +
+  // pannello si centra verticalmente e il pannello ha l'altezza che gli serve.
+  const panelH = spec.burnCaptions ? height - (M + slideH + 24 * s) - M : 150 * s;
+  const top = spec.burnCaptions ? M : Math.round((height - (slideH + 24 * s + panelH)) / 2);
   return {
     s,
-    slide: { left: M, top: M, width: slideW, height: slideH },
-    avatar: { left: rightLeft, top: M, width: width - rightLeft - M, height: slideH },
-    caption: { left: M, top: M + slideH + 24 * s, width: slideW, height: height - (M + slideH + 24 * s) - M },
-    panel: { left: rightLeft, top: M + slideH + 24 * s, width: width - rightLeft - M, height: height - (M + slideH + 24 * s) - M },
+    slide: { left: M, top, width: slideW, height: slideH },
+    avatar: { left: rightLeft, top, width: width - rightLeft - M, height: slideH },
+    caption: { left: M, top: top + slideH + 24 * s, width: slideW, height: panelH },
+    panel: { left: rightLeft, top: top + slideH + 24 * s, width: width - rightLeft - M, height: panelH },
     radius: 14 * s,
   };
 }

@@ -98,6 +98,7 @@ export interface SlideLessonView {
   layout: 'split' | 'pip';
   pipPosition?: PipPosition;
   slidePositions?: Record<string, PipPosition>;
+  burnCaptions?: boolean;
   moduleTitle: string;
   mode: 'single' | 'sections';
   /** True durante il rimontaggio dei video con le slide aggiornate. */

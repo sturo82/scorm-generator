@@ -29,4 +29,5 @@ export { renderPillolaLesson } from './blocks/pillola-lesson.js';
 export { renderPillolaInterattivaLesson } from './blocks/pillola-interattiva-lesson.js';
 export * from './stateful.js';
 export { createTranscriptFollower, type TranscriptFollower } from './transcript-follow.js';
+export { attachCaptionTrack, cuesToWebVtt, type CaptionCue } from './caption-track.js';
 export * from './course-structure.js';

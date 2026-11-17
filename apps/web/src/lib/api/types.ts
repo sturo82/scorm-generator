@@ -391,6 +391,8 @@ export interface SlideLayoutChoice {
   layout?: 'split' | 'pip';
   pipPosition?: PipPosition;
   slidePositions?: Record<string, PipPosition>;
+  /** Sottotitoli incisi nel video (default no: c'è la trascrizione e il CC del player). */
+  burnCaptions?: boolean;
 }
 
 export interface ApiClient {

@@ -24,6 +24,7 @@ import {
   type StatefulSpec,
   type StatefulState,
   createTranscriptFollower,
+  attachCaptionTrack,
 } from '@scorm/contracts/render-core';
 import { courseLabels, resolveLessonLayout, type CourseLabels } from '@scorm/contracts';
 
@@ -255,6 +256,8 @@ function applyVideoKaraoke(root: HTMLElement): void {
     });
   });
 
+  // Traccia sottotitoli (CC) dalle righe della trascrizione, spenta di default.
+  if (video && cues.length > 0) attachCaptionTrack(root);
   // Karaoke highlight.
   if (video && cues.length > 0) {
     const starts = cues.map((c) => Number(c.getAttribute('data-seek') || '0'));
