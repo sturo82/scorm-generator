@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Upload, Plus, Trash2, Loader2, Video as VideoIcon, X, Youtube, Clapperboard, Download, Play, Camera, ImageUp } from 'lucide-react';
+import { Upload, Plus, Trash2, Loader2, Video as VideoIcon, X, Youtube, Clapperboard, Download, Play, Camera, ImageUp, Pencil } from 'lucide-react';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -54,6 +54,8 @@ export default function VideosPage() {
   const fileInput = React.useRef<HTMLInputElement>(null);
   const [externalOpen, setExternalOpen] = React.useState(false);
   const [slidesOpen, setSlidesOpen] = React.useState(false);
+  // Import da riaprire (video creato da slide); null = nuovo video da slide.
+  const [slidesImportId, setSlidesImportId] = React.useState<string | null>(null);
   const [playingId, setPlayingId] = React.useState<string | null>(null);
   const playing = videos.data?.find((v) => v.id === playingId) ?? null;
 
@@ -84,7 +86,13 @@ export default function VideosPage() {
         description="Libreria video del tuo team: carica file o collega canali esterni (YouTube, Vimeo, Twitch)."
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => setSlidesOpen(true)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSlidesImportId(null);
+                setSlidesOpen(true);
+              }}
+            >
               <Clapperboard className="size-4" /> Crea da slide
             </Button>
             <Button variant="outline" onClick={() => setExternalOpen(true)}>
@@ -108,7 +116,13 @@ export default function VideosPage() {
         }
       />
 
-      <SlideVideoDialog courseId="library" libraryMode open={slidesOpen} onClose={() => setSlidesOpen(false)} />
+      <SlideVideoDialog
+        courseId="library"
+        libraryMode
+        initialImportId={slidesImportId}
+        open={slidesOpen}
+        onClose={() => setSlidesOpen(false)}
+      />
       {/* Tab sorgente + filtro canale */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-1 rounded-lg border bg-card p-1" role="tablist">
@@ -208,6 +222,21 @@ export default function VideosPage() {
               <CardContent className="p-3">
                 <div className="flex items-start justify-between gap-2">
                   <p className="line-clamp-2 text-sm font-semibold">{v.title}</p>
+                  {v.slideImportId && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Modifica copioni, clip e montaggio"
+                      title="Modifica copioni, clip e montaggio"
+                      className="shrink-0 text-muted-foreground opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                      onClick={() => {
+                        setSlidesImportId(v.slideImportId);
+                        setSlidesOpen(true);
+                      }}
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                  )}
                   {v.downloadUrl && (
                     <a
                       href={v.downloadUrl}

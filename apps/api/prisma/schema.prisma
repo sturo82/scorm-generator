@@ -514,6 +514,8 @@ model VideoAsset {
   // Trascrizione ASR dei video caricati (cue con timestamp) come JSONB.
   transcript        Json                  @default("[]")
   transcriptStatus  VideoTranscriptStatus @default(NONE)
+  // Import "video da slide" di origine (libreria), per riaprire copioni, clip e montaggio.
+  slideImportId String?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 

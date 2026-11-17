@@ -831,6 +831,7 @@ export class MockApiClient implements ApiClient {
       durationSec: null,
       transcript: [],
       transcriptStatus: 'none',
+      slideImportId: null,
       createdAt: new Date().toISOString(),
     };
     this.videos.unshift(v);
@@ -852,6 +853,7 @@ export class MockApiClient implements ApiClient {
       durationSec: null,
       transcript: [],
       transcriptStatus: 'ready',
+      slideImportId: null,
       createdAt: new Date().toISOString(),
     };
     this.videos.unshift(v);

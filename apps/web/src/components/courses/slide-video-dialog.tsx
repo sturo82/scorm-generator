@@ -93,11 +93,14 @@ function fmtMin(sec: number) {
 export function SlideVideoDialog({
   courseId,
   libraryMode = false,
+  initialImportId = null,
   open,
   onClose,
 }: {
   courseId: string;
-  /** Crea video per la libreria (courseId = "library") invece di moduli di un corso. */
+  /** Libreria: riapre l'import di un video già creato. Senza, si parte da un nuovo import. */
+  initialImportId?: string | null;
+/** Crea video per la libreria (courseId = "library") invece di moduli di un corso. */
   libraryMode?: boolean;
   open: boolean;
   onClose: () => void;
@@ -107,15 +110,30 @@ export function SlideVideoDialog({
   const [importId, setImportId] = React.useState<string | null>(null);
   const [language, setLanguage] = React.useState('it');
 
+  // Libreria: ogni apertura parte da un nuovo video (o dall'import del video scelto); l'eventuale
+  // bozza lasciata a metà si riprende dal pulsante dedicato. Nei corsi si riprende l'ultimo import.
+  const [draftId, setDraftId] = React.useState<string | null>(null);
   React.useEffect(() => {
     if (!open) return;
     try {
-      setImportId(window.localStorage.getItem(storageKeyFor(courseId)));
+      const stored = window.localStorage.getItem(storageKeyFor(courseId));
+      if (libraryMode) {
+        setImportId(initialImportId);
+        setDraftId(initialImportId ? null : stored);
+      } else {
+        setImportId(stored);
+      }
     } catch {
-      setImportId(null);
+      setImportId(initialImportId);
     }
-  }, [open, courseId]);
-
+  }, [open, courseId, libraryMode, initialImportId]);
+  const draft = useSlideImport(courseId, libraryMode && open ? draftId : null);
+  React.useEffect(() => {
+    if (draftId && draft.isError) {
+      window.localStorage.removeItem(storageKeyFor(courseId));
+      setDraftId(null);
+    }
+  }, [draft.isError, draftId, courseId]);
   const importSlides = useImportSlides(courseId);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
@@ -173,6 +191,16 @@ export function SlideVideoDialog({
                 </>
               )}
             </Button>
+            {libraryMode && draftId && draft.data && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+                <span className="min-w-0 truncate">
+                  Hai una bozza non completata: <strong>{draft.data.filename}</strong>
+                </span>
+                <Button size="sm" variant="outline" onClick={() => setImportId(draftId)}>
+                  Riprendi la bozza
+                </Button>
+              </div>
+            )}
             {libraryMode && (
               <label className="flex items-center gap-2 text-sm">
                 <span className="font-medium">Lingua del parlato</span>
@@ -188,11 +216,20 @@ export function SlideVideoDialog({
           </section>
         ) : (
           <Pipeline
+            key={importId}
             courseId={courseId}
             importId={importId}
             onReplace={resetImport}
             onLessonDone={() => {
               if (libraryMode) {
+                // Completato: non è più una bozza. Il video resta riapribile dalla sua card.
+                try {
+                  if (window.localStorage.getItem(storageKeyFor(courseId)) === importId) {
+                    window.localStorage.removeItem(storageKeyFor(courseId));
+                  }
+                } catch {
+                  /* storage non disponibile */
+                }
                 qc.invalidateQueries({ queryKey: qk.videos });
                 return;
               }

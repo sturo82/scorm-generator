@@ -56,6 +56,8 @@ export const VideoAssetView = z.object({
   durationSec: z.number().int().nullable(),
   transcript: z.array(TranscriptCue).default([]),
   transcriptStatus: VideoTranscriptStatus.default('none'),
+  /** Import "video da slide" da cui è nato il video (modificabile da lì), se creato da slide. */
+  slideImportId: z.string().nullable().default(null),
   createdAt: z.string(),
 });
 export type VideoAssetView = z.infer<typeof VideoAssetView>;

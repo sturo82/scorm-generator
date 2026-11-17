@@ -212,6 +212,7 @@ export class VideosService {
     durationSec: number | null;
     transcript: unknown;
     transcriptStatus: string;
+    slideImportId?: string | null;
     createdAt: Date;
   }): Promise<VideoAssetView> {
     const sign = async (key: string | null, downloadFilename?: string): Promise<string | null> => {
@@ -240,6 +241,7 @@ export class VideosService {
       durationSec: row.durationSec,
       transcript: Array.isArray(row.transcript) ? (row.transcript as VideoAssetView['transcript']) : [],
       transcriptStatus: row.transcriptStatus.toLowerCase() as VideoAssetView['transcriptStatus'],
+      slideImportId: row.slideImportId ?? null,
       createdAt: row.createdAt.toISOString(),
     };
   }

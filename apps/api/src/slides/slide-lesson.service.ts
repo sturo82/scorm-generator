@@ -768,6 +768,7 @@ if (!input) return undefined;
         channel: (doc.moduleTitle || manifest.filename.replace(/\.[^.]+$/, '')).slice(0, 140) || null,
         transcript: await this.readCues(part),
         transcriptStatus: 'READY',
+        slideImportId: doc.importId,
       },
       select: { id: true },
     });
