@@ -53,6 +53,7 @@ export class SlidesController {
     @CurrentContext() ctx: AuthContext,
     @Param('courseId') courseId: string,
     @UploadedFile() file: UploadedMulterFile | undefined,
+    @Query('language') language?: string,
   ): Promise<SlideImportView> {
     if (!file) throw new BadRequestException('Nessun file ricevuto (campo "file")');
     if (file.mimetype !== 'application/pdf') throw new BadRequestException('Serve un file PDF');
@@ -61,6 +62,7 @@ export class SlidesController {
       courseId,
       filename: file.originalname,
       content: file.buffer,
+      language,
     });
   }
 

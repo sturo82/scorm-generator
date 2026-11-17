@@ -683,7 +683,7 @@ export interface ApiClient {
   redeemSso(ticket: string): Promise<SsoRedeemResult>;
 
   // Video-lezione da slide (PDF + avatar)
-  importSlides(courseId: string, file: File): Promise<SlideImportView>;
+  importSlides(courseId: string, file: File, language?: string): Promise<SlideImportView>;
   getSlideImport(courseId: string, importId: string): Promise<SlideImportView>;
   getSlideScripts(courseId: string, importId: string): Promise<SlideScriptsResponse>;
   generateSlideScripts(courseId: string, importId: string, knowledgeDocIds?: string[]): Promise<SlideScriptsGeneration>;

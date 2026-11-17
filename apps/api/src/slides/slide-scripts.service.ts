@@ -10,6 +10,7 @@ import {
   OBJECT_STORAGE,
 } from '../providers/provider.constants.js';
 import { SlidesService, type SlideImportManifest } from './slides.service.js';
+import { meterCourseId } from './slide-owner.js';
 
 /** Velocità di parlato stimata (parole/secondo) per prevedere la durata del video. */
 const WORDS_PER_SEC = 2.4;
@@ -260,7 +261,7 @@ export class SlideScriptsService {
       where: { id: courseId, tenantId },
       select: { language: true },
     });
-    const language = languageName(course?.language ?? 'it');
+    const language = languageName(course?.language ?? manifest.language ?? 'it');
 
     const now = new Date().toISOString();
     const state: ScriptsGenerationState = { status: 'running', startedAt: now, updatedAt: now, leaseUntil: Date.now() + JOB_LEASE_MS };
@@ -460,7 +461,7 @@ export class SlideScriptsService {
       for (const unit of ['INPUT_TOKENS', 'OUTPUT_TOKENS'] as const) {
         await this.meter.record({
           tenantId,
-          courseId,
+          courseId: meterCourseId(courseId),
           provider: 'BEDROCK_LLM',
           model: result.model,
           unit,

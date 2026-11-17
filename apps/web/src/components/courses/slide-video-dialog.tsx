@@ -52,6 +52,17 @@ const AVATAR_TYPES: Array<{ id: SlideAvatarType; label: string }> = [
   { id: 'digital_twin', label: 'Digital twin (da video)' },
 ];
 
+/** In libreria non c'è un corso: niente fonti del corso, riepilogo e quiz; il risultato sono video riutilizzabili. */
+const LibraryContext = React.createContext<{ library: boolean; language?: string }>({ library: false });
+
+const LIBRARY_LANGUAGES: Array<{ id: string; label: string }> = [
+  { id: 'it', label: 'Italiano' },
+  { id: 'en', label: 'English' },
+  { id: 'fr', label: 'Français' },
+  { id: 'de', label: 'Deutsch' },
+  { id: 'es', label: 'Español' },
+];
+
 function storageKeyFor(courseId: string) {
   return `slide-video-import:${courseId}`;
 }
@@ -69,16 +80,20 @@ function fmtMin(sec: number) {
  */
 export function SlideVideoDialog({
   courseId,
+  libraryMode = false,
   open,
   onClose,
 }: {
   courseId: string;
+  /** Crea video per la libreria (courseId = "library") invece di moduli di un corso. */
+  libraryMode?: boolean;
   open: boolean;
   onClose: () => void;
 }) {
   const toast = useToast();
   const qc = useQueryClient();
   const [importId, setImportId] = React.useState<string | null>(null);
+  const [language, setLanguage] = React.useState('it');
 
   React.useEffect(() => {
     if (!open) return;
@@ -97,7 +112,7 @@ export function SlideVideoDialog({
     e.target.value = '';
     if (!file) return;
     try {
-      const res = await importSlides.mutateAsync(file);
+      const res = await importSlides.mutateAsync({ file, language: libraryMode ? language : undefined });
       window.localStorage.setItem(storageKeyFor(courseId), res.importId);
       setImportId(res.importId);
       toast.show(`${res.slides.length} slide importate`, 'success');
@@ -120,7 +135,13 @@ export function SlideVideoDialog({
   }
 
   return (
-    <Dialog open={open} onClose={onClose} title="Video-lezione da slide con avatar" size="xl">
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={libraryMode ? 'Video da slide con avatar' : 'Video-lezione da slide con avatar'}
+      size="xl"
+    >
+      <LibraryContext.Provider value={{ library: libraryMode }}>
       <div className="max-h-[75vh] space-y-6 overflow-y-auto pr-1">
         <input ref={fileRef} type="file" accept="application/pdf" className="hidden" onChange={handleFile} />
 
@@ -140,6 +161,18 @@ export function SlideVideoDialog({
                 </>
               )}
             </Button>
+            {libraryMode && (
+              <label className="flex items-center gap-2 text-sm">
+                <span className="font-medium">Lingua del parlato</span>
+                <select className={cn(SELECT, 'w-40')} value={language} onChange={(e) => setLanguage(e.target.value)}>
+                  {LIBRARY_LANGUAGES.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </section>
         ) : (
           <Pipeline
@@ -147,6 +180,10 @@ export function SlideVideoDialog({
             importId={importId}
             onReplace={resetImport}
             onLessonDone={() => {
+              if (libraryMode) {
+                qc.invalidateQueries({ queryKey: qk.videos });
+                return;
+              }
               qc.invalidateQueries({ queryKey: qk.modules(courseId) });
               qc.invalidateQueries({ queryKey: ['courses', courseId, 'assessments'] });
               qc.invalidateQueries({ queryKey: qk.cost(courseId) });
@@ -155,6 +192,7 @@ export function SlideVideoDialog({
           />
         )}
       </div>
+      </LibraryContext.Provider>
     </Dialog>
   );
 }
@@ -266,7 +304,7 @@ function Pipeline({
       />
 
       {approved && (
-        <StepClips courseId={courseId} importId={importId} view={clipsView} />
+        <StepClips courseId={courseId} importId={importId} view={clipsView} language={imp.data?.language} />
       )}
 
       {clipsDone && (
@@ -308,6 +346,7 @@ function StepScripts({
   const toast = useToast();
   const generate = useGenerateSlideScripts(courseId, importId);
   const save = useSaveSlideScripts(courseId, importId);
+  const { library } = React.useContext(LibraryContext);
   const courseDocs = useKnowledge('COURSE', courseId);
   const globalDocs = useKnowledge('GLOBAL');
   const [draft, setDraft] = React.useState<SlideScriptEntry[]>([]);
@@ -337,7 +376,7 @@ function StepScripts({
     ? JSON.stringify(draft.map((d) => [d.index, d.script, d.skip])) !==
       JSON.stringify(doc.slides.map((d) => [d.index, d.script, d.skip]))
     : false;
-  const readyCourse = (courseDocs.data ?? []).filter((d) => d.status === 'READY');
+  const readyCourse = (library ? [] : courseDocs.data ?? []).filter((d) => d.status === 'READY');
   const readyGlobal = (globalDocs.data ?? []).filter((d) => d.status === 'READY');
   const realSlides = draft.filter((d) => !d.extra);
   const extras = draft.filter((d) => d.extra);
@@ -604,10 +643,13 @@ function StepScripts({
 function StepClips({
   courseId,
   importId,
+  language,
   view,
 }: {
   courseId: string;
   importId: string;
+  /** Lingua del parlato (import di libreria): filtra le voci proposte. */
+  language?: string;
   view: import('@/lib/api/types').SlideClipsView | null;
 }) {
   const toast = useToast();
@@ -623,7 +665,7 @@ function StepClips({
 
   const started = Boolean(view) && !changing;
   const avatars = useVideoAvatars(courseId, !started, { source });
-  const voices = useVideoVoices(courseId, !started);
+  const voices = useVideoVoices(courseId, !started, language ? { language } : undefined);
   const avatarItems = React.useMemo(() => avatars.data?.pages.flatMap((p) => p.items) ?? [], [avatars.data]);
   const voiceItems = React.useMemo(() => voices.data?.pages.flatMap((p) => p.items) ?? [], [voices.data]);
 
@@ -871,6 +913,7 @@ function StepLesson({
   defaultTitle: string;
   onClose: () => void;
 }) {
+  const { library } = React.useContext(LibraryContext);
   const toast = useToast();
   const build = useBuildSlideLesson(courseId, importId);
   const remaster = useRemasterSlideLesson(courseId, importId);
@@ -988,7 +1031,7 @@ function StepLesson({
 
   return (
     <section className="space-y-3">
-      <Heading n={3} title="Montaggio e lezioni" done={view?.status === 'completed'} />
+      <Heading n={3} title={library ? 'Montaggio dei video' : 'Montaggio e lezioni'} done={view?.status === 'completed'} />
       {(!view || view.status === 'failed') && (
         <div className="space-y-3">
           {view?.status === 'failed' && (
@@ -999,11 +1042,18 @@ function StepLesson({
           {!view && (
             <>
               <fieldset className="space-y-1 text-sm">
-                <legend className="font-medium">Come vuoi organizzare il corso?</legend>
-                {([
-                  ['single', 'Una sola lezione con tutte le slide (un video, un riepilogo, un quiz)'],
-                  ['sections', 'Un modulo per sezione (un video, un riepilogo e un quiz per sezione, più un test finale)'],
-                ] as const).map(([id, label]) => (
+                <legend className="font-medium">{library ? 'Quanti video vuoi creare?' : 'Come vuoi organizzare il corso?'}</legend>
+                {(
+                  (library
+                    ? [
+                        ['single', 'Un solo video con tutte le slide'],
+                        ['sections', 'Un video per sezione'],
+                      ]
+                    : [
+                        ['single', 'Una sola lezione con tutte le slide (un video, un riepilogo, un quiz)'],
+                        ['sections', 'Un modulo per sezione (un video, un riepilogo e un quiz per sezione, più un test finale)'],
+                      ]) as ReadonlyArray<readonly ['single' | 'sections', string]>
+                ).map(([id, label]) => (
                   <label key={id} className="flex items-center gap-2">
                     <input type="radio" name="slide-mode" checked={mode === id} onChange={() => chooseMode(id)} />
                     {label}
@@ -1013,13 +1063,13 @@ function StepLesson({
 
               {mode === 'single' ? (
                 <label className="block space-y-1 text-sm">
-                  <span className="font-medium">Titolo del modulo e della lezione</span>
+                  <span className="font-medium">{library ? 'Titolo del video' : 'Titolo del modulo e della lezione'}</span>
                   <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
                 </label>
               ) : (
                 <div className="space-y-2">
                   <label className="block space-y-1 text-sm">
-                    <span className="font-medium">Titolo del corso (usato nel test finale)</span>
+                    <span className="font-medium">{library ? 'Nome della raccolta (canale in libreria)' : 'Titolo del corso (usato nel test finale)'}</span>
                     <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
                   </label>
                   <p className="text-sm font-medium">Sezioni</p>
@@ -1029,7 +1079,7 @@ function StepLesson({
                     <>
                       <p className="text-xs text-muted-foreground">
                         Proposte dall&apos;AI leggendo le slide: modifica titoli e slide di inizio come preferisci. Ogni
-                        sezione diventa un modulo con il suo video.
+                        sezione diventa {library ? 'un video della libreria' : 'un modulo con il suo video'}.
                       </p>
                       <ul className="space-y-2">
                         {sections.map((sec, i) => {
@@ -1125,7 +1175,13 @@ function StepLesson({
               ) : (
                 <>
                   <Clapperboard className="size-4" />{' '}
-                  {view ? 'Riprova il montaggio' : mode === 'sections' ? `Crea ${sections.length} moduli` : 'Crea la video-lezione'}
+                  {view
+                    ? 'Riprova il montaggio'
+                    : mode === 'sections'
+                      ? `Crea ${sections.length} ${library ? 'video' : 'moduli'}`
+                      : library
+                        ? 'Crea il video'
+                        : 'Crea la video-lezione'}
                 </>
               )}
             </Button>
@@ -1138,7 +1194,7 @@ function StepLesson({
             label={
               (view.remaster ? 'Aggiorno i video con le nuove slide — ' : '') +
               (view.mode === 'sections' && view.step !== 'final_quiz'
-                ? `Modulo ${view.currentPart + 1} di ${view.parts.length} — `
+                ? `${library ? "Video" : "Modulo"} ${view.currentPart + 1} di ${view.parts.length} — `
                 : '') +
               (STEP_LABEL[view.step] ?? 'Elaborazione…')
             }
@@ -1161,19 +1217,32 @@ function StepLesson({
       {view?.status === 'completed' && (
         <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
           <p className="font-medium">
-            {view.mode === 'sections'
+            {library
+              ? view.parts.length === 1
+                ? `Il video «${view.parts[0]?.title}» è stato aggiunto alla libreria.`
+                : `${view.parts.length} video aggiunti alla libreria: ${view.parts.map((p) => `«${p.title}»`).join(', ')}.`
+              : view.mode === 'sections'
               ? `${view.parts.length} moduli creati: ${view.parts.map((p) => `«${p.title}»`).join(', ')}.`
               : `La video-lezione «${view.moduleTitle}» è pronta.`}
           </p>
           <p className="text-muted-foreground">
+            {library ? (
+              <>
+                Li trovi nella pagina Video, con la trascrizione già pronta. Quando li inserisci in una lezione di un
+                corso potrai creare riepilogo e quiz da quel contenuto.
+              </>
+            ) : (
+              <>
             Trovi {view.mode === 'sections' ? 'i nuovi moduli' : 'il nuovo modulo'} tra i contenuti del corso, con video,
             trascrizione, riepilogo scritto e quiz di verifica
             {view.mode === 'sections' ? ' (più il test finale del corso)' : ''}. I contenuti sono in bozza: vanno
             validati prima della pubblicazione.
+              </>
+            )}
           </p>
           <div className="rounded-md border bg-background p-2 text-xs text-muted-foreground">
             Hai sostituito il PDF o vuoi spostare l&apos;avatar? Rimonta i video: si rifà solo il montaggio (pochi
-            centesimi), le clip avatar non si rigenerano e riepilogo, trascrizione e quiz restano invariati.
+            centesimi), le clip avatar non si rigenerano{library ? '' : ' e riepilogo, trascrizione e quiz restano invariati'}.
           </div>
           {editLayout && (
             <div className="rounded-md border bg-background p-3">

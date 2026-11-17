@@ -31,6 +31,7 @@ import { autoDirection, type SlideDirection } from './slide-direction.js';
 import { createHash } from 'node:crypto';
 import { SlideClipsService } from './slide-clips.service.js';
 import { SlideScriptsService } from './slide-scripts.service.js';
+import { isLibrary, meterCourseId } from './slide-owner.js';
 import { SlidesService } from './slides.service.js';
 
 const MEDIA_URL_TTL_SEC = 3 * 3600;
@@ -64,6 +65,8 @@ export interface LessonPart {
   assessmentId?: string;
   /** True quando tutte le domande del quiz sono state salvate. */
   quizReady?: boolean;
+  /** Libreria: id del VideoAsset creato per questa parte. */
+  videoAssetId?: string;
   /** Durante un rimontaggio: true quando il video di questa parte è stato rifatto e sostituito. */
   remasterDone?: boolean;
 }
@@ -116,7 +119,7 @@ export interface SlideLessonView {
   mode: SlideLessonDoc['mode'];
   remaster: boolean;
   currentPart: number;
-  parts: Array<{ id: string; title: string; done: boolean; moduleId?: string; lessonId?: string }>;
+  parts: Array<{ id: string; title: string; done: boolean; moduleId?: string; lessonId?: string; videoAssetId?: string }>;
   /** Primo modulo/lezione creati (compatibilità con la modalità "una lezione"). */
   moduleId?: string;
   lessonId?: string;
@@ -200,7 +203,7 @@ export class SlideLessonService {
   /** Propone la divisione in sezioni (titoli e slide di inizio) leggendo il testo delle slide. */
   async proposeSections(tenantId: string, courseId: string, importId: string): Promise<SectionInput[]> {
     const manifest = await this.slides.loadManifest(tenantId, courseId, importId);
-    const language = await this.courseLanguage(tenantId, courseId);
+    const language = await this.courseLanguage(tenantId, courseId, importId);
     const deck = manifest.slides
       .map((s) => `Slide ${s.index}: ${s.text.replace(/\s+/g, ' ').trim().slice(0, 160) || '(solo grafica)'}`)
       .join('\n');
@@ -402,7 +405,8 @@ export class SlideLessonService {
           doc.currentPart = i;
           part.videoKey = undefined;
           await this.stepRender(tenantId, doc, part);
-          await this.swapVideo(tenantId, doc, part);
+          if (isLibrary(doc.courseId)) await this.updateLibraryVideo(tenantId, part);
+          else await this.swapVideo(tenantId, doc, part);
           part.remasterDone = true;
           await this.save(tenantId, doc);
         }
@@ -413,6 +417,23 @@ export class SlideLessonService {
         doc.leaseUntil = undefined;
         await this.save(tenantId, doc, false);
         this.logger.log(`Video rimontati con le slide aggiornate (import ${importId}, ${doc.parts.length} parti)`);
+        return;
+      }
+      if (isLibrary(courseId)) {
+        // Libreria: nessun corso, quindi niente riepilogo, lezioni e quiz. Ogni parte diventa un
+        // video riutilizzabile con la sua trascrizione; riepilogo e quiz si creano nel corso.
+        for (let i = 0; i < doc.parts.length; i++) {
+          doc.currentPart = i;
+          const part = doc.parts[i]!;
+          if (!part.videoKey) await this.stepRender(tenantId, doc, part);
+          if (!part.videoAssetId) await this.createLibraryVideo(tenantId, doc, part);
+        }
+        doc.step = 'done';
+        doc.status = 'completed';
+        doc.owner = undefined;
+        doc.leaseUntil = undefined;
+        await this.save(tenantId, doc, false);
+        this.logger.log(`Video da slide salvati in libreria (import ${importId}, ${doc.parts.length} video)`);
         return;
       }
       for (let i = 0; i < doc.parts.length; i++) {
@@ -524,7 +545,7 @@ export class SlideLessonService {
     await this.storage.putObject(key, Buffer.from(result.bytes), { contentType: 'video/mp4' });
     await this.meter.record({
       tenantId,
-      courseId,
+      courseId: meterCourseId(courseId),
       provider: 'BEDROCK_VIDEO',
       model: 'remotion-slide-video',
       unit: 'SECONDS',
@@ -588,12 +609,60 @@ export class SlideLessonService {
 
   /** Colori del video dal brand principale del corso (sfondo scuro, accento del brand). */
   private async brandTheme(tenantId: string, courseId: string): Promise<Partial<SlideVideoTheme>> {
+    if (isLibrary(courseId)) return {};
     const course = await this.prisma.course.findFirst({ where: { id: courseId, tenantId }, select: { primaryBrandId: true } });
     if (!course?.primaryBrandId) return {};
     const brand = await this.prisma.brand.findFirst({ where: { id: course.primaryBrandId, tenantId }, select: { definition: true } });
     const colors = (brand?.definition as { colors?: { primary?: string; secondary?: string } } | null)?.colors;
     const accent = [colors?.primary, colors?.secondary].find((c) => c && luminance(c) > 0.18);
     return accent ? { accent } : {};
+  }
+
+  private async readCues(part: LessonPart): Promise<Array<{ id: string; start: number; end: number; text: string }>> {
+    if (!part.transcriptKey || !(await this.storage.exists(part.transcriptKey))) return [];
+    const cues = JSON.parse((await this.storage.getObject(part.transcriptKey)).toString('utf8')) as Array<{
+      id: string;
+      start: number;
+      end: number;
+      text: string;
+    }>;
+    return cues.map((c) => ({ id: c.id, start: c.start, end: c.end, text: c.text }));
+  }
+
+  /** Libreria: salva il video montato come VideoAsset con la trascrizione della timeline. */
+  private async createLibraryVideo(tenantId: string, doc: SlideLessonDoc, part: LessonPart): Promise<void> {
+    const manifest = await this.slides.loadManifest(tenantId, doc.courseId, doc.importId);
+    const row = await this.prisma.videoAsset.create({
+      data: {
+        tenantId,
+        title: part.title.slice(0, 140),
+        source: 'UPLOAD',
+        storageKey: part.videoKey!,
+        mimeType: 'video/mp4',
+        durationSec: part.videoDurationSec ? Math.round(part.videoDurationSec) : null,
+        channel: (doc.moduleTitle || manifest.filename.replace(/\.[^.]+$/, '')).slice(0, 140) || null,
+        transcript: await this.readCues(part),
+        transcriptStatus: 'READY',
+      },
+      select: { id: true },
+    });
+    part.videoAssetId = row.id;
+    await this.save(tenantId, doc);
+  }
+
+  /** Libreria: dopo un rimontaggio aggiorna file, durata e trascrizione del VideoAsset esistente. */
+  private async updateLibraryVideo(tenantId: string, part: LessonPart): Promise<void> {
+    if (!part.videoAssetId) throw new Error(`Video di libreria mancante per «${part.title}»`);
+    const res = await this.prisma.videoAsset.updateMany({
+      where: { id: part.videoAssetId, tenantId },
+      data: {
+        storageKey: part.videoKey!,
+        durationSec: part.videoDurationSec ? Math.round(part.videoDurationSec) : null,
+        transcript: await this.readCues(part),
+        transcriptStatus: 'READY',
+      },
+    });
+    if (res.count === 0) throw new Error(`Il video «${part.title}» non è più in libreria`);
   }
 
   /** Sostituisce il video nel blocco video della lezione esistente, lasciando intatto il resto. */
@@ -630,7 +699,7 @@ export class SlideLessonService {
     doc.step = 'summary';
     await this.save(tenantId, doc);
     const narration = await this.narrationText(tenantId, doc, part);
-    const language = await this.courseLanguage(tenantId, doc.courseId);
+    const language = await this.courseLanguage(tenantId, doc.courseId, doc.importId);
     const result = await this.llm.generate({
       system: systemPrompt(),
       messages: [
@@ -792,7 +861,7 @@ export class SlideLessonService {
     narration: string,
     scope: 'intermediate' | 'final',
   ): Promise<ReturnType<typeof Assessment.parse>> {
-    const language = await this.courseLanguage(tenantId, doc.courseId);
+    const language = await this.courseLanguage(tenantId, doc.courseId, doc.importId);
     const course = await this.prisma.course.findFirst({
       where: { id: doc.courseId, tenantId },
       select: { title: true },
@@ -849,7 +918,8 @@ export class SlideLessonService {
       .join('\n\n');
   }
 
-  private async courseLanguage(tenantId: string, courseId: string): Promise<string> {
+  private async courseLanguage(tenantId: string, courseId: string, importId: string): Promise<string> {
+    if (isLibrary(courseId)) return (await this.slides.loadManifest(tenantId, courseId, importId)).language ?? 'it';
     const c = await this.prisma.course.findFirst({ where: { id: courseId, tenantId }, select: { language: true } });
     return c?.language ?? 'it';
   }
@@ -863,7 +933,7 @@ export class SlideLessonService {
     for (const unit of ['INPUT_TOKENS', 'OUTPUT_TOKENS'] as const) {
       await this.meter.record({
         tenantId,
-        courseId,
+        courseId: meterCourseId(courseId),
         provider: 'BEDROCK_LLM',
         model: result.model,
         unit,
@@ -936,9 +1006,10 @@ export class SlideLessonService {
       parts: doc.parts.map((p) => ({
         id: p.id,
         title: p.title,
-        done: p.quizReady === true,
+        done: isLibrary(doc.courseId) ? Boolean(p.videoAssetId) : p.quizReady === true,
         moduleId: p.moduleId,
         lessonId: p.lessonId,
+        videoAssetId: p.videoAssetId,
       })),
       moduleId: doc.parts[0]?.moduleId,
       lessonId: doc.parts[0]?.lessonId,

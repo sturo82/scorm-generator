@@ -954,7 +954,7 @@ export function useUploadModuleCover(courseId: string) {
 
 
 export const useImportSlides = (courseId: string) =>
-  useMutation({ mutationFn: (file: File) => api.importSlides(courseId, file) });
+  useMutation({ mutationFn: (input: { file: File; language?: string }) => api.importSlides(courseId, input.file, input.language) });
 
 export const useSlideScripts = (courseId: string, importId: string | null) =>
   useQuery({

@@ -4,6 +4,7 @@ import type { ObjectStorage } from '@scorm/domain';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OBJECT_STORAGE } from '../providers/provider.constants.js';
 import { pdfToSlides, PdfSlidesInputError } from './pdf-slides.js';
+import { isLibrary } from './slide-owner.js';
 
 /** Dimensione massima del PDF caricato. */
 export const SLIDES_MAX_PDF_BYTES = 50 * 1024 * 1024;
@@ -21,6 +22,8 @@ export interface SlideImportManifest {
   courseId: string;
   filename: string;
   createdAt: string;
+  /** Lingua dei copioni per gli import in libreria (nei corsi vale la lingua del corso). */
+  language?: string;
   slides: ImportedSlide[];
 }
 
@@ -50,16 +53,14 @@ export class SlidesService {
     courseId: string;
     filename: string;
     content: Buffer;
+    /** Lingua dei copioni (solo per la libreria). */
+    language?: string;
   }): Promise<SlideImportView> {
     if (input.content.byteLength === 0) throw new BadRequestException('File vuoto');
     if (input.content.byteLength > SLIDES_MAX_PDF_BYTES) {
       throw new BadRequestException(`PDF troppo grande (max ${SLIDES_MAX_PDF_BYTES / 1024 / 1024} MB)`);
     }
-    const course = await this.prisma.course.findFirst({
-      where: { id: input.courseId, tenantId: input.tenantId },
-      select: { id: true },
-    });
-    if (!course) throw new NotFoundException('Corso non trovato');
+    await this.requireOwner(input.tenantId, input.courseId);
 
     let pages;
     try {
@@ -85,6 +86,7 @@ export class SlidesService {
       courseId: input.courseId,
       filename: input.filename,
       createdAt: new Date().toISOString(),
+      language: isLibrary(input.courseId) ? (input.language || 'it').slice(0, 8) : undefined,
       slides,
     };
     await this.storage.putObject(`${prefix}/manifest.json`, Buffer.from(JSON.stringify(manifest)), {
@@ -191,14 +193,17 @@ export class SlidesService {
   /** Manifest di un import (usato anche dalle fasi successive della pipeline). */
   async loadManifest(tenantId: string, courseId: string, importId: string): Promise<SlideImportManifest> {
     if (!/^[0-9a-f-]{36}$/i.test(importId)) throw new NotFoundException('Import non trovato');
-    const course = await this.prisma.course.findFirst({
-      where: { id: courseId, tenantId },
-      select: { id: true },
-    });
-    if (!course) throw new NotFoundException('Corso non trovato');
+    await this.requireOwner(tenantId, courseId);
     const key = `${this.prefix(tenantId, courseId, importId)}/manifest.json`;
     if (!(await this.storage.exists(key))) throw new NotFoundException('Import non trovato');
     return JSON.parse((await this.storage.getObject(key)).toString('utf8')) as SlideImportManifest;
+  }
+
+  /** Il corso deve appartenere al tenant; la libreria esiste sempre (i file sono già per tenant). */
+  private async requireOwner(tenantId: string, courseId: string): Promise<void> {
+    if (isLibrary(courseId)) return;
+    const course = await this.prisma.course.findFirst({ where: { id: courseId, tenantId }, select: { id: true } });
+    if (!course) throw new NotFoundException('Corso non trovato');
   }
 
   private async toView(m: SlideImportManifest): Promise<SlideImportView> {

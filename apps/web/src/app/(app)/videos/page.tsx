@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Upload, Plus, Trash2, Loader2, Video as VideoIcon, X, Youtube } from 'lucide-react';
+import { Upload, Plus, Trash2, Loader2, Video as VideoIcon, X, Youtube, Clapperboard } from 'lucide-react';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/select';
 import { Dialog } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
+import { SlideVideoDialog } from '@/components/courses/slide-video-dialog';
 import {
   useVideos,
   useVideoChannels,
@@ -50,6 +51,7 @@ export default function VideosPage() {
   const del = useDeleteVideoAsset();
   const fileInput = React.useRef<HTMLInputElement>(null);
   const [externalOpen, setExternalOpen] = React.useState(false);
+  const [slidesOpen, setSlidesOpen] = React.useState(false);
 
   async function handleUpload(file: File | undefined) {
     if (!file) return;
@@ -78,6 +80,9 @@ export default function VideosPage() {
         description="Libreria video del tuo team: carica file o collega canali esterni (YouTube, Vimeo, Twitch)."
         actions={
           <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setSlidesOpen(true)}>
+              <Clapperboard className="size-4" /> Crea da slide
+            </Button>
             <Button variant="outline" onClick={() => setExternalOpen(true)}>
               <Youtube className="size-4" /> Aggiungi esterno
             </Button>
@@ -99,6 +104,7 @@ export default function VideosPage() {
         }
       />
 
+      <SlideVideoDialog courseId="library" libraryMode open={slidesOpen} onClose={() => setSlidesOpen(false)} />
       {/* Tab sorgente + filtro canale */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-1 rounded-lg border bg-card p-1" role="tablist">

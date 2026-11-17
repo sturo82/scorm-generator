@@ -573,13 +573,13 @@ export class HttpApiClient implements ApiClient {
   }
 
   // Video-lezione da slide (PDF + avatar)
-  async importSlides(courseId: string, file: File) {
+  async importSlides(courseId: string, file: File, language?: string) {
     const session = getSession();
     const form = new FormData();
     form.append('file', file);
     const headers = new Headers();
     if (session) headers.set('Authorization', `Bearer ${session.token}`);
-    const res = await fetch(`${this.baseUrl}/courses/${courseId}/slides/import`, { method: 'POST', headers, body: form });
+    const res = await fetch(`${this.baseUrl}/courses/${courseId}/slides/import${language ? `?language=${encodeURIComponent(language)}` : ''}`, { method: 'POST', headers, body: form });
     if (res.status === 401) void handleSessionExpired();
     if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 300)}`);
     return (await res.json()) as SlideImportView;

@@ -11,6 +11,8 @@ export interface SlideImportView {
   courseId: string;
   filename: string;
   createdAt: string;
+  /** Lingua dei copioni (solo import di libreria). */
+  language?: string;
   slides: SlideImportSlide[];
 }
 
@@ -115,7 +117,7 @@ export interface SlideLessonView {
   /** True durante il rimontaggio dei video con le slide aggiornate. */
   remaster?: boolean;
   currentPart: number;
-  parts: Array<{ id: string; title: string; done: boolean; moduleId?: string; lessonId?: string }>;
+  parts: Array<{ id: string; title: string; done: boolean; moduleId?: string; lessonId?: string; videoAssetId?: string }>;
   moduleId?: string;
   lessonId?: string;
 }

@@ -22,6 +22,7 @@ import type { AppConfig } from '../config/configuration.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { OBJECT_STORAGE, VIDEO_GEN_PROVIDER } from '../providers/provider.constants.js';
 import { SlideScriptsService } from './slide-scripts.service.js';
+import { meterCourseId } from './slide-owner.js';
 
 const CONCURRENCY = 3;
 const POLL_INTERVAL_MS = 8_000;
@@ -375,7 +376,7 @@ export class SlideClipsService {
             clip.error = undefined;
             await this.meter.record({
               tenantId,
-              courseId: doc.courseId,
+              courseId: meterCourseId(doc.courseId),
               provider: 'HEYGEN',
               model: `heygen-${doc.engine}-${doc.avatarType}`,
               unit: 'SECONDS',
