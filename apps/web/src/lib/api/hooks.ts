@@ -988,10 +988,11 @@ export const useSlideClipsEstimate = (
   engine: string | undefined,
   avatarType: SlideAvatarType,
   enabled: boolean,
+  all = false,
 ) =>
   useQuery({
-    queryKey: ['courses', courseId, 'slides', importId, 'estimate', engine ?? 'default', avatarType],
-    queryFn: () => api.estimateSlideClips(courseId, importId as string, engine, avatarType),
+    queryKey: ['courses', courseId, 'slides', importId, 'estimate', engine ?? 'default', avatarType, all],
+    queryFn: () => api.estimateSlideClips(courseId, importId as string, engine, avatarType, all),
     enabled: !!courseId && !!importId && enabled,
   });
 
@@ -1070,3 +1071,12 @@ export const useSlideDirection = (courseId: string, importId: string | null, ena
     enabled: !!courseId && !!importId && enabled,
     staleTime: 10 * 60_000,
   });
+
+/** Cambia avatar di un video già generato: rigenera tutte le clip (copioni, slide e regia restano). */
+export function useChangeSlideAvatar(courseId: string, importId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: StartSlideClipsInput) => api.changeSlideAvatar(courseId, importId as string, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, 'clips'] }),
+  });
+}

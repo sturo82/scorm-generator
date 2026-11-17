@@ -125,6 +125,8 @@ export class SlideClipsService {
     importId: string,
     engineInput?: string,
     avatarTypeInput: HeyGenAvatarBillingType = 'digital_twin',
+    /** True per il cambio avatar: si rigenerano tutte le clip incluse. */
+    all = false,
   ): Promise<SlideClipsEstimate> {
     const scripts = await this.scripts.get(tenantId, courseId, importId);
     if (!scripts) throw new BadRequestException('Genera prima i copioni');
@@ -132,10 +134,16 @@ export class SlideClipsService {
     const existing = await this.load(tenantId, courseId, importId);
     const todo = scripts.slides.filter((s) => {
       if (s.skip) return false;
+      if (all) return true;
       const done = existing?.clips.find((c) => c.index === s.index);
       return !(done?.state === 'completed' && done.scriptHash === hashScript(s.script));
     });
-    const minutes = todo.reduce((n, s) => n + s.estSec, 0) / 60;
+    // Con clip già generate la durata reale è più affidabile della stima dal numero di parole.
+    const minutes =
+      todo.reduce((n, s) => {
+        const real = existing?.clips.find((c) => c.index === s.index)?.durationSec;
+        return n + (real && real > 0 ? real : s.estSec);
+      }, 0) / 60;
     return {
       slides: todo.length,
       minutes: Math.round(minutes * 10) / 10,
@@ -207,6 +215,54 @@ export class SlideClipsService {
       clips,
     };
     await this.save(tenantId, doc);
+    this.launch(tenantId, courseId, importId);
+    return this.toView(doc);
+  }
+
+  /**
+   * Cambia avatar (e voce/engine) di un video già generato: rigenera TUTTE le clip incluse con
+   * il nuovo avatar, mantenendo copioni, slide e regia. I video delle lezioni si aggiornano poi
+   * con il rimontaggio, che aggiorna anche la trascrizione (i tempi del parlato cambiano).
+   */
+  async changeAvatar(
+    tenantId: string,
+    courseId: string,
+    importId: string,
+    input: StartSlideClips,
+  ): Promise<SlideClipsView> {
+    if (!this.videoGen) throw new NotImplementedException('Generazione video avatar non configurata');
+    const existing = await this.load(tenantId, courseId, importId);
+    if (!existing) throw new BadRequestException('Non ci sono clip da sostituire: generale prima.');
+    if (this.isLeased(existing)) throw new ConflictException('Generazione già in corso per questo import.');
+    const scripts = await this.scripts.get(tenantId, courseId, importId);
+    if (!scripts || scripts.status !== 'approved') {
+      throw new ConflictException('I copioni vanno approvati prima di generare le clip.');
+    }
+    const avatarType = input.avatarType as HeyGenAvatarBillingType;
+    const engine = this.resolveEngine(input.engine, avatarType);
+    const est = await this.estimate(tenantId, courseId, importId, engine, avatarType, true);
+    if (est.minutes > est.maxMinutes) {
+      throw new BadRequestException(
+        `Stima ${est.minutes} min di video, oltre il tetto di ${est.maxMinutes} min per esecuzione.`,
+      );
+    }
+    const cfg = this.config.get('heygen', { infer: true });
+    const now = new Date().toISOString();
+    const doc: SlideClipsDoc = {
+      ...existing,
+      status: 'running',
+      avatarId: input.avatarId,
+      avatarType,
+      voiceId: input.voiceId,
+      engine,
+      resolution: input.resolution ?? existing.resolution ?? cfg.resolution ?? '720p',
+      updatedAt: now,
+      clips: scripts.slides
+        .filter((s) => !s.skip)
+        .map((s) => ({ index: s.index, scriptHash: hashScript(s.script), state: 'pending' as const, attempts: 0 })),
+    };
+    await this.save(tenantId, doc);
+    this.logger.log(`Cambio avatar import ${importId}: ${doc.clips.length} clip con ${input.avatarId}`);
     this.launch(tenantId, courseId, importId);
     return this.toView(doc);
   }

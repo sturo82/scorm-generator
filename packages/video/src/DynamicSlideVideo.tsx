@@ -11,6 +11,7 @@ import {
 } from 'remotion';
 import {
   activeCueAt,
+  avatarCrop,
   computeSlideTimeline,
   globalCues,
   type GlobalCue,
@@ -191,7 +192,7 @@ export const DynamicSlideVideo: React.FC<{ spec: SlideVideoSpec }> = ({ spec }) 
         const e = timeline.entries[i]!;
         return (
           <Sequence key={`av-${slide.id}`} from={e.startFrame} durationInFrames={e.durationFrames} layout="none">
-            <AvatarLayer src={slide.clipUrl} rect={g.avatar} s={s} accent={spec.theme.accent} fade={fadeIn} />
+            <AvatarLayer src={slide.clipUrl} rect={g.avatar} s={s} accent={spec.theme.accent} fade={fadeIn} frame={spec.avatarFrame} />
           </Sequence>
         );
       })}
@@ -291,7 +292,8 @@ const AvatarLayer: React.FC<{
   s: number;
   accent: string;
   fade: number;
-}> = ({ src, rect, s, accent, fade }) => (
+  frame: SlideVideoSpec['avatarFrame'];
+}> = ({ src, rect, s, accent, fade, frame }) => (
   <div
     style={{
       position: 'absolute',
@@ -306,17 +308,10 @@ const AvatarLayer: React.FC<{
       boxShadow: `0 ${S(18, s)}px ${S(60, s)}px rgba(0,0,0,${0.55 * rect.shadow}), 0 0 0 ${S(rect.ring, s)}px ${accent}`,
     }}
   >
-    {/* La clip è 16:9 con la persona al centro: ritaglio sul viso, più stretto nei cerchi. */}
+    {/* Ritaglio sulla persona: il punto scelto (avatarFrame) al centro, più stretto nei cerchi. */}
     <OffthreadVideo
       src={src}
-      style={{
-        width: '100%',
-        height: '100%',
-        objectFit: 'cover',
-        objectPosition: '50% 22%',
-        transform: `scale(${rect.zoom})`,
-        transformOrigin: '50% 28%',
-      }}
+      style={{ position: 'absolute', ...cropStyle(S(rect.w, s), S(rect.h, s), frame, rect.zoom) }}
     />
   </div>
 );
@@ -441,4 +436,14 @@ function hexA(hex: string, alpha: number): string {
   const h = m[1]!.length === 3 ? m[1]!.split('').map((c) => c + c).join('') : m[1]!;
   const n = parseInt(h, 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+function cropStyle(
+  w: number,
+  h: number,
+  frame: SlideVideoSpec['avatarFrame'],
+  zoom: number,
+): React.CSSProperties {
+  const c = avatarCrop(w, h, frame, zoom);
+  return { left: c.left, top: c.top, width: c.width, height: c.height, maxWidth: 'none' };
 }

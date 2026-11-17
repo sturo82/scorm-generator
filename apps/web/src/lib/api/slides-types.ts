@@ -108,6 +108,7 @@ export interface SlideLessonView {
   pipPosition?: PipPosition;
   slidePositions?: Record<string, PipPosition>;
   slideShots?: Record<string, SlideShot>;
+  avatarFrame?: { x?: number; y?: number; zoom?: number };
   burnCaptions?: boolean;
   moduleTitle: string;
   mode: 'single' | 'sections';

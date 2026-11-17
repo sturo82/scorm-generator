@@ -14,6 +14,7 @@ import {
   globalCues,
   type Block,
   type PipPosition,
+  type AvatarFrame,
   type SlideShot,
   type SlideVideoLayout,
   type SlideVideoTheme,
@@ -79,6 +80,8 @@ export interface SlideLessonDoc {
   slidePositions?: Record<string, PipPosition>;
   /** Inquadrature scelte dall'utente per slide (layout dynamic); le altre seguono la regia automatica. */
   slideShots?: Record<string, SlideShot>;
+  /** Inquadratura della persona nella clip avatar (punto al centro e zoom). */
+  avatarFrame?: Partial<AvatarFrame>;
   /** Sottotitoli incisi nel video. Assente nei documenti precedenti, che li avevano: vale true. */
   burnCaptions?: boolean;
   /** Titolo del corso/modulo (modalità "una lezione") o del gruppo di sezioni. */
@@ -107,6 +110,7 @@ export interface SlideLessonView {
   pipPosition: PipPosition;
   slidePositions: Record<string, PipPosition>;
   slideShots: Record<string, SlideShot>;
+  avatarFrame: Partial<AvatarFrame>;
   burnCaptions: boolean;
   moduleTitle: string;
   mode: SlideLessonDoc['mode'];
@@ -249,6 +253,7 @@ export class SlideLessonService {
       slidePositions?: Record<string, PipPosition>;
       slideShots?: Record<string, SlideShot>;
       burnCaptions?: boolean;
+      avatarFrame?: Partial<AvatarFrame>;
     },
   ): Promise<SlideLessonView> {
     const clipsView = await this.clips.status(tenantId, courseId, importId);
@@ -283,6 +288,7 @@ export class SlideLessonService {
         pipPosition: input.pipPosition ?? 'bottom-right',
         slidePositions: input.slidePositions ?? {},
         slideShots: input.slideShots ?? {},
+        avatarFrame: input.avatarFrame ?? {},
         burnCaptions: input.burnCaptions ?? false,
         moduleTitle,
         mode: sections ? 'sections' : 'single',
@@ -328,11 +334,16 @@ export class SlideLessonService {
       slidePositions?: Record<string, PipPosition>;
       slideShots?: Record<string, SlideShot>;
       burnCaptions?: boolean;
+      avatarFrame?: Partial<AvatarFrame>;
     } = {},
   ): Promise<SlideLessonView> {
     const existing = await this.load(tenantId, courseId, importId);
     if (!existing || existing.status !== 'completed') {
       throw new ConflictException('Non c\'è una lezione completata da aggiornare.');
+    }
+    const clipsNow = await this.clips.status(tenantId, courseId, importId);
+    if (!clipsNow || clipsNow.status !== 'completed') {
+      throw new ConflictException('Le clip avatar non sono tutte pronte: attendi la fine della generazione.');
     }
     const doc: SlideLessonDoc = {
       ...existing,
@@ -344,6 +355,7 @@ export class SlideLessonService {
       pipPosition: input.pipPosition ?? existing.pipPosition ?? 'bottom-right',
       slidePositions: input.slidePositions ?? existing.slidePositions ?? {},
       slideShots: input.slideShots ?? existing.slideShots ?? {},
+      avatarFrame: input.avatarFrame ?? existing.avatarFrame ?? {},
       burnCaptions: input.burnCaptions ?? existing.burnCaptions ?? true,
       currentPart: 0,
       parts: existing.parts.map((p) => ({ ...p, remasterDone: false })),
@@ -487,6 +499,7 @@ export class SlideLessonService {
       layout: doc.layout,
       pipPosition: doc.pipPosition,
       burnCaptions: doc.burnCaptions ?? true,
+      avatarFrame: doc.avatarFrame,
       sectionTitle: part.title,
       theme: await this.brandTheme(tenantId, courseId),
     });
@@ -595,6 +608,19 @@ export class SlideLessonService {
     const vc = blocks.find((b) => b.type === 'video_checkpoint');
     if (!vc?.payload?.video) throw new Error(`Blocco video non trovato per «${part.title}»`);
     vc.payload.video.storageKey = part.videoKey;
+    // Con clip rigenerate (es. cambio avatar) i tempi del parlato cambiano: si aggiorna anche
+    // la trascrizione, ricavata dalla stessa timeline del nuovo montaggio.
+    if (part.transcriptKey && (await this.storage.exists(part.transcriptKey))) {
+      const cues = JSON.parse((await this.storage.getObject(part.transcriptKey)).toString('utf8')) as Array<{
+        id: string;
+        start: number;
+        end: number;
+        text: string;
+      }>;
+      const payload = vc.payload as Record<string, unknown>;
+      payload.transcript = cues.map((c) => ({ id: c.id, start: c.start, end: c.end, text: c.text }));
+      payload.transcriptStatus = 'ready';
+    }
     await this.modules.setLessonBlocks(tenantId, doc.courseId, part.moduleId, part.lessonId, blocks as unknown as Block[]);
   }
 
@@ -901,6 +927,7 @@ export class SlideLessonService {
       pipPosition: doc.pipPosition ?? 'bottom-right',
       slidePositions: doc.slidePositions ?? {},
       slideShots: doc.slideShots ?? {},
+      avatarFrame: doc.avatarFrame ?? {},
       burnCaptions: doc.burnCaptions ?? true,
       moduleTitle: doc.moduleTitle,
       mode: doc.mode,

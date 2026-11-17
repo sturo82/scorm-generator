@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Check, Clapperboard, FileUp, Wand2 } from 'lucide-react';
 import {
+  avatarCrop,
   HEYGEN_ENGINES,
   heygenAvatarTypeLabel,
   heygenBillingTypeFor,
@@ -35,6 +36,7 @@ import {
   useSlideLesson,
   useSlideScripts,
   useStartSlideClips,
+  useChangeSlideAvatar,
   useVideoAvatars,
   useVideoVoices,
 } from '@/lib/api/hooks';
@@ -610,13 +612,16 @@ function StepClips({
 }) {
   const toast = useToast();
   const start = useStartSlideClips(courseId, importId);
+  const change = useChangeSlideAvatar(courseId, importId);
+  // Cambio avatar su clip già generate: riapre la scelta e rigenera tutte le clip.
+  const [changing, setChanging] = React.useState(false);
   const [source, setSource] = React.useState<'mine' | 'stock'>('mine');
   const [avatarId, setAvatarId] = React.useState('');
   const [avatarType, setAvatarType] = React.useState<SlideAvatarType>('digital_twin');
   const [voiceId, setVoiceId] = React.useState('');
   const [engine, setEngine] = React.useState<'avatar_iii' | 'avatar_iv' | 'avatar_v'>('avatar_iii');
 
-  const started = Boolean(view);
+  const started = Boolean(view) && !changing;
   const avatars = useVideoAvatars(courseId, !started, { source });
   const voices = useVideoVoices(courseId, !started);
   const avatarItems = React.useMemo(() => avatars.data?.pages.flatMap((p) => p.items) ?? [], [avatars.data]);
@@ -627,7 +632,7 @@ function StepClips({
     if (!heygenEngineSupports(engine, avatarType)) setEngine('avatar_iii');
   }, [avatarType, engine]);
 
-  const estimate = useSlideClipsEstimate(courseId, importId, engine, avatarType, !started);
+  const estimate = useSlideClipsEstimate(courseId, importId, engine, avatarType, !started, changing);
   const selected = avatarItems.find((a) => a.id === avatarId);
   // Il tipo (e quindi la tariffa) segue l'avatar scelto: digital twin, da foto o del catalogo.
   React.useEffect(() => {
@@ -636,8 +641,15 @@ function StepClips({
 
   async function handleStart() {
     try {
-      await start.mutateAsync({ avatarId, avatarType, engine, voiceId: voiceId || undefined });
-      toast.show('Generazione delle clip avviata: prosegue sul server', 'success');
+      const input = { avatarId, avatarType, engine, voiceId: voiceId || undefined };
+      if (changing) {
+        await change.mutateAsync(input);
+        setChanging(false);
+        toast.show('Nuove clip in generazione: al termine rimonta i video dal passo 3', 'success');
+      } else {
+        await start.mutateAsync(input);
+        toast.show('Generazione delle clip avviata: prosegue sul server', 'success');
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       toast.show(
@@ -763,13 +775,25 @@ function StepClips({
             )}
           </div>
 
-          <div className="flex justify-end">
-            <Button onClick={handleStart} disabled={!avatarId || start.isPending}>
-              {start.isPending ? (
+          {changing && (
+            <p className="rounded-md border border-amber-300/60 bg-amber-50 p-2.5 text-xs text-amber-900">
+              Cambio avatar: si rigenerano tutte le clip con il nuovo avatar (il costo è quello indicato sopra). Copioni,
+              slide, regia, riepiloghi e quiz restano invariati; al termine rimonta i video dal passo 3 per applicarlo.
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            {changing && (
+              <Button variant="ghost" onClick={() => setChanging(false)}>
+                Annulla
+              </Button>
+            )}
+            <Button onClick={handleStart} disabled={!avatarId || start.isPending || change.isPending}>
+              {start.isPending || change.isPending ? (
                 <AiWorkingInline label="Avvio…" />
               ) : (
                 <>
-                  <Clapperboard className="size-4" /> Genera le clip{selected ? ` con ${selected.name}` : ''}
+                  <Clapperboard className="size-4" /> {changing ? 'Rigenera le clip' : 'Genera le clip'}
+                  {selected ? ` con ${selected.name}` : ''}
                 </>
               )}
             </Button>
@@ -777,7 +801,16 @@ function StepClips({
         </div>
       )}
 
-      {view && <ClipsProgress view={view} onRetry={() => start.mutate({ avatarId: view.avatarId, avatarType: view.avatarType })} retrying={start.isPending} />}
+      {view && !changing && (
+        <ClipsProgress view={view} onRetry={() => start.mutate({ avatarId: view.avatarId, avatarType: view.avatarType })} retrying={start.isPending} />
+      )}
+      {view && !changing && view.status !== 'running' && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="outline" onClick={() => setChanging(true)} title="Rigenera le clip con un altro avatar o un'altra voce, senza rifare copioni e lezioni">
+            Cambia avatar o voce
+          </Button>
+        </div>
+      )}
     </section>
   );
 }
@@ -847,6 +880,11 @@ function StepLesson({
   const [pipPosition, setPipPosition] = React.useState<PipPosition>(view?.pipPosition ?? 'bottom-right');
   const [slidePositions, setSlidePositions] = React.useState<Record<string, PipPosition>>(view?.slidePositions ?? {});
   const [burnCaptions, setBurnCaptions] = React.useState<boolean>(view?.burnCaptions ?? false);
+  const [avatarFrame, setAvatarFrame] = React.useState<{ x: number; y: number; zoom: number }>({
+    x: view?.avatarFrame?.x ?? 50,
+    y: view?.avatarFrame?.y ?? 22,
+    zoom: view?.avatarFrame?.zoom ?? 1,
+  });
   const [editLayout, setEditLayout] = React.useState(false);
   // Allinea le scelte a quelle salvate quando arriva lo stato dal server.
   React.useEffect(() => {
@@ -855,6 +893,7 @@ function StepLesson({
     setPipPosition(view.pipPosition ?? 'bottom-right');
     setSlidePositions(view.slidePositions ?? {});
     setSlideShots(view.slideShots ?? {});
+    setAvatarFrame({ x: view.avatarFrame?.x ?? 50, y: view.avatarFrame?.y ?? 22, zoom: view.avatarFrame?.zoom ?? 1 });
     setBurnCaptions(view.burnCaptions ?? true);
   }, [view?.status]); // eslint-disable-line react-hooks/exhaustive-deps
   const [title, setTitle] = React.useState(defaultTitle);
@@ -898,6 +937,7 @@ function StepLesson({
         pipPosition,
         slidePositions: layout === 'split' ? {} : slidePositions,
         slideShots: layout === 'dynamic' ? slideShots : {},
+        avatarFrame,
         burnCaptions,
         moduleTitle: title.trim() || undefined,
         sections: mode === 'sections' ? sections.map((s) => ({ title: s.title.trim(), from: s.from })) : undefined,
@@ -925,6 +965,7 @@ function StepLesson({
               pipPosition,
               slidePositions: layout === 'split' ? {} : slidePositions,
               slideShots: layout === 'dynamic' ? slideShots : {},
+              avatarFrame,
               burnCaptions,
             }
           : undefined,
@@ -1063,6 +1104,9 @@ function StepLesson({
                 setBurnCaptions={setBurnCaptions}
                 slideShots={slideShots}
                 setSlideShots={setSlideShots}
+                avatarFrame={avatarFrame}
+                setAvatarFrame={setAvatarFrame}
+                previewClipUrl={clips.clips.find((c) => c.clipUrl)?.clipUrl}
                 courseId={courseId}
                 importId={importId}
                 clipIndexes={clipIdx}
@@ -1144,6 +1188,9 @@ function StepLesson({
                 setBurnCaptions={setBurnCaptions}
                 slideShots={slideShots}
                 setSlideShots={setSlideShots}
+                avatarFrame={avatarFrame}
+                setAvatarFrame={setAvatarFrame}
+                previewClipUrl={clips.clips.find((c) => c.clipUrl)?.clipUrl}
                 courseId={courseId}
                 importId={importId}
                 clipIndexes={clipIdx}
@@ -1237,6 +1284,9 @@ function LayoutEditor({
   setBurnCaptions,
   slideShots,
   setSlideShots,
+  avatarFrame,
+  setAvatarFrame,
+  previewClipUrl,
   courseId,
   importId,
   clipIndexes,
@@ -1247,6 +1297,9 @@ function LayoutEditor({
   setBurnCaptions: (v: boolean) => void;
   slideShots: Record<string, SlideShot>;
   setSlideShots: (fn: (cur: Record<string, SlideShot>) => Record<string, SlideShot>) => void;
+  avatarFrame: { x: number; y: number; zoom: number };
+  setAvatarFrame: (f: { x: number; y: number; zoom: number }) => void;
+  previewClipUrl?: string;
   courseId: string;
   importId: string;
   layout: SlideLayout;
@@ -1277,6 +1330,7 @@ function LayoutEditor({
           </label>
         ))}
       </fieldset>
+      <AvatarFrameEditor value={avatarFrame} onChange={setAvatarFrame} clipUrl={previewClipUrl} />
       <label className="flex items-start gap-2">
         <input type="checkbox" className="mt-1" checked={burnCaptions} onChange={(e) => setBurnCaptions(e.target.checked)} />
         <span>
@@ -1361,6 +1415,79 @@ function LayoutEditor({
               </div>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Inquadratura della persona nel riquadro e nel cerchio dell'avatar: punto da tenere al centro e
+ * zoom, con anteprima dal vivo sulla clip vera (stessi ritagli del video montato).
+ */
+function AvatarFrameEditor({
+  value,
+  onChange,
+  clipUrl,
+}: {
+  value: { x: number; y: number; zoom: number };
+  onChange: (f: { x: number; y: number; zoom: number }) => void;
+  clipUrl?: string;
+}) {
+  const [open, setOpen] = React.useState(value.x !== 50 || value.y !== 22 || value.zoom !== 1);
+  // Stesso calcolo del montaggio: il punto scelto della clip va al centro del riquadro.
+  const style = (w: number, h: number, baseZoom: number): React.CSSProperties => ({
+    position: 'absolute',
+    maxWidth: 'none',
+    ...avatarCrop(w, h, value, baseZoom),
+  });
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      <label className="flex items-center gap-2">
+        <input type="checkbox" checked={open} onChange={(e) => setOpen(e.target.checked)} />
+        <span className="font-medium">Inquadratura dell&apos;avatar</span>
+        <span className="text-xs text-muted-foreground">
+          (se la persona non risulta centrata: sposta il punto da tenere al centro)
+        </span>
+      </label>
+      {open && (
+        <div className="flex flex-wrap items-start gap-4">
+          {clipUrl ? (
+            <div className="flex items-end gap-3">
+              <div className="relative h-[150px] w-[100px] overflow-hidden rounded-lg border bg-black" title="Riquadro (presentatore / affiancata)">
+                <video src={clipUrl} muted loop autoPlay playsInline style={style(100, 150, 1.04)} />
+              </div>
+              <div className="relative size-[96px] overflow-hidden rounded-full border-4 border-primary bg-black" title="Cerchio (focus)">
+                <video src={clipUrl} muted loop autoPlay playsInline style={style(88, 88, 1.32)} />
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">Anteprima disponibile quando le clip sono pronte.</p>
+          )}
+          <div className="min-w-[220px] flex-1 space-y-2 text-xs">
+            {([
+              ['x', 'Orizzontale', 0, 100, 1],
+              ['y', 'Verticale', 0, 100, 1],
+              ['zoom', 'Zoom', 1, 2, 0.05],
+            ] as const).map(([k, label, min, max, step]) => (
+              <label key={k} className="flex items-center gap-2">
+                <span className="w-20">{label}</span>
+                <input
+                  type="range"
+                  min={min}
+                  max={max}
+                  step={step}
+                  value={value[k]}
+                  onChange={(e) => onChange({ ...value, [k]: Number(e.target.value) })}
+                  className="flex-1"
+                />
+                <span className="w-10 text-right tabular-nums">{k === 'zoom' ? `${value.zoom.toFixed(2)}×` : `${value[k]}%`}</span>
+              </label>
+            ))}
+            <Button size="sm" variant="ghost" onClick={() => onChange({ x: 50, y: 22, zoom: 1 })}>
+              Ripristina
+            </Button>
+          </div>
         </div>
       )}
     </div>

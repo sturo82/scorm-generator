@@ -606,8 +606,15 @@ export class HttpApiClient implements ApiClient {
       body: JSON.stringify(input),
     });
   }
-  estimateSlideClips(courseId: string, importId: string, engine: string | undefined, avatarType: SlideAvatarType) {
+  changeSlideAvatar(courseId: string, importId: string, input: StartSlideClipsInput) {
+    return this.request<SlideClipsView>(`/courses/${courseId}/slides/imports/${importId}/clips/avatar`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+  estimateSlideClips(courseId: string, importId: string, engine: string | undefined, avatarType: SlideAvatarType, all?: boolean) {
     const qs = new URLSearchParams({ avatarType });
+    if (all) qs.set('all', 'true');
     if (engine) qs.set('engine', engine);
     return this.request<SlideClipsEstimate>(`/courses/${courseId}/slides/imports/${importId}/clips/estimate?${qs.toString()}`);
   }

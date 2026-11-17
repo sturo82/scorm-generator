@@ -398,6 +398,8 @@ export interface SlideLayoutChoice {
   pipPosition?: PipPosition;
   slidePositions?: Record<string, PipPosition>;
   slideShots?: Record<string, SlideShot>;
+  /** Inquadratura della persona nella clip (punto al centro in % e zoom). */
+  avatarFrame?: { x?: number; y?: number; zoom?: number };
   /** Sottotitoli incisi nel video (default no: c'è la trascrizione e il CC del player). */
   burnCaptions?: boolean;
 }
@@ -690,7 +692,8 @@ export interface ApiClient {
     importId: string,
     input: { slides: Array<{ index: number; script: string; skip: boolean }>; approved: boolean },
   ): Promise<SlideScriptsDoc>;
-  estimateSlideClips(courseId: string, importId: string, engine: string | undefined, avatarType: SlideAvatarType): Promise<SlideClipsEstimate>;
+  estimateSlideClips(courseId: string, importId: string, engine: string | undefined, avatarType: SlideAvatarType, all?: boolean): Promise<SlideClipsEstimate>;
+  changeSlideAvatar(courseId: string, importId: string, input: StartSlideClipsInput): Promise<SlideClipsView>;
   getSlideClips(courseId: string, importId: string): Promise<SlideClipsView | { status: 'none' }>;
   startSlideClips(courseId: string, importId: string, input: StartSlideClipsInput): Promise<SlideClipsView>;
   getSlideLesson(courseId: string, importId: string): Promise<SlideLessonView | { status: 'none' }>;

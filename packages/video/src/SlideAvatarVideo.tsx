@@ -4,6 +4,7 @@ import { AbsoluteFill, Img, OffthreadVideo, Sequence, interpolate, useCurrentFra
 import {
   SlideVideoSpec,
   activeCueAt,
+  avatarCrop,
   computeSlideTimeline,
   globalCues,
   type GlobalCue,
@@ -220,12 +221,9 @@ const SlideScene: React.FC<{ spec: SlideVideoSpec; slideIndex: number; g: Geomet
         <OffthreadVideo
           src={slide.clipUrl}
           style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            objectPosition: '50% 20%',
-            transform: pip ? 'scale(1.25)' : 'none',
-            transformOrigin: '50% 30%',
+            position: 'absolute',
+            maxWidth: 'none',
+            ...avatarCrop(g.avatar.width, g.avatar.height, spec.avatarFrame, pip ? 1.25 : 1),
           }}
         />
       </div>

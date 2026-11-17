@@ -35,6 +35,17 @@ export type SlideShot = z.infer<typeof SlideShot>;
 export const SlideShots = z.record(z.string().regex(/^\d+$/), SlideShot);
 export type SlideShots = z.infer<typeof SlideShots>;
 
+/**
+ * Inquadratura della persona dentro il riquadro/cerchio dell'avatar: punto da tenere al centro
+ * (percentuali della clip) e zoom. Serve quando la persona non è al centro della clip.
+ */
+export const AvatarFrame = z.object({
+  x: z.number().min(0).max(100).default(50),
+  y: z.number().min(0).max(100).default(22),
+  zoom: z.number().min(1).max(2.5).default(1),
+});
+export type AvatarFrame = z.infer<typeof AvatarFrame>;
+
 /** Posizioni per slide (chiave = indice della slide nell'import, 1-based) che sostituiscono il default. */
 export const SlidePipPositions = z.record(z.string().regex(/^\d+$/), PipPosition);
 export type SlidePipPositions = z.infer<typeof SlidePipPositions>;
@@ -96,6 +107,8 @@ export const SlideVideoSpec = z.object({
    * una traccia CC attivabile dal player; incisi servono solo se l'MP4 si usa fuori dal corso.
    */
   burnCaptions: z.boolean().default(false),
+  /** Inquadratura della persona nella clip (vale per tutte le slide). */
+  avatarFrame: AvatarFrame.default({}),
   theme: SlideVideoTheme.default({}),
   /** Titolo del modulo/sezione, mostrato nel pannello laterale. */
   sectionTitle: z.string().optional(),
@@ -249,6 +262,7 @@ export const BuildSlideLesson = z.object({
   slidePositions: SlidePipPositions.default({}),
   slideShots: SlideShots.default({}),
   burnCaptions: z.boolean().default(false),
+  avatarFrame: AvatarFrame.optional(),
 });
 
 /** Rimontaggio dei video con le slide attuali; consente di cambiare disposizione e posizioni. */
@@ -258,6 +272,7 @@ export const RemasterSlideLesson = z.object({
   slidePositions: SlidePipPositions.optional(),
   slideShots: SlideShots.optional(),
   burnCaptions: z.boolean().optional(),
+  avatarFrame: AvatarFrame.optional(),
 });
 export type RemasterSlideLesson = z.infer<typeof RemasterSlideLesson>;
 export type BuildSlideLesson = z.infer<typeof BuildSlideLesson>;
@@ -268,3 +283,28 @@ export const GenerateSlideScripts = z.object({
   knowledgeDocIds: z.array(z.string().min(1)).max(10).default([]),
 });
 export type GenerateSlideScripts = z.infer<typeof GenerateSlideScripts>;
+
+/**
+ * Ritaglio della clip avatar in un riquadro: porta il punto (x%, y%) della clip AL CENTRO del
+ * riquadro, con l'ingrandimento richiesto, senza mai lasciare bordi vuoti (il punto si avvicina
+ * al centro quanto consentito dai bordi della clip). Restituisce posizione e dimensioni del
+ * video dentro il riquadro, in px. La stessa funzione serve al montaggio e all'anteprima.
+ */
+export function avatarCrop(
+  boxW: number,
+  boxH: number,
+  frame: { x?: number; y?: number; zoom?: number } | undefined,
+  baseZoom = 1,
+  clipAspect = 16 / 9,
+): { left: number; top: number; width: number; height: number } {
+  const x = (frame?.x ?? 50) / 100;
+  const y = (frame?.y ?? 22) / 100;
+  const zoom = Math.max(1, baseZoom * (frame?.zoom ?? 1));
+  const cover = Math.max(boxW / clipAspect, boxH); // altezza minima della clip per coprire il riquadro
+  const height = cover * zoom;
+  const width = height * clipAspect;
+  const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
+  const left = clamp(boxW / 2 - x * width, boxW - width, 0);
+  const top = clamp(boxH * 0.42 - y * height, boxH - height, 0);
+  return { left, top, width, height };
+}
