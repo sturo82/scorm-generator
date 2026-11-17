@@ -120,11 +120,32 @@ export class SlidesService {
       if (e instanceof PdfSlidesInputError) throw new BadRequestException(e.message);
       throw e;
     }
-    if (pages.length !== manifest.slides.length) {
+    if (pages.length > manifest.slides.length) {
       throw new BadRequestException(
         `Il nuovo PDF ha ${pages.length} pagine, l'import ne ha ${manifest.slides.length}: servono le stesse pagine, ` +
           'altrimenti copioni e clip non corrisponderebbero. Per un PDF diverso avvia un nuovo import.',
       );
+    }
+    // Meno pagine dell'import: ammesso solo se le slide in più (es. un mazzo duplicato) sono già
+    // ESCLUSE dal video; si sostituiscono le prime N e le altre restano come sono, inutilizzate.
+    if (pages.length < manifest.slides.length) {
+      const scriptsKey = `${this.prefix(input.tenantId, input.courseId, input.importId)}/scripts.json`;
+      if (!(await this.storage.exists(scriptsKey))) {
+        throw new BadRequestException(
+          `Il nuovo PDF ha ${pages.length} pagine, l'import ne ha ${manifest.slides.length}: genera prima i copioni ed escludi le slide in più.`,
+        );
+      }
+      const scripts = JSON.parse((await this.storage.getObject(scriptsKey)).toString('utf8')) as {
+        slides: Array<{ index: number; skip: boolean; extra?: unknown }>;
+      };
+      const stillUsed = scripts.slides
+        .filter((x) => !x.extra && x.index > pages.length && !x.skip)
+        .map((x) => x.index);
+      if (stillUsed.length > 0) {
+        throw new BadRequestException(
+          `Il nuovo PDF ha ${pages.length} pagine ma le slide ${stillUsed.slice(0, 8).join(', ')}${stillUsed.length > 8 ? '…' : ''} dell'import sono ancora incluse nel video: servono le stesse pagine.`,
+        );
+      }
     }
     // Controllo di corrispondenza pagina per pagina (testo normalizzato, insensibile a font e spaziatura).
     const mismatched: number[] = [];
