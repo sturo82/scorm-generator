@@ -22,6 +22,7 @@ import {
   type Behavior,
   type StatefulSpec,
   type StatefulState,
+  createTranscriptFollower,
 } from '@scorm/contracts/render-core';
 import type { CourseLabels } from '@scorm/contracts';
 
@@ -286,6 +287,19 @@ function VideoKaraokeView({ node }: { node: VNode }): React.ReactElement {
     video.addEventListener('timeupdate', onTime);
     return () => video.removeEventListener('timeupdate', onTime);
   }, [activeTab]);
+  // La riga attiva resta alla stessa altezza del pannello: scorre il testo, non la pagina.
+  const followerRef = React.useRef<ReturnType<typeof createTranscriptFollower> | null>(null);
+  React.useEffect(() => {
+    if (!rootRef.current) return;
+    const f = createTranscriptFollower(rootRef.current);
+    followerRef.current = f;
+    return () => f.dispose();
+  }, [activeTab]);
+  React.useEffect(() => {
+    if (activeCue < 0 || !rootRef.current) return;
+    const el = rootRef.current.querySelectorAll<HTMLElement>('.transcript-cue')[activeCue];
+    followerRef.current?.follow(el);
+  }, [activeCue]);
 
   function onClick(e: React.MouseEvent<HTMLDivElement>): void {
     const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-tab-btn]');

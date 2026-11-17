@@ -1,4 +1,4 @@
-import { SlideVideoSpec, type SlideCue, type SlideVideoLayout, type SlideVideoTheme } from '@scorm/contracts';
+import { SlideVideoSpec, type PipPosition, type SlideCue, type SlideVideoLayout, type SlideVideoTheme } from '@scorm/contracts';
 
 /** Una slide pronta per il montaggio: asset già risolti in URL e sottotitoli SRT grezzi. */
 export interface AssemblySlide {
@@ -13,6 +13,8 @@ export interface AssemblySlide {
   narration?: string;
   /** Sottotitoli SRT della clip (tempi relativi alla clip). */
   srt?: string;
+  /** Posizione dell'avatar per questa slide (layout pip). */
+  pipPosition?: PipPosition;
 }
 
 /**
@@ -63,6 +65,7 @@ export function mergeCues(cues: SlideCue[], maxChars = 72, maxSec = 5): SlideCue
 export interface BuildSpecInput {
   slides: AssemblySlide[];
   layout?: SlideVideoLayout;
+  pipPosition?: PipPosition;
   sectionTitle?: string;
   theme?: Partial<SlideVideoTheme>;
 }
@@ -86,11 +89,13 @@ export function buildSlideVideoSpec(input: BuildSpecInput): SlideVideoSpec {
       title: s.title,
       narration: s.narration,
       cues,
+      pipPosition: s.pipPosition,
     };
   });
   return SlideVideoSpec.parse({
     version: 1,
     layout: input.layout ?? 'split',
+    pipPosition: input.pipPosition ?? 'bottom-right',
     theme: input.theme ?? {},
     sectionTitle: input.sectionTitle,
     slides,

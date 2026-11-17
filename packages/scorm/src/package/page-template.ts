@@ -469,7 +469,10 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 /* Barra tab: resta orizzontale in cima al pannello (scrollabile se tante tab),
    mentre il corpo del pannello scorre verticalmente accanto al video. */
 .block.video.lesson-videofirst-vnext .vf-tabs-vertical { flex-wrap: nowrap; overflow-x: auto; }
-.block.video.lesson-videofirst-vnext .video-panel-body { flex: 1 1 auto; }
+.block.video.lesson-videofirst-vnext .video-panel-body { flex: 1 1 auto; min-height: 0; }
+/* Il pannello è alto quanto il video: la trascrizione scorre dentro il pannello, non la pagina. */
+.block.video.lesson-videofirst-vnext .video-panel { height: 0; min-height: max(100%, 320px); }
+@media (max-width: 720px) { .block.video.lesson-videofirst-vnext .video-panel { height: auto; min-height: 0; max-height: 60vh; } }
 .block.video .vf-section-title { margin: 0.75rem 0 0.25rem; font-size: 0.9rem; font-weight: 700; color: var(--pl-text); }
 .block.video .vf-section-body { font-size: 0.9rem; line-height: 1.55; }
 .block.video .vf-section-body:not(:last-child) { margin-bottom: 0.75rem; }

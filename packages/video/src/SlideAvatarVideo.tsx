@@ -6,6 +6,7 @@ import {
   computeSlideTimeline,
   globalCues,
   type GlobalCue,
+  type PipPosition,
   type SlideTimeline,
 } from '@scorm/contracts';
 
@@ -41,11 +42,11 @@ export const SlideAvatarVideo: React.FC<{ spec: SlideVideoSpec }> = ({ spec: raw
         const e = timeline.entries[i]!;
         return (
           <Sequence key={slide.id} from={e.startFrame} durationInFrames={e.durationFrames}>
-            <SlideScene spec={spec} slideIndex={i} g={g} />
+            <SlideScene spec={spec} slideIndex={i} g={geometry(spec, slide.pipPosition)} />
           </Sequence>
         );
       })}
-      <Captions cues={cues} spec={spec} g={g} />
+      <Captions cues={cues} spec={spec} timeline={timeline} />
       <SidePanel spec={spec} timeline={timeline} g={g} />
     </AbsoluteFill>
   );
@@ -68,18 +69,40 @@ interface Geometry {
   radius: number;
 }
 
-/** Posizioni in px per il canvas dato (progettate su 1920x1080, scalate). */
-function geometry(spec: SlideVideoSpec): Geometry {
+/**
+ * Posizioni in px per il canvas dato (progettate su 1920x1080, scalate). Nel layout pip
+ * `pos` sceglie l'angolo del cerchio avatar (default quello del video); il box dei
+ * sottotitoli si sposta di conseguenza per non sovrapporsi all'avatar.
+ */
+function geometry(spec: SlideVideoSpec, pos?: PipPosition): Geometry {
   const { width, height } = spec.canvas;
   const s = width / 1920;
   const M = 48 * s;
   if (spec.layout === 'pip') {
     const d = 320 * s;
+    const p = pos ?? spec.pipPosition ?? 'bottom-right';
+    const right = p.endsWith('right');
+    const bottom = p.startsWith('bottom');
+    const capH = 190 * s;
+    const capTop = height - 230 * s;
+    const caption = bottom
+      ? {
+          left: right ? M : M + d + 24 * s,
+          top: capTop,
+          width: width - 2 * M - d - 24 * s,
+          height: capH,
+        }
+      : { left: M, top: capTop, width: width - 2 * M, height: capH };
     return {
       s,
       slide: { left: 0, top: 0, width, height },
-      avatar: { left: width - d - M, top: height - d - M - 8 * s, width: d, height: d },
-      caption: { left: M, top: height - 230 * s, width: width - 2 * M - d - 24 * s, height: 190 * s },
+      avatar: {
+        left: right ? width - d - M : M,
+        top: bottom ? height - d - M - 8 * s : M,
+        width: d,
+        height: d,
+      },
+      caption,
       panel: { left: 0, top: 0, width: 0, height: 0 },
       radius: d / 2,
     };
@@ -200,10 +223,20 @@ const SlideScene: React.FC<{ spec: SlideVideoSpec; slideIndex: number; g: Geomet
 
 /* ------------------------------ Sottotitoli -------------------------------- */
 
-const Captions: React.FC<{ cues: GlobalCue[]; spec: SlideVideoSpec; g: Geometry }> = ({ cues, spec, g }) => {
+const Captions: React.FC<{ cues: GlobalCue[]; spec: SlideVideoSpec; timeline: SlideTimeline }> = ({
+  cues,
+  spec,
+  timeline,
+}) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = frame / fps;
+  // Il box dei sottotitoli segue la posizione dell'avatar della slide corrente.
+  const idx = Math.max(
+    0,
+    timeline.entries.findIndex((e) => frame >= e.startFrame && frame < e.startFrame + e.durationFrames),
+  );
+  const g = geometry(spec, spec.slides[idx]?.pipPosition);
   const cue = activeCueAt(cues, t);
   if (!cue) return null;
   const sinceStart = (t - cue.start) * fps;

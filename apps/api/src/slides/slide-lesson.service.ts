@@ -13,6 +13,7 @@ import {
   computeSlideTimeline,
   globalCues,
   type Block,
+  type PipPosition,
   type SlideVideoLayout,
 } from '@scorm/contracts';
 import type { LLMProvider, ObjectStorage } from '@scorm/domain';
@@ -69,6 +70,9 @@ export interface SlideLessonDoc {
   step: Step;
   error?: string;
   layout: SlideVideoLayout;
+  /** Posizione di default del cerchio avatar (layout pip) e override per slide (indice → posizione). */
+  pipPosition?: PipPosition;
+  slidePositions?: Record<string, PipPosition>;
   /** Titolo del corso/modulo (modalità "una lezione") o del gruppo di sezioni. */
   moduleTitle: string;
   mode: 'single' | 'sections';
@@ -92,6 +96,8 @@ export interface SlideLessonView {
   step: Step;
   error?: string;
   layout: SlideVideoLayout;
+  pipPosition: PipPosition;
+  slidePositions: Record<string, PipPosition>;
   moduleTitle: string;
   mode: SlideLessonDoc['mode'];
   remaster: boolean;
@@ -225,7 +231,13 @@ export class SlideLessonService {
     tenantId: string,
     courseId: string,
     importId: string,
-    input: { layout?: SlideVideoLayout; moduleTitle?: string; sections?: SectionInput[] },
+    input: {
+      layout?: SlideVideoLayout;
+      moduleTitle?: string;
+      sections?: SectionInput[];
+      pipPosition?: PipPosition;
+      slidePositions?: Record<string, PipPosition>;
+    },
   ): Promise<SlideLessonView> {
     const clipsView = await this.clips.status(tenantId, courseId, importId);
     if (!clipsView || clipsView.status !== 'completed') {
@@ -256,6 +268,8 @@ export class SlideLessonService {
         status: 'running',
         step: 'render',
         layout: input.layout ?? 'split',
+        pipPosition: input.pipPosition ?? 'bottom-right',
+        slidePositions: input.slidePositions ?? {},
         moduleTitle,
         mode: sections ? 'sections' : 'single',
         parts,
@@ -290,7 +304,12 @@ export class SlideLessonService {
    * `replacePdf`), riusando le clip avatar: nessun costo HeyGen, solo il montaggio. Sostituisce
    * il video nel blocco esistente di ogni lezione senza toccare trascrizione, riepilogo e quiz.
    */
-  async remaster(tenantId: string, courseId: string, importId: string): Promise<SlideLessonView> {
+  async remaster(
+    tenantId: string,
+    courseId: string,
+    importId: string,
+    input: { layout?: SlideVideoLayout; pipPosition?: PipPosition; slidePositions?: Record<string, PipPosition> } = {},
+  ): Promise<SlideLessonView> {
     const existing = await this.load(tenantId, courseId, importId);
     if (!existing || existing.status !== 'completed') {
       throw new ConflictException('Non c\'è una lezione completata da aggiornare.');
@@ -301,6 +320,9 @@ export class SlideLessonService {
       step: 'render',
       error: undefined,
       remaster: true,
+      layout: input.layout ?? existing.layout,
+      pipPosition: input.pipPosition ?? existing.pipPosition ?? 'bottom-right',
+      slidePositions: input.slidePositions ?? existing.slidePositions ?? {},
       currentPart: 0,
       parts: existing.parts.map((p) => ({ ...p, remasterDone: false })),
       updatedAt: new Date().toISOString(),
@@ -424,9 +446,15 @@ export class SlideLessonService {
         durationSec: c.durationSec,
         narration: scriptByIndex.get(c.index),
         srt,
+        pipPosition: doc.slidePositions?.[String(c.index)],
       });
     }
-    const spec = buildSlideVideoSpec({ slides: assembly, layout: doc.layout, sectionTitle: part.title });
+    const spec = buildSlideVideoSpec({
+      slides: assembly,
+      layout: doc.layout,
+      pipPosition: doc.pipPosition,
+      sectionTitle: part.title,
+    });
 
     const cfg = this.config.get('cartoonVideo', { infer: true });
     const video = await import('@scorm/video');
@@ -784,6 +812,8 @@ export class SlideLessonService {
       step: doc.step,
       error: doc.error,
       layout: doc.layout,
+      pipPosition: doc.pipPosition ?? 'bottom-right',
+      slidePositions: doc.slidePositions ?? {},
       moduleTitle: doc.moduleTitle,
       mode: doc.mode,
       remaster: doc.remaster === true,

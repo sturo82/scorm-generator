@@ -16,6 +16,14 @@ import { z } from 'zod';
 export const SlideVideoLayout = z.enum(['split', 'pip']);
 export type SlideVideoLayout = z.infer<typeof SlideVideoLayout>;
 
+/** Posizione del cerchio avatar nel layout "pip". */
+export const PipPosition = z.enum(['bottom-right', 'bottom-left', 'top-right', 'top-left']);
+export type PipPosition = z.infer<typeof PipPosition>;
+
+/** Posizioni per slide (chiave = indice della slide nell'import, 1-based) che sostituiscono il default. */
+export const SlidePipPositions = z.record(z.string().regex(/^\d+$/), PipPosition);
+export type SlidePipPositions = z.infer<typeof SlidePipPositions>;
+
 /** Riga di sottotitolo, con tempi in secondi RELATIVI all'inizio della clip della slide. */
 export const SlideCue = z.object({
   start: z.number().nonnegative(),
@@ -42,6 +50,8 @@ export const SlideVideoSlide = z.object({
   narration: z.string().optional(),
   /** Sottotitoli della clip (da SRT HeyGen), tempi relativi alla clip. */
   cues: z.array(SlideCue).default([]),
+  /** Posizione dell'avatar per questa slide (layout pip); se assente vale quella del video. */
+  pipPosition: PipPosition.optional(),
 });
 export type SlideVideoSlide = z.infer<typeof SlideVideoSlide>;
 
@@ -62,6 +72,8 @@ export const SlideVideoSpec = z.object({
     })
     .default({}),
   layout: SlideVideoLayout.default('split'),
+  /** Posizione di default del cerchio avatar nel layout pip (vale per tutte le slide). */
+  pipPosition: PipPosition.default('bottom-right'),
   theme: SlideVideoTheme.default({}),
   /** Titolo del modulo/sezione, mostrato nel pannello laterale. */
   sectionTitle: z.string().optional(),
@@ -211,7 +223,17 @@ export const BuildSlideLesson = z.object({
     .min(1)
     .max(12)
     .optional(),
+  pipPosition: PipPosition.default('bottom-right'),
+  slidePositions: SlidePipPositions.default({}),
 });
+
+/** Rimontaggio dei video con le slide attuali; consente di cambiare disposizione e posizioni. */
+export const RemasterSlideLesson = z.object({
+  layout: SlideVideoLayout.optional(),
+  pipPosition: PipPosition.optional(),
+  slidePositions: SlidePipPositions.optional(),
+});
+export type RemasterSlideLesson = z.infer<typeof RemasterSlideLesson>;
 export type BuildSlideLesson = z.infer<typeof BuildSlideLesson>;
 
 /** Generazione dei copioni, opzionalmente arricchiti da documenti di knowledge. */

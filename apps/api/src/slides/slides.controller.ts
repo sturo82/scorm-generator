@@ -14,6 +14,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import {
   BuildSlideLesson as BuildSlideLessonSchema,
   GenerateSlideScripts as GenerateSlideScriptsSchema,
+  RemasterSlideLesson as RemasterSlideLessonSchema,
   StartSlideClips as StartSlideClipsSchema,
   UpdateSlideScripts as UpdateSlideScriptsSchema,
   type BuildSlideLesson as BuildSlideLessonType,
@@ -176,8 +177,12 @@ export class SlidesController {
     @CurrentContext() ctx: AuthContext,
     @Param('courseId') courseId: string,
     @Param('importId') importId: string,
+    @Body() raw: unknown,
   ): Promise<SlideLessonView> {
-    return this.lessons.remaster(ctx.tenant.tenantId, courseId, importId);
+    // Body opzionale: senza scelte si rimonta con disposizione e posizioni attuali.
+    const parsed = RemasterSlideLessonSchema.safeParse(raw ?? {});
+    if (!parsed.success) throw new BadRequestException('Richiesta non valida: disposizione o posizioni');
+    return this.lessons.remaster(ctx.tenant.tenantId, courseId, importId, parsed.data);
   }
 
   @Get('imports/:importId/lesson')

@@ -88,12 +88,16 @@ export interface SlideSection {
   from: number;
 }
 
+export type PipPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+
 export interface SlideLessonView {
   importId: string;
   status: 'running' | 'completed' | 'failed';
   step: 'render' | 'summary' | 'lesson' | 'quiz' | 'final_quiz' | 'done';
   error?: string;
   layout: 'split' | 'pip';
+  pipPosition?: PipPosition;
+  slidePositions?: Record<string, PipPosition>;
   moduleTitle: string;
   mode: 'single' | 'sections';
   /** True durante il rimontaggio dei video con le slide aggiornate. */

@@ -23,6 +23,7 @@ import {
   type RenderContext,
   type StatefulSpec,
   type StatefulState,
+  createTranscriptFollower,
 } from '@scorm/contracts/render-core';
 import { courseLabels, resolveLessonLayout, type CourseLabels } from '@scorm/contracts';
 
@@ -257,6 +258,7 @@ function applyVideoKaraoke(root: HTMLElement): void {
   // Karaoke highlight.
   if (video && cues.length > 0) {
     const starts = cues.map((c) => Number(c.getAttribute('data-seek') || '0'));
+    const follower = createTranscriptFollower(root);
     let lastIdx = -1;
     video.addEventListener('timeupdate', () => {
       const tt = video.currentTime;
@@ -270,7 +272,7 @@ function applyVideoKaraoke(root: HTMLElement): void {
       cues.forEach((c) => (c.className = 'transcript-cue'));
       if (idx >= 0 && cues[idx]) {
         cues[idx].className = 'transcript-cue is-active';
-        if (cues[idx].scrollIntoView) cues[idx].scrollIntoView({ block: 'nearest' });
+        follower.follow(cues[idx]);
       }
     });
   }

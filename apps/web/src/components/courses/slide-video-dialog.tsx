@@ -11,7 +11,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { AiWorking, AiWorkingInline } from '@/components/courses/ai-working';
-import type { SlideAvatarType, SlideScriptEntry, SlideSection } from '@/lib/api/types';
+import type { PipPosition, SlideAvatarType, SlideScriptEntry, SlideSection } from '@/lib/api/types';
 import {
   qk,
   useBuildSlideLesson,
@@ -266,6 +266,8 @@ function Pipeline({
           importId={importId}
           view={lessonView}
           clips={clipsView!}
+          thumbs={imp.data?.slides ?? []}
+          extraTitles={Object.fromEntries((scriptsDoc?.slides ?? []).filter((x) => x.extra).map((x) => [x.index, x.extra!.title]))}
           defaultTitle={imp.data?.filename.replace(/\.pdf$/i, '') ?? 'Video-lezione'}
           onClose={onClose}
         />
@@ -808,6 +810,8 @@ function StepLesson({
   importId,
   view,
   clips,
+  thumbs,
+  extraTitles,
   defaultTitle,
   onClose,
 }: {
@@ -815,6 +819,8 @@ function StepLesson({
   importId: string;
   view: import('@/lib/api/types').SlideLessonView | null;
   clips: import('@/lib/api/types').SlideClipsView;
+  thumbs: Array<{ index: number; imageUrl: string }>;
+  extraTitles: Record<number, string>;
   defaultTitle: string;
   onClose: () => void;
 }) {
@@ -822,7 +828,17 @@ function StepLesson({
   const build = useBuildSlideLesson(courseId, importId);
   const remaster = useRemasterSlideLesson(courseId, importId);
   const propose = useProposeSlideSections(courseId, importId);
-  const [layout, setLayout] = React.useState<'split' | 'pip'>('split');
+  const [layout, setLayout] = React.useState<'split' | 'pip'>(view?.layout ?? 'split');
+  const [pipPosition, setPipPosition] = React.useState<PipPosition>(view?.pipPosition ?? 'bottom-right');
+  const [slidePositions, setSlidePositions] = React.useState<Record<string, PipPosition>>(view?.slidePositions ?? {});
+  const [editLayout, setEditLayout] = React.useState(false);
+  // Allinea le scelte a quelle salvate quando arriva lo stato dal server.
+  React.useEffect(() => {
+    if (!view) return;
+    setLayout(view.layout);
+    setPipPosition(view.pipPosition ?? 'bottom-right');
+    setSlidePositions(view.slidePositions ?? {});
+  }, [view?.status]); // eslint-disable-line react-hooks/exhaustive-deps
   const [title, setTitle] = React.useState(defaultTitle);
   const [mode, setMode] = React.useState<'single' | 'sections'>('single');
   const [sections, setSections] = React.useState<SlideSection[]>([]);
@@ -861,6 +877,8 @@ function StepLesson({
     try {
       await build.mutateAsync({
         layout,
+        pipPosition,
+        slidePositions: layout === 'pip' ? slidePositions : {},
         moduleTitle: title.trim() || undefined,
         sections: mode === 'sections' ? sections.map((s) => ({ title: s.title.trim(), from: s.from })) : undefined,
       });
@@ -880,7 +898,10 @@ function StepLesson({
 
   async function handleRemaster() {
     try {
-      await remaster.mutateAsync();
+      await remaster.mutateAsync(
+        editLayout ? { layout, pipPosition, slidePositions: layout === 'pip' ? slidePositions : {} } : undefined,
+      );
+      setEditLayout(false);
       toast.show('Rimontaggio avviato: le clip avatar non vengono rigenerate', 'success');
     } catch {
       toast.show('Avvio del rimontaggio non riuscito', 'error');
@@ -1003,18 +1024,17 @@ function StepLesson({
                 </div>
               )}
 
-              <fieldset className="space-y-1 text-sm">
-                <legend className="font-medium">Disposizione</legend>
-                {([
-                  ['split', 'Slide affiancata all’avatar (consigliata: non copre le slide)'],
-                  ['pip', 'Slide a tutto schermo con l’avatar in un cerchio'],
-                ] as const).map(([id, label]) => (
-                  <label key={id} className="flex items-center gap-2">
-                    <input type="radio" name="slide-layout" checked={layout === id} onChange={() => setLayout(id)} />
-                    {label}
-                  </label>
-                ))}
-              </fieldset>
+              <LayoutEditor
+                layout={layout}
+                setLayout={setLayout}
+                pipPosition={pipPosition}
+                setPipPosition={setPipPosition}
+                slidePositions={slidePositions}
+                setSlidePositions={setSlidePositions}
+                clipIndexes={clipIdx}
+                thumbs={thumbs}
+                extraTitles={extraTitles}
+              />
             </>
           )}
           <div className="flex justify-end">
@@ -1074,19 +1094,215 @@ function StepLesson({
             validati prima della pubblicazione.
           </p>
           <div className="rounded-md border bg-background p-2 text-xs text-muted-foreground">
-            Hai sostituito il PDF con una versione migliore? Aggiorna i video con le nuove slide: si rifà solo il
-            montaggio (pochi centesimi), le clip avatar non si rigenerano e riepilogo, trascrizione e quiz restano
-            invariati.
+            Hai sostituito il PDF o vuoi spostare l&apos;avatar? Rimonta i video: si rifà solo il montaggio (pochi
+            centesimi), le clip avatar non si rigenerano e riepilogo, trascrizione e quiz restano invariati.
           </div>
+          {editLayout && (
+            <div className="rounded-md border bg-background p-3">
+              <LayoutEditor
+                layout={layout}
+                setLayout={setLayout}
+                pipPosition={pipPosition}
+                setPipPosition={setPipPosition}
+                slidePositions={slidePositions}
+                setSlidePositions={setSlidePositions}
+                clipIndexes={clipIdx}
+                thumbs={thumbs}
+                extraTitles={extraTitles}
+              />
+            </div>
+          )}
           <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="ghost" onClick={() => setEditLayout((v) => !v)}>
+              {editLayout ? 'Annulla modifiche alla disposizione' : 'Cambia disposizione o posizione dell’avatar'}
+            </Button>
             <Button variant="outline" onClick={handleRemaster} disabled={remaster.isPending}>
-              {remaster.isPending ? <AiWorkingInline label="Avvio…" /> : 'Aggiorna i video con le nuove slide'}
+              {remaster.isPending ? (
+                <AiWorkingInline label="Avvio…" />
+              ) : editLayout ? (
+                'Rimonta i video con la nuova disposizione'
+              ) : (
+                'Aggiorna i video con le nuove slide'
+              )}
             </Button>
             <Button onClick={onClose}>Chiudi</Button>
           </div>
         </div>
       )}
     </section>
+  );
+}
+
+const PIP_POSITIONS: Array<{ id: PipPosition; label: string }> = [
+  { id: 'top-left', label: 'In alto a sinistra' },
+  { id: 'top-right', label: 'In alto a destra' },
+  { id: 'bottom-left', label: 'In basso a sinistra' },
+  { id: 'bottom-right', label: 'In basso a destra' },
+];
+
+/** Riquadro 16:9 con i quattro angoli selezionabili (posizione del cerchio avatar). */
+function CornerPicker({
+  value,
+  onChange,
+  small = false,
+  inherit,
+}: {
+  value: PipPosition | undefined;
+  onChange: (p: PipPosition | undefined) => void;
+  small?: boolean;
+  /** Posizione ereditata dal default, mostrata attenuata quando `value` è vuoto. */
+  inherit?: PipPosition;
+}) {
+  const shown = value ?? inherit;
+  return (
+    <div className={cn('relative rounded border bg-muted/40', small ? 'h-[54px] w-24' : 'h-24 w-[168px]')}>
+      {PIP_POSITIONS.map((p) => {
+        const [v, h] = p.id.split('-') as ['top' | 'bottom', 'left' | 'right'];
+        const active = shown === p.id;
+        return (
+          <button
+            key={p.id}
+            type="button"
+            title={p.label}
+            aria-label={p.label}
+            aria-pressed={value === p.id}
+            onClick={() => onChange(value === p.id && inherit ? undefined : p.id)}
+            className={cn(
+              'absolute grid place-items-center rounded-full border-2 transition',
+              small ? 'size-5' : 'size-8',
+              v === 'top' ? 'top-1' : 'bottom-1',
+              h === 'left' ? 'left-1' : 'right-1',
+              active
+                ? value
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-primary/50 bg-primary/30'
+                : 'border-dashed border-muted-foreground/40 bg-background hover:border-primary',
+            )}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/** Disposizione del video e, nel layout pip, posizione dell'avatar (default + per slide). */
+function LayoutEditor({
+  layout,
+  setLayout,
+  pipPosition,
+  setPipPosition,
+  slidePositions,
+  setSlidePositions,
+  clipIndexes,
+  thumbs,
+  extraTitles,
+}: {
+  layout: 'split' | 'pip';
+  setLayout: (l: 'split' | 'pip') => void;
+  pipPosition: PipPosition;
+  setPipPosition: (p: PipPosition) => void;
+  slidePositions: Record<string, PipPosition>;
+  setSlidePositions: (fn: (cur: Record<string, PipPosition>) => Record<string, PipPosition>) => void;
+  clipIndexes: number[];
+  thumbs: Array<{ index: number; imageUrl: string }>;
+  extraTitles: Record<number, string>;
+}) {
+  const [perSlide, setPerSlide] = React.useState(Object.keys(slidePositions).length > 0);
+  const thumbByIndex = React.useMemo(() => new Map(thumbs.map((t) => [t.index, t.imageUrl])), [thumbs]);
+  const overrides = Object.keys(slidePositions).length;
+  return (
+    <div className="space-y-3 text-sm">
+      <fieldset className="space-y-1">
+        <legend className="font-medium">Disposizione</legend>
+        {([
+          ['split', 'Slide affiancata all’avatar (consigliata: non copre le slide)'],
+          ['pip', 'Slide a tutto schermo con l’avatar in un cerchio'],
+        ] as const).map(([id, label]) => (
+          <label key={id} className="flex items-center gap-2">
+            <input type="radio" name="slide-layout" checked={layout === id} onChange={() => setLayout(id)} />
+            {label}
+          </label>
+        ))}
+      </fieldset>
+      {layout === 'pip' && (
+        <div className="space-y-3 rounded-md border p-3">
+          <div className="flex flex-wrap items-center gap-4">
+            <CornerPicker value={pipPosition} onChange={(p) => p && setPipPosition(p)} />
+            <div className="space-y-1">
+              <p className="font-medium">Posizione dell&apos;avatar</p>
+              <p className="text-xs text-muted-foreground">
+                {PIP_POSITIONS.find((p) => p.id === pipPosition)?.label}: vale per tutte le slide. I sottotitoli si
+                spostano per non sovrapporsi all&apos;avatar.
+              </p>
+              <label className="flex items-center gap-2 text-xs">
+                <input type="checkbox" checked={perSlide} onChange={(e) => setPerSlide(e.target.checked)} />
+                Scegli la posizione slide per slide{overrides > 0 ? ` (${overrides} personalizzate)` : ''}
+              </label>
+            </div>
+          </div>
+          {perSlide && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                Clicca un angolo per spostare l&apos;avatar in quella slide; clicca di nuovo per tornare alla posizione
+                di default. Utile quando il cerchio coprirebbe una parte importante della slide.
+              </p>
+              <div className="grid max-h-80 grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3">
+                {clipIndexes.map((i) => {
+                  const img = thumbByIndex.get(i);
+                  return (
+                    <div key={i} className="space-y-1 rounded border p-2">
+                      <div className="relative">
+                        {img ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- URL firmato dinamico
+                          <img src={img} alt={`Slide ${i}`} className="w-full rounded" />
+                        ) : (
+                          <div className="grid aspect-video w-full place-items-center rounded bg-muted p-2 text-center text-[11px]">
+                            {extraTitles[i] ?? `Slide ${i}`}
+                          </div>
+                        )}
+                        <AvatarDot pos={slidePositions[String(i)] ?? pipPosition} custom={Boolean(slidePositions[String(i)])} />
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-muted-foreground">{img ? `Slide ${i}` : 'Slide extra'}</span>
+                        <CornerPicker
+                          small
+                          value={slidePositions[String(i)]}
+                          inherit={pipPosition}
+                          onChange={(p) =>
+                            setSlidePositions((cur) => {
+                              const next = { ...cur };
+                              if (!p || p === pipPosition) delete next[String(i)];
+                              else next[String(i)] = p;
+                              return next;
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Anteprima del cerchio avatar sulla miniatura della slide (stesse proporzioni del video). */
+function AvatarDot({ pos, custom }: { pos: PipPosition; custom: boolean }) {
+  const [v, h] = pos.split('-') as ['top' | 'bottom', 'left' | 'right'];
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'absolute aspect-square w-[16.7%] rounded-full border-2',
+        custom ? 'border-primary bg-primary/60' : 'border-white/80 bg-white/40',
+        v === 'top' ? 'top-[4.4%]' : 'bottom-[5.2%]',
+        h === 'left' ? 'left-[2.5%]' : 'right-[2.5%]',
+      )}
+    />
   );
 }
 

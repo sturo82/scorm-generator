@@ -55,6 +55,7 @@ import type {
   SlideSection,
   SlideScriptsGeneration,
   SlideScriptsResponse,
+  SlideLayoutChoice,
 } from './types';
 
 /**
@@ -631,13 +632,16 @@ export class HttpApiClient implements ApiClient {
     if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 2000)}`);
     return (await res.json()) as SlideImportView & { warnings: string[] };
   }
-  remasterSlideLesson(courseId: string, importId: string) {
-    return this.request<SlideLessonView>(`/courses/${courseId}/slides/imports/${importId}/lesson/remaster`, { method: 'POST' });
+  remasterSlideLesson(courseId: string, importId: string, input?: SlideLayoutChoice) {
+    return this.request<SlideLessonView>(`/courses/${courseId}/slides/imports/${importId}/lesson/remaster`, {
+      method: 'POST',
+      body: JSON.stringify(input ?? {}),
+    });
   }
   proposeSlideSections(courseId: string, importId: string) {
     return this.request<{ sections: SlideSection[] }>(`/courses/${courseId}/slides/imports/${importId}/sections/propose`, { method: 'POST' });
   }
-  buildSlideLesson(courseId: string, importId: string, input: { layout: 'split' | 'pip'; moduleTitle?: string; sections?: SlideSection[] }) {
+  buildSlideLesson(courseId: string, importId: string, input: SlideLayoutChoice & { layout: 'split' | 'pip'; moduleTitle?: string; sections?: SlideSection[] }) {
     return this.request<SlideLessonView>(`/courses/${courseId}/slides/imports/${importId}/lesson`, {
       method: 'POST',
       body: JSON.stringify(input),

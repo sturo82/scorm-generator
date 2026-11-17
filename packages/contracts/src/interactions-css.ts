@@ -494,6 +494,11 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
   background: var(--ix-surface); overflow: hidden; display: flex; flex-direction: column;
 }
 [data-motion] .block.video.lesson-videofirst-vnext .video-panel { align-self: stretch; }
+/* Il pannello è alto quanto il video (height:0 + min-height:100% non allunga la riga della griglia):
+   la trascrizione scorre DENTRO il pannello, non la pagina. Su schermi stretti altezza fissa. */
+[data-motion] .block.video.lesson-videofirst-vnext .video-panel { height: 0; min-height: max(100%, 320px); }
+@media (max-width: 720px) { [data-motion] .block.video.lesson-videofirst-vnext .video-panel { height: auto; min-height: 0; max-height: 60vh; } }
+[data-motion] .block.video.lesson-videofirst-vnext .video-panel-body { min-height: 0; }
 [data-motion] .block.video .video-tabs {
   display: flex; gap: 0.25rem; padding: 0.4rem 0.4rem 0;
   border-bottom: 1px solid var(--ix-border);

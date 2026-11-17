@@ -1026,7 +1026,7 @@ export const useProposeSlideSections = (courseId: string, importId: string | nul
 export function useBuildSlideLesson(courseId: string, importId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { layout: 'split' | 'pip'; moduleTitle?: string; sections?: Array<{ title: string; from: number }> }) =>
+    mutationFn: (input: import('./types').SlideLayoutChoice & { layout: 'split' | 'pip'; moduleTitle?: string; sections?: Array<{ title: string; from: number }> }) =>
       api.buildSlideLesson(courseId, importId as string, input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, 'lesson'] });
@@ -1057,7 +1057,7 @@ export function useReplaceSlides(courseId: string, importId: string | null) {
 export function useRemasterSlideLesson(courseId: string, importId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.remasterSlideLesson(courseId, importId as string),
+    mutationFn: (input?: import('./types').SlideLayoutChoice) => api.remasterSlideLesson(courseId, importId as string, input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, 'lesson'] }),
   });
 }
