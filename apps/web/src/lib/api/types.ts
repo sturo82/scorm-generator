@@ -676,6 +676,8 @@ export interface ApiClient {
   getSlideClips(courseId: string, importId: string): Promise<SlideClipsView | { status: 'none' }>;
   startSlideClips(courseId: string, importId: string, input: StartSlideClipsInput): Promise<SlideClipsView>;
   getSlideLesson(courseId: string, importId: string): Promise<SlideLessonView | { status: 'none' }>;
+  replaceSlides(courseId: string, importId: string, file: File): Promise<SlideImportView & { warnings: string[] }>;
+  remasterSlideLesson(courseId: string, importId: string): Promise<SlideLessonView>;
   proposeSlideSections(courseId: string, importId: string): Promise<{ sections: SlideSection[] }>;
   buildSlideLesson(courseId: string, importId: string, input: { layout: 'split' | 'pip'; moduleTitle?: string; sections?: SlideSection[] }): Promise<SlideLessonView>;
 }

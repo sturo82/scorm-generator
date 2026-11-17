@@ -18,6 +18,8 @@ import {
   useGenerateSlideScripts,
   useImportSlides,
   useProposeSlideSections,
+  useRemasterSlideLesson,
+  useReplaceSlides,
   useKnowledge,
   useSaveSlideScripts,
   useSlideClips,
@@ -162,6 +164,9 @@ function Pipeline({
   onClose: () => void;
 }) {
   const imp = useSlideImport(courseId, importId);
+  const replace = useReplaceSlides(courseId, importId);
+  const replaceRef = React.useRef<HTMLInputElement>(null);
+  const toast = useToast();
   const scripts = useSlideScripts(courseId, importId);
   const clips = useSlideClips(courseId, importId);
   const lesson = useSlideLesson(courseId, importId);
@@ -183,18 +188,56 @@ function Pipeline({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lessonView?.status]);
 
+  async function handleReplace(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const res = await replace.mutateAsync(file);
+      toast.show(
+        res.warnings.length > 0
+          ? `Slide aggiornate. ${res.warnings[0]}`
+          : lessonView?.status === 'completed'
+            ? 'Slide aggiornate. Per vederle nei video usa «Aggiorna i video con le nuove slide».'
+            : 'Slide aggiornate: copioni e clip sono rimasti invariati',
+        res.warnings.length > 0 ? 'info' : 'success',
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message.replace(/^API \d+:\s*/, '') : '';
+      let detail = msg;
+      try {
+        detail = (JSON.parse(msg) as { message?: string }).message ?? msg;
+      } catch {
+        /* messaggio non JSON */
+      }
+      toast.show(detail.slice(0, 220) || 'Sostituzione del PDF non riuscita', 'error');
+    }
+  }
+
   return (
     <div className="space-y-8">
+      <input ref={replaceRef} type="file" accept="application/pdf" className="hidden" onChange={handleReplace} />
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
         <span className="min-w-0 truncate">
           <strong>{imp.data?.filename ?? 'Slide importate'}</strong>
           {imp.data ? ` · ${imp.data.slides.length} slide` : ''}
         </span>
-        {!lessonView && (
-          <Button size="sm" variant="ghost" onClick={onReplace}>
-            Usa un altro PDF
+        <div className="flex flex-wrap gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={replace.isPending || lessonView?.status === 'running'}
+            onClick={() => replaceRef.current?.click()}
+            title="Sostituisce solo le immagini delle slide con un PDF aggiornato (stesse pagine). Copioni e clip avatar restano invariati: nessun costo HeyGen."
+          >
+            {replace.isPending ? <AiWorkingInline label="Aggiorno le slide…" /> : 'Sostituisci con PDF aggiornato'}
           </Button>
-        )}
+          {!lessonView && !clipsView && (
+            <Button size="sm" variant="ghost" onClick={onReplace}>
+              Nuovo import (azzera tutto)
+            </Button>
+          )}
+        </div>
       </div>
 
       <StepScripts
@@ -771,6 +814,7 @@ function StepLesson({
 }) {
   const toast = useToast();
   const build = useBuildSlideLesson(courseId, importId);
+  const remaster = useRemasterSlideLesson(courseId, importId);
   const propose = useProposeSlideSections(courseId, importId);
   const [layout, setLayout] = React.useState<'split' | 'pip'>('split');
   const [title, setTitle] = React.useState(defaultTitle);
@@ -825,6 +869,15 @@ function StepLesson({
             : 'Avvio del montaggio non riuscito',
         'error',
       );
+    }
+  }
+
+  async function handleRemaster() {
+    try {
+      await remaster.mutateAsync();
+      toast.show('Rimontaggio avviato: le clip avatar non vengono rigenerate', 'success');
+    } catch {
+      toast.show('Avvio del rimontaggio non riuscito', 'error');
     }
   }
 
@@ -979,9 +1032,11 @@ function StepLesson({
         <div className="space-y-2">
           <AiWorking
             label={
+              (view.remaster ? 'Aggiorno i video con le nuove slide — ' : '') +
               (view.mode === 'sections' && view.step !== 'final_quiz'
                 ? `Modulo ${view.currentPart + 1} di ${view.parts.length} — `
-                : '') + (STEP_LABEL[view.step] ?? 'Elaborazione…')
+                : '') +
+              (STEP_LABEL[view.step] ?? 'Elaborazione…')
             }
             hint="Prosegue sul server: puoi chiudere questa finestra e tornare più tardi."
           />
@@ -1012,7 +1067,15 @@ function StepLesson({
             {view.mode === 'sections' ? ' (più il test finale del corso)' : ''}. I contenuti sono in bozza: vanno
             validati prima della pubblicazione.
           </p>
-          <div className="flex justify-end">
+          <div className="rounded-md border bg-background p-2 text-xs text-muted-foreground">
+            Hai sostituito il PDF con una versione migliore? Aggiorna i video con le nuove slide: si rifà solo il
+            montaggio (pochi centesimi), le clip avatar non si rigenerano e riepilogo, trascrizione e quiz restano
+            invariati.
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={handleRemaster} disabled={remaster.isPending}>
+              {remaster.isPending ? <AiWorkingInline label="Avvio…" /> : 'Aggiorna i video con le nuove slide'}
+            </Button>
             <Button onClick={onClose}>Chiudi</Button>
           </div>
         </div>

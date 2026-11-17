@@ -148,6 +148,38 @@ export class SlidesController {
     return { sections: await this.lessons.proposeSections(ctx.tenant.tenantId, courseId, importId) };
   }
 
+  /** Sostituisce le immagini con quelle di un PDF aggiornato, mantenendo copioni e clip. */
+  @Post('imports/:importId/replace')
+  @Roles('EDITOR')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: SLIDES_MAX_PDF_BYTES } }))
+  async replace(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+    @UploadedFile() file: UploadedMulterFile | undefined,
+  ): Promise<SlideImportView & { warnings: string[] }> {
+    if (!file) throw new BadRequestException('Nessun file ricevuto (campo "file")');
+    if (file.mimetype !== 'application/pdf') throw new BadRequestException('Serve un file PDF');
+    return this.slides.replacePdf({
+      tenantId: ctx.tenant.tenantId,
+      courseId,
+      importId,
+      filename: file.originalname,
+      content: file.buffer,
+    });
+  }
+
+  /** Rifà i video delle lezioni con le slide aggiornate, senza rigenerare le clip avatar. */
+  @Post('imports/:importId/lesson/remaster')
+  @Roles('EDITOR')
+  remasterLesson(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+  ): Promise<SlideLessonView> {
+    return this.lessons.remaster(ctx.tenant.tenantId, courseId, importId);
+  }
+
   @Get('imports/:importId/lesson')
   async getLesson(
     @CurrentContext() ctx: AuthContext,

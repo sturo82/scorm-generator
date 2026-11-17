@@ -58,6 +58,8 @@ export interface LessonPart {
   assessmentId?: string;
   /** True quando tutte le domande del quiz sono state salvate. */
   quizReady?: boolean;
+  /** Durante un rimontaggio: true quando il video di questa parte è stato rifatto e sostituito. */
+  remasterDone?: boolean;
 }
 
 export interface SlideLessonDoc {
@@ -75,6 +77,8 @@ export interface SlideLessonDoc {
   currentPart: number;
   finalAssessmentId?: string;
   finalQuizReady?: boolean;
+  /** True durante il rimontaggio dei video con le slide aggiornate (le clip avatar non si rigenerano). */
+  remaster?: boolean;
   createdAt: string;
   updatedAt: string;
   owner?: string;
@@ -90,6 +94,7 @@ export interface SlideLessonView {
   layout: SlideVideoLayout;
   moduleTitle: string;
   mode: SlideLessonDoc['mode'];
+  remaster: boolean;
   currentPart: number;
   parts: Array<{ id: string; title: string; done: boolean; moduleId?: string; lessonId?: string }>;
   /** Primo modulo/lezione creati (compatibilità con la modalità "una lezione"). */
@@ -280,6 +285,31 @@ export class SlideLessonService {
     });
   }
 
+  /**
+   * Rifà i video delle lezioni già create con le immagini delle slide ATTUALI (dopo
+   * `replacePdf`), riusando le clip avatar: nessun costo HeyGen, solo il montaggio. Sostituisce
+   * il video nel blocco esistente di ogni lezione senza toccare trascrizione, riepilogo e quiz.
+   */
+  async remaster(tenantId: string, courseId: string, importId: string): Promise<SlideLessonView> {
+    const existing = await this.load(tenantId, courseId, importId);
+    if (!existing || existing.status !== 'completed') {
+      throw new ConflictException('Non c\'è una lezione completata da aggiornare.');
+    }
+    const doc: SlideLessonDoc = {
+      ...existing,
+      status: 'running',
+      step: 'render',
+      error: undefined,
+      remaster: true,
+      currentPart: 0,
+      parts: existing.parts.map((p) => ({ ...p, remasterDone: false })),
+      updatedAt: new Date().toISOString(),
+    };
+    await this.save(tenantId, doc);
+    this.launch(tenantId, courseId, importId);
+    return this.view(doc);
+  }
+
   async status(tenantId: string, courseId: string, importId: string): Promise<SlideLessonView | null> {
     await this.slides.loadManifest(tenantId, courseId, importId);
     const doc = await this.load(tenantId, courseId, importId);
@@ -309,6 +339,26 @@ export class SlideLessonService {
     if (!doc || doc.status !== 'running') return;
     const heartbeat = setInterval(() => void this.save(tenantId, doc).catch(() => undefined), HEARTBEAT_MS);
     try {
+      if (doc.remaster) {
+        for (let i = 0; i < doc.parts.length; i++) {
+          const part = doc.parts[i]!;
+          if (part.remasterDone) continue;
+          doc.currentPart = i;
+          part.videoKey = undefined;
+          await this.stepRender(tenantId, doc, part);
+          await this.swapVideo(tenantId, doc, part);
+          part.remasterDone = true;
+          await this.save(tenantId, doc);
+        }
+        doc.remaster = false;
+        doc.step = 'done';
+        doc.status = 'completed';
+        doc.owner = undefined;
+        doc.leaseUntil = undefined;
+        await this.save(tenantId, doc, false);
+        this.logger.log(`Video rimontati con le slide aggiornate (import ${importId}, ${doc.parts.length} parti)`);
+        return;
+      }
       for (let i = 0; i < doc.parts.length; i++) {
         doc.currentPart = i;
         const part = doc.parts[i]!;
@@ -417,6 +467,21 @@ export class SlideLessonService {
     part.videoKey = key;
     part.videoDurationSec = result.durationSec;
     await this.save(tenantId, doc);
+  }
+
+  /** Sostituisce il video nel blocco video della lezione esistente, lasciando intatto il resto. */
+  private async swapVideo(tenantId: string, doc: SlideLessonDoc, part: LessonPart): Promise<void> {
+    if (!part.lessonId || !part.moduleId) throw new Error(`Lezione mancante per «${part.title}»`);
+    const lesson = await this.prisma.lesson.findFirst({
+      where: { id: part.lessonId, module: { id: part.moduleId, course: { id: doc.courseId, tenantId } } },
+      select: { blocks: true },
+    });
+    if (!lesson || !Array.isArray(lesson.blocks)) throw new Error(`Lezione non trovata per «${part.title}»`);
+    const blocks = lesson.blocks as Array<{ type?: string; payload?: { video?: { storageKey?: string } } }>;
+    const vc = blocks.find((b) => b.type === 'video_checkpoint');
+    if (!vc?.payload?.video) throw new Error(`Blocco video non trovato per «${part.title}»`);
+    vc.payload.video.storageKey = part.videoKey;
+    await this.modules.setLessonBlocks(tenantId, doc.courseId, part.moduleId, part.lessonId, blocks as unknown as Block[]);
   }
 
   // --- Passo 2: riepilogo e punti chiave ------------------------------------
@@ -721,6 +786,7 @@ export class SlideLessonService {
       layout: doc.layout,
       moduleTitle: doc.moduleTitle,
       mode: doc.mode,
+      remaster: doc.remaster === true,
       currentPart: doc.currentPart,
       parts: doc.parts.map((p) => ({
         id: p.id,

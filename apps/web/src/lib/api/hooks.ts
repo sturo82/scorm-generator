@@ -1041,3 +1041,23 @@ export const useSlideImport = (courseId: string, importId: string | null) =>
     enabled: !!courseId && !!importId,
     staleTime: 60 * 60_000,
   });
+
+/** Sostituisce le immagini dell'import con un PDF aggiornato (stesse pagine), mantenendo copioni e clip. */
+export function useReplaceSlides(courseId: string, importId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => api.replaceSlides(courseId, importId as string, file),
+    onSuccess: (res) => {
+      qc.setQueryData(['courses', courseId, 'slides', importId, 'import'], res);
+    },
+  });
+}
+
+/** Rifà i video delle lezioni con le slide aggiornate, senza rigenerare le clip avatar. */
+export function useRemasterSlideLesson(courseId: string, importId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.remasterSlideLesson(courseId, importId as string),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, 'lesson'] }),
+  });
+}

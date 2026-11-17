@@ -620,6 +620,20 @@ export class HttpApiClient implements ApiClient {
   getSlideLesson(courseId: string, importId: string) {
     return this.request<SlideLessonView | { status: 'none' }>(`/courses/${courseId}/slides/imports/${importId}/lesson`);
   }
+  async replaceSlides(courseId: string, importId: string, file: File) {
+    const session = getSession();
+    const form = new FormData();
+    form.append('file', file);
+    const headers = new Headers();
+    if (session) headers.set('Authorization', `Bearer ${session.token}`);
+    const res = await fetch(`${this.baseUrl}/courses/${courseId}/slides/imports/${importId}/replace`, { method: 'POST', headers, body: form });
+    if (res.status === 401) void handleSessionExpired();
+    if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 400)}`);
+    return (await res.json()) as SlideImportView & { warnings: string[] };
+  }
+  remasterSlideLesson(courseId: string, importId: string) {
+    return this.request<SlideLessonView>(`/courses/${courseId}/slides/imports/${importId}/lesson/remaster`, { method: 'POST' });
+  }
   proposeSlideSections(courseId: string, importId: string) {
     return this.request<{ sections: SlideSection[] }>(`/courses/${courseId}/slides/imports/${importId}/sections/propose`, { method: 'POST' });
   }

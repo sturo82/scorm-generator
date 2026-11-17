@@ -96,6 +96,8 @@ export interface SlideLessonView {
   layout: 'split' | 'pip';
   moduleTitle: string;
   mode: 'single' | 'sections';
+  /** True durante il rimontaggio dei video con le slide aggiornate. */
+  remaster?: boolean;
   currentPart: number;
   parts: Array<{ id: string; title: string; done: boolean; moduleId?: string; lessonId?: string }>;
   moduleId?: string;

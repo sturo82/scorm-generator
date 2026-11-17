@@ -93,6 +93,70 @@ export class SlidesService {
     return this.toView(manifest);
   }
 
+  /**
+   * Sostituisce le immagini delle slide con quelle di un PDF aggiornato (stesse pagine,
+   * stessi contenuti: ad esempio riesportato con i font corretti) MANTENENDO copioni, clip
+   * avatar e lezioni già create. Le chiavi delle immagini restano le stesse, quindi niente
+   * altro va ricollegato. Rifiuta PDF con un numero di pagine diverso o con pagine che non
+   * corrispondono per testo alle precedenti, perché i copioni e le clip sono legati alla
+   * posizione di ogni slide.
+   */
+  async replacePdf(input: {
+    tenantId: string;
+    courseId: string;
+    importId: string;
+    filename: string;
+    content: Buffer;
+  }): Promise<SlideImportView & { warnings: string[] }> {
+    if (input.content.byteLength === 0) throw new BadRequestException('File vuoto');
+    if (input.content.byteLength > SLIDES_MAX_PDF_BYTES) {
+      throw new BadRequestException(`PDF troppo grande (max ${SLIDES_MAX_PDF_BYTES / 1024 / 1024} MB)`);
+    }
+    const manifest = await this.loadManifest(input.tenantId, input.courseId, input.importId);
+    let pages;
+    try {
+      pages = await pdfToSlides(input.content);
+    } catch (e) {
+      if (e instanceof PdfSlidesInputError) throw new BadRequestException(e.message);
+      throw e;
+    }
+    if (pages.length !== manifest.slides.length) {
+      throw new BadRequestException(
+        `Il nuovo PDF ha ${pages.length} pagine, l'import ne ha ${manifest.slides.length}: servono le stesse pagine, ` +
+          'altrimenti copioni e clip non corrisponderebbero. Per un PDF diverso avvia un nuovo import.',
+      );
+    }
+    // Controllo di corrispondenza pagina per pagina (testo normalizzato, insensibile a font e spaziatura).
+    const mismatched: number[] = [];
+    pages.forEach((p, i) => {
+      if (textSimilarity(manifest.slides[i]!.text, p.text) < 0.5) mismatched.push(p.index);
+    });
+    if (mismatched.length > Math.max(2, Math.floor(pages.length * 0.1))) {
+      throw new BadRequestException(
+        `Il nuovo PDF non sembra lo stesso documento: le pagine ${mismatched.slice(0, 10).join(', ')}${mismatched.length > 10 ? '…' : ''} hanno un testo molto diverso.`,
+      );
+    }
+    for (let i = 0; i < pages.length; i++) {
+      const slide = manifest.slides[i]!;
+      await this.storage.putObject(slide.imageKey, pages[i]!.png, {
+        contentType: 'image/png',
+        custom: { tenantId: input.tenantId, importId: input.importId },
+      });
+      slide.text = pages[i]!.text;
+    }
+    manifest.filename = input.filename;
+    await this.storage.putObject(
+      `${this.prefix(input.tenantId, input.courseId, input.importId)}/manifest.json`,
+      Buffer.from(JSON.stringify(manifest)),
+      { contentType: 'application/json' },
+    );
+    const view = await this.toView(manifest);
+    return {
+      ...view,
+      warnings: mismatched.length > 0 ? [`Pagine con testo diverso dal precedente: ${mismatched.join(', ')}`] : [],
+    };
+  }
+
   async get(tenantId: string, courseId: string, importId: string): Promise<SlideImportView> {
     return this.toView(await this.loadManifest(tenantId, courseId, importId));
   }
@@ -119,4 +183,22 @@ export class SlidesService {
     );
     return { ...m, slides };
   }
+}
+
+/** Insieme dei trigrammi di sole lettere minuscole: robusto a font, spazi e a capo diversi. */
+function trigrams(text: string): Set<string> {
+  const t = text.toLowerCase().replace(/[^a-zà-ÿ0-9]/g, '');
+  const out = new Set<string>();
+  for (let i = 0; i + 3 <= t.length; i++) out.add(t.slice(i, i + 3));
+  return out;
+}
+
+/** Somiglianza 0..1 tra due testi (Jaccard sui trigrammi); due testi vuoti sono uguali. */
+export function textSimilarity(a: string, b: string): number {
+  const A = trigrams(a);
+  const B = trigrams(b);
+  if (A.size === 0 && B.size === 0) return 1;
+  let inter = 0;
+  for (const g of A) if (B.has(g)) inter++;
+  return inter / (A.size + B.size - inter || 1);
 }
