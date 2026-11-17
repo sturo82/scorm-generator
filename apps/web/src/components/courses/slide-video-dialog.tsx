@@ -275,7 +275,11 @@ function Pipeline({
   const clipsView = clips.data && 'clips' in clips.data ? clips.data : null;
   const clipsDone = clipsView?.status === 'completed';
   const lessonView = lesson.data && 'step' in lesson.data ? lesson.data : null;
-
+  // Le clip sono state rigenerate dopo l'ultimo montaggio: il video salvato è ancora la versione precedente.
+  const videoOutdated =
+    lessonView?.status === 'completed' &&
+    clipsView?.status === 'completed' &&
+    Boolean(clipsView.updatedAt && lessonView.updatedAt && clipsView.updatedAt > lessonView.updatedAt);
   // Notifica una sola volta il completamento della lezione.
   const notified = React.useRef(false);
   React.useEffect(() => {
@@ -297,7 +301,7 @@ function Pipeline({
         res.warnings.length > 0
           ? `Slide aggiornate. ${res.warnings[0]}`
           : lessonView?.status === 'completed'
-            ? 'Slide aggiornate. Per vederle nei video usa «Aggiorna i video con le nuove slide».'
+            ? 'Slide aggiornate. Per vederle nei video usa «Rimonta con le slide e le clip attuali».'
             : 'Slide aggiornate: copioni e clip sono rimasti invariati',
         res.warnings.length > 0 ? 'info' : 'success',
       );
@@ -353,7 +357,7 @@ function Pipeline({
       />
 
       {approved && (
-        <StepClips courseId={courseId} importId={importId} view={clipsView} language={imp.data?.language} scripts={scriptsDoc} />
+        <StepClips courseId={courseId} importId={importId} view={clipsView} language={imp.data?.language} scripts={scriptsDoc} videoOutdated={videoOutdated} />
       )}
 
       {clipsDone && (
@@ -361,6 +365,7 @@ function Pipeline({
           courseId={courseId}
           importId={importId}
           view={lessonView}
+          videoOutdated={videoOutdated}
           clips={clipsView!}
           thumbs={imp.data?.slides ?? []}
           extraTitles={Object.fromEntries((scriptsDoc?.slides ?? []).filter((x) => x.extra).map((x) => [x.index, x.extra!.title]))}
@@ -943,6 +948,7 @@ function StepClips({
   importId,
   language,
   scripts,
+  videoOutdated,
   view,
 }: {
   courseId: string;
@@ -950,6 +956,8 @@ function StepClips({
   /** Lingua del parlato (import di libreria): filtra le voci proposte. */
   language?: string;
   scripts: SlideScriptsDoc | null;
+  /** Clip più recenti dell'ultimo montaggio: il video va rimontato (passo 3). */
+  videoOutdated: boolean;
 view: import('@/lib/api/types').SlideClipsView | null;
 }) {
   const toast = useToast();
@@ -999,7 +1007,7 @@ view: import('@/lib/api/types').SlideClipsView | null;
         engine: view.engine as 'avatar_iii' | 'avatar_iv' | 'avatar_v',
         voiceId: view.voiceId,
       });
-      toast.show('Rigenerazione avviata: al termine rimonta i video dal passo 3', 'success');
+      toast.show('Rigenerazione avviata: al termine premi «Rimonta» nel passo 3 per aggiornare il video', 'success');
     } catch {
       toast.show('Avvio della rigenerazione non riuscito', 'error');
     }
@@ -1171,6 +1179,12 @@ view: import('@/lib/api/types').SlideClipsView | null;
       {view && !changing && (
         <ClipsProgress view={view} onRetry={() => start.mutate({ avatarId: view.avatarId, avatarType: view.avatarType })} retrying={start.isPending} />
       )}
+      {videoOutdated && !changing && (
+        <p className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-900">
+          <strong>Le clip sono state aggiornate, ma il video no.</strong> Il video che vedi nella pagina Video è ancora
+          la versione precedente: vai al passo 3 e premi <strong>«Rimonta con le clip aggiornate»</strong>.
+        </p>
+      )}
       {view && !changing && view.status === 'completed' && regen.data && regen.data.slides > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-900">
           <p>
@@ -1235,6 +1249,7 @@ function StepLesson({
   courseId,
   importId,
   view,
+  videoOutdated,
   clips,
   thumbs,
   extraTitles,
@@ -1244,6 +1259,8 @@ function StepLesson({
   courseId: string;
   importId: string;
   view: import('@/lib/api/types').SlideLessonView | null;
+  /** Clip più recenti dell'ultimo montaggio. */
+  videoOutdated: boolean;
   clips: import('@/lib/api/types').SlideClipsView;
   thumbs: Array<{ index: number; imageUrl: string }>;
   extraTitles: Record<number, string>;
@@ -1625,6 +1642,13 @@ function StepLesson({
               </>
             )}
           </p>
+          {videoOutdated && (
+            <div className="rounded-md border border-amber-300/60 bg-amber-50 p-2.5 text-sm text-amber-900">
+              <strong>Il video non è aggiornato.</strong> Dopo l&apos;ultimo montaggio hai cambiato avatar, voce o
+              pronuncia: le clip nuove ci sono, ma il video salvato{library ? ' in libreria' : ' nella lezione'} è ancora
+              quello precedente. Premi <strong>«Rimonta con le clip aggiornate»</strong> (senza costi HeyGen).
+            </div>
+          )}
           <div className="rounded-md border bg-background p-2 text-xs text-muted-foreground">
             Hai sostituito il PDF o vuoi spostare l&apos;avatar? Rimonta i video: si rifà solo il montaggio (pochi
             centesimi), le clip avatar non si rigenerano{library ? '' : ' e riepilogo, trascrizione e quiz restano invariati'}.
@@ -1658,14 +1682,16 @@ function StepLesson({
             <Button variant="ghost" onClick={() => setEditLayout((v) => !v)}>
               {editLayout ? 'Annulla modifiche alla disposizione' : 'Cambia disposizione, copertina o finale'}
             </Button>
-            <Button variant="outline" onClick={handleRemaster} disabled={remaster.isPending}>
+            <Button variant={videoOutdated && !editLayout ? 'default' : 'outline'} onClick={handleRemaster} disabled={remaster.isPending}>
               {remaster.isPending ? (
                 <AiWorkingInline label="Avvio…" />
               ) : editLayout ? (
                 'Rimonta i video con la nuova disposizione'
               ) : (
-                'Aggiorna i video con le nuove slide'
-              )}
+                videoOutdated
+                  ? 'Rimonta con le clip aggiornate'
+                  : 'Rimonta con le slide e le clip attuali'
+)}
             </Button>
             <Button onClick={onClose}>Chiudi</Button>
           </div>

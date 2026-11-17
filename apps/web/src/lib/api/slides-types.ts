@@ -88,6 +88,8 @@ export interface SlideClipsView {
   avatarType: SlideAvatarType;
   voiceId?: string;
   engine: string;
+  /** Ultimo salvataggio: dopo una rigenerazione indica quando le clip sono state aggiornate. */
+  updatedAt?: string;
   clips: SlideClip[];
   progress: { total: number; completed: number; failed: number; processing: number };
   totalDurationSec: number;
@@ -134,6 +136,7 @@ export interface SlideLessonView {
   mode: 'single' | 'sections';
   /** True durante il rimontaggio dei video con le slide aggiornate. */
   remaster?: boolean;
+  updatedAt?: string;
   currentPart: number;
   parts: Array<{ id: string; title: string; done: boolean; moduleId?: string; lessonId?: string; videoAssetId?: string }>;
   moduleId?: string;

@@ -130,6 +130,8 @@ export interface SlideLessonView {
   moduleTitle: string;
   mode: SlideLessonDoc['mode'];
   remaster: boolean;
+  /** Ultimo salvataggio del montaggio: a lavoro concluso coincide con la fine dell'ultimo (ri)montaggio. */
+  updatedAt: string;
   currentPart: number;
   parts: Array<{ id: string; title: string; done: boolean; moduleId?: string; lessonId?: string; videoAssetId?: string }>;
   /** Primo modulo/lezione creati (compatibilità con la modalità "una lezione"). */
@@ -1131,6 +1133,7 @@ if (!input) return undefined;
       moduleTitle: doc.moduleTitle,
       mode: doc.mode,
       remaster: doc.remaster === true,
+      updatedAt: doc.updatedAt,
       currentPart: doc.currentPart,
       parts: doc.parts.map((p) => ({
         id: p.id,
