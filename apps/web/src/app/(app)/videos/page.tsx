@@ -191,8 +191,10 @@ export default function VideosPage() {
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={v.thumbnailUrl} alt="" className="size-full object-cover" />
                     ) : (
+                      // crossOrigin come nel player: stesso URL, e una risposta in cache senza intestazioni CORS
+                      // verrebbe riusata dal player (che le richiede) facendolo fallire.
                       // eslint-disable-next-line jsx-a11y/media-has-caption
-                      <video src={`${v.url}#t=0.1`} preload="metadata" className="size-full object-contain" />
+                      <video src={`${v.url}#t=0.1`} crossOrigin="anonymous" preload="metadata" className="size-full object-contain" />
                     )}
                     <span className="absolute inset-0 grid place-items-center bg-black/10 transition-colors group-hover/play:bg-black/30">
                       <span className="grid size-12 place-items-center rounded-full bg-black/60 text-white">
