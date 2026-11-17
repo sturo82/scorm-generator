@@ -53,6 +53,7 @@ import type {
   SlideLessonView,
   SlideAvatarType,
   SlideSection,
+  PronunciationEntry,
   SlideScriptsGeneration,
   SlideScriptsResponse,
   SlideLayoutChoice,
@@ -618,6 +619,12 @@ export class HttpApiClient implements ApiClient {
     return this.request<SlideScriptsDoc>(`/courses/${courseId}/slides/imports/${importId}/scripts`, {
       method: 'PUT',
       body: JSON.stringify(input),
+    });
+  }
+  setSlideGlossary(courseId: string, importId: string, glossary: PronunciationEntry[]) {
+    return this.request<SlideScriptsDoc>(`/courses/${courseId}/slides/imports/${importId}/glossary`, {
+      method: 'PUT',
+      body: JSON.stringify({ glossary }),
     });
   }
   changeSlideAvatar(courseId: string, importId: string, input: StartSlideClipsInput) {

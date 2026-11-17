@@ -90,6 +90,27 @@ export const SlideVideoTheme = z.object({
 });
 export type SlideVideoTheme = z.infer<typeof SlideVideoTheme>;
 
+/**
+ * Sfondo di una scheda di copertina o finale: una slide (immagine) oppure un fotogramma fermo di
+ * una clip avatar (`atSec` secondi dall'inizio della clip). Gli URL sono già risolti e firmati.
+ */
+export const SlideVideoCardBackground = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('slide'), imageUrl: z.string().min(1) }),
+  z.object({ kind: z.literal('frame'), clipUrl: z.string().min(1), atSec: z.number().nonnegative() }),
+]);
+export type SlideVideoCardBackground = z.infer<typeof SlideVideoCardBackground>;
+
+/** Copertina o schermata finale del video: titolo, sottotitolo, logo e sfondo opzionali. */
+export const SlideVideoCard = z.object({
+  title: z.string().max(200).default(''),
+  subtitle: z.string().max(300).optional(),
+  durationSec: z.number().min(1).max(12).default(4),
+  /** URL (firmato) del logo del brand, mostrato sopra il titolo. */
+  logoUrl: z.string().min(1).optional(),
+  background: SlideVideoCardBackground.optional(),
+});
+export type SlideVideoCard = z.infer<typeof SlideVideoCard>;
+
 export const SlideVideoSpec = z.object({
   version: z.literal(1).default(1),
   canvas: z
@@ -112,9 +133,41 @@ export const SlideVideoSpec = z.object({
   theme: SlideVideoTheme.default({}),
   /** Titolo del modulo/sezione, mostrato nel pannello laterale. */
   sectionTitle: z.string().optional(),
+  /** Copertina prima delle slide e schermata finale dopo: la timeline delle slide non cambia. */
+  cover: SlideVideoCard.optional(),
+  outro: SlideVideoCard.optional(),
   slides: z.array(SlideVideoSlide).min(1),
 });
 export type SlideVideoSpec = z.infer<typeof SlideVideoSpec>;
+
+/** Frame di copertina, corpo (slide) e schermata finale del video completo. */
+export interface SlideVideoSegments {
+  coverFrames: number;
+  bodyFrames: number;
+  outroFrames: number;
+  totalFrames: number;
+  /** Secondi di ritardo con cui iniziano le slide (durata della copertina). */
+  offsetSec: number;
+  totalSec: number;
+}
+
+export function slideVideoSegments(
+  spec: Pick<SlideVideoSpec, 'cover' | 'outro' | 'slides'>,
+  fps: number,
+): SlideVideoSegments {
+  const body = computeSlideTimeline(spec.slides, fps);
+  const coverFrames = spec.cover ? Math.max(1, Math.round(spec.cover.durationSec * fps)) : 0;
+  const outroFrames = spec.outro ? Math.max(1, Math.round(spec.outro.durationSec * fps)) : 0;
+  const totalFrames = coverFrames + body.totalFrames + outroFrames;
+  return {
+    coverFrames,
+    bodyFrames: body.totalFrames,
+    outroFrames,
+    totalFrames,
+    offsetSec: coverFrames / fps,
+    totalSec: totalFrames / fps,
+  };
+}
 
 /** Posizione di una slide sulla timeline del video finale. */
 export interface SlideTimelineEntry {
@@ -228,6 +281,18 @@ export const UpdateSlideScripts = z.object({
   slides: z.array(SlideScriptItem).min(1).max(200),
   approved: z.boolean().default(false),
 });
+
+/**
+ * Glossario di pronuncia: `term` come compare nel testo, `spoken` come lo deve leggere la voce
+ * (scrittura fonetica). Vale solo per l'audio: slide, trascrizione e sottotitoli restano con `term`.
+ */
+export const PronunciationEntry = z.object({
+  term: z.string().trim().min(1).max(80),
+  spoken: z.string().trim().min(1).max(120),
+});
+export type PronunciationEntry = z.infer<typeof PronunciationEntry>;
+export const UpdateSlideGlossary = z.object({ glossary: z.array(PronunciationEntry).max(50) });
+export type UpdateSlideGlossary = z.infer<typeof UpdateSlideGlossary>;
 export type UpdateSlideScripts = z.infer<typeof UpdateSlideScripts>;
 
 /** Avvio della generazione delle clip avatar (una per slide). */
@@ -243,6 +308,22 @@ export const StartSlideClips = z.object({
   resolution: z.enum(['720p', '1080p']).optional(),
 });
 export type StartSlideClips = z.infer<typeof StartSlideClips>;
+
+/**
+ * Scheda di copertina o finale richiesta dall'utente. Lo sfondo è una slide dell'import oppure un
+ * fotogramma di una clip avatar (`atSec` dall'inizio della clip della slide `index`).
+ */
+export const SlideCardInput = z.object({
+  title: z.string().trim().max(200).optional(),
+  subtitle: z.string().trim().max(300).optional(),
+  background: z
+    .discriminatedUnion('kind', [
+      z.object({ kind: z.literal('slide'), index: z.number().int().positive() }),
+      z.object({ kind: z.literal('frame'), index: z.number().int().positive(), atSec: z.number().nonnegative() }),
+    ])
+    .optional(),
+});
+export type SlideCardInput = z.infer<typeof SlideCardInput>;
 
 /** Montaggio del video finale e creazione della lezione. */
 export const BuildSlideLesson = z.object({
@@ -263,6 +344,10 @@ export const BuildSlideLesson = z.object({
   slideShots: SlideShots.default({}),
   burnCaptions: z.boolean().default(false),
   avatarFrame: AvatarFrame.optional(),
+  cover: SlideCardInput.optional(),
+  outro: SlideCardInput.optional(),
+  /** Brand per colori e logo (solo libreria: nei corsi vale il brand principale del corso). */
+  brandId: z.string().min(1).optional(),
 });
 
 /** Rimontaggio dei video con le slide attuali; consente di cambiare disposizione e posizioni. */
@@ -273,6 +358,10 @@ export const RemasterSlideLesson = z.object({
   slideShots: SlideShots.optional(),
   burnCaptions: z.boolean().optional(),
   avatarFrame: AvatarFrame.optional(),
+  /** `null` toglie la scheda; assente lascia quella attuale. */
+  cover: SlideCardInput.nullable().optional(),
+  outro: SlideCardInput.nullable().optional(),
+  brandId: z.string().min(1).nullable().optional(),
 });
 export type RemasterSlideLesson = z.infer<typeof RemasterSlideLesson>;
 export type BuildSlideLesson = z.infer<typeof BuildSlideLesson>;

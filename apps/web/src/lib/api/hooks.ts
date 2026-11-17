@@ -3,7 +3,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Block, Brief, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
 import { getApiClient } from './client';
-import type { SlideAvatarType, StartSlideClipsInput, BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole, AttachStockImageInput, AttachStockCoverInput } from './types';
+import type { PronunciationEntry, SlideAvatarType, StartSlideClipsInput, BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole, AttachStockImageInput, AttachStockCoverInput } from './types';
 
 const api = getApiClient();
 
@@ -993,6 +993,18 @@ export function useSaveSlideScripts(courseId: string, importId: string | null) {
     mutationFn: (input: { slides: Array<{ index: number; script: string; skip: boolean }>; approved: boolean }) =>
       api.saveSlideScripts(courseId, importId as string, input),
     onSuccess: (doc) => qc.setQueryData(['courses', courseId, 'slides', importId, 'scripts'], doc),
+  });
+}
+
+export function useSetSlideGlossary(courseId: string, importId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (glossary: PronunciationEntry[]) => api.setSlideGlossary(courseId, importId as string, glossary),
+    onSuccess: (doc) => {
+      qc.setQueryData(['courses', courseId, 'slides', importId, 'scripts'], doc);
+      // Cambia quali clip vanno rigenerate: la stima si ricalcola.
+      qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, 'estimate'] });
+    },
   });
 }
 

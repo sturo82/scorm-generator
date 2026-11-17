@@ -46,6 +46,20 @@ export interface SlideScriptsDoc {
   slides: SlideScriptEntry[];
   totalWords: number;
   estTotalSec: number;
+  /** Pronuncia di nomi e sigle (solo audio). */
+  glossary?: PronunciationEntry[];
+}
+
+export interface PronunciationEntry {
+  term: string;
+  spoken: string;
+}
+
+/** Copertina o schermata finale: sfondo = una slide o un fotogramma della clip di una slide. */
+export interface SlideCardChoice {
+  title?: string;
+  subtitle?: string;
+  background?: { kind: 'slide'; index: number } | { kind: 'frame'; index: number; atSec: number };
 }
 
 export type SlideAvatarType = 'photo' | 'studio' | 'digital_twin';
@@ -72,6 +86,7 @@ export interface SlideClipsView {
   status: 'running' | 'completed' | 'failed';
   avatarId: string;
   avatarType: SlideAvatarType;
+  voiceId?: string;
   engine: string;
   clips: SlideClip[];
   progress: { total: number; completed: number; failed: number; processing: number };
@@ -112,6 +127,9 @@ export interface SlideLessonView {
   slideShots?: Record<string, SlideShot>;
   avatarFrame?: { x?: number; y?: number; zoom?: number };
   burnCaptions?: boolean;
+  cover?: SlideCardChoice;
+  outro?: SlideCardChoice;
+  brandId?: string;
   moduleTitle: string;
   mode: 'single' | 'sections';
   /** True durante il rimontaggio dei video con le slide aggiornate. */

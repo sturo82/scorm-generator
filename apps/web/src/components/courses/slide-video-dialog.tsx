@@ -18,9 +18,20 @@ import { Dialog } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { AiWorking, AiWorkingInline } from '@/components/courses/ai-working';
-import type { PipPosition, SlideAvatarType, SlideLayout, SlideScriptEntry, SlideSection, SlideShot } from '@/lib/api/types';
+import type {
+  PipPosition,
+  PronunciationEntry,
+  SlideAvatarType,
+  SlideCardChoice,
+  SlideLayout,
+  SlideScriptEntry,
+  SlideScriptsDoc,
+  SlideSection,
+  SlideShot,
+} from '@/lib/api/types';
 import {
   qk,
+  useBrands,
   useBuildSlideLesson,
   useGenerateSlideScripts,
   useImportSlides,
@@ -29,7 +40,8 @@ import {
   useReplaceSlides,
   useKnowledge,
   useSaveSlideScripts,
-  useSlideClips,
+  useSetSlideGlossary,
+useSlideClips,
   useSlideClipsEstimate,
   useSlideDirection,
   useSlideImport,
@@ -304,7 +316,7 @@ function Pipeline({
       />
 
       {approved && (
-        <StepClips courseId={courseId} importId={importId} view={clipsView} language={imp.data?.language} />
+        <StepClips courseId={courseId} importId={importId} view={clipsView} language={imp.data?.language} scripts={scriptsDoc} />
       )}
 
       {clipsDone && (
@@ -638,19 +650,270 @@ function StepScripts({
   );
 }
 
+// --- Glossario di pronuncia ---------------------------------------------------
+
+/** Numeri delle slide (copioni inclusi) in cui compare il termine come parola intera. */
+function slidesUsingTerm(term: string, slides: SlideScriptEntry[]): number[] {
+  const t = term.trim();
+  if (!t) return [];
+  const re = new RegExp(`(?<![\\p{L}\\p{N}])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'iu');
+  return slides.filter((s) => !s.skip && re.test(s.script)).map((s) => s.index);
+}
+
+/**
+ * Pronuncia di nomi, marchi e sigle: la voce legge il testo con le regole della lingua del copione e
+ * storpia i termini stranieri. Qui si scrive come devono suonare; vale solo per l'audio, a schermo e nei
+ * sottotitoli resta il termine originale.
+ */
+function PronunciationPanel({
+  courseId,
+  importId,
+  glossary,
+  slides,
+}: {
+  courseId: string;
+  importId: string;
+  glossary: PronunciationEntry[];
+  slides: SlideScriptEntry[];
+}) {
+  const toast = useToast();
+  const save = useSetSlideGlossary(courseId, importId);
+  const [rows, setRows] = React.useState<PronunciationEntry[]>(glossary);
+  const key = JSON.stringify(glossary);
+  React.useEffect(() => setRows(glossary), [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const clean = rows.filter((r) => r.term.trim() && r.spoken.trim());
+  const dirty = JSON.stringify(clean.map((r) => [r.term.trim(), r.spoken.trim()])) !== JSON.stringify(glossary.map((r) => [r.term, r.spoken]));
+  async function handleSave() {
+    try {
+      await save.mutateAsync(clean.map((r) => ({ term: r.term.trim(), spoken: r.spoken.trim() })));
+      toast.show('Pronuncia salvata', 'success');
+    } catch {
+      toast.show('Salvataggio della pronuncia non riuscito', 'error');
+    }
+  }
+  return (
+    <details className="rounded-lg border p-3" open={glossary.length > 0}>
+      <summary className="cursor-pointer text-sm font-medium">
+        Pronuncia di nomi e sigle{glossary.length ? ` (${glossary.length})` : ''}
+      </summary>
+      <div className="mt-3 space-y-2">
+        <p className="text-xs text-muted-foreground">
+          La voce legge ogni parola con le regole dell&apos;italiano: un nome inglese come «Knowkube» o una sigla
+          come «SW» esce storpiato. Scrivi sotto come deve suonare (per esempio «Nòu-chiub»). Cambia solo l&apos;audio:
+          slide, sottotitoli e trascrizione restano con il termine originale. Dopo averlo salvato, le clip che
+          contengono il termine vanno rigenerate (ne vedi il costo qui sotto).
+        </p>
+        {rows.map((r, i) => {
+          const used = slidesUsingTerm(r.term, slides);
+          return (
+            <div key={i} className="grid items-center gap-2 sm:grid-cols-[1fr_1fr_auto_auto]">
+              <Input
+                value={r.term}
+                placeholder="Termine nel testo (es. Knowkube)"
+                maxLength={80}
+                onChange={(e) => setRows((cur) => cur.map((x, j) => (j === i ? { ...x, term: e.target.value } : x)))}
+              />
+              <Input
+                value={r.spoken}
+                placeholder="Come si legge (es. Nòu-chiub)"
+                maxLength={120}
+                onChange={(e) => setRows((cur) => cur.map((x, j) => (j === i ? { ...x, spoken: e.target.value } : x)))}
+              />
+              <span className="text-xs text-muted-foreground">
+                {r.term.trim() ? (used.length ? `slide ${used.join(', ')}` : 'non presente nei copioni') : ''}
+              </span>
+              <Button size="sm" variant="ghost" aria-label="Rimuovi" onClick={() => setRows((cur) => cur.filter((_, j) => j !== i))}>
+                ✕
+              </Button>
+            </div>
+          );
+        })}
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => setRows((cur) => [...cur, { term: '', spoken: '' }])}>
+            + Aggiungi
+          </Button>
+          <Button size="sm" onClick={handleSave} disabled={!dirty || save.isPending}>
+            {save.isPending ? <AiWorkingInline label="Salvo…" /> : 'Salva pronuncia'}
+          </Button>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+// --- Copertina e schermata finale ------------------------------------------
+
+/**
+ * Editor di una scheda (copertina o finale): attivazione, titolo, sottotitolo e sfondo scelto tra
+ * nessuno, una slide oppure un fotogramma di una clip avatar (scorrendo la clip).
+ */
+function CardEditor({
+  label,
+  value,
+  onChange,
+  titleHint,
+  thumbs,
+  clips,
+}: {
+  label: string;
+  value: SlideCardChoice | null;
+  onChange: (v: SlideCardChoice | null) => void;
+  titleHint: string;
+  thumbs: Array<{ index: number; imageUrl: string }>;
+  clips: import('@/lib/api/types').SlideClipsView['clips'];
+}) {
+  const withClip = clips.filter((c) => c.clipUrl).sort((a, b) => a.index - b.index);
+  const bg = value?.background;
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const [frameIdx, setFrameIdx] = React.useState<number>(bg?.kind === 'frame' ? bg.index : (withClip[0]?.index ?? 1));
+  const frameClip = withClip.find((c) => c.index === frameIdx) ?? withClip[0];
+  const patch = (p: Partial<SlideCardChoice>) => onChange({ ...(value ?? {}), ...p });
+  return (
+    <div className="space-y-2 rounded-lg border p-3">
+      <label className="flex items-center gap-2 text-sm font-medium">
+        <input type="checkbox" checked={value !== null} onChange={(e) => onChange(e.target.checked ? {} : null)} />
+        {label}
+      </label>
+      {value && (
+        <div className="space-y-3">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="space-y-1 text-sm">
+              <span className="text-xs text-muted-foreground">Titolo</span>
+              <Input value={value.title ?? ''} placeholder={titleHint} maxLength={200} onChange={(e) => patch({ title: e.target.value })} />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="text-xs text-muted-foreground">Sottotitolo (facoltativo)</span>
+              <Input value={value.subtitle ?? ''} maxLength={300} onChange={(e) => patch({ subtitle: e.target.value })} />
+            </label>
+          </div>
+          <fieldset className="space-y-2 text-sm">
+            <legend className="text-xs text-muted-foreground">Immagine di sfondo</legend>
+            <div className="flex flex-wrap gap-3">
+              {([
+                ['none', 'Nessuna (colori del brand)'],
+                ['slide', 'Una slide'],
+                ['frame', 'Un fotogramma del video'],
+              ] as const).map(([k, l]) => (
+                <label key={k} className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    checked={(bg?.kind ?? 'none') === k}
+                    disabled={k === 'frame' && withClip.length === 0}
+                    onChange={() =>
+                      patch({
+                        background:
+                          k === 'none'
+                            ? undefined
+                            : k === 'slide'
+                              ? { kind: 'slide', index: thumbs[0]?.index ?? 1 }
+                              : { kind: 'frame', index: frameClip?.index ?? 1, atSec: 0 },
+                      })
+                    }
+                  />
+                  {l}
+                </label>
+              ))}
+            </div>
+            {bg?.kind === 'slide' && (
+              <div className="grid max-h-40 grid-cols-4 gap-2 overflow-y-auto rounded-md border p-2 sm:grid-cols-6">
+                {thumbs.map((t) => (
+                  <button
+                    key={t.index}
+                    type="button"
+                    onClick={() => patch({ background: { kind: 'slide', index: t.index } })}
+                    className={cn('relative overflow-hidden rounded border', bg.index === t.index && 'border-primary ring-2 ring-primary/40')}
+                    title={`Slide ${t.index}`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- anteprima firmata */}
+                    <img src={t.imageUrl} alt={`Slide ${t.index}`} className="aspect-video w-full object-cover" />
+                    <span className="absolute left-0.5 top-0.5 rounded bg-black/70 px-1 text-[10px] text-white">{t.index}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {bg?.kind === 'frame' && frameClip?.clipUrl && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    Clip della slide
+                    <select
+                      className={cn(SELECT, 'h-8 w-24')}
+                      value={frameClip.index}
+                      onChange={(e) => {
+                        const idx = Number(e.target.value);
+                        setFrameIdx(idx);
+                        patch({ background: { kind: 'frame', index: idx, atSec: 0 } });
+                      }}
+                    >
+                      {withClip.map((c) => (
+                        <option key={c.index} value={c.index}>
+                          {c.index}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const t = videoRef.current?.currentTime ?? 0;
+                      videoRef.current?.pause();
+                      patch({ background: { kind: 'frame', index: frameClip.index, atSec: Math.round(t * 10) / 10 } });
+                    }}
+                  >
+                    Usa questo fotogramma
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Scelto: slide {bg.index} a {bg.atSec.toFixed(1)} s
+                  </span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                  <video
+                    key={frameClip.index}
+                    ref={videoRef}
+                    src={frameClip.clipUrl}
+                    controls
+                    muted
+                    preload="metadata"
+                    className="aspect-video w-full rounded-md bg-black"
+                  />
+                  <div className="space-y-1">
+                    {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                    <video
+                      key={`${bg.index}-${bg.atSec}`}
+                      src={`${(withClip.find((c) => c.index === bg.index) ?? frameClip).clipUrl}#t=${bg.atSec}`}
+                      preload="metadata"
+                      muted
+                      className="aspect-video w-full rounded-md bg-black"
+                    />
+                    <p className="text-[11px] text-muted-foreground">Anteprima del fotogramma scelto.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </fieldset>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Passo 2: avatar e clip --------------------------------------------------
 
 function StepClips({
   courseId,
   importId,
   language,
+  scripts,
   view,
 }: {
   courseId: string;
   importId: string;
   /** Lingua del parlato (import di libreria): filtra le voci proposte. */
   language?: string;
-  view: import('@/lib/api/types').SlideClipsView | null;
+  scripts: SlideScriptsDoc | null;
+view: import('@/lib/api/types').SlideClipsView | null;
 }) {
   const toast = useToast();
   const start = useStartSlideClips(courseId, importId);
@@ -681,6 +944,29 @@ function StepClips({
     if (selected) setAvatarType(heygenBillingTypeFor({ source: selected.source, groupType: selected.groupType }));
   }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Clip da rigenerare (pronuncia o copione cambiati dopo la generazione) con il costo.
+  const regen = useSlideClipsEstimate(
+    courseId,
+    importId,
+    view?.engine,
+    view?.avatarType ?? 'digital_twin',
+    view?.status === 'completed' && !changing,
+    false,
+  );
+  async function handleRegenerate() {
+    if (!view) return;
+    try {
+      await start.mutateAsync({
+        avatarId: view.avatarId,
+        avatarType: view.avatarType,
+        engine: view.engine as 'avatar_iii' | 'avatar_iv' | 'avatar_v',
+        voiceId: view.voiceId,
+      });
+      toast.show('Rigenerazione avviata: al termine rimonta i video dal passo 3', 'success');
+    } catch {
+      toast.show('Avvio della rigenerazione non riuscito', 'error');
+    }
+  }
   async function handleStart() {
     try {
       const input = { avatarId, avatarType, engine, voiceId: voiceId || undefined };
@@ -708,7 +994,9 @@ function StepClips({
   return (
     <section className="space-y-3">
       <Heading n={2} title="Avatar e clip" done={view?.status === 'completed'} />
-
+      {scripts && (
+        <PronunciationPanel courseId={courseId} importId={importId} glossary={scripts.glossary ?? []} slides={scripts.slides} />
+      )}
       {!started && (
         <div className="space-y-4">
           <div className="space-y-2">
@@ -846,6 +1134,18 @@ function StepClips({
       {view && !changing && (
         <ClipsProgress view={view} onRetry={() => start.mutate({ avatarId: view.avatarId, avatarType: view.avatarType })} retrying={start.isPending} />
       )}
+      {view && !changing && view.status === 'completed' && regen.data && regen.data.slides > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-900">
+          <p>
+            <strong>{regen.data.slides}</strong> {regen.data.slides === 1 ? 'clip va rigenerata' : 'clip vanno rigenerate'} per le
+            modifiche a pronuncia o copioni: circa <strong>{regen.data.minutes} min</strong> di video, costo HeyGen stimato{' '}
+            <strong>${regen.data.costUsd.toFixed(2)}</strong>. Le altre clip restano quelle già generate.
+          </p>
+          <Button size="sm" onClick={handleRegenerate} disabled={start.isPending}>
+            {start.isPending ? <AiWorkingInline label="Avvio…" /> : `Rigenera ${regen.data.slides} clip`}
+          </Button>
+        </div>
+      )}
       {view && !changing && view.status !== 'running' && (
         <div className="flex justify-end">
           <Button size="sm" variant="outline" onClick={() => setChanging(true)} title="Rigenera le clip con un altro avatar o un'altra voce, senza rifare copioni e lezioni">
@@ -929,7 +1229,11 @@ function StepLesson({
     zoom: view?.avatarFrame?.zoom ?? 1,
   });
   const [editLayout, setEditLayout] = React.useState(false);
-  // Allinea le scelte a quelle salvate quando arriva lo stato dal server.
+  const [cover, setCover] = React.useState<SlideCardChoice | null>(view?.cover ?? null);
+  const [outro, setOutro] = React.useState<SlideCardChoice | null>(view?.outro ?? null);
+  const [brandId, setBrandId] = React.useState<string>(view?.brandId ?? '');
+  const brands = useBrands();
+// Allinea le scelte a quelle salvate quando arriva lo stato dal server.
   React.useEffect(() => {
     if (!view) return;
     setLayout(view.layout);
@@ -938,6 +1242,9 @@ function StepLesson({
     setSlideShots(view.slideShots ?? {});
     setAvatarFrame({ x: view.avatarFrame?.x ?? 50, y: view.avatarFrame?.y ?? 22, zoom: view.avatarFrame?.zoom ?? 1 });
     setBurnCaptions(view.burnCaptions ?? true);
+    setCover(view.cover ?? null);
+    setOutro(view.outro ?? null);
+    setBrandId(view.brandId ?? '');
   }, [view?.status]); // eslint-disable-line react-hooks/exhaustive-deps
   const [title, setTitle] = React.useState(defaultTitle);
   const [mode, setMode] = React.useState<'single' | 'sections'>('single');
@@ -982,6 +1289,9 @@ function StepLesson({
         slideShots: layout === 'dynamic' ? slideShots : {},
         avatarFrame,
         burnCaptions,
+        cover: cover ?? undefined,
+        outro: outro ?? undefined,
+        brandId: library && brandId ? brandId : undefined,
         moduleTitle: title.trim() || undefined,
         sections: mode === 'sections' ? sections.map((s) => ({ title: s.title.trim(), from: s.from })) : undefined,
       });
@@ -1010,6 +1320,9 @@ function StepLesson({
               slideShots: layout === 'dynamic' ? slideShots : {},
               avatarFrame,
               burnCaptions,
+              cover,
+              outro,
+              brandId: library ? brandId || null : undefined,
             }
           : undefined,
       );
@@ -1020,6 +1333,40 @@ function StepLesson({
     }
   }
 
+  const cardsBlock = (
+    <div className="space-y-3">
+      <p className="text-sm font-medium">Copertina e schermata finale</p>
+      {library && (
+        <label className="block space-y-1 text-sm">
+          <span className="text-xs text-muted-foreground">Brand (colori e logo)</span>
+          <select className={SELECT} value={brandId} onChange={(e) => setBrandId(e.target.value)}>
+            <option value="">Colori predefiniti, senza logo</option>
+            {(brands.data ?? []).map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <CardEditor
+        label="Aggiungi una copertina all'inizio"
+        value={cover}
+        onChange={setCover}
+        titleHint={`Predefinito: titolo del video`}
+        thumbs={thumbs}
+        clips={clips.clips}
+      />
+      <CardEditor
+        label="Aggiungi una schermata finale"
+        value={outro}
+        onChange={setOutro}
+        titleHint="Predefinito: Grazie per l’attenzione"
+        thumbs={thumbs}
+        clips={clips.clips}
+      />
+    </div>
+  );
   const STEP_LABEL: Record<string, string> = {
     render: 'Montaggio del video con slide, avatar e sottotitoli…',
     summary: 'Scrivo il riepilogo e i punti chiave…',
@@ -1163,6 +1510,7 @@ function StepLesson({
                 thumbs={thumbs}
                 extraTitles={extraTitles}
               />
+              {cardsBlock}
             </>
           )}
           <div className="flex justify-end">
@@ -1266,11 +1614,12 @@ function StepLesson({
                 thumbs={thumbs}
                 extraTitles={extraTitles}
               />
+              {cardsBlock}
             </div>
           )}
           <div className="flex flex-wrap justify-end gap-2">
             <Button variant="ghost" onClick={() => setEditLayout((v) => !v)}>
-              {editLayout ? 'Annulla modifiche alla disposizione' : 'Cambia disposizione o posizione dell’avatar'}
+              {editLayout ? 'Annulla modifiche alla disposizione' : 'Cambia disposizione, copertina o finale'}
             </Button>
             <Button variant="outline" onClick={handleRemaster} disabled={remaster.isPending}>
               {remaster.isPending ? (

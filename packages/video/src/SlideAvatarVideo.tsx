@@ -1,12 +1,14 @@
 import React from 'react';
 import { DynamicSlideVideo } from './DynamicSlideVideo.js';
-import { AbsoluteFill, Img, OffthreadVideo, Sequence, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Freeze, Img, OffthreadVideo, Sequence, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 import {
   SlideVideoSpec,
   activeCueAt,
   avatarCrop,
   computeSlideTimeline,
   globalCues,
+  slideVideoSegments,
+  type SlideVideoCard,
   type GlobalCue,
   type PipPosition,
   type SlideTimeline,
@@ -27,9 +29,98 @@ import {
 export const SlideAvatarVideo: React.FC<{ spec: SlideVideoSpec }> = ({ spec: rawSpec }) => {
   // Applica i default dello schema anche se l'API passa uno spec parziale.
   const spec = React.useMemo(() => SlideVideoSpec.parse(rawSpec), [rawSpec]);
+  const { fps } = useVideoConfig();
+  const seg = React.useMemo(() => slideVideoSegments(spec, fps), [spec, fps]);
   // Layout "dynamic": regia con inquadrature animate per slide.
-  if (spec.layout === 'dynamic') return <DynamicSlideVideo spec={spec} />;
-  return <StaticSlideVideo spec={spec} />;
+  const body = spec.layout === 'dynamic' ? <DynamicSlideVideo spec={spec} /> : <StaticSlideVideo spec={spec} />;
+  if (!spec.cover && !spec.outro) return body;
+  // Copertina e finale sono sequenze attorno al corpo: dentro una Sequence il frame riparte da 0,
+  // quindi il montaggio delle slide non conosce né l'una né l'altra.
+  return (
+    <AbsoluteFill style={{ backgroundColor: spec.theme.bg }}>
+      {spec.cover && (
+        <Sequence from={0} durationInFrames={seg.coverFrames}>
+          <CardScene card={spec.cover} spec={spec} kind="cover" />
+        </Sequence>
+      )}
+      <Sequence from={seg.coverFrames} durationInFrames={seg.bodyFrames}>
+        {body}
+      </Sequence>
+      {spec.outro && (
+        <Sequence from={seg.coverFrames + seg.bodyFrames} durationInFrames={seg.outroFrames}>
+          <CardScene card={spec.outro} spec={spec} kind="outro" />
+        </Sequence>
+      )}
+    </AbsoluteFill>
+  );
+};
+
+/** Scheda di copertina o finale: sfondo (slide o fotogramma avatar) scurito, logo, titolo e sottotitolo. */
+const CardScene: React.FC<{ card: SlideVideoCard; spec: SlideVideoSpec; kind: 'cover' | 'outro' }> = ({
+  card,
+  spec,
+  kind,
+}) => {
+  const frame = useCurrentFrame();
+  const { fps, durationInFrames, width, height } = useVideoConfig();
+  const s = width / 1920;
+  const fadeIn = interpolate(frame, [0, 10], [0, 1], { extrapolateRight: 'clamp' });
+  const fadeOut = interpolate(frame, [durationInFrames - 10, durationInFrames], [1, 0], {
+    extrapolateLeft: 'clamp',
+  });
+  const rise = interpolate(frame, [4, 22], [24 * s, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const bg = card.background;
+  return (
+    <AbsoluteFill style={{ opacity: kind === 'cover' ? fadeIn : Math.min(fadeIn, fadeOut), backgroundColor: spec.theme.bg }}>
+      {bg?.kind === 'slide' && (
+        // La slide fa da sfondo: sfocata, così il suo testo non si sovrappone al titolo della scheda.
+        <Img
+          src={bg.imageUrl}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: `blur(${22 * s}px) brightness(0.8)`, transform: 'scale(1.08)' }}
+        />
+      )}
+      {bg?.kind === 'frame' && (
+        <Freeze frame={Math.round(bg.atSec * fps)}>
+          <OffthreadVideo
+            src={bg.clipUrl}
+            muted
+            style={{
+              position: 'absolute',
+              maxWidth: 'none',
+              ...avatarCrop(width, height, { x: 50, y: 50, zoom: 1 }, 1),
+            }}
+          />
+        </Freeze>
+      )}
+      {bg && (
+        <AbsoluteFill
+          style={{ background: `linear-gradient(180deg, ${spec.theme.bg}cc 0%, ${spec.theme.bg}99 45%, ${spec.theme.bg}ee 100%)` }}
+        />
+      )}
+      <AbsoluteFill
+        style={{
+          alignItems: 'center',
+          justifyContent: 'center',
+          textAlign: 'center',
+          padding: `0 ${160 * s}px`,
+          fontFamily: 'Inter, Roboto, "Helvetica Neue", Arial, sans-serif',
+          color: spec.theme.text,
+          transform: `translateY(${rise}px)`,
+        }}
+      >
+        {card.logoUrl && (
+          <Img src={card.logoUrl} style={{ maxHeight: 120 * s, maxWidth: 420 * s, objectFit: 'contain', marginBottom: 48 * s }} />
+        )}
+        <div style={{ width: 120 * s, height: 8 * s, borderRadius: 4 * s, background: spec.theme.accent, marginBottom: 40 * s }} />
+        {card.title && <div style={{ fontSize: 88 * s, fontWeight: 800, lineHeight: 1.1 }}>{card.title}</div>}
+        {card.subtitle && (
+          <div style={{ marginTop: 28 * s, fontSize: 40 * s, fontWeight: 500, lineHeight: 1.3, opacity: 0.88 }}>
+            {card.subtitle}
+          </div>
+        )}
+      </AbsoluteFill>
+    </AbsoluteFill>
+  );
 };
 
 /** Layout fissi "split" e "pip". */

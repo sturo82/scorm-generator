@@ -16,9 +16,11 @@ import {
   GenerateSlideScripts as GenerateSlideScriptsSchema,
   RemasterSlideLesson as RemasterSlideLessonSchema,
   StartSlideClips as StartSlideClipsSchema,
+  UpdateSlideGlossary,
   UpdateSlideScripts as UpdateSlideScriptsSchema,
   type BuildSlideLesson as BuildSlideLessonType,
   type StartSlideClips as StartSlideClipsType,
+  type UpdateSlideGlossary as UpdateSlideGlossaryType,
   type UpdateSlideScripts as UpdateSlideScriptsType,
 } from '@scorm/contracts';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
@@ -105,6 +107,18 @@ export class SlidesController {
     @Body(new ZodValidationPipe(UpdateSlideScriptsSchema)) body: UpdateSlideScriptsType,
   ): Promise<SlideScriptsDoc> {
     return this.scripts.update(ctx.tenant.tenantId, courseId, importId, body);
+  }
+
+  /** Glossario di pronuncia (nomi e sigle). Modificabile anche a copioni approvati. */
+  @Put('imports/:importId/glossary')
+  @Roles('EDITOR')
+  setGlossary(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+    @Body(new ZodValidationPipe(UpdateSlideGlossary)) body: UpdateSlideGlossaryType,
+  ): Promise<SlideScriptsDoc> {
+    return this.scripts.setGlossary(ctx.tenant.tenantId, courseId, importId, body.glossary);
   }
 
   @Get('imports/:importId/clips/estimate')

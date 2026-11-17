@@ -10,9 +10,13 @@ import { randomUUID } from 'node:crypto';
 import {
   Assessment,
   assessmentJsonSchema,
+  BRAND_STORAGE_PREFIX,
   computeSlideTimeline,
   globalCues,
+  slideVideoSegments,
   type Block,
+  type SlideCardInput,
+  type SlideVideoCard,
   type PipPosition,
   type AvatarFrame,
   type SlideShot,
@@ -87,6 +91,11 @@ export interface SlideLessonDoc {
   avatarFrame?: Partial<AvatarFrame>;
   /** Sottotitoli incisi nel video. Assente nei documenti precedenti, che li avevano: vale true. */
   burnCaptions?: boolean;
+  /** Copertina e schermata finale (assenti = nessuna). */
+  cover?: SlideCardInput;
+  outro?: SlideCardInput;
+  /** Brand scelto per colori e logo; senza, nei corsi vale il brand principale del corso. */
+  brandId?: string;
   /** Titolo del corso/modulo (modalità "una lezione") o del gruppo di sezioni. */
   moduleTitle: string;
   mode: 'single' | 'sections';
@@ -115,6 +124,9 @@ export interface SlideLessonView {
   slideShots: Record<string, SlideShot>;
   avatarFrame: Partial<AvatarFrame>;
   burnCaptions: boolean;
+  cover?: SlideCardInput;
+  outro?: SlideCardInput;
+  brandId?: string;
   moduleTitle: string;
   mode: SlideLessonDoc['mode'];
   remaster: boolean;
@@ -257,8 +269,12 @@ export class SlideLessonService {
       slideShots?: Record<string, SlideShot>;
       burnCaptions?: boolean;
       avatarFrame?: Partial<AvatarFrame>;
+      cover?: SlideCardInput;
+      outro?: SlideCardInput;
+      brandId?: string;
     },
   ): Promise<SlideLessonView> {
+    await this.validateCards(tenantId, courseId, importId, input.cover, input.outro, input.brandId);
     const clipsView = await this.clips.status(tenantId, courseId, importId);
     if (!clipsView || clipsView.status !== 'completed') {
       throw new ConflictException('Le clip avatar non sono tutte pronte.');
@@ -293,6 +309,9 @@ export class SlideLessonService {
         slideShots: input.slideShots ?? {},
         avatarFrame: input.avatarFrame ?? {},
         burnCaptions: input.burnCaptions ?? false,
+        cover: input.cover,
+        outro: input.outro,
+        brandId: input.brandId,
         moduleTitle,
         mode: sections ? 'sections' : 'single',
         parts,
@@ -338,8 +357,13 @@ export class SlideLessonService {
       slideShots?: Record<string, SlideShot>;
       burnCaptions?: boolean;
       avatarFrame?: Partial<AvatarFrame>;
+      /** `null` toglie la scheda; `undefined` lascia quella attuale. */
+      cover?: SlideCardInput | null;
+      outro?: SlideCardInput | null;
+      brandId?: string | null;
     } = {},
   ): Promise<SlideLessonView> {
+    await this.validateCards(tenantId, courseId, importId, input.cover ?? undefined, input.outro ?? undefined, input.brandId ?? undefined);
     const existing = await this.load(tenantId, courseId, importId);
     if (!existing || existing.status !== 'completed') {
       throw new ConflictException('Non c\'è una lezione completata da aggiornare.');
@@ -360,6 +384,9 @@ export class SlideLessonService {
       slideShots: input.slideShots ?? existing.slideShots ?? {},
       avatarFrame: input.avatarFrame ?? existing.avatarFrame ?? {},
       burnCaptions: input.burnCaptions ?? existing.burnCaptions ?? true,
+      cover: input.cover === undefined ? existing.cover : (input.cover ?? undefined),
+      outro: input.outro === undefined ? existing.outro : (input.outro ?? undefined),
+      brandId: input.brandId === undefined ? existing.brandId : (input.brandId ?? undefined),
       currentPart: 0,
       parts: existing.parts.map((p) => ({ ...p, remasterDone: false })),
       updatedAt: new Date().toISOString(),
@@ -515,6 +542,7 @@ export class SlideLessonService {
         a.pipPosition = doc.slidePositions?.[String(idx)] ?? d?.corner ?? 'bottom-right';
       }
     }
+    const style = await this.brandStyle(tenantId, doc);
     const spec = buildSlideVideoSpec({
       slides: assembly,
       layout: doc.layout,
@@ -522,7 +550,9 @@ export class SlideLessonService {
       burnCaptions: doc.burnCaptions ?? true,
       avatarFrame: doc.avatarFrame,
       sectionTitle: part.title,
-      theme: await this.brandTheme(tenantId, courseId),
+      theme: style.theme,
+      cover: await this.resolveCard(tenantId, doc, doc.cover, 'cover', part.title, style.logoUrl, manifest.slides, clipsView.clips),
+      outro: await this.resolveCard(tenantId, doc, doc.outro, 'outro', part.title, style.logoUrl, manifest.slides, clipsView.clips),
     });
 
     const cfg = this.config.get('cartoonVideo', { infer: true });
@@ -555,10 +585,13 @@ export class SlideLessonService {
     });
     // Trascrizione globale pronta per la lezione (stessa timeline del render).
     const timeline = computeSlideTimeline(spec.slides, spec.canvas.fps);
+    // Con una copertina le slide iniziano dopo di lei: la trascrizione segue lo stesso ritardo.
+    const offsetSec = slideVideoSegments(spec, spec.canvas.fps).offsetSec;
+    const cues = globalCues(spec.slides, timeline).map((c) => ({ ...c, start: c.start + offsetSec, end: c.end + offsetSec }));
     part.transcriptKey = `${this.prefix(tenantId, doc)}/transcript-${part.id}.json`;
     await this.storage.putObject(
       part.transcriptKey,
-      Buffer.from(JSON.stringify(globalCues(spec.slides, timeline))),
+      Buffer.from(JSON.stringify(cues)),
       { contentType: 'application/json' },
     );
     part.videoKey = key;
@@ -607,15 +640,107 @@ export class SlideLessonService {
     return items;
   }
 
-  /** Colori del video dal brand principale del corso (sfondo scuro, accento del brand). */
-  private async brandTheme(tenantId: string, courseId: string): Promise<Partial<SlideVideoTheme>> {
-    if (isLibrary(courseId)) return {};
-    const course = await this.prisma.course.findFirst({ where: { id: courseId, tenantId }, select: { primaryBrandId: true } });
-    if (!course?.primaryBrandId) return {};
-    const brand = await this.prisma.brand.findFirst({ where: { id: course.primaryBrandId, tenantId }, select: { definition: true } });
-    const colors = (brand?.definition as { colors?: { primary?: string; secondary?: string } } | null)?.colors;
-    const accent = [colors?.primary, colors?.secondary].find((c) => c && luminance(c) > 0.18);
-    return accent ? { accent } : {};
+  /**
+   * Colori e logo del video: brand scelto dall'utente oppure, per un corso, il suo brand
+   * principale (sfondo scuro, accento del brand). Senza brand restano i colori di default.
+   */
+  private async brandStyle(tenantId: string, doc: SlideLessonDoc): Promise<{ theme: Partial<SlideVideoTheme>; logoUrl?: string }> {
+    let brandId = doc.brandId;
+    if (!brandId && !isLibrary(doc.courseId)) {
+      const course = await this.prisma.course.findFirst({ where: { id: doc.courseId, tenantId }, select: { primaryBrandId: true } });
+      brandId = course?.primaryBrandId ?? undefined;
+    }
+    if (!brandId) return { theme: {} };
+    const brand = await this.prisma.brand.findFirst({ where: { id: brandId, tenantId }, select: { definition: true } });
+    const def = brand?.definition as {
+      colors?: { primary?: string; secondary?: string };
+      assets?: { logoPrimaryUrl?: string; logoInverseUrl?: string };
+    } | null;
+    const accent = [def?.colors?.primary, def?.colors?.secondary].find((c) => c && luminance(c) > 0.18);
+    // Sfondo scuro: meglio il logo per fondi scuri, se il brand lo prevede.
+    const logo = def?.assets?.logoInverseUrl || def?.assets?.logoPrimaryUrl || '';
+    let logoUrl: string | undefined;
+    if (logo.startsWith(BRAND_STORAGE_PREFIX)) {
+      logoUrl = await this.storage
+        .getSignedUrl(logo.slice(BRAND_STORAGE_PREFIX.length), { expiresInSec: MEDIA_URL_TTL_SEC })
+        .catch(() => undefined);
+    } else if (/^https:\/\//.test(logo)) {
+      logoUrl = logo;
+    }
+    return { theme: accent ? { accent } : {}, logoUrl };
+  }
+
+  /** Controlla che brand e slide indicati per copertina e finale esistano, prima di avviare il montaggio. */
+  private async validateCards(
+    tenantId: string,
+    courseId: string,
+    importId: string,
+    cover: SlideCardInput | undefined,
+    outro: SlideCardInput | undefined,
+    brandId: string | undefined,
+  ): Promise<void> {
+    if (brandId) {
+      const brand = await this.prisma.brand.findFirst({ where: { id: brandId, tenantId }, select: { id: true } });
+      if (!brand) throw new BadRequestException('Brand non trovato');
+    }
+    const bgs = [cover?.background, outro?.background].filter((b): b is NonNullable<typeof b> => Boolean(b));
+    if (bgs.length === 0) return;
+    const manifest = await this.slides.loadManifest(tenantId, courseId, importId);
+    const clipsView = await this.clips.status(tenantId, courseId, importId);
+    for (const b of bgs) {
+      if (b.kind === 'slide' && !manifest.slides.some((s) => s.index === b.index)) {
+        throw new BadRequestException(`Slide ${b.index} inesistente per lo sfondo`);
+      }
+      if (b.kind === 'frame' && !clipsView?.clips.some((c) => c.index === b.index && c.clipKey)) {
+        throw new BadRequestException(`La slide ${b.index} non ha una clip avatar da cui prendere il fotogramma`);
+      }
+    }
+  }
+
+  /** Trasforma la scelta dell'utente in scheda del video, con URL firmati per sfondo e logo. */
+  private async resolveCard(
+    tenantId: string,
+    doc: SlideLessonDoc,
+    input: SlideCardInput | undefined,
+    kind: 'cover' | 'outro',
+    partTitle: string,
+    logoUrl: string | undefined,
+    slides: Array<{ index: number; imageKey: string }>,
+    clips: Array<{ index: number; clipKey?: string; durationSec?: number }>,
+  ): Promise<SlideVideoCard | undefined> {
+if (!input) return undefined;
+    const language = isLibrary(doc.courseId)
+      ? ((await this.slides.loadManifest(tenantId, doc.courseId, doc.importId)).language ?? 'it')
+      : await this.courseLanguage(tenantId, doc.courseId, doc.importId);
+    const thanks: Record<string, string> = {
+      it: 'Grazie per l’attenzione',
+      en: 'Thank you',
+      fr: 'Merci de votre attention',
+      de: 'Vielen Dank für Ihre Aufmerksamkeit',
+      es: 'Gracias por su atención',
+    };
+    const lang = language.toLowerCase().slice(0, 2);
+    const fallbackThanks = thanks[lang] ?? thanks.it ?? '';
+    const title = input.title?.trim() || (kind === 'cover' ? partTitle : fallbackThanks);
+    let background: SlideVideoCard['background'];
+    const bg = input.background;
+    if (bg?.kind === 'slide') {
+      const slide = slides.find((s) => s.index === bg.index);
+      if (slide) {
+        background = { kind: 'slide', imageUrl: await this.storage.getSignedUrl(slide.imageKey, { expiresInSec: MEDIA_URL_TTL_SEC }) };
+      }
+    } else if (bg?.kind === 'frame') {
+      const clip = clips.find((c) => c.index === bg.index);
+      if (clip?.clipKey) {
+        const maxAt = Math.max(0, (clip.durationSec ?? bg.atSec) - 0.2);
+        background = {
+          kind: 'frame',
+          clipUrl: await this.storage.getSignedUrl(clip.clipKey, { expiresInSec: MEDIA_URL_TTL_SEC }),
+          atSec: Math.min(bg.atSec, maxAt),
+        };
+      }
+    }
+    return { title, subtitle: input.subtitle?.trim() || undefined, durationSec: kind === 'cover' ? 4 : 5, logoUrl, background };
   }
 
   private async readCues(part: LessonPart): Promise<Array<{ id: string; start: number; end: number; text: string }>> {
@@ -999,6 +1124,9 @@ export class SlideLessonService {
       slideShots: doc.slideShots ?? {},
       avatarFrame: doc.avatarFrame ?? {},
       burnCaptions: doc.burnCaptions ?? true,
+      cover: doc.cover,
+      outro: doc.outro,
+      brandId: doc.brandId,
       moduleTitle: doc.moduleTitle,
       mode: doc.mode,
       remaster: doc.remaster === true,

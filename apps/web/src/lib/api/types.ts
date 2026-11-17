@@ -373,11 +373,15 @@ import type {
   SlideShot,
   SlideLayout,
   SlideDirectionItem,
+  PronunciationEntry,
+  SlideCardChoice,
 } from './slides-types';
 export type {
   SlideShot,
   SlideLayout,
   SlideDirectionItem,
+  PronunciationEntry,
+  SlideCardChoice,
   PipPosition,
   SlideScriptsGeneration,
   SlideScriptsResponse,
@@ -402,6 +406,11 @@ export interface SlideLayoutChoice {
   avatarFrame?: { x?: number; y?: number; zoom?: number };
   /** Sottotitoli incisi nel video (default no: c'è la trascrizione e il CC del player). */
   burnCaptions?: boolean;
+  /** Copertina e finale: `null` le toglie (solo rimontaggio). */
+  cover?: SlideCardChoice | null;
+  outro?: SlideCardChoice | null;
+  /** Brand per colori e logo (libreria). */
+  brandId?: string | null;
 }
 
 export interface ApiClient {
@@ -694,6 +703,7 @@ export interface ApiClient {
     importId: string,
     input: { slides: Array<{ index: number; script: string; skip: boolean }>; approved: boolean },
   ): Promise<SlideScriptsDoc>;
+  setSlideGlossary(courseId: string, importId: string, glossary: PronunciationEntry[]): Promise<SlideScriptsDoc>;
   estimateSlideClips(courseId: string, importId: string, engine: string | undefined, avatarType: SlideAvatarType, all?: boolean): Promise<SlideClipsEstimate>;
   changeSlideAvatar(courseId: string, importId: string, input: StartSlideClipsInput): Promise<SlideClipsView>;
   getSlideClips(courseId: string, importId: string): Promise<SlideClipsView | { status: 'none' }>;

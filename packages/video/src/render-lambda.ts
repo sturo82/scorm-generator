@@ -11,7 +11,7 @@ import {
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
 import {
   computeAllSceneBounds,
-  computeSlideTimeline,
+  slideVideoSegments,
   type SlideVideoSpec,
   type VideoSpec,
   type WordMark,
@@ -149,8 +149,7 @@ export async function renderSlideVideoOnLambda(
 ): Promise<RenderPillolaResult> {
   await ensureRemotionCredentials();
   const region = opts.region as AwsRegion;
-  const timeline = computeSlideTimeline(spec.slides, spec.canvas.fps);
-
+  const timeline = slideVideoSegments(spec, spec.canvas.fps);
   const { renderId, bucketName } = await renderMediaOnLambda({
     region,
     functionName: opts.functionName,

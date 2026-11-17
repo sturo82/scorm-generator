@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import type { DocumentExtractor, LLMProvider, ObjectStorage } from '@scorm/domain';
-import type { GenerateSlideScripts, UpdateSlideScripts } from '@scorm/contracts';
+import type { GenerateSlideScripts, PronunciationEntry, UpdateSlideScripts } from '@scorm/contracts';
 import { DocumentExtractorRegistry } from '@scorm/adapters/extractors';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
@@ -69,6 +69,8 @@ export interface SlideScriptsDoc {
   slides: SlideScriptEntry[];
   totalWords: number;
   estTotalSec: number;
+  /** Pronuncia di nomi e sigle: vale solo per l'audio delle clip. */
+  glossary?: PronunciationEntry[];
 }
 
 const BASE_RULES = (language: string): string[] => [
@@ -318,7 +320,8 @@ export class SlideScriptsService {
         }),
       );
     }
-    const doc = this.toDoc(importId, courseId, language, 'draft', out.model, entries, knowledge);
+    const previous = await this.get(tenantId, courseId, importId);
+    const doc = this.toDoc(importId, courseId, language, 'draft', out.model, entries, knowledge, previous?.glossary);
     await this.save(tenantId, doc);
     return doc;
   }
@@ -358,7 +361,33 @@ export class SlideScriptsService {
       existing.model,
       entries,
       { ids: existing.knowledgeDocIds, names: existing.knowledgeNames },
+      existing.glossary,
     );
+    await this.save(tenantId, doc);
+    return doc;
+  }
+
+  /**
+   * Aggiorna il glossario di pronuncia. Si può modificare anche a copioni approvati e a clip già
+   * generate: cambia solo l'audio, e le clip interessate si rigenerano dal passo successivo.
+   */
+  async setGlossary(
+    tenantId: string,
+    courseId: string,
+    importId: string,
+    glossary: PronunciationEntry[],
+  ): Promise<SlideScriptsDoc> {
+    const existing = await this.get(tenantId, courseId, importId);
+    if (!existing) throw new BadRequestException('Genera prima i copioni');
+    const seen = new Set<string>();
+    const clean = glossary.filter((e) => {
+      const k = e.term.trim().toLowerCase();
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    const doc: SlideScriptsDoc = { ...existing, glossary: clean, updatedAt: new Date().toISOString() };
+    if (clean.length === 0) delete doc.glossary;
     await this.save(tenantId, doc);
     return doc;
   }
@@ -371,6 +400,7 @@ export class SlideScriptsService {
     model: string,
     slides: SlideScriptEntry[],
     knowledge: { ids: string[]; names: string[] } | null,
+    glossary?: PronunciationEntry[],
   ): SlideScriptsDoc {
     const active = slides.filter((s) => !s.skip);
     return {
@@ -385,6 +415,7 @@ export class SlideScriptsService {
       slides,
       totalWords: active.reduce((n, s) => n + s.words, 0),
       estTotalSec: active.reduce((n, s) => n + s.estSec, 0),
+      ...(glossary && glossary.length > 0 ? { glossary } : {}),
     };
   }
 

@@ -1,4 +1,4 @@
-import { SlideVideoSpec, type AvatarFrame, type SlideShot, type PipPosition, type SlideCue, type SlideVideoLayout, type SlideVideoTheme } from '@scorm/contracts';
+import { SlideVideoSpec, type SlideVideoCard, type AvatarFrame, type SlideShot, type PipPosition, type SlideCue, type SlideVideoLayout, type SlideVideoTheme } from '@scorm/contracts';
 
 /** Una slide pronta per il montaggio: asset già risolti in URL e sottotitoli SRT grezzi. */
 export interface AssemblySlide {
@@ -72,6 +72,8 @@ export interface BuildSpecInput {
   avatarFrame?: Partial<AvatarFrame>;
   sectionTitle?: string;
   theme?: Partial<SlideVideoTheme>;
+  cover?: SlideVideoCard;
+  outro?: SlideVideoCard;
 }
 
 /** Costruisce e valida lo SlideVideoSpec per il render a partire dalle slide con clip. */
@@ -105,6 +107,8 @@ export function buildSlideVideoSpec(input: BuildSpecInput): SlideVideoSpec {
     avatarFrame: input.avatarFrame ?? {},
     theme: input.theme ?? {},
     sectionTitle: input.sectionTitle,
+    cover: input.cover,
+    outro: input.outro,
     slides,
   });
 }

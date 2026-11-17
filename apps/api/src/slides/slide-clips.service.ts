@@ -15,6 +15,7 @@ import {
   heygenEngineSupports,
   isHeyGenEngineId,
   type HeyGenAvatarBillingType,
+  type PronunciationEntry,
   type StartSlideClips,
 } from '@scorm/contracts';
 import type { ObjectStorage, VideoGenerationProvider } from '@scorm/domain';
@@ -23,6 +24,7 @@ import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { OBJECT_STORAGE, VIDEO_GEN_PROVIDER } from '../providers/provider.constants.js';
 import { SlideScriptsService } from './slide-scripts.service.js';
 import { meterCourseId } from './slide-owner.js';
+import { applyGlossary, restoreGlossary } from './slide-glossary.js';
 
 const CONCURRENCY = 3;
 const POLL_INTERVAL_MS = 8_000;
@@ -137,7 +139,7 @@ export class SlideClipsService {
       if (s.skip) return false;
       if (all) return true;
       const done = existing?.clips.find((c) => c.index === s.index);
-      return !(done?.state === 'completed' && done.scriptHash === hashScript(s.script));
+      return !(done?.state === 'completed' && done.scriptHash === hashScript(applyGlossary(s.script, scripts.glossary)));
     });
     // Con clip già generate la durata reale è più affidabile della stima dal numero di parole.
     const minutes =
@@ -192,7 +194,7 @@ export class SlideClipsService {
     const clips: SlideClip[] = scripts.slides
       .filter((s) => !s.skip)
       .map((s) => {
-        const hash = hashScript(s.script);
+        const hash = hashScript(applyGlossary(s.script, scripts.glossary));
         const prev = existing?.clips.find((c) => c.index === s.index);
         // Una clip completata, o con un job HeyGen già avviato (jobRef), si conserva: rigenerarla
         // significherebbe pagarla due volte.
@@ -260,7 +262,7 @@ export class SlideClipsService {
       updatedAt: now,
       clips: scripts.slides
         .filter((s) => !s.skip)
-        .map((s) => ({ index: s.index, scriptHash: hashScript(s.script), state: 'pending' as const, attempts: 0 })),
+        .map((s) => ({ index: s.index, scriptHash: hashScript(applyGlossary(s.script, scripts.glossary)), state: 'pending' as const, attempts: 0 })),
     };
     await this.save(tenantId, doc);
     this.logger.log(`Cambio avatar import ${importId}: ${doc.clips.length} clip con ${input.avatarId}`);
@@ -310,7 +312,8 @@ export class SlideClipsService {
     if (!doc || doc.status !== 'running') return;
     const scripts = await this.scripts.get(tenantId, courseId, importId);
     if (!scripts) return;
-    const scriptByIndex = new Map(scripts.slides.map((s) => [s.index, s.script]));
+    // Alla voce arriva il testo con la pronuncia del glossario; slide e sottotitoli restano con i termini originali.
+    const scriptByIndex = new Map(scripts.slides.map((s) => [s.index, applyGlossary(s.script, scripts.glossary)]));
 
     const heartbeat = setInterval(() => void this.save(tenantId, doc).catch(() => undefined), HEARTBEAT_MS);
     try {
@@ -319,7 +322,7 @@ export class SlideClipsService {
         for (;;) {
           const clip = queue.shift();
           if (!clip) return;
-          await this.processClip(tenantId, doc, clip, scriptByIndex.get(clip.index) ?? '');
+          await this.processClip(tenantId, doc, clip, scriptByIndex.get(clip.index) ?? '', scripts.glossary);
         }
       };
       await Promise.all(Array.from({ length: CONCURRENCY }, worker));
@@ -334,7 +337,13 @@ export class SlideClipsService {
     this.logger.log(`Clip slide import ${importId}: ${doc.status}`);
   }
 
-  private async processClip(tenantId: string, doc: SlideClipsDoc, clip: SlideClip, script: string): Promise<void> {
+  private async processClip(
+    tenantId: string,
+    doc: SlideClipsDoc,
+    clip: SlideClip,
+    script: string,
+    glossary: PronunciationEntry[] | undefined,
+  ): Promise<void> {
     const prefix = this.prefix(tenantId, doc.courseId, doc.importId);
     while (clip.state !== 'completed' && clip.state !== 'failed') {
       try {
@@ -366,7 +375,8 @@ export class SlideClipsService {
               try {
                 const srt = await download(res.subtitleUrl);
                 clip.srtKey = `${prefix}/clips/${n}.srt`;
-                await this.storage.putObject(clip.srtKey, srt.bytes, { contentType: 'application/x-subrip' });
+                const srtText = restoreGlossary(Buffer.from(srt.bytes).toString('utf8'), glossary);
+                await this.storage.putObject(clip.srtKey, Buffer.from(srtText, 'utf8'), { contentType: 'application/x-subrip' });
               } catch (e) {
                 this.logger.warn(`Sottotitoli slide ${clip.index} non scaricati: ${errMsg(e)}`);
               }
