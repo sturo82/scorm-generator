@@ -185,6 +185,16 @@ export class SlidesController {
     return this.lessons.remaster(ctx.tenant.tenantId, courseId, importId, parsed.data);
   }
 
+  /** Regia automatica (inquadratura e angolo dell'avatar per slide) del layout dinamico. */
+  @Get('imports/:importId/lesson/direction')
+  async lessonDirection(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+  ): Promise<{ items: Array<{ index: number; shot: string; corner: string; words: number }> }> {
+    return { items: await this.lessons.direction(ctx.tenant.tenantId, courseId, importId) };
+  }
+
   @Get('imports/:importId/lesson')
   async getLesson(
     @CurrentContext() ctx: AuthContext,

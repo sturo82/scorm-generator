@@ -1152,6 +1152,7 @@ export class MockApiClient implements ApiClient {
   async replaceSlides(): Promise<never> { return this.slidesUnavailable(); }
   async remasterSlideLesson(): Promise<never> { return this.slidesUnavailable(); }
   async proposeSlideSections(): Promise<never> { return this.slidesUnavailable(); }
+  async getSlideDirection(): Promise<never> { return this.slidesUnavailable(); }
   async buildSlideLesson(): Promise<never> { return this.slidesUnavailable(); }
 
   private pushAudit(action: string, resourceType: string, resourceId: string) {

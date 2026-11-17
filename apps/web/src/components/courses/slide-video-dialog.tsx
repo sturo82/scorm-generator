@@ -17,7 +17,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { AiWorking, AiWorkingInline } from '@/components/courses/ai-working';
-import type { PipPosition, SlideAvatarType, SlideScriptEntry, SlideSection } from '@/lib/api/types';
+import type { PipPosition, SlideAvatarType, SlideLayout, SlideScriptEntry, SlideSection, SlideShot } from '@/lib/api/types';
 import {
   qk,
   useBuildSlideLesson,
@@ -30,6 +30,7 @@ import {
   useSaveSlideScripts,
   useSlideClips,
   useSlideClipsEstimate,
+  useSlideDirection,
   useSlideImport,
   useSlideLesson,
   useSlideScripts,
@@ -841,7 +842,8 @@ function StepLesson({
   const build = useBuildSlideLesson(courseId, importId);
   const remaster = useRemasterSlideLesson(courseId, importId);
   const propose = useProposeSlideSections(courseId, importId);
-  const [layout, setLayout] = React.useState<'split' | 'pip'>(view?.layout ?? 'split');
+  const [layout, setLayout] = React.useState<SlideLayout>(view?.layout ?? 'dynamic');
+  const [slideShots, setSlideShots] = React.useState<Record<string, SlideShot>>(view?.slideShots ?? {});
   const [pipPosition, setPipPosition] = React.useState<PipPosition>(view?.pipPosition ?? 'bottom-right');
   const [slidePositions, setSlidePositions] = React.useState<Record<string, PipPosition>>(view?.slidePositions ?? {});
   const [burnCaptions, setBurnCaptions] = React.useState<boolean>(view?.burnCaptions ?? false);
@@ -852,6 +854,7 @@ function StepLesson({
     setLayout(view.layout);
     setPipPosition(view.pipPosition ?? 'bottom-right');
     setSlidePositions(view.slidePositions ?? {});
+    setSlideShots(view.slideShots ?? {});
     setBurnCaptions(view.burnCaptions ?? true);
   }, [view?.status]); // eslint-disable-line react-hooks/exhaustive-deps
   const [title, setTitle] = React.useState(defaultTitle);
@@ -893,7 +896,8 @@ function StepLesson({
       await build.mutateAsync({
         layout,
         pipPosition,
-        slidePositions: layout === 'pip' ? slidePositions : {},
+        slidePositions: layout === 'split' ? {} : slidePositions,
+        slideShots: layout === 'dynamic' ? slideShots : {},
         burnCaptions,
         moduleTitle: title.trim() || undefined,
         sections: mode === 'sections' ? sections.map((s) => ({ title: s.title.trim(), from: s.from })) : undefined,
@@ -915,7 +919,15 @@ function StepLesson({
   async function handleRemaster() {
     try {
       await remaster.mutateAsync(
-        editLayout ? { layout, pipPosition, slidePositions: layout === 'pip' ? slidePositions : {}, burnCaptions } : undefined,
+        editLayout
+          ? {
+              layout,
+              pipPosition,
+              slidePositions: layout === 'split' ? {} : slidePositions,
+              slideShots: layout === 'dynamic' ? slideShots : {},
+              burnCaptions,
+            }
+          : undefined,
       );
       setEditLayout(false);
       toast.show('Rimontaggio avviato: le clip avatar non vengono rigenerate', 'success');
@@ -1049,6 +1061,10 @@ function StepLesson({
                 setSlidePositions={setSlidePositions}
                 burnCaptions={burnCaptions}
                 setBurnCaptions={setBurnCaptions}
+                slideShots={slideShots}
+                setSlideShots={setSlideShots}
+                courseId={courseId}
+                importId={importId}
                 clipIndexes={clipIdx}
                 thumbs={thumbs}
                 extraTitles={extraTitles}
@@ -1126,6 +1142,10 @@ function StepLesson({
                 setSlidePositions={setSlidePositions}
                 burnCaptions={burnCaptions}
                 setBurnCaptions={setBurnCaptions}
+                slideShots={slideShots}
+                setSlideShots={setSlideShots}
+                courseId={courseId}
+                importId={importId}
                 clipIndexes={clipIdx}
                 thumbs={thumbs}
                 extraTitles={extraTitles}
@@ -1215,14 +1235,22 @@ function LayoutEditor({
   setSlidePositions,
   burnCaptions,
   setBurnCaptions,
+  slideShots,
+  setSlideShots,
+  courseId,
+  importId,
   clipIndexes,
   thumbs,
   extraTitles,
 }: {
   burnCaptions: boolean;
   setBurnCaptions: (v: boolean) => void;
-  layout: 'split' | 'pip';
-  setLayout: (l: 'split' | 'pip') => void;
+  slideShots: Record<string, SlideShot>;
+  setSlideShots: (fn: (cur: Record<string, SlideShot>) => Record<string, SlideShot>) => void;
+  courseId: string;
+  importId: string;
+  layout: SlideLayout;
+  setLayout: (l: SlideLayout) => void;
   pipPosition: PipPosition;
   setPipPosition: (p: PipPosition) => void;
   slidePositions: Record<string, PipPosition>;
@@ -1239,8 +1267,9 @@ function LayoutEditor({
       <fieldset className="space-y-1">
         <legend className="font-medium">Disposizione</legend>
         {([
-          ['split', 'Slide affiancata all’avatar (consigliata: non copre le slide)'],
-          ['pip', 'Slide a tutto schermo con l’avatar in un cerchio'],
+          ['dynamic', 'Dinamica (consigliata): l’inquadratura cambia slide per slide con transizioni animate'],
+          ['split', 'Fissa: slide affiancata all’avatar'],
+          ['pip', 'Fissa: slide a tutto schermo con l’avatar in un cerchio'],
         ] as const).map(([id, label]) => (
           <label key={id} className="flex items-center gap-2">
             <input type="radio" name="slide-layout" checked={layout === id} onChange={() => setLayout(id)} />
@@ -1259,6 +1288,19 @@ function LayoutEditor({
           </span>
         </span>
       </label>
+      {layout === 'dynamic' && (
+        <DirectionEditor
+          courseId={courseId}
+          importId={importId}
+          clipIndexes={clipIndexes}
+          thumbs={thumbs}
+          extraTitles={extraTitles}
+          slideShots={slideShots}
+          setSlideShots={setSlideShots}
+          slidePositions={slidePositions}
+          setSlidePositions={setSlidePositions}
+        />
+      )}
       {layout === 'pip' && (
         <div className="space-y-3 rounded-md border p-3">
           <div className="flex flex-wrap items-center gap-4">
@@ -1325,17 +1367,145 @@ function LayoutEditor({
   );
 }
 
+const SHOTS: Array<{ id: SlideShot; label: string; hint: string }> = [
+  { id: 'presenter', label: 'Presentatore', hint: 'avatar grande, slide in una card' },
+  { id: 'side', label: 'Affiancata', hint: 'slide grande e avatar a lato' },
+  { id: 'focus', label: 'Focus slide', hint: 'slide a tutto schermo, avatar in un cerchio' },
+  { id: 'mini', label: 'Avatar discreto', hint: 'slide a tutto schermo, cerchio piccolo' },
+];
+
+/**
+ * Regia del layout dinamico: per ogni slide l'inquadratura e l'angolo scelti in automatico
+ * (in base a ruolo e densità della slide e alla zona più vuota dell'immagine), modificabili.
+ */
+function DirectionEditor({
+  courseId,
+  importId,
+  clipIndexes,
+  thumbs,
+  extraTitles,
+  slideShots,
+  setSlideShots,
+  slidePositions,
+  setSlidePositions,
+}: {
+  courseId: string;
+  importId: string;
+  clipIndexes: number[];
+  thumbs: Array<{ index: number; imageUrl: string }>;
+  extraTitles: Record<number, string>;
+  slideShots: Record<string, SlideShot>;
+  setSlideShots: (fn: (cur: Record<string, SlideShot>) => Record<string, SlideShot>) => void;
+  slidePositions: Record<string, PipPosition>;
+  setSlidePositions: (fn: (cur: Record<string, PipPosition>) => Record<string, PipPosition>) => void;
+}) {
+  const [open, setOpen] = React.useState(Object.keys(slideShots).length + Object.keys(slidePositions).length > 0);
+  const direction = useSlideDirection(courseId, importId, open);
+  const auto = React.useMemo(() => new Map((direction.data?.items ?? []).map((d) => [d.index, d])), [direction.data]);
+  const thumbByIndex = React.useMemo(() => new Map(thumbs.map((t) => [t.index, t.imageUrl])), [thumbs]);
+  const changed = new Set([...Object.keys(slideShots), ...Object.keys(slidePositions)]).size;
+  return (
+    <div className="space-y-3 rounded-md border p-3">
+      <p className="text-xs text-muted-foreground">
+        La regia sceglie per ogni slide l&apos;inquadratura (presentatore all&apos;apertura, sulle slide di sezione e in
+        chiusura; avatar più discreto sulle slide dense) e mette il cerchio nell&apos;angolo più libero, così non copre il
+        contenuto. I colori seguono il brand del corso.
+      </p>
+      <label className="flex items-center gap-2 text-xs">
+        <input type="checkbox" checked={open} onChange={(e) => setOpen(e.target.checked)} />
+        Rivedi la regia slide per slide{changed > 0 ? ` (${changed} modificate)` : ''}
+      </label>
+      {open &&
+        (direction.isLoading ? (
+          <AiWorkingInline label="Analizzo le slide…" />
+        ) : (
+          <div className="grid max-h-96 grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3">
+            {clipIndexes.map((i) => {
+              const key = String(i);
+              const a = auto.get(i);
+              const shot = slideShots[key] ?? a?.shot ?? 'focus';
+              const corner = slidePositions[key] ?? a?.corner ?? 'bottom-right';
+              const img = thumbByIndex.get(i);
+              const circle = shot === 'focus' || shot === 'mini';
+              return (
+                <div key={i} className="space-y-1.5 rounded border p-2">
+                  <div className="relative overflow-hidden rounded bg-muted">
+                    {img ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- URL firmato dinamico
+                      <img src={img} alt={`Slide ${i}`} className="w-full" />
+                    ) : (
+                      <div className="grid aspect-video w-full place-items-center p-2 text-center text-[11px]">
+                        {extraTitles[i] ?? `Slide ${i}`}
+                      </div>
+                    )}
+                    {circle && <AvatarDot pos={corner} custom={Boolean(slidePositions[key])} small={shot === 'mini'} />}
+                    {!circle && (
+                      <span className="absolute right-1 top-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white">
+                        {SHOTS.find((x) => x.id === shot)?.label}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted-foreground">{img ? `Slide ${i}` : 'Slide extra'}</span>
+                    {circle && (
+                      <CornerPicker
+                        small
+                        value={slidePositions[key]}
+                        inherit={a?.corner ?? 'bottom-right'}
+                        onChange={(p) =>
+                          setSlidePositions((cur) => {
+                            const next = { ...cur };
+                            if (!p || p === a?.corner) delete next[key];
+                            else next[key] = p;
+                            return next;
+                          })
+                        }
+                      />
+                    )}
+                  </div>
+                  <select
+                    className={SELECT}
+                    value={slideShots[key] ?? ''}
+                    title={SHOTS.find((x) => x.id === shot)?.hint}
+                    onChange={(e) =>
+                      setSlideShots((cur) => {
+                        const next = { ...cur };
+                        const v = e.target.value as SlideShot | '';
+                        if (!v) delete next[key];
+                        else next[key] = v;
+                        return next;
+                      })
+                    }
+                  >
+                    <option value="">Auto · {SHOTS.find((x) => x.id === (a?.shot ?? 'focus'))?.label}</option>
+                    {SHOTS.map((x) => (
+                      <option key={x.id} value={x.id}>
+                        {x.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+    </div>
+  );
+}
+
 /** Anteprima del cerchio avatar sulla miniatura della slide (stesse proporzioni del video). */
-function AvatarDot({ pos, custom }: { pos: PipPosition; custom: boolean }) {
+function AvatarDot({ pos, custom, small = false }: { pos: PipPosition; custom: boolean; small?: boolean }) {
   const [v, h] = pos.split('-') as ['top' | 'bottom', 'left' | 'right'];
   return (
     <span
       aria-hidden
       className={cn(
-        'absolute aspect-square w-[16.7%] rounded-full border-2',
+        'absolute aspect-square rounded-full border-2',
+        small ? 'w-[10.4%]' : 'w-[15.6%]',
         custom ? 'border-primary bg-primary/60' : 'border-white/80 bg-white/40',
-        v === 'top' ? 'top-[4.4%]' : 'bottom-[5.2%]',
-        h === 'left' ? 'left-[2.5%]' : 'right-[2.5%]',
+        // Stesse proporzioni del video: cerchio 300 px (margine 44) o 200 px (margine 34) su 1920×1080.
+        v === 'top' ? (small ? 'top-[3.1%]' : 'top-[4.1%]') : small ? 'bottom-[3.1%]' : 'bottom-[4.1%]',
+        h === 'left' ? (small ? 'left-[1.8%]' : 'left-[2.3%]') : small ? 'right-[1.8%]' : 'right-[2.3%]',
       )}
     />
   );

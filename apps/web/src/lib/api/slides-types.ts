@@ -89,15 +89,25 @@ export interface SlideSection {
 }
 
 export type PipPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+/** Inquadratura di una slide nel layout dinamico. */
+export type SlideShot = 'presenter' | 'side' | 'focus' | 'mini';
+export type SlideLayout = 'split' | 'pip' | 'dynamic';
+export interface SlideDirectionItem {
+  index: number;
+  shot: SlideShot;
+  corner: PipPosition;
+  words: number;
+}
 
 export interface SlideLessonView {
   importId: string;
   status: 'running' | 'completed' | 'failed';
   step: 'render' | 'summary' | 'lesson' | 'quiz' | 'final_quiz' | 'done';
   error?: string;
-  layout: 'split' | 'pip';
+  layout: SlideLayout;
   pipPosition?: PipPosition;
   slidePositions?: Record<string, PipPosition>;
+  slideShots?: Record<string, SlideShot>;
   burnCaptions?: boolean;
   moduleTitle: string;
   mode: 'single' | 'sections';

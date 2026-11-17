@@ -13,12 +13,27 @@ import { z } from 'zod';
  */
 
 /** Disposizione del video: slide affiancata all'avatar, oppure avatar in cerchio sopra la slide. */
-export const SlideVideoLayout = z.enum(['split', 'pip']);
+export const SlideVideoLayout = z.enum(['split', 'pip', 'dynamic']);
 export type SlideVideoLayout = z.infer<typeof SlideVideoLayout>;
 
 /** Posizione del cerchio avatar nel layout "pip". */
 export const PipPosition = z.enum(['bottom-right', 'bottom-left', 'top-right', 'top-left']);
 export type PipPosition = z.infer<typeof PipPosition>;
+
+/**
+ * Inquadratura di una slide nel layout "dynamic" (regia):
+ *  - presenter: avatar grande, slide in una card più piccola (apertura, sezioni, chiusura);
+ *  - side: slide grande con l'avatar in un riquadro affiancato (slide con poco testo);
+ *  - focus: slide a tutto schermo, avatar in un cerchio in un angolo (slide dense);
+ *  - mini: slide a tutto schermo, avatar in un cerchio piccolo e discreto (slide molto dense).
+ * Il passaggio tra un'inquadratura e la successiva è animato.
+ */
+export const SlideShot = z.enum(['presenter', 'side', 'focus', 'mini']);
+export type SlideShot = z.infer<typeof SlideShot>;
+
+/** Inquadrature per slide (chiave = indice della slide nell'import) che sostituiscono quelle automatiche. */
+export const SlideShots = z.record(z.string().regex(/^\d+$/), SlideShot);
+export type SlideShots = z.infer<typeof SlideShots>;
 
 /** Posizioni per slide (chiave = indice della slide nell'import, 1-based) che sostituiscono il default. */
 export const SlidePipPositions = z.record(z.string().regex(/^\d+$/), PipPosition);
@@ -52,6 +67,8 @@ export const SlideVideoSlide = z.object({
   cues: z.array(SlideCue).default([]),
   /** Posizione dell'avatar per questa slide (layout pip); se assente vale quella del video. */
   pipPosition: PipPosition.optional(),
+  /** Inquadratura della slide nel layout dynamic (default: focus). */
+  shot: SlideShot.optional(),
 });
 export type SlideVideoSlide = z.infer<typeof SlideVideoSlide>;
 
@@ -216,7 +233,7 @@ export type StartSlideClips = z.infer<typeof StartSlideClips>;
 
 /** Montaggio del video finale e creazione della lezione. */
 export const BuildSlideLesson = z.object({
-  layout: SlideVideoLayout.default('split'),
+  layout: SlideVideoLayout.default('dynamic'),
   /** Titolo del modulo e della lezione creati (o del corso, con più sezioni). */
   moduleTitle: z.string().trim().min(1).max(200).optional(),
   /**
@@ -230,6 +247,7 @@ export const BuildSlideLesson = z.object({
     .optional(),
   pipPosition: PipPosition.default('bottom-right'),
   slidePositions: SlidePipPositions.default({}),
+  slideShots: SlideShots.default({}),
   burnCaptions: z.boolean().default(false),
 });
 
@@ -238,6 +256,7 @@ export const RemasterSlideLesson = z.object({
   layout: SlideVideoLayout.optional(),
   pipPosition: PipPosition.optional(),
   slidePositions: SlidePipPositions.optional(),
+  slideShots: SlideShots.optional(),
   burnCaptions: z.boolean().optional(),
 });
 export type RemasterSlideLesson = z.infer<typeof RemasterSlideLesson>;

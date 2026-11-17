@@ -14,7 +14,9 @@ import {
   globalCues,
   type Block,
   type PipPosition,
+  type SlideShot,
   type SlideVideoLayout,
+  type SlideVideoTheme,
 } from '@scorm/contracts';
 import type { LLMProvider, ObjectStorage } from '@scorm/domain';
 import type { AppConfig } from '../config/configuration.js';
@@ -23,7 +25,9 @@ import { assessmentPrompt, systemPrompt } from '../generation/prompts.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LLM_PROVIDER, OBJECT_STORAGE } from '../providers/provider.constants.js';
-import { buildSlideVideoSpec } from './slide-assembly.js';
+import { buildSlideVideoSpec, type AssemblySlide } from './slide-assembly.js';
+import { autoDirection, type SlideDirection } from './slide-direction.js';
+import { createHash } from 'node:crypto';
 import { SlideClipsService } from './slide-clips.service.js';
 import { SlideScriptsService } from './slide-scripts.service.js';
 import { SlidesService } from './slides.service.js';
@@ -73,6 +77,8 @@ export interface SlideLessonDoc {
   /** Posizione di default del cerchio avatar (layout pip) e override per slide (indice → posizione). */
   pipPosition?: PipPosition;
   slidePositions?: Record<string, PipPosition>;
+  /** Inquadrature scelte dall'utente per slide (layout dynamic); le altre seguono la regia automatica. */
+  slideShots?: Record<string, SlideShot>;
   /** Sottotitoli incisi nel video. Assente nei documenti precedenti, che li avevano: vale true. */
   burnCaptions?: boolean;
   /** Titolo del corso/modulo (modalità "una lezione") o del gruppo di sezioni. */
@@ -100,6 +106,7 @@ export interface SlideLessonView {
   layout: SlideVideoLayout;
   pipPosition: PipPosition;
   slidePositions: Record<string, PipPosition>;
+  slideShots: Record<string, SlideShot>;
   burnCaptions: boolean;
   moduleTitle: string;
   mode: SlideLessonDoc['mode'];
@@ -240,6 +247,7 @@ export class SlideLessonService {
       sections?: SectionInput[];
       pipPosition?: PipPosition;
       slidePositions?: Record<string, PipPosition>;
+      slideShots?: Record<string, SlideShot>;
       burnCaptions?: boolean;
     },
   ): Promise<SlideLessonView> {
@@ -274,6 +282,7 @@ export class SlideLessonService {
         layout: input.layout ?? 'split',
         pipPosition: input.pipPosition ?? 'bottom-right',
         slidePositions: input.slidePositions ?? {},
+        slideShots: input.slideShots ?? {},
         burnCaptions: input.burnCaptions ?? false,
         moduleTitle,
         mode: sections ? 'sections' : 'single',
@@ -317,6 +326,7 @@ export class SlideLessonService {
       layout?: SlideVideoLayout;
       pipPosition?: PipPosition;
       slidePositions?: Record<string, PipPosition>;
+      slideShots?: Record<string, SlideShot>;
       burnCaptions?: boolean;
     } = {},
   ): Promise<SlideLessonView> {
@@ -333,6 +343,7 @@ export class SlideLessonService {
       layout: input.layout ?? existing.layout,
       pipPosition: input.pipPosition ?? existing.pipPosition ?? 'bottom-right',
       slidePositions: input.slidePositions ?? existing.slidePositions ?? {},
+      slideShots: input.slideShots ?? existing.slideShots ?? {},
       burnCaptions: input.burnCaptions ?? existing.burnCaptions ?? true,
       currentPart: 0,
       parts: existing.parts.map((p) => ({ ...p, remasterDone: false })),
@@ -441,7 +452,7 @@ export class SlideLessonService {
       .sort((a, b) => a.index - b.index);
     if (partClips.length === 0) throw new Error(`Nessuna clip per «${part.title}»`);
 
-    const assembly = [];
+    const assembly: AssemblySlide[] = [];
     for (const c of partClips) {
       const imageKey = imageByIndex.get(c.index);
       const extra = scriptEntry.get(c.index)?.extra;
@@ -460,12 +471,24 @@ export class SlideLessonService {
         pipPosition: doc.slidePositions?.[String(c.index)],
       });
     }
+    // Layout dinamico: regia automatica (inquadratura + angolo libero) con le scelte dell'utente.
+    if (doc.layout === 'dynamic') {
+      const direction = await this.direction(tenantId, courseId, importId);
+      const auto = new Map(direction.map((d) => [d.index, d]));
+      for (const a of assembly) {
+        const idx = Number(a.id.replace('slide-', ''));
+        const d = auto.get(idx);
+        a.shot = doc.slideShots?.[String(idx)] ?? d?.shot ?? 'focus';
+        a.pipPosition = doc.slidePositions?.[String(idx)] ?? d?.corner ?? 'bottom-right';
+      }
+    }
     const spec = buildSlideVideoSpec({
       slides: assembly,
       layout: doc.layout,
       pipPosition: doc.pipPosition,
       burnCaptions: doc.burnCaptions ?? true,
       sectionTitle: part.title,
+      theme: await this.brandTheme(tenantId, courseId),
     });
 
     const cfg = this.config.get('cartoonVideo', { infer: true });
@@ -507,6 +530,57 @@ export class SlideLessonService {
     part.videoKey = key;
     part.videoDurationSec = result.durationSec;
     await this.save(tenantId, doc);
+  }
+
+  /**
+   * Regia automatica delle slide incluse nel video (inquadratura + angolo libero), con cache su
+   * storage invalidata quando cambiano le slide (es. dopo «Sostituisci con PDF aggiornato»).
+   */
+  async direction(tenantId: string, courseId: string, importId: string): Promise<SlideDirection[]> {
+    const manifest = await this.slides.loadManifest(tenantId, courseId, importId);
+    const clipsView = await this.clips.status(tenantId, courseId, importId);
+    const scripts = await this.scripts.get(tenantId, courseId, importId);
+    const included = (clipsView?.clips ?? []).map((c) => c.index).sort((a, b) => a - b);
+    const sig = createHash('sha1')
+      .update(JSON.stringify([manifest.filename, manifest.slides.map((x) => x.text), included, 'v1']))
+      .digest('hex');
+    const cacheKey = `${this.prefix(tenantId, { courseId, importId })}/direction.json`;
+    if (await this.storage.exists(cacheKey)) {
+      const cached = JSON.parse((await this.storage.getObject(cacheKey)).toString('utf8')) as { sig: string; items: SlideDirection[] };
+      if (cached.sig === sig) return cached.items;
+    }
+    const byIndex = new Map(manifest.slides.map((x) => [x.index, x]));
+    const extra = new Map((scripts?.slides ?? []).filter((x) => x.extra).map((x) => [x.index, x.extra!]));
+    // Le parti (sezioni) iniziano e finiscono con il presentatore: la regia si calcola per parte.
+    const doc = await this.load(tenantId, courseId, importId);
+    const parts = doc?.parts?.length ? doc.parts : [{ from: 1, to: OPEN_END }];
+    const items: SlideDirection[] = [];
+    for (const part of parts) {
+      const inputs = [];
+      for (const idx of included.filter((n) => n >= part.from && n <= part.to)) {
+        const m = byIndex.get(idx);
+        const e = extra.get(idx);
+        inputs.push({
+          index: idx,
+          text: m?.text ?? (e ? [e.title, ...e.bullets].join('\n') : ''),
+          png: m ? await this.storage.getObject(m.imageKey) : undefined,
+          extra: !m && Boolean(e),
+        });
+      }
+      items.push(...autoDirection(inputs));
+    }
+    await this.storage.putObject(cacheKey, Buffer.from(JSON.stringify({ sig, items })), { contentType: 'application/json' });
+    return items;
+  }
+
+  /** Colori del video dal brand principale del corso (sfondo scuro, accento del brand). */
+  private async brandTheme(tenantId: string, courseId: string): Promise<Partial<SlideVideoTheme>> {
+    const course = await this.prisma.course.findFirst({ where: { id: courseId, tenantId }, select: { primaryBrandId: true } });
+    if (!course?.primaryBrandId) return {};
+    const brand = await this.prisma.brand.findFirst({ where: { id: course.primaryBrandId, tenantId }, select: { definition: true } });
+    const colors = (brand?.definition as { colors?: { primary?: string; secondary?: string } } | null)?.colors;
+    const accent = [colors?.primary, colors?.secondary].find((c) => c && luminance(c) > 0.18);
+    return accent ? { accent } : {};
   }
 
   /** Sostituisce il video nel blocco video della lezione esistente, lasciando intatto il resto. */
@@ -826,6 +900,7 @@ export class SlideLessonService {
       layout: doc.layout,
       pipPosition: doc.pipPosition ?? 'bottom-right',
       slidePositions: doc.slidePositions ?? {},
+      slideShots: doc.slideShots ?? {},
       burnCaptions: doc.burnCaptions ?? true,
       moduleTitle: doc.moduleTitle,
       mode: doc.mode,
@@ -842,6 +917,19 @@ export class SlideLessonService {
       lessonId: doc.parts[0]?.lessonId,
     };
   }
+}
+
+/** Luminanza relativa di un colore esadecimale (0 nero, 1 bianco); -1 se non è un colore valido. */
+function luminance(hex: string): number {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return -1;
+  const h = m[1]!.length === 3 ? m[1]!.split('').map((c) => c + c).join('') : m[1]!;
+  const n = parseInt(h, 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * ch[0]! + 0.7152 * ch[1]! + 0.0722 * ch[2]!;
 }
 
 function errMsg(err: unknown): string {

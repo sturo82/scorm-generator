@@ -370,8 +370,14 @@ import type {
   SlideScriptsGeneration,
   SlideScriptsResponse,
   PipPosition,
+  SlideShot,
+  SlideLayout,
+  SlideDirectionItem,
 } from './slides-types';
 export type {
+  SlideShot,
+  SlideLayout,
+  SlideDirectionItem,
   PipPosition,
   SlideScriptsGeneration,
   SlideScriptsResponse,
@@ -388,9 +394,10 @@ export type {
 
 /** Disposizione del video slide+avatar e posizioni del cerchio avatar (layout pip). */
 export interface SlideLayoutChoice {
-  layout?: 'split' | 'pip';
+  layout?: SlideLayout;
   pipPosition?: PipPosition;
   slidePositions?: Record<string, PipPosition>;
+  slideShots?: Record<string, SlideShot>;
   /** Sottotitoli incisi nel video (default no: c'è la trascrizione e il CC del player). */
   burnCaptions?: boolean;
 }
@@ -690,7 +697,8 @@ export interface ApiClient {
   replaceSlides(courseId: string, importId: string, file: File): Promise<SlideImportView & { warnings: string[] }>;
   remasterSlideLesson(courseId: string, importId: string, input?: SlideLayoutChoice): Promise<SlideLessonView>;
   proposeSlideSections(courseId: string, importId: string): Promise<{ sections: SlideSection[] }>;
-  buildSlideLesson(courseId: string, importId: string, input: SlideLayoutChoice & { layout: 'split' | 'pip'; moduleTitle?: string; sections?: SlideSection[] }): Promise<SlideLessonView>;
+  buildSlideLesson(courseId: string, importId: string, input: SlideLayoutChoice & { layout: SlideLayout; moduleTitle?: string; sections?: SlideSection[] }): Promise<SlideLessonView>;
+  getSlideDirection(courseId: string, importId: string): Promise<{ items: SlideDirectionItem[] }>;
 }
 
 /** Esito del redeem di un ticket SSO: token di sessione + dati utente/tenant. */

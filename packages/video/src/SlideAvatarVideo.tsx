@@ -1,4 +1,5 @@
 import React from 'react';
+import { DynamicSlideVideo } from './DynamicSlideVideo.js';
 import { AbsoluteFill, Img, OffthreadVideo, Sequence, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 import {
   SlideVideoSpec,
@@ -25,6 +26,13 @@ import {
 export const SlideAvatarVideo: React.FC<{ spec: SlideVideoSpec }> = ({ spec: rawSpec }) => {
   // Applica i default dello schema anche se l'API passa uno spec parziale.
   const spec = React.useMemo(() => SlideVideoSpec.parse(rawSpec), [rawSpec]);
+  // Layout "dynamic": regia con inquadrature animate per slide.
+  if (spec.layout === 'dynamic') return <DynamicSlideVideo spec={spec} />;
+  return <StaticSlideVideo spec={spec} />;
+};
+
+/** Layout fissi "split" e "pip". */
+const StaticSlideVideo: React.FC<{ spec: SlideVideoSpec }> = ({ spec }) => {
   const { fps } = useVideoConfig();
   const timeline = React.useMemo(() => computeSlideTimeline(spec.slides, fps), [spec.slides, fps]);
   const cues = React.useMemo(() => globalCues(spec.slides, timeline), [spec.slides, timeline]);

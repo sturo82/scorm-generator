@@ -56,6 +56,8 @@ import type {
   SlideScriptsGeneration,
   SlideScriptsResponse,
   SlideLayoutChoice,
+  SlideLayout,
+  SlideDirectionItem,
 } from './types';
 
 /**
@@ -641,7 +643,10 @@ export class HttpApiClient implements ApiClient {
   proposeSlideSections(courseId: string, importId: string) {
     return this.request<{ sections: SlideSection[] }>(`/courses/${courseId}/slides/imports/${importId}/sections/propose`, { method: 'POST' });
   }
-  buildSlideLesson(courseId: string, importId: string, input: SlideLayoutChoice & { layout: 'split' | 'pip'; moduleTitle?: string; sections?: SlideSection[] }) {
+  getSlideDirection(courseId: string, importId: string) {
+    return this.request<{ items: SlideDirectionItem[] }>(`/courses/${courseId}/slides/imports/${importId}/lesson/direction`);
+  }
+  buildSlideLesson(courseId: string, importId: string, input: SlideLayoutChoice & { layout: SlideLayout; moduleTitle?: string; sections?: SlideSection[] }) {
     return this.request<SlideLessonView>(`/courses/${courseId}/slides/imports/${importId}/lesson`, {
       method: 'POST',
       body: JSON.stringify(input),

@@ -1026,7 +1026,7 @@ export const useProposeSlideSections = (courseId: string, importId: string | nul
 export function useBuildSlideLesson(courseId: string, importId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: import('./types').SlideLayoutChoice & { layout: 'split' | 'pip'; moduleTitle?: string; sections?: Array<{ title: string; from: number }> }) =>
+    mutationFn: (input: import('./types').SlideLayoutChoice & { layout: import('./types').SlideLayout; moduleTitle?: string; sections?: Array<{ title: string; from: number }> }) =>
       api.buildSlideLesson(courseId, importId as string, input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, 'lesson'] });
@@ -1061,3 +1061,12 @@ export function useRemasterSlideLesson(courseId: string, importId: string | null
     onSuccess: () => qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, 'lesson'] }),
   });
 }
+
+/** Regia automatica (inquadratura e angolo per slide) del layout dinamico. */
+export const useSlideDirection = (courseId: string, importId: string | null, enabled: boolean) =>
+  useQuery({
+    queryKey: ['courses', courseId, 'slides', importId, 'direction'],
+    queryFn: () => api.getSlideDirection(courseId, importId as string),
+    enabled: !!courseId && !!importId && enabled,
+    staleTime: 10 * 60_000,
+  });

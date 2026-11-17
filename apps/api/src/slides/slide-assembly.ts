@@ -1,4 +1,4 @@
-import { SlideVideoSpec, type PipPosition, type SlideCue, type SlideVideoLayout, type SlideVideoTheme } from '@scorm/contracts';
+import { SlideVideoSpec, type SlideShot, type PipPosition, type SlideCue, type SlideVideoLayout, type SlideVideoTheme } from '@scorm/contracts';
 
 /** Una slide pronta per il montaggio: asset già risolti in URL e sottotitoli SRT grezzi. */
 export interface AssemblySlide {
@@ -15,6 +15,8 @@ export interface AssemblySlide {
   srt?: string;
   /** Posizione dell'avatar per questa slide (layout pip). */
   pipPosition?: PipPosition;
+  /** Inquadratura della slide (layout dynamic). */
+  shot?: SlideShot;
 }
 
 /**
@@ -91,6 +93,7 @@ export function buildSlideVideoSpec(input: BuildSpecInput): SlideVideoSpec {
       narration: s.narration,
       cues,
       pipPosition: s.pipPosition,
+      shot: s.shot,
     };
   });
   return SlideVideoSpec.parse({
