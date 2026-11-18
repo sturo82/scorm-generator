@@ -41,6 +41,27 @@ export interface WalletBalance {
   currency?: string;
   /** Se Manager lo espone: false = pagamenti Stripe in modalità di prova. */
   livemode?: boolean;
+  /** Ultima ricarica (ISO), se Manager la espone. */
+  last_topup_at?: string | null;
+}
+/** Riga dei movimenti di Manager. */
+export interface WalletMovement {
+  id: string;
+  type: string;
+  affects_balance?: boolean;
+  amount: number;
+  product?: string;
+  feature?: string;
+  reference?: string;
+  balance_after?: number;
+  created_at: string;
+}
+export interface WalletMovementsPage {
+  page: number;
+  page_size: number;
+  pages: number;
+  total: number;
+  results: WalletMovement[];
 }
 
 /** Errore quando il wallet della company non ha crediti sufficienti. */
@@ -155,6 +176,21 @@ export class WalletService {
     }
   }
 
+  /** Movimenti del wallet (una pagina). Null se il wallet non è abilitato o non raggiungibile. */
+  async getTransactions(companyId: string, page: number, pageSize: number): Promise<WalletMovementsPage | null> {
+    if (!(await this.isEnabled())) return null;
+    try {
+      return await this.http.get<WalletMovementsPage>('wallet/transactions', {
+        company_id: companyId,
+        page: String(page),
+        page_size: String(pageSize),
+        product: this.productKey,
+      });
+    } catch (err) {
+      this.logger.warn(`Lettura movimenti fallita (company=${companyId}): ${describe(err)}`);
+      return null;
+    }
+  }
   /**
    * Ottiene (e crea se manca) il wallet personale dell'utente. Lo stesso `sub` dà sempre lo stesso
    * `company_id`, che va usato così com'è. Chiamarlo solo quando l'utente apre o sceglie il wallet

@@ -1,4 +1,4 @@
-import type { Assessment, Block, Brief, BriefDraft, CreditQuoteView, WalletView } from '@scorm/contracts';
+import type { Assessment, Block, Brief, BriefDraft, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import { computeQuote } from '@scorm/contracts';
 import type {
   AdminUserView,
@@ -681,7 +681,10 @@ export class MockApiClient implements ApiClient {
     };
   }
   async getWallet(): Promise<WalletView> {
-    return { enabled: false, payer: 'COMPANY', currency: 'CREDITS', canTopup: false, company: null, personal: { active: false }, personalAvailable: false, personalSpace: false };
+    return { enabled: false, payer: 'COMPANY', currency: 'CREDITS', canTopup: false, company: null, companyAccess: 'unavailable', personal: { active: false }, personalAvailable: false, personalSpace: false };
+  }
+  async getWalletTransactions(): Promise<WalletTransactionsView> {
+    return { page: 1, pages: 0, total: 0, results: [] };
   }
   async getSignupConfig(): Promise<{ enabled: boolean; captcha: null }> {
     return { enabled: false, captcha: null };

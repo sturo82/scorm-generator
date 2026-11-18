@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, Post, Put, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { CurrentContext, type AuthContext } from '../auth/auth-context.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
@@ -15,6 +15,11 @@ type QuoteBodyType = z.infer<typeof QuoteBody>;
 const PayerBody = z.object({ payer: z.enum(['COMPANY', 'PERSONAL']) });
 type PayerBodyType = z.infer<typeof PayerBody>;
 
+const TxQuery = z.object({
+  wallet: z.enum(['company', 'personal']),
+  page: z.coerce.number().int().min(1).max(1000).default(1),
+});
+type TxQueryType = z.infer<typeof TxQuery>;
 /** Importi di ricarica del wallet personale consentiti (euro; 1 EUR = 100 crediti). */
 const TopupBody = z.object({ amountEur: z.number().int().min(5).max(500) });
 type TopupBodyType = z.infer<typeof TopupBody>;
@@ -30,6 +35,11 @@ export class BillingController {
     return this.billing.walletView(ctx.tenant.tenantId, ctx.userId, ctx.role);
   }
 
+  /** Movimenti del wallet dell'azienda o personale (solo quelli che cambiano il saldo). */
+  @Get('transactions')
+  transactions(@CurrentContext() ctx: AuthContext, @Query(new ZodValidationPipe(TxQuery)) q: TxQueryType) {
+    return this.billing.transactions(ctx.tenant.tenantId, ctx.userId, ctx.role, q.wallet, q.page);
+  }
   /** Sceglie il wallet che paga le generazioni; il personale si attiva alla prima scelta. */
   @Put('payer')
   async setPayer(@CurrentContext() ctx: AuthContext, @Body(new ZodValidationPipe(PayerBody)) body: PayerBodyType) {

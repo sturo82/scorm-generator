@@ -738,6 +738,15 @@ export const useWallet = () =>
     retry: false,
   });
 
+/** Movimenti di un wallet (solo quelli che cambiano il saldo), a pagine. */
+export const useWalletTransactions = (wallet: 'company' | 'personal', page: number, enabled = true) =>
+  useQuery({
+    queryKey: ['billing', 'transactions', wallet, page],
+    queryFn: () => api.getWalletTransactions(wallet, page),
+    enabled,
+    staleTime: 10_000,
+    retry: false,
+  });
 /** Cambia il wallet che paga le generazioni (azienda o personale). */
 export function useSetWalletPayer() {
   const qc = useQueryClient();

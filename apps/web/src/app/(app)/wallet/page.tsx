@@ -7,12 +7,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
-import { useSetWalletPayer, useStartWalletTopup, useWallet } from '@/lib/api/hooks';
+import { getSession } from '@/lib/auth';
+import { useSetWalletPayer, useStartWalletTopup, useWallet, useWalletTransactions } from '@/lib/api/hooks';
 
 const AMOUNTS_EUR = [5, 10, 20, 50];
 /** Cambio di Manager: 1 EUR = 100 crediti. */
 const CREDITS_PER_EUR = 100;
 const BEFORE_KEY = 'wallet:personal-before';
+const BEFORE_TOPUP_KEY = 'wallet:personal-last-topup';
 const fmt = (n: number | undefined) => (n === undefined ? '—' : n.toLocaleString('it-IT'));
 
 /**
@@ -37,9 +39,14 @@ export default function WalletPage() {
   React.useEffect(() => {
     if (!waiting) return;
     const before = Number(window.sessionStorage.getItem(BEFORE_KEY) ?? 'NaN');
-    if (Number.isFinite(before) && personal?.balance !== undefined && personal.balance > before) {
+    const beforeTopup = window.sessionStorage.getItem(BEFORE_TOPUP_KEY) ?? '';
+    const credited =
+      (Number.isFinite(before) && personal?.balance !== undefined && personal.balance > before) ||
+      (personal?.lastTopupAt !== undefined && personal.lastTopupAt !== beforeTopup);
+    if (credited) {
       setWaiting(false);
       window.sessionStorage.removeItem(BEFORE_KEY);
+      window.sessionStorage.removeItem(BEFORE_TOPUP_KEY);
       toast.show('Crediti accreditati', 'success');
       return;
     }
@@ -51,7 +58,7 @@ export default function WalletPage() {
       clearTimeout(stop);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waiting, personal?.balance]);
+  }, [waiting, personal?.balance, personal?.lastTopupAt]);
 
   async function choose(payer: 'COMPANY' | 'PERSONAL') {
     try {
@@ -65,6 +72,7 @@ export default function WalletPage() {
   async function startTopup(amountEur: number) {
     try {
       window.sessionStorage.setItem(BEFORE_KEY, String(personal?.balance ?? 0));
+      window.sessionStorage.setItem(BEFORE_TOPUP_KEY, personal?.lastTopupAt ?? '');
       const { url, testMode } = await topup.mutateAsync(amountEur);
       // Stripe in prova: si avvisa prima di aprire la pagina di pagamento (non è una ricarica reale).
       if (
@@ -90,6 +98,7 @@ export default function WalletPage() {
   }
 
   const w = wallet.data;
+  const role = getSession()?.user.role ?? 'VIEWER';
   if (wallet.isLoading) return <Skeleton className="h-64 w-full" />;
   if (!w || !w.personalAvailable) {
     return (
@@ -137,11 +146,12 @@ export default function WalletPage() {
           selected={w.payer === 'COMPANY'}
           disabled={!w.company || setPayer.isPending}
           onChoose={() => void choose('COMPANY')}
-          unavailable={!w.company ? "L'azienda non paga a crediti." : undefined}
+          unavailable={companyMessage(w.companyAccess)}
         >
           {w.company && (
             <>
               <Balance available={w.company.available} />
+              <LastTopup at={w.company.lastTopupAt} />
               {w.company.canTopup && w.company.topupUrl ? (
                 <a
                   href={w.company.topupUrl}
@@ -168,7 +178,10 @@ export default function WalletPage() {
           onChoose={() => void choose('PERSONAL')}
         >
           {w.personal.active ? (
-            <Balance available={w.personal.available} />
+            <>
+              <Balance available={w.personal.available} />
+              <LastTopup at={w.personal.lastTopupAt} />
+            </>
           ) : (
             <p className="text-sm text-muted-foreground">
               Non è ancora attivo: si attiva quando lo scegli o fai la prima ricarica.
@@ -191,9 +204,101 @@ export default function WalletPage() {
           </div>
         </WalletCard>
       </div>
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        {w.companyAccess === 'active' && (
+          <Movements title="Movimenti azienda" wallet="company" restricted={!['OWNER', 'ADMIN'].includes(role)} />
+        )}
+        {w.personal.active && <Movements title="Movimenti personali" wallet="personal" />}
+      </div>
     </>
   );
 }
+
+function companyMessage(access: string): string | undefined {
+  switch (access) {
+    case 'none':
+      return 'Non appartieni a nessuna azienda: usi solo il wallet personale.';
+    case 'billing_off':
+      return "La tua azienda non paga a crediti: non c'è un wallet aziendale da usare.";
+    case 'unavailable':
+      return 'Il wallet aziendale non è raggiungibile in questo momento.';
+    default:
+      return undefined;
+  }
+}
+
+function LastTopup({ at }: { at: string | undefined }) {
+  if (!at) return null;
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return null;
+  return <p className="text-xs text-muted-foreground">Ultima ricarica: {d.toLocaleString('it-IT')}</p>;
+}
+
+const TYPE_LABEL: Record<string, string> = { topup: 'Ricarica', capture: 'Addebito', adjust: 'Rettifica', refund: 'Rimborso' };
+
+/** Un addebito è sempre in uscita, anche se Manager manda l'importo senza segno. */
+function delta(r: { type: string; amount: number }): number {
+  return r.type === 'capture' ? -Math.abs(r.amount) : r.amount;
+}
+
+/** Movimenti che cambiano il saldo, a pagine. */
+function Movements({ title, wallet, restricted = false }: { title: string; wallet: 'company' | 'personal'; restricted?: boolean }) {
+  const [page, setPage] = React.useState(1);
+  const tx = useWalletTransactions(wallet, page, !restricted);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {restricted ? (
+          <p className="text-sm text-muted-foreground">I movimenti dell&apos;azienda sono visibili agli amministratori.</p>
+        ) : tx.isLoading ? (
+          <Skeleton className="h-24 w-full" />
+        ) : !tx.data || tx.data.results.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nessun movimento.</p>
+        ) : (
+          <>
+            <ul className="divide-y text-sm">
+              {tx.data.results.map((r) => (
+                <li key={r.id} className="flex items-center justify-between gap-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">
+                      {TYPE_LABEL[r.type] ?? r.type}
+                      {r.feature ? ` · ${r.feature}` : ''}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleString('it-IT')}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className={cn('font-semibold', delta(r) >= 0 ? 'text-emerald-700' : 'text-foreground')}>
+                      {delta(r) > 0 ? '+' : ''}
+                      {fmt(delta(r))}
+                    </p>
+                    {r.balanceAfter !== undefined && <p className="text-xs text-muted-foreground">saldo {fmt(r.balanceAfter)}</p>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {tx.data.pages > 1 && (
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                  Precedenti
+                </Button>
+                <span>
+                  Pagina {tx.data.page} di {tx.data.pages}
+                </span>
+                <Button size="sm" variant="outline" disabled={page >= tx.data.pages} onClick={() => setPage((p) => p + 1)}>
+                  Successivi
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 
 function Balance({ available }: { available: number | undefined }) {
   return (

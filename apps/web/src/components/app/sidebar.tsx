@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn';
 import { NAV_ITEMS, ROLE_RANK } from './nav-items';
 import { AppBrand } from './app-brand';
 import { getSession } from '@/lib/auth';
+import { useWallet } from '@/lib/api/hooks';
 import type { AppUserRole } from '@/lib/api/types';
 
 /** Contenuto della navigazione, condiviso tra sidebar desktop e drawer mobile. */
@@ -15,7 +16,10 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   // quello dell'utente corrente. L'enforcement reale è server-side.
   const roleStr = getSession()?.user.role;
   const myRank = ROLE_RANK[(roleStr as AppUserRole) ?? 'VIEWER'] ?? 0;
-  const items = NAV_ITEMS.filter((it) => !it.requiresRole || myRank >= ROLE_RANK[it.requiresRole]);
+  const walletOn = useWallet().data?.personalAvailable === true;
+  const items = NAV_ITEMS.filter(
+    (it) => (!it.requiresRole || myRank >= ROLE_RANK[it.requiresRole]) && (!it.requiresWallet || walletOn),
+  );
   return (
     <nav className="flex flex-col gap-0.5 px-3 py-4" aria-label="Navigazione principale">
       {items.map((item, i) => {

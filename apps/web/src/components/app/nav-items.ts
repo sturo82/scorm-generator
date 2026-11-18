@@ -1,4 +1,4 @@
-import { BookOpen, Database, LayoutDashboard, Palette, Gauge, ScrollText, Settings, Video } from 'lucide-react';
+import { BookOpen, Database, LayoutDashboard, Palette, Gauge, ScrollText, Settings, Video, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AppUserRole } from '@/lib/api/types';
 
@@ -8,6 +8,8 @@ export interface NavItem {
   icon: LucideIcon;
   /** Se presente, la voce è mostrata solo a chi ha questo ruolo o superiore. */
   requiresRole?: AppUserRole;
+  /** Mostrata solo se i crediti sono abilitati sull'installazione. */
+  requiresWallet?: boolean;
 }
 
 /** Voci di navigazione principali dell'area applicativa. */
@@ -18,6 +20,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/videos', label: 'Video', icon: Video },
   { href: '/brands', label: 'Brand', icon: Palette },
   { href: '/usage', label: 'Utilizzo', icon: Gauge },
+  { href: '/wallet', label: 'Wallet', icon: Wallet, requiresWallet: true },
   { href: '/audit', label: 'Audit', icon: ScrollText },
   { href: '/settings', label: 'Impostazioni', icon: Settings },
 ];

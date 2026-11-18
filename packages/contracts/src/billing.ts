@@ -29,6 +29,35 @@ export interface CreditQuoteView {
 export interface WalletBlock {
   balance?: number;
   available?: number;
+  /** Data (ISO) dell'ultima ricarica, se Manager la espone. */
+  lastTopupAt?: string;
+}
+
+/**
+ * Accesso dell'utente a un wallet di azienda:
+ * - `active`: l'azienda paga a crediti e il suo wallet è raggiungibile;
+ * - `billing_off`: l'utente ha un'azienda ma non paga a crediti;
+ * - `unavailable`: wallet non abilitato o non raggiungibile in questo momento;
+ * - `none`: nessuna azienda (spazio personale).
+ */
+export type CompanyWalletAccess = 'active' | 'billing_off' | 'unavailable' | 'none';
+
+/** Movimento del wallet che cambia il saldo (ricarica, addebito, rettifica, rimborso). */
+export interface WalletTransaction {
+  id: string;
+  type: string;
+  amount: number;
+  feature?: string;
+  product?: string;
+  balanceAfter?: number;
+  createdAt: string;
+}
+
+export interface WalletTransactionsView {
+  page: number;
+  pages: number;
+  total: number;
+  results: WalletTransaction[];
 }
 
 /**
@@ -48,6 +77,10 @@ export interface WalletView {
   canTopup: boolean;
   /** Wallet dell'azienda; assente se l'azienda non paga a crediti. */
   company: (WalletBlock & { topupUrl?: string; canTopup: boolean }) | null;
+  /** Se e perché l'utente può usare un wallet di azienda. */
+  companyAccess: CompanyWalletAccess;
+  /** Identificativo dell'azienda a cui appartiene l'utente (assente nello spazio personale). */
+  companyId?: string;
   /** Wallet personale: `active` è false finché l'utente non lo attiva (Manager lo crea alla prima richiesta). */
   personal: WalletBlock & { active: boolean };
   /** True se il wallet è abilitato sull'installazione (quindi l'utente può attivare quello personale). */

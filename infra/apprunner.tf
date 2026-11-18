@@ -103,6 +103,7 @@ resource "aws_apprunner_service" "api" {
           ECOSYSTEM_SELF_REGISTER = "true"
           ENTITLEMENT_ENFORCE     = var.entitlement_enforce_fallback
           WALLET_ENABLED          = "false"
+          PERSONAL_SPACE_ENABLED  = "true"
         }
 
         runtime_environment_secrets = {

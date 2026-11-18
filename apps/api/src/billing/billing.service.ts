@@ -1,6 +1,6 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { avatarFeature, type WalletView } from '@scorm/contracts';
+import { avatarFeature, type CompanyWalletAccess, type WalletTransactionsView, type WalletView } from '@scorm/contracts';
 import type { AppConfig } from '../config/configuration.js';
 import { FeatureCatalogService } from '../ecosystem/feature-catalog.service.js';
 import {
@@ -238,6 +238,11 @@ export class BillingService {
     const livemode = [companyBal, personalBal].find((b) => typeof b?.livemode === 'boolean')?.livemode;
     if (typeof livemode === 'boolean') this.stripeTest = !livemode;
     const current = payer === 'PERSONAL' ? personalBal : companyBal;
+    let companyAccess: CompanyWalletAccess = 'active';
+    if (personalSpace) companyAccess = 'none';
+    else if (!walletOn) companyAccess = 'unavailable';
+    else if (!companyBilled) companyAccess = 'billing_off';
+    else if (!companyBal) companyAccess = 'unavailable';
     return {
       enabled: walletOn && (payer === 'PERSONAL' || companyBilled),
       payer,
@@ -247,20 +252,65 @@ export class BillingService {
       topupUrl: payer === 'COMPANY' ? this.topupUrl() : undefined,
       canTopup: payer === 'PERSONAL' ? true : role === 'OWNER',
       company: companyBilled
-        ? { balance: companyBal?.balance, available: companyBal?.available, topupUrl: this.topupUrl(), canTopup: role === 'OWNER' }
+        ? { balance: companyBal?.balance, available: companyBal?.available, lastTopupAt: companyBal?.last_topup_at ?? undefined, topupUrl: this.topupUrl(), canTopup: role === 'OWNER' }
         : null,
       personal: {
         // Il wallet personale esiste solo dopo l'attivazione; prima di allora non si interroga Manager.
         active: Boolean(user?.personalWalletId),
         balance: personalBal?.balance,
         available: personalBal?.available,
+        lastTopupAt: personalBal?.last_topup_at ?? undefined,
       },
+      companyAccess,
+      companyId: personalSpace ? undefined : tenantId,
       personalAvailable: walletOn,
       personalSpace,
       stripeTestMode: this.stripeTest,
     };
   }
 
+  /**
+   * Movimenti che cambiano il saldo (ricariche, addebiti, rettifiche, rimborsi) del wallet
+   * dell'azienda dell'utente o del suo wallet personale. Hold e release sono solo audit e si omettono.
+   */
+  async transactions(
+    tenantId: string,
+    userId: string,
+    role: string,
+    wallet: 'company' | 'personal',
+    page: number,
+  ): Promise<WalletTransactionsView> {
+    const empty: WalletTransactionsView = { page, pages: 0, total: 0, results: [] };
+    let companyId: string | null | undefined;
+    if (wallet === 'company') {
+      if (isPersonalTenant(tenantId) || !(await this.companyBilled(tenantId))) return empty;
+      // Il dettaglio dei movimenti dell'azienda è per chi la amministra.
+      if (role !== 'OWNER' && role !== 'ADMIN') throw new ForbiddenException('Movimenti riservati agli amministratori');
+      companyId = tenantId;
+    } else {
+      const user = await this.prisma.user.findFirst({ where: { id: userId, tenantId }, select: { personalWalletId: true } });
+      companyId = user?.personalWalletId;
+    }
+    if (!companyId) return empty;
+    const res = await this.wallet.getTransactions(companyId, page, 20);
+    if (!res) return empty;
+    return {
+      page: res.page,
+      pages: res.pages,
+      total: res.total,
+      results: res.results
+        .filter((r) => r.affects_balance !== false && !['hold', 'release'].includes(r.type))
+        .map((r) => ({
+          id: r.id,
+          type: r.type,
+          amount: r.amount,
+          feature: r.feature,
+          product: r.product,
+          balanceAfter: r.balance_after,
+          createdAt: r.created_at,
+        })),
+    };
+  }
   /** Cambia il wallet che paga le generazioni dell'utente; il personale si attiva alla prima scelta. */
   async setPayer(tenantId: string, userId: string, kind: 'COMPANY' | 'PERSONAL'): Promise<void> {
     if (kind === 'COMPANY' && isPersonalTenant(tenantId)) {
