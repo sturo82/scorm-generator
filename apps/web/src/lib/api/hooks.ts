@@ -735,7 +735,8 @@ export const useWallet = () =>
     staleTime: 15_000,
     refetchInterval: (q) => (q.state.data?.enabled ? 20_000 : false),
     refetchOnWindowFocus: true,
-    retry: false,
+    // Un errore momentaneo non deve nascondere il wallet fino al ricaricamento della pagina.
+    retry: 2,
   });
 
 /** Movimenti di un wallet (solo quelli che cambiano il saldo), a pagine. */

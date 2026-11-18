@@ -273,8 +273,9 @@ export class WalletService {
     if (!(await this.isEnabled())) {
       return { holdId: `noop:${input.reference}`, status: 'noop' };
     }
+    let raw: WalletHold & { hold_id?: unknown; id?: unknown };
     try {
-      return await this.http.post<WalletHold>('wallet/holds', {
+      raw = await this.http.post<WalletHold & { hold_id?: unknown; id?: unknown }>('wallet/holds', {
         company_id: input.companyId,
         product: this.productKey,
         feature: input.feature,
@@ -283,24 +284,34 @@ export class WalletService {
         ...(input.amount !== undefined ? { amount: Math.round(input.amount) } : {}),
       });
     } catch (err) {
-      if (err instanceof EcosystemRequestError) {
-        const body = asManagerError(err.body);
-        if (err.status === 403 && body.error === 'personal_wallet_not_allowed') {
-          throw new PersonalWalletNotAllowedException();
-        }
-        if (err.status === 404 && body.error === 'company_not_found') {
-          throw new CompanyWalletMissingException(input.companyId);
-        }
-        if (err.status === 409 && body.error === 'feature_not_priced') {
-          throw new FeatureNotPricedException(input.feature);
-        }
-        if (err.status === 409) {
-          throw new InsufficientCreditsException(input.feature, input.amount, body.available);
-        }
-      }
-      this.logger.error(`Wallet hold fallito (ref=${input.reference}): ${describe(err)}`);
+      this.mapHoldError(err, input);
+    }
+    // Manager restituisce l'id dell'hold come numero: lo si usa sempre come stringa.
+    const id = raw.holdId ?? raw.hold_id ?? raw.id;
+    if (id === undefined || id === null || id === '') {
+      this.logger.error(`Wallet hold senza id (ref=${input.reference}): la riserva scadrà da sola`);
       throw new WalletUnavailableException();
     }
+    return { ...raw, holdId: String(id) };
+  }
+  private mapHoldError(err: unknown, input: CreateHoldInput): never {
+    if (err instanceof EcosystemRequestError) {
+      const body = asManagerError(err.body);
+      if (err.status === 403 && body.error === 'personal_wallet_not_allowed') {
+        throw new PersonalWalletNotAllowedException();
+      }
+      if (err.status === 404 && body.error === 'company_not_found') {
+        throw new CompanyWalletMissingException(input.companyId);
+      }
+      if (err.status === 409 && body.error === 'feature_not_priced') {
+        throw new FeatureNotPricedException(input.feature);
+      }
+      if (err.status === 409) {
+        throw new InsufficientCreditsException(input.feature, input.amount, body.available);
+      }
+    }
+    this.logger.error(`Wallet hold fallito (ref=${input.reference}): ${describe(err)}`);
+    throw new WalletUnavailableException();
   }
 
   /**
@@ -310,7 +321,7 @@ export class WalletService {
    * lascia l'hold che Manager libera a scadenza.
    */
   async capture(companyId: string, holdId: string, actual?: { units?: number; amount?: number }): Promise<void> {
-    if (holdId.startsWith('noop:') || !(await this.isEnabled())) return;
+    if (String(holdId).startsWith('noop:') || !(await this.isEnabled())) return;
     try {
       await this.http.post(`wallet/holds/${encodeURIComponent(holdId)}/capture`, {
         company_id: companyId,
@@ -336,7 +347,7 @@ export class WalletService {
    * non maschera l'errore originale che ha innescato il release.
    */
   async release(companyId: string, holdId: string): Promise<void> {
-    if (holdId.startsWith('noop:') || !(await this.isEnabled())) return;
+    if (String(holdId).startsWith('noop:') || !(await this.isEnabled())) return;
     try {
       await this.http.post(`wallet/holds/${encodeURIComponent(holdId)}/release`, {
         company_id: companyId,

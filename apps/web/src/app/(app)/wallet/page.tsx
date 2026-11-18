@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
-import { getSession } from '@/lib/auth';
 import { useSetWalletPayer, useStartWalletTopup, useWallet, useWalletTransactions } from '@/lib/api/hooks';
 
 const AMOUNTS_EUR = [5, 10, 20, 50];
@@ -98,7 +97,6 @@ export default function WalletPage() {
   }
 
   const w = wallet.data;
-  const role = getSession()?.user.role ?? 'VIEWER';
   if (wallet.isLoading) return <Skeleton className="h-64 w-full" />;
   if (!w || !w.personalAvailable) {
     return (
@@ -206,7 +204,7 @@ export default function WalletPage() {
       </div>
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         {w.companyAccess === 'active' && (
-          <Movements title="Movimenti azienda" wallet="company" restricted={!['OWNER', 'ADMIN'].includes(role)} />
+          <Movements title="Movimenti azienda" wallet="company" restricted={!w.company?.canViewMovements} />
         )}
         {w.personal.active && <Movements title="Movimenti personali" wallet="personal" />}
       </div>

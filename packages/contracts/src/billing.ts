@@ -76,7 +76,7 @@ export interface WalletView {
   topupUrl?: string;
   canTopup: boolean;
   /** Wallet dell'azienda; assente se Manager non ne ha uno per l'azienda. */
-  company: (WalletBlock & { topupUrl?: string; canTopup: boolean }) | null;
+  company: (WalletBlock & { topupUrl?: string; canTopup: boolean; canViewMovements: boolean }) | null;
   /** Se e perché l'utente può usare un wallet di azienda. */
   companyAccess: CompanyWalletAccess;
   /** Identificativo dell'azienda a cui appartiene l'utente (assente nello spazio personale). */

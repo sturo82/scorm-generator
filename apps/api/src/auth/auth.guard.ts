@@ -200,7 +200,9 @@ export class AuthGuard implements CanActivate {
   ) {
     // Nello spazio personale l'utente è l'unico del suo tenant, quindi ne è il titolare.
     const role = personal ? 'OWNER' : mapEcoRoleToInternal(ecoRole);
-    await this.prisma.$transaction(async (tx) => {
+    // Al primo accesso il browser manda più richieste insieme: se un'altra ha già creato tenant o
+    // utente, il vincolo di unicità fallisce e basta rileggere quello che ha creato.
+    await this.ignoreUniqueRace(() => this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.current_tenant', ${tenantId}, true)`;
       const existingTenant = await tx.tenant.findUnique({ where: { id: tenantId } });
       if (!existingTenant) {
@@ -226,11 +228,19 @@ export class AuthGuard implements CanActivate {
           ...(personal ? { walletPayer: 'PERSONAL' } : {}),
         },
       });
-    });
+    }));
     return this.prisma.user.findUnique({
       where: { tenantId_externalId: { tenantId, externalId } },
       select: { id: true, role: true, tenantId: true, walletPayer: true, personalWalletId: true },
     });
+  }
+  /** Esegue `fn` ignorando la violazione di unicità (P2002) di una creazione concorrente. */
+  private async ignoreUniqueRace(fn: () => Promise<unknown>): Promise<void> {
+    try {
+      await fn();
+    } catch (err) {
+      if ((err as { code?: string })?.code !== 'P2002') throw err;
+    }
   }
   /**
    * Prova a interpretare il bearer come token utente SSO (kind=user). Ritorna i

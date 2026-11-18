@@ -256,7 +256,7 @@ export class BillingService {
       topupUrl: payer === 'COMPANY' ? this.topupUrl() : undefined,
       canTopup: payer === 'PERSONAL' ? true : role === 'OWNER',
       company: companyBilled
-        ? { balance: companyBal?.balance, available: companyBal?.available, lastTopupAt: companyBal?.last_topup_at ?? undefined, topupUrl: this.topupUrl(), canTopup: role === 'OWNER' }
+        ? { balance: companyBal?.balance, available: companyBal?.available, lastTopupAt: companyBal?.last_topup_at ?? undefined, topupUrl: this.topupUrl(), canTopup: role === 'OWNER', canViewMovements: role === 'OWNER' || role === 'ADMIN' }
         : null,
       personal: {
         // Il wallet personale esiste solo dopo l'attivazione; prima di allora non si interroga Manager.
