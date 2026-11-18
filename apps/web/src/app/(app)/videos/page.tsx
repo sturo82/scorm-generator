@@ -269,13 +269,22 @@ export default function VideosPage() {
                     title={
                       v.generationCost.sharedBy > 1
                         ? `Costo dell'intero import da slide, da cui sono nati ${v.generationCost.sharedBy} video.`
-                        : 'Costo misurato della generazione (avatar, montaggio, testi AI), rigenerazioni comprese.'
+                        : v.generationCost.totalCredits !== undefined
+                          ? 'Crediti addebitati per la generazione (avatar, montaggio, testi AI), rigenerazioni comprese.'
+                          : 'Costo misurato della generazione (avatar, montaggio, testi AI), rigenerazioni comprese.'
                     }
                   >
-                    Costo di generazione <strong className="text-foreground">{fmtUsd(v.generationCost.totalUsd)}</strong>
+                    Costo di generazione{' '}
+                    <strong className="text-foreground">
+                      {v.generationCost.totalCredits !== undefined
+                        ? fmtCredits(v.generationCost.totalCredits)
+                        : fmtUsd(v.generationCost.totalUsd ?? 0)}
+                    </strong>
                     {v.generationCost.sharedBy > 1 ? ` (import di ${v.generationCost.sharedBy} video)` : ''}
                     {' · '}
-                    {v.generationCost.breakdown.map((b) => `${b.label} ${fmtUsd(b.usd)}`).join(' · ')}
+                    {v.generationCost.breakdown
+                      .map((b) => `${b.label} ${b.credits !== undefined ? fmtCredits(b.credits) : fmtUsd(b.usd ?? 0)}`)
+                      .join(' · ')}
                   </p>
                 )}
               </CardContent>
@@ -405,6 +414,10 @@ function VideoPlayerDialog({ video, onClose }: { video: VideoAssetView | null; o
     </Dialog>
   );
 }
+function fmtCredits(v: number): string {
+  return `${v.toLocaleString('it-IT')} crediti`;
+}
+
 function fmtUsd(v: number): string {
   return v > 0 && v < 0.01 ? '<$0.01' : `$${v.toFixed(2)}`;
 }

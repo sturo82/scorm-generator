@@ -25,6 +25,7 @@ import {
   useSetCourseShareable,
   useActiveJobs,
   useBrands,
+  useWallet,
 } from '@/lib/api/hooks';
 import { StockPhotoPicker } from '@/components/courses/stock-photo-picker';
 import { CoverFramer, COVER_ASPECT } from '@/components/courses/cover-framer';
@@ -59,6 +60,7 @@ const STEPS: StepDef[] = [
  */
 export function CourseWizard({ courseId }: { courseId: string }) {
   const course = useCourse(courseId);
+  const creditsOn = useWallet().data?.enabled === true;
   const modules = useModules(courseId);
   const saveBrief = useSaveBrief(courseId);
   const genCover = useGenerateCover(courseId);
@@ -545,10 +547,12 @@ export function CourseWizard({ courseId }: { courseId: string }) {
             <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground">
               <span className="flex items-center gap-2">
                 <span aria-hidden>💰</span>
-                Costi &amp; prezzo del corso
-                <span className="font-normal text-xs text-muted-foreground/80">
-                  (consumo AI e margine — opzionale)
-                </span>
+                {creditsOn ? 'Crediti usati' : <>Costi &amp; prezzo del corso</>}
+                {!creditsOn && (
+                  <span className="font-normal text-xs text-muted-foreground/80">
+                    (consumo AI e margine — opzionale)
+                  </span>
+                )}
               </span>
               <ChevronDown className="size-4 shrink-0 transition-transform group-open:rotate-180" />
             </summary>

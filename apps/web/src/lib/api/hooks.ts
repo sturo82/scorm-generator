@@ -739,6 +739,14 @@ export const useWallet = () =>
     retry: 2,
   });
 
+/** Crediti addebitati per un corso (solo con i crediti attivi). */
+export const useCourseCredits = (courseId: string, enabled = true) =>
+  useQuery({
+    queryKey: ['billing', 'course-credits', courseId],
+    queryFn: () => api.getCourseCredits(courseId),
+    enabled,
+    staleTime: 15_000,
+  });
 /** Movimenti di un wallet (solo quelli che cambiano il saldo), a pagine. */
 export const useWalletTransactions = (wallet: 'company' | 'personal', page: number, enabled = true) =>
   useQuery({

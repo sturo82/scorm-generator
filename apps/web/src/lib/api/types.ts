@@ -1,4 +1,4 @@
-import type { CreditQuoteItem, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
+import type { CourseCreditsView, CreditQuoteItem, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import type {
   Brief,
   BriefDraft,
@@ -571,6 +571,8 @@ export interface ApiClient {
   getUsage(): Promise<UsageView>;
   /** Saldo del wallet a crediti (solo se l'azienda paga a crediti). */
   getWallet(): Promise<WalletView>;
+  /** Crediti addebitati per un corso, per funzione. */
+  getCourseCredits(courseId: string): Promise<CourseCreditsView>;
   /** Movimenti che cambiano il saldo del wallet aziendale o personale. */
   getWalletTransactions(wallet: 'company' | 'personal', page: number): Promise<WalletTransactionsView>;
   /** Preventivo in crediti di una generazione. */

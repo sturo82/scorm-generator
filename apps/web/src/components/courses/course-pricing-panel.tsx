@@ -1,11 +1,11 @@
 'use client';
 
 import * as React from 'react';
-import { Receipt, TrendingUp, Info } from 'lucide-react';
+import { Coins, Receipt, TrendingUp, Info } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input, Label } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useCourseCost, useCourseQuote } from '@/lib/api/hooks';
+import { useCourseCost, useCourseCredits, useCourseQuote, useWallet } from '@/lib/api/hooks';
 import type { MeterUnit } from '@scorm/contracts';
 
 /** Etichette leggibili per sorgente di costo. */
@@ -53,6 +53,96 @@ function numberFmt(n: number): string {
  * backend (stessa formula dei contracts), così UI e server concordano.
  */
 export function CoursePricingPanel({ courseId }: { courseId: string }) {
+  const wallet = useWallet();
+  if (wallet.isLoading) return <Skeleton className="h-24 w-full" />;
+  // Con i crediti attivi il cliente vede solo quanto ha pagato in crediti: niente costi dei
+  // fornitori né margine (l'API non li espone).
+  if (wallet.data?.enabled) return <CourseCreditsPanel courseId={courseId} />;
+  return <InternalCostPanel courseId={courseId} />;
+}
+
+/** Nomi leggibili delle funzioni a pagamento del listino. */
+function featureLabel(feature: string): string {
+  if (feature.startsWith('video_avatar')) return 'Video avatar';
+  if (feature.startsWith('avatar_creation')) return 'Creazione avatar';
+  switch (feature) {
+    case 'text_standard':
+      return 'Testi AI (struttura, lezioni, quiz)';
+    case 'text_light':
+      return 'Testi AI brevi';
+    case 'image_generation':
+      return 'Immagini';
+    case 'audio_narration':
+      return 'Narrazione audio';
+    case 'video_render':
+      return 'Montaggio video';
+    case 'video_cartoon':
+    case 'video_cartoon_ai':
+      return 'Video animato';
+    default:
+      return feature;
+  }
+}
+
+/** Crediti già addebitati per il corso, per funzione. */
+function CourseCreditsPanel({ courseId }: { courseId: string }) {
+  const credits = useCourseCredits(courseId);
+  const data = credits.data;
+  return (
+    <Card>
+      <CardContent className="space-y-4 pt-6">
+        <header className="flex items-start gap-3">
+          <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+            <Coins className="size-5" />
+          </span>
+          <div>
+            <h3 className="text-base font-semibold">Crediti usati per questo corso</h3>
+            <p className="text-sm text-muted-foreground">Crediti addebitati finora per generare il corso, rigenerazioni comprese.</p>
+          </div>
+        </header>
+        {credits.isLoading ? (
+          <Skeleton className="h-20 w-full" />
+        ) : !data || data.lines.length === 0 ? (
+          <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            Nessun credito addebitato per questo corso finora.
+          </p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Voce</th>
+                  <th className="px-3 py-2 text-right font-medium">Operazioni</th>
+                  <th className="px-3 py-2 text-right font-medium">Crediti</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {data.lines.map((l) => (
+                  <tr key={l.feature}>
+                    <td className="px-3 py-2 font-medium">{featureLabel(l.feature)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs text-muted-foreground">{numberFmt(l.operations)}</td>
+                    <td className="px-3 py-2 text-right font-mono">{numberFmt(l.credits)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t-2 bg-muted/30">
+                <tr>
+                  <td className="px-3 py-2 font-semibold" colSpan={2}>
+                    Totale
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono font-semibold">{numberFmt(data.total)} crediti</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Pannello interno (crediti non attivi): costo dei fornitori e prezzo con margine. */
+function InternalCostPanel({ courseId }: { courseId: string }) {
   const cost = useCourseCost(courseId);
   const [markupPct, setMarkupPct] = React.useState(60);
   const [bufferPct, setBufferPct] = React.useState(15);

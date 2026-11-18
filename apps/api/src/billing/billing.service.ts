@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { avatarFeature, type CompanyWalletAccess, type WalletTransactionsView, type WalletView } from '@scorm/contracts';
+import { avatarFeature, type CompanyWalletAccess, type CourseCreditsView, type WalletTransactionsView, type WalletView } from '@scorm/contracts';
 import type { AppConfig } from '../config/configuration.js';
 import { FeatureCatalogService } from '../ecosystem/feature-catalog.service.js';
 import {
@@ -151,13 +151,26 @@ export class BillingService {
    * feature assente si addebita per intero (voci esatte). Consumo zero libera la riserva; un
    * consumo oltre la riserva si addebita fino alla riserva e si registra l'eccedenza.
    */
-  async settle(_tenantId: string, res: Reservation | null, actual?: Record<string, number>): Promise<void> {
+  async settle(tenantId: string, res: Reservation | null, actual?: Record<string, number>): Promise<void> {
     if (!res) return;
+    const charged: Array<{ feature: string; units?: number; credits: number }> = [];
+    try {
+      await this.settleHolds(res, actual, charged);
+    } finally {
+      await this.recordCharges(tenantId, res, charged);
+    }
+  }
+
+  private async settleHolds(
+    res: Reservation,
+    actual: Record<string, number> | undefined,
+    charged: Array<{ feature: string; units?: number; credits: number }>,
+  ): Promise<void> {
     const company = res.companyId;
     for (const h of res.holds) {
       const a = actual?.[h.feature];
       if (a === undefined) {
-        await this.wallet.capture(company, h.holdId);
+        if (await this.wallet.capture(company, h.holdId)) charged.push({ feature: h.feature, units: h.units, credits: h.credits });
         continue;
       }
       if (a <= 0) {
@@ -165,7 +178,7 @@ export class BillingService {
         continue;
       }
       if (h.units === undefined) {
-        await this.wallet.capture(company, h.holdId);
+        if (await this.wallet.capture(company, h.holdId)) charged.push({ feature: h.feature, credits: h.credits });
         continue;
       }
       if (a > h.units + 1e-9) {
@@ -173,8 +186,99 @@ export class BillingService {
           `Consumo oltre la riserva (${h.feature}, ref=${res.ref}): reale ${a} > riservato ${h.units}. Si addebita la riserva.`,
         );
       }
-      await this.wallet.capture(company, h.holdId, { units: Math.min(a, h.units) });
+      const units = Math.min(a, h.units);
+      if (await this.wallet.capture(company, h.holdId, { units })) charged.push({ feature: h.feature, units, credits: this.catalog.credits(h.feature, units) ?? h.credits });
     }
+  }
+
+  /**
+   * Registra in locale i crediti addebitati, collegati al corso (o al video da slide) da cui
+   * nasce la riserva. Best-effort: un errore qui non annulla l'addebito già fatto su Manager.
+   */
+  private async recordCharges(
+    tenantId: string,
+    res: Reservation,
+    charged: Array<{ feature: string; units?: number; credits: number }>,
+  ): Promise<void> {
+    if (charged.length === 0) return;
+    try {
+      const scope = await this.scopeOf(tenantId, res.ref);
+      const payer = res.companyId === tenantId ? 'COMPANY' : 'PERSONAL';
+      await this.tenantPrisma.runInTenant(tenantId, (tx) =>
+        tx.creditCharge.createMany({
+          data: charged.map((c) => ({
+            tenantId,
+            courseId: scope.courseId ?? null,
+            slideImportId: scope.slideImportId ?? null,
+            feature: c.feature,
+            units: c.units ?? null,
+            credits: Math.round(c.credits),
+            walletId: res.companyId,
+            payer,
+            reference: res.ref,
+          })),
+          skipDuplicates: true,
+        }),
+      );
+    } catch (err) {
+      this.logger.warn(`Registrazione addebito fallita (ref=${res.ref}): ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /** Corso (e import slide) a cui appartiene una riserva, ricavato dal suo `reference`. */
+  private async scopeOf(tenantId: string, ref: string): Promise<{ courseId?: string; slideImportId?: string }> {
+    const [, kind, id] = ref.split(':');
+    if (!id) return {};
+    switch (kind) {
+      case 'job': {
+        const job = await this.prisma.generationJob.findFirst({ where: { id, tenantId }, select: { courseId: true } });
+        return { courseId: job?.courseId ?? undefined };
+      }
+      case 'cover':
+      case 'rss-brief':
+        return { courseId: id };
+      case 'module-cover': {
+        const m = await this.prisma.module.findFirst({ where: { id }, select: { courseId: true, course: { select: { tenantId: true } } } });
+        return m?.course.tenantId === tenantId ? { courseId: m.courseId } : {};
+      }
+      case 'images':
+      case 'narration':
+      case 'video':
+      case 'cartoon': {
+        const l = await this.prisma.lesson.findFirst({
+          where: { id },
+          select: { module: { select: { courseId: true, course: { select: { tenantId: true } } } } },
+        });
+        return l?.module.course.tenantId === tenantId ? { courseId: l.module.courseId } : {};
+      }
+      case 'slide-clips':
+      case 'slide-scripts':
+      case 'slide-sections':
+      case 'slide-lesson': {
+        // Gli import slide non sono una tabella: il corso si ricava dai consumi già registrati.
+        const u = await this.prisma.usageRecord.findFirst({
+          where: { tenantId, slideImportId: id, courseId: { not: null } },
+          select: { courseId: true },
+        });
+        return { courseId: u?.courseId ?? undefined, slideImportId: id };
+      }
+      default:
+        return {};
+    }
+  }
+
+  /** Crediti addebitati per un corso, per feature (quello che ha pagato il cliente). */
+  async courseCredits(tenantId: string, courseId: string): Promise<CourseCreditsView> {
+    const rows = await this.prisma.creditCharge.groupBy({
+      by: ['feature'],
+      where: { tenantId, courseId },
+      _sum: { credits: true, units: true },
+      _count: { _all: true },
+    });
+    const lines = rows
+      .map((r) => ({ feature: r.feature, units: r._sum.units ?? undefined, operations: r._count._all, credits: r._sum.credits ?? 0 }))
+      .sort((a, b) => b.credits - a.credits);
+    return { courseId, total: lines.reduce((n, l) => n + l.credits, 0), lines };
   }
 
   /** Libera tutta la riserva (operazione fallita o annullata). */

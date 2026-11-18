@@ -6,6 +6,7 @@ import type {
   UpdateVideoAsset,
   VideoAssetView,
 } from '@scorm/contracts';
+import { WalletService } from '../ecosystem/wallet.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OBJECT_STORAGE, TRANSCRIPTION_PROVIDER } from '../providers/provider.constants.js';
 
@@ -32,6 +33,7 @@ export class VideosService {
     private readonly prisma: PrismaService,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(TRANSCRIPTION_PROVIDER) private readonly transcription: TranscriptionProvider,
+    private readonly wallet: WalletService,
   ) {}
 
   async list(tenantId: string, filter: ListVideosFilter = {}): Promise<VideoAssetView[]> {
@@ -150,6 +152,8 @@ export class VideosService {
     slideImportId: string | null | undefined,
   ): Promise<VideoAssetView['generationCost']> {
     if (!tenantId || !slideImportId) return null;
+    // Con i crediti attivi il cliente vede quanto ha pagato in crediti, non i costi dei fornitori.
+    if (await this.wallet.isEnabled()) return this.generationCredits(tenantId, slideImportId);
     const [groups, sharedBy] = await Promise.all([
       this.prisma.usageRecord.groupBy({
         by: ['source'],
@@ -176,6 +180,20 @@ export class VideosService {
       .sort((a, b) => b.usd - a.usd);
     const total = [...byLabel.values()].reduce((n, v) => n + v, 0);
     return { totalUsd: Math.round(total * 100) / 100, breakdown, sharedBy: Math.max(1, sharedBy) };
+  }
+
+  private async generationCredits(tenantId: string, slideImportId: string): Promise<VideoAssetView['generationCost']> {
+    const [groups, sharedBy] = await Promise.all([
+      this.prisma.creditCharge.groupBy({ by: ['feature'], where: { tenantId, slideImportId }, _sum: { credits: true } }),
+      this.prisma.videoAsset.count({ where: { tenantId, slideImportId } }),
+    ]);
+    if (groups.length === 0) return null;
+    const label = (f: string): string =>
+      f.startsWith('video_avatar') ? 'Avatar' : f === 'video_render' ? 'Montaggio video' : 'Testi AI';
+    const byLabel = new Map<string, number>();
+    for (const g of groups) byLabel.set(label(g.feature), (byLabel.get(label(g.feature)) ?? 0) + (g._sum.credits ?? 0));
+    const breakdown = [...byLabel.entries()].map(([l, credits]) => ({ label: l, credits })).sort((a, b) => b.credits - a.credits);
+    return { totalCredits: breakdown.reduce((n, b) => n + b.credits, 0), breakdown, sharedBy: Math.max(1, sharedBy) };
   }
 
   private async removeFile(key: string | null): Promise<void> {

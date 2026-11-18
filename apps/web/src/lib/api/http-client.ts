@@ -1,4 +1,4 @@
-import type { Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CreditQuoteView, FeedCategory, WalletTransactionsView, WalletView } from '@scorm/contracts';
+import type { Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CourseCreditsView, CreditQuoteView, FeedCategory, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import { notifyInsufficientCredits } from '../billing-events';
 import { getSession, handleSessionExpired } from '../auth';
 import type {
@@ -356,6 +356,9 @@ export class HttpApiClient implements ApiClient {
   }
   getUsage() { return this.request<UsageView>('/usage'); }
   getWallet() { return this.request<WalletView>('/billing/wallet'); }
+  getCourseCredits(courseId: string) {
+    return this.request<CourseCreditsView>(`/billing/courses/${encodeURIComponent(courseId)}`);
+  }
   getWalletTransactions(wallet: 'company' | 'personal', page: number) {
     return this.request<WalletTransactionsView>(`/billing/transactions?wallet=${wallet}&page=${page}`);
   }

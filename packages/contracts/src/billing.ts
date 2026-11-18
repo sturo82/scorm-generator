@@ -42,6 +42,13 @@ export interface WalletBlock {
  */
 export type CompanyWalletAccess = 'active' | 'missing' | 'unavailable' | 'none';
 
+/** Crediti addebitati per un corso, per funzione (quanto ha pagato il cliente). */
+export interface CourseCreditsView {
+  courseId: string;
+  total: number;
+  lines: Array<{ feature: string; units?: number; operations: number; credits: number }>;
+}
+
 /** Movimento del wallet che cambia il saldo (ricarica, addebito, rettifica, rimborso). */
 export interface WalletTransaction {
   id: string;

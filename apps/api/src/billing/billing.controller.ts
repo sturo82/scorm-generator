@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { CurrentContext, type AuthContext } from '../auth/auth-context.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
@@ -35,6 +35,11 @@ export class BillingController {
     return this.billing.walletView(ctx.tenant.tenantId, ctx.userId, ctx.role);
   }
 
+  /** Crediti addebitati per un corso (quanto ha pagato il cliente, senza costi dei fornitori). */
+  @Get('courses/:courseId')
+  courseCredits(@CurrentContext() ctx: AuthContext, @Param('courseId') courseId: string) {
+    return this.billing.courseCredits(ctx.tenant.tenantId, courseId);
+  }
   /** Movimenti del wallet dell'azienda o personale (solo quelli che cambiano il saldo). */
   @Get('transactions')
   transactions(@CurrentContext() ctx: AuthContext, @Query(new ZodValidationPipe(TxQuery)) q: TxQueryType) {

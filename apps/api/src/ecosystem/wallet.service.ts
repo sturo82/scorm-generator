@@ -320,26 +320,29 @@ export class WalletService {
    * parametri addebita l'intera riserva. Se disabilitato, no-op. Non lancia: un capture fallito
    * lascia l'hold che Manager libera a scadenza.
    */
-  async capture(companyId: string, holdId: string, actual?: { units?: number; amount?: number }): Promise<void> {
-    if (String(holdId).startsWith('noop:') || !(await this.isEnabled())) return;
+  async capture(companyId: string, holdId: string, actual?: { units?: number; amount?: number }): Promise<boolean> {
+    if (String(holdId).startsWith('noop:') || !(await this.isEnabled())) return false;
     try {
       await this.http.post(`wallet/holds/${encodeURIComponent(holdId)}/capture`, {
         company_id: companyId,
         ...(actual?.units !== undefined ? { units: round3(actual.units) } : {}),
         ...(actual?.amount !== undefined ? { amount: Math.round(actual.amount) } : {}),
       });
+      return true;
     } catch (err) {
       if (err instanceof EcosystemRequestError) {
         const code = asManagerError(err.body).error;
         // Idempotente: già catturato/chiuso, nulla da fare.
-        if (code === 'hold_already_captured' || code === 'hold_not_open') return;
+        if (code === 'hold_already_captured') return true;
+        if (code === 'hold_not_open') return false;
         if (code === 'capture_exceeds_hold') {
           this.logger.error(`Wallet capture oltre la riserva (hold=${holdId}): consumo reale superiore a quanto prenotato`);
-          return;
+          return false;
         }
       }
       this.logger.error(`Wallet capture fallito (hold=${holdId}): ${describe(err)}`);
     }
+    return false;
   }
 
   /**
