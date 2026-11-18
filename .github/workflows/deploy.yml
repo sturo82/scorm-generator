@@ -32,6 +32,8 @@ permissions:
   contents: read
 
 jobs:
+  # I tre job partono insieme: test, immagine API e build del web. Il deploy
+  # parte solo se tutti e tre riescono, quindi nulla va online senza test verdi.
   test:
     runs-on: ubuntu-latest
     container: node:20.11.0-bookworm
@@ -39,15 +41,8 @@ jobs:
       - uses: actions/checkout@v4
       # Cache della cache di npm (~/.npm): npm ci la riusa, evitando di riscaricare
       # i pacchetti a ogni run. Invalidata quando cambia package-lock.json.
-      # 'sharp' scarica un binario prebuilt di libvips da GitHub; quando quel
-      # download fallisce (es. 504), fa fallback alla COMPILAZIONE da sorgente,
-      # che richiede libvips-dev + toolchain. Li installiamo così 'npm ci' è
-      # resiliente ai problemi di rete del prebuilt (il container è Debian).
-      - name: Install libvips (sharp build fallback)
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            libvips-dev libglib2.0-dev libexpat1-dev pkg-config build-essential python3
+      # sharp (>= 0.33) arriva come pacchetti npm precompilati (@img/sharp-*):
+      # niente compilazione da sorgente né download da GitHub.
       - name: Cache npm
         uses: actions/cache@v4
         with:
@@ -55,28 +50,22 @@ jobs:
           key: npm-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             npm-${{ runner.os }}-
-      # sharp: il prebuilt è scaricato da GitHub releases, che può dare 504
-      # (interruzioni del CDN release). Forziamo la BUILD da sorgente contro il
-      # libvips di sistema (installato sopra) e usiamo un mirror per il tarball
-      # libvips: così npm ci NON dipende dagli asset GitHub di sharp.
-      - name: Install deps (npm ci, sharp from source)
-        env:
-          npm_config_build_from_source: 'true'
-          npm_config_sharp_libvips_binary_host: 'https://registry.npmmirror.com/-/binary/sharp-libvips'
-        run: npm ci
+      - run: npm ci
       - run: npx prisma generate --schema apps/api/prisma/schema.prisma
       - run: npm run build
       - run: node_modules/.bin/vitest run
       - run: npm run lint
 
-  deploy:
-    needs: test
+  # Immagine API: pubblicata su ECR SOLO con il tag del commit. Il tag `latest`
+  # (quello che App Runner esegue) si sposta nel job deploy, dopo i test.
+  image:
     runs-on: ubuntu-latest
+    outputs:
+      migrations: ${{ steps.changes.outputs.migrations }}
     steps:
       - uses: actions/checkout@v4
-
-      # Rileva se il push tocca le migrazioni Prisma: se NO, saltiamo CodeBuild
-      # (le migrazioni sono idempotenti ma inutili senza nuove migrazioni, ~1min).
+      # Rileva se il push tocca le migrazioni Prisma: se NO, saltiamo l'immagine
+      # migrate e CodeBuild.
       - name: Rileva cambi migrazioni
         uses: dorny/paths-filter@v3
         id: changes
@@ -84,31 +73,22 @@ jobs:
           filters: |
             migrations:
               - 'apps/api/prisma/migrations/**'
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-
-      # --- API: build immagine (+ stage migrate), push su ECR -----------------
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
-
-      # Buildx abilita la cache dei layer Docker su GitHub Actions (type=gha):
-      # i layer non cambiati (incluso `npm ci` dell'immagine) vengono riusati tra
-      # run finché cambiano solo i sorgenti. Invalidata quando cambia il contesto
-      # del layer (es. package-lock.json per lo stage deps).
+      # Buildx abilita la cache dei layer Docker su GitHub Actions (type=gha).
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
       - name: Build & push API image
         env:
           ECR_API: ${{ vars.ECR_API }}
           TAG: ${{ github.sha }}
         run: |
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          # Stage runtime (immagine servita da App Runner): tag sha + latest.
           # APP_VERSION/BUILD_TIME finiscono come env dell'immagine ed esposti in /health.
           docker buildx build \
             --target runtime \
@@ -116,9 +96,14 @@ jobs:
             --build-arg BUILD_TIME="$BUILD_TIME" \
             --cache-from type=gha,scope=api-runtime \
             --cache-to type=gha,scope=api-runtime,mode=max \
-            -t "$ECR_API:$TAG" -t "$ECR_API:latest" \
+            -t "$ECR_API:$TAG" \
             --push .
-          # Stage migrate (task one-off migrazioni). Condivide i layer col runtime.
+      # Stage migrate (task one-off migrazioni): solo se servono le migrazioni.
+      - name: Build & push migrate image
+        if: steps.changes.outputs.migrations == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          ECR_API: ${{ vars.ECR_API }}
+        run: |
           docker buildx build \
             --target migrate \
             --cache-from type=gha,scope=api-runtime \
@@ -127,11 +112,88 @@ jobs:
             -t "$ECR_API:migrate" \
             --push .
 
+  # Web statico: build in parallelo, pubblicato come artifact e caricato su S3
+  # solo dopo che l'API nuova è online.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node for web build
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.11.0'
+          cache: 'npm' # riusa la cache npm tra run (npm ci più veloce)
+
+      - name: Build web (static export)
+        env:
+          NODE_ENV: production
+          NEXT_PUBLIC_API_MODE: real
+          NEXT_PUBLIC_API_URL: https://${{ vars.API_DOMAIN }}
+          NEXT_PUBLIC_AUTH_MODE: oidc
+          NEXT_PUBLIC_OIDC_ISSUER: ${{ vars.COGNITO_ISSUER }}
+          NEXT_PUBLIC_OIDC_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
+          NEXT_PUBLIC_OIDC_REDIRECT_URI: https://${{ vars.WEB_DOMAIN }}/auth/callback
+          NEXT_PUBLIC_OIDC_SCOPE: openid email profile
+          NEXT_PUBLIC_OIDC_AUDIENCE: ${{ vars.COGNITO_CLIENT_ID }}
+          NEXT_PUBLIC_OIDC_AUTH_DOMAIN: ${{ vars.AUTH_DOMAIN }}
+          # Versione mostrata in UI (footer): sha corto + istante del build.
+          NEXT_PUBLIC_APP_VERSION: ${{ github.sha }}
+        run: |
+          # Istante del build in ISO UTC (affidabile, calcolato ora).
+          export NEXT_PUBLIC_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # File di versione servito NO-CACHE: il footer lo interroga per capire
+          # se è stata pubblicata una versione del web più recente di quella in
+          # esecuzione (allora invita a ricaricare).
+          printf '{"version":"%s","buildTime":"%s"}\n' \
+            "$NEXT_PUBLIC_APP_VERSION" "$NEXT_PUBLIC_BUILD_TIME" > apps/web/public/version.json
+          # NODE_ENV=production farebbe saltare le devDependencies (tsc, next):
+          # forziamo l'install completo per avere i tool di build.
+          npm ci --include=dev
+          npm run build --workspace @scorm/contracts
+          npm run build --workspace @scorm/scorm
+          npm run build --workspace @scorm/web
+
+      - name: Upload web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-out
+          path: apps/web/out
+          retention-days: 3
+
+  deploy:
+    needs: [test, image, web]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      # Test verdi: l'immagine del commit diventa `latest`, quella che App Runner esegue.
+      - name: Promote image to latest
+        env:
+          ECR_API: ${{ vars.ECR_API }}
+          TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          REPO="${ECR_API#*/}"
+          MANIFEST=$(aws ecr batch-get-image --repository-name "$REPO" --image-ids imageTag="$TAG" \
+            --accepted-media-types application/vnd.oci.image.index.v1+json application/vnd.oci.image.manifest.v1+json application/vnd.docker.distribution.manifest.v2+json application/vnd.docker.distribution.manifest.list.v2+json \
+            --query 'images[0].imageManifest' --output text)
+          MEDIA=$(aws ecr batch-get-image --repository-name "$REPO" --image-ids imageTag="$TAG" \
+            --accepted-media-types application/vnd.oci.image.index.v1+json application/vnd.oci.image.manifest.v1+json application/vnd.docker.distribution.manifest.v2+json application/vnd.docker.distribution.manifest.list.v2+json \
+            --query 'images[0].imageManifestMediaType' --output text)
+          # Se `latest` punta già allo stesso manifest, ECR risponde ImageAlreadyExistsException: va bene.
+          aws ecr put-image --repository-name "$REPO" --image-tag latest \
+            --image-manifest "$MANIFEST" --image-manifest-media-type "$MEDIA" >/dev/null \
+            || aws ecr describe-images --repository-name "$REPO" --image-ids imageTag=latest \
+                 --query "imageDetails[0].imageTags" --output text | grep -qw "$TAG"
+          echo "latest -> $TAG"
       # --- Migrazioni DB (CodeBuild) — solo se sono cambiate le migrazioni ----
       # Via di fuga: un run manuale (workflow_dispatch) esegue SEMPRE le
       # migrazioni, utile se il filtro non le rilevasse o per forzarle.
       - name: Run DB migrations
-        if: steps.changes.outputs.migrations == 'true' || github.event_name == 'workflow_dispatch'
+        if: needs.image.outputs.migrations == 'true' || github.event_name == 'workflow_dispatch'
         env:
           PROJECT: ${{ vars.MIGRATE_PROJECT }}
         run: |
@@ -188,42 +250,12 @@ jobs:
             sleep 10
           done
 
-      # --- Web: build statico, sync su S3, invalidazione CloudFront -----------
-      - name: Setup Node for web build
-        uses: actions/setup-node@v4
+      # --- Web: sync su S3 e invalidazione CloudFront ---------------------------
+      - name: Download web build
+        uses: actions/download-artifact@v4
         with:
-          node-version: '20.11.0'
-          cache: 'npm' # riusa la cache npm tra run (npm ci più veloce)
-
-      - name: Build web (static export)
-        env:
-          NODE_ENV: production
-          NEXT_PUBLIC_API_MODE: real
-          NEXT_PUBLIC_API_URL: https://${{ vars.API_DOMAIN }}
-          NEXT_PUBLIC_AUTH_MODE: oidc
-          NEXT_PUBLIC_OIDC_ISSUER: ${{ vars.COGNITO_ISSUER }}
-          NEXT_PUBLIC_OIDC_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
-          NEXT_PUBLIC_OIDC_REDIRECT_URI: https://${{ vars.WEB_DOMAIN }}/auth/callback
-          NEXT_PUBLIC_OIDC_SCOPE: openid email profile
-          NEXT_PUBLIC_OIDC_AUDIENCE: ${{ vars.COGNITO_CLIENT_ID }}
-          NEXT_PUBLIC_OIDC_AUTH_DOMAIN: ${{ vars.AUTH_DOMAIN }}
-          # Versione mostrata in UI (footer): sha corto + istante del build.
-          NEXT_PUBLIC_APP_VERSION: ${{ github.sha }}
-        run: |
-          # Istante del build in ISO UTC (affidabile, calcolato ora).
-          export NEXT_PUBLIC_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          # File di versione servito NO-CACHE: il footer lo interroga per capire
-          # se è stata pubblicata una versione del web più recente di quella in
-          # esecuzione (allora invita a ricaricare).
-          printf '{"version":"%s","buildTime":"%s"}\n' \
-            "$NEXT_PUBLIC_APP_VERSION" "$NEXT_PUBLIC_BUILD_TIME" > apps/web/public/version.json
-          # NODE_ENV=production farebbe saltare le devDependencies (tsc, next):
-          # forziamo l'install completo per avere i tool di build.
-          npm ci --include=dev
-          npm run build --workspace @scorm/contracts
-          npm run build --workspace @scorm/scorm
-          npm run build --workspace @scorm/web
-
+          name: web-out
+          path: apps/web/out
       - name: Sync to S3 + invalidate CloudFront
         env:
           WEB_BUCKET: ${{ vars.WEB_BUCKET }}

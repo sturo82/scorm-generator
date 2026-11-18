@@ -50,5 +50,10 @@
     "prettier": "3.2.5",
     "typescript": "5.4.5",
     "vitest": "1.5.0"
+  },
+  "overrides": {
+    "@xenova/transformers": {
+      "sharp": "0.33.5"
+    }
   }
 }
