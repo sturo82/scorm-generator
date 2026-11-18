@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { avatarFeature } from '@scorm/contracts';
+import { avatarFeature, type WalletView } from '@scorm/contracts';
 import type { AppConfig } from '../config/configuration.js';
 import { FeatureCatalogService } from '../ecosystem/feature-catalog.service.js';
 import {
@@ -9,6 +9,8 @@ import {
   WalletService,
 } from '../ecosystem/wallet.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { TenantPrismaService } from '../tenancy/tenant-prisma.service.js';
+import { currentPayer, type Payer } from './payer-context.js';
 
 /** Voce di spesa: feature del listino e, per le feature a unità, le unità (elementi o minuti). */
 export interface BillItem {
@@ -18,6 +20,8 @@ export interface BillItem {
 
 /** Riserva di crediti (uno o più hold), serializzabile per essere salvata con il lavoro. */
 export interface Reservation {
+  /** Wallet su cui sono state fatte le riserve (company o personale): capture e release vanno allo stesso. */
+  companyId: string;
   /** Prefisso del `reference` (ogni hold usa `${ref}:${feature}`). */
   ref: string;
   holds: Array<{ feature: string; holdId: string; units?: number; credits: number }>;
@@ -61,14 +65,24 @@ export class BillingService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly tenantPrisma: TenantPrismaService,
     private readonly wallet: WalletService,
     private readonly catalog: FeatureCatalogService,
     private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
-  /** True se le generazioni di questa azienda si addebitano in crediti. */
+  /** Chi paga la richiesta in corso: wallet personale scelto dall'utente oppure, di default, l'azienda. */
+  payerFor(tenantId: string): Payer {
+    return currentPayer() ?? { companyId: tenantId, kind: 'company' };
+  }
+
+  /**
+   * True se la generazione in corso si addebita in crediti: wallet abilitato sull'installazione e
+   * (azienda con addebito attivo oppure utente che ha scelto di pagare con il wallet personale).
+   */
   async isBilled(tenantId: string): Promise<boolean> {
     if (!(await this.wallet.isEnabled())) return false;
+    if (this.payerFor(tenantId).kind === 'personal') return true;
     const hit = this.billedCache.get(tenantId);
     if (hit && hit.until > Date.now()) return hit.value;
     const row = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { walletBilling: true } });
@@ -97,8 +111,9 @@ export class BillingService {
    */
   async reserve(tenantId: string, ref: string, items: BillItem[]): Promise<Reservation | null> {
     if (!(await this.isBilled(tenantId))) return null;
+    const payer = this.payerFor(tenantId);
     const lines = normalize(items, this.catalog);
-    if (lines.length === 0) return { ref, holds: [] };
+    if (lines.length === 0) return { ref, companyId: payer.companyId, holds: [] };
     const holds: Reservation['holds'] = [];
     try {
       for (const l of lines) {
@@ -106,7 +121,7 @@ export class BillingService {
         if (price === undefined) throw new FeatureNotPricedException(l.feature);
         const unit = this.catalog.isUnit(l.feature);
         const hold = await this.wallet.hold({
-          companyId: tenantId,
+          companyId: payer.companyId,
           feature: l.feature,
           reference: `${ref}:${l.feature}`,
           ...(unit ? { units: l.units } : { amount: price }),
@@ -119,10 +134,10 @@ export class BillingService {
         });
       }
     } catch (err) {
-      await Promise.all(holds.map((h) => this.wallet.release(tenantId, h.holdId)));
+      await Promise.all(holds.map((h) => this.wallet.release(payer.companyId, h.holdId)));
       throw err;
     }
-    return { ref, holds };
+    return { ref, companyId: payer.companyId, holds };
   }
 
   /**
@@ -130,20 +145,21 @@ export class BillingService {
    * feature assente si addebita per intero (voci esatte). Consumo zero libera la riserva; un
    * consumo oltre la riserva si addebita fino alla riserva e si registra l'eccedenza.
    */
-  async settle(tenantId: string, res: Reservation | null, actual?: Record<string, number>): Promise<void> {
+  async settle(_tenantId: string, res: Reservation | null, actual?: Record<string, number>): Promise<void> {
     if (!res) return;
+    const company = res.companyId;
     for (const h of res.holds) {
       const a = actual?.[h.feature];
       if (a === undefined) {
-        await this.wallet.capture(tenantId, h.holdId);
+        await this.wallet.capture(company, h.holdId);
         continue;
       }
       if (a <= 0) {
-        await this.wallet.release(tenantId, h.holdId);
+        await this.wallet.release(company, h.holdId);
         continue;
       }
       if (h.units === undefined) {
-        await this.wallet.capture(tenantId, h.holdId);
+        await this.wallet.capture(company, h.holdId);
         continue;
       }
       if (a > h.units + 1e-9) {
@@ -151,14 +167,14 @@ export class BillingService {
           `Consumo oltre la riserva (${h.feature}, ref=${res.ref}): reale ${a} > riservato ${h.units}. Si addebita la riserva.`,
         );
       }
-      await this.wallet.capture(tenantId, h.holdId, { units: Math.min(a, h.units) });
+      await this.wallet.capture(company, h.holdId, { units: Math.min(a, h.units) });
     }
   }
 
   /** Libera tutta la riserva (operazione fallita o annullata). */
-  async release(tenantId: string, res: Reservation | null): Promise<void> {
+  async release(_tenantId: string, res: Reservation | null): Promise<void> {
     if (!res) return;
-    await Promise.all(res.holds.map((h) => this.wallet.release(tenantId, h.holdId)));
+    await Promise.all(res.holds.map((h) => this.wallet.release(res.companyId, h.holdId)));
   }
 
   /**
@@ -169,7 +185,7 @@ export class BillingService {
     if (!(await this.isBilled(tenantId))) return;
     const q = this.quote(items);
     if (!q.priced) throw new FeatureNotPricedException(q.lines.find((l) => l.credits === null)?.feature ?? '');
-    const bal = await this.wallet.getBalance(tenantId);
+    const bal = await this.wallet.getBalance(this.payerFor(tenantId).companyId);
     if (bal && bal.available < q.total) {
       throw new InsufficientCreditsException(q.lines[0]?.feature ?? '', q.total, bal.available);
     }
@@ -196,27 +212,91 @@ export class BillingService {
     }
   }
 
-  /** Stato del wallet mostrato in app: addebito attivo, saldo e link alla pagina di ricarica. */
-  async walletView(tenantId: string): Promise<{
-    enabled: boolean;
-    balance?: number;
-    available?: number;
-    currency: 'CREDITS';
-    topupUrl?: string;
-  }> {
-    const enabled = await this.isBilled(tenantId);
-    if (!enabled) return { enabled: false, currency: 'CREDITS' };
-    const bal = await this.wallet.getBalance(tenantId);
+  /**
+   * Stato dei wallet mostrato in app: addebito attivo per chi sta generando, wallet scelto, saldo
+   * dell'azienda e, se già attivato, del wallet personale. Il wallet personale NON si crea qui:
+   * Manager lo crea alla prima chiamata, quindi si attiva solo quando l'utente lo sceglie.
+   */
+  async walletView(tenantId: string, userId: string, role: string): Promise<WalletView> {
+    const walletOn = await this.wallet.isEnabled();
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { walletPayer: true, personalWalletId: true },
+    });
+    const payer: 'COMPANY' | 'PERSONAL' = user?.walletPayer === 'PERSONAL' && user.personalWalletId ? 'PERSONAL' : 'COMPANY';
+    const companyBilled = walletOn && (await this.companyBilled(tenantId));
+    const [companyBal, personalBal] = await Promise.all([
+      companyBilled ? this.wallet.getBalance(tenantId) : null,
+      walletOn && user?.personalWalletId ? this.wallet.getBalance(user.personalWalletId) : null,
+    ]);
+    const current = payer === 'PERSONAL' ? personalBal : companyBal;
     return {
-      enabled: true,
-      balance: bal?.balance,
-      available: bal?.available,
+      enabled: walletOn && (payer === 'PERSONAL' || companyBilled),
+      payer,
+      balance: current?.balance,
+      available: current?.available,
       currency: 'CREDITS',
-      topupUrl: this.topupUrl(),
+      topupUrl: payer === 'COMPANY' ? this.topupUrl() : undefined,
+      canTopup: payer === 'PERSONAL' ? true : role === 'OWNER',
+      company: companyBilled
+        ? { balance: companyBal?.balance, available: companyBal?.available, topupUrl: this.topupUrl(), canTopup: role === 'OWNER' }
+        : null,
+      personal: {
+        // Il wallet personale esiste solo dopo l'attivazione; prima di allora non si interroga Manager.
+        active: Boolean(user?.personalWalletId),
+        balance: personalBal?.balance,
+        available: personalBal?.available,
+      },
+      personalAvailable: walletOn,
     };
   }
 
-  /** Portale owner di Manager, dove si ricarica con Stripe. */
+  /** Cambia il wallet che paga le generazioni dell'utente; il personale si attiva alla prima scelta. */
+  async setPayer(tenantId: string, userId: string, kind: 'COMPANY' | 'PERSONAL'): Promise<void> {
+    if (kind === 'PERSONAL') await this.ensurePersonalWallet(tenantId, userId);
+    await this.tenantPrisma.runInTenant(tenantId, (tx) =>
+      tx.user.updateMany({ where: { id: userId, tenantId }, data: { walletPayer: kind } }),
+    );
+  }
+
+  /** Pagina di pagamento Stripe per ricaricare il wallet personale dell'utente. */
+  async startPersonalTopup(tenantId: string, userId: string, amountEur: number): Promise<{ url: string }> {
+    const companyId = await this.ensurePersonalWallet(tenantId, userId);
+    const web = this.config.get('webAppUrl', { infer: true }).replace(/\/+$/, '');
+    return this.wallet.createPersonalTopupSession({
+      companyId,
+      amountEur,
+      successUrl: `${web}/wallet?topup=success`,
+      cancelUrl: `${web}/wallet?topup=cancel`,
+    });
+  }
+
+  /** company_id del wallet personale: lo chiede a Manager la prima volta e lo salva (mai ricostruito da noi). */
+  private async ensurePersonalWallet(tenantId: string, userId: string): Promise<string> {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { externalId: true, email: true, personalWalletId: true },
+    });
+    if (!user) throw new NotFoundException('Utente non trovato');
+    if (user.personalWalletId) return user.personalWalletId;
+    const personal = await this.wallet.getOrCreatePersonal(user.externalId, user.email);
+    await this.tenantPrisma.runInTenant(tenantId, (tx) =>
+      tx.user.updateMany({ where: { id: userId, tenantId }, data: { personalWalletId: personal.company_id } }),
+    );
+    return personal.company_id;
+  }
+
+  /** L'azienda ha l'addebito a crediti attivo (flag per azienda), indipendentemente da chi paga la richiesta. */
+  private async companyBilled(tenantId: string): Promise<boolean> {
+    const hit = this.billedCache.get(tenantId);
+    if (hit && hit.until > Date.now()) return hit.value;
+    const row = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { walletBilling: true } });
+    const value = row?.walletBilling === true;
+    this.billedCache.set(tenantId, { value, until: Date.now() + BILLED_CACHE_MS });
+    return value;
+  }
+
+  /** Portale owner di Manager, dove l'azienda si ricarica con Stripe. */
   private topupUrl(): string | undefined {
     const base = this.config.get('ecosystem', { infer: true }).managerUrl;
     if (!base) return undefined;

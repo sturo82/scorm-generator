@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Put } from '@nestjs/common';
 import { z } from 'zod';
 import { CurrentContext, type AuthContext } from '../auth/auth-context.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
@@ -12,17 +12,35 @@ const QuoteBody = z.object({
 });
 type QuoteBodyType = z.infer<typeof QuoteBody>;
 
-/** Wallet a crediti e preventivi: saldo, link di ricarica e costo di una generazione. */
+const PayerBody = z.object({ payer: z.enum(['COMPANY', 'PERSONAL']) });
+type PayerBodyType = z.infer<typeof PayerBody>;
+
+/** Importi di ricarica del wallet personale consentiti (euro; 1 EUR = 100 crediti). */
+const TopupBody = z.object({ amountEur: z.number().int().min(5).max(500) });
+type TopupBodyType = z.infer<typeof TopupBody>;
+
+/** Wallet a crediti e preventivi: saldi, scelta di chi paga, ricarica e costo di una generazione. */
 @Controller('billing')
 export class BillingController {
   constructor(private readonly billing: BillingService) {}
 
-  /** Stato del wallet dell'azienda (saldo solo se l'addebito è attivo). */
+  /** Stato dei wallet (azienda e personale) e di chi paga le generazioni. */
   @Get('wallet')
-  async wallet(@CurrentContext() ctx: AuthContext) {
-    const view = await this.billing.walletView(ctx.tenant.tenantId);
-    // La ricarica è riservata all'owner dell'azienda.
-    return { ...view, canTopup: ctx.role === 'OWNER' };
+  wallet(@CurrentContext() ctx: AuthContext) {
+    return this.billing.walletView(ctx.tenant.tenantId, ctx.userId, ctx.role);
+  }
+
+  /** Sceglie il wallet che paga le generazioni; il personale si attiva alla prima scelta. */
+  @Put('payer')
+  async setPayer(@CurrentContext() ctx: AuthContext, @Body(new ZodValidationPipe(PayerBody)) body: PayerBodyType) {
+    await this.billing.setPayer(ctx.tenant.tenantId, ctx.userId, body.payer);
+    return this.billing.walletView(ctx.tenant.tenantId, ctx.userId, ctx.role);
+  }
+
+  /** Avvia la ricarica del wallet personale: ritorna la pagina di pagamento Stripe. */
+  @Post('topup')
+  topup(@CurrentContext() ctx: AuthContext, @Body(new ZodValidationPipe(TopupBody)) body: TopupBodyType) {
+    return this.billing.startPersonalTopup(ctx.tenant.tenantId, ctx.userId, body.amountEur);
   }
 
   /** Preventivo in crediti di una generazione, con `billed` per sapere se verrà addebitata. */

@@ -34,7 +34,10 @@ export function InsufficientCreditsDialog() {
               </p>
             )}
             {w?.canTopup === false && (
-              <p className="text-muted-foreground">La ricarica è riservata al titolare dell&apos;azienda.</p>
+              <p className="text-muted-foreground">
+                La ricarica del wallet dell&apos;azienda è riservata al titolare: puoi anche{' '}
+                <a className="underline" href="/wallet">usare il tuo wallet personale</a>.
+              </p>
             )}
           </div>
         </div>
@@ -42,10 +45,10 @@ export function InsufficientCreditsDialog() {
           <Button variant="outline" onClick={() => setDetail(null)}>
             Chiudi
           </Button>
-          {w?.canTopup && w.topupUrl && (
+          {w?.canTopup && (w.topupUrl || w.payer === 'PERSONAL') && (
             <a
-              href={w.topupUrl}
-              target="_blank"
+              href={w.payer === 'PERSONAL' ? '/wallet' : w.topupUrl}
+              target={w.payer === 'PERSONAL' ? undefined : '_blank'}
               rel="noreferrer"
               className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
             >

@@ -738,6 +738,22 @@ export const useWallet = () =>
     retry: false,
   });
 
+/** Cambia il wallet che paga le generazioni (azienda o personale). */
+export function useSetWalletPayer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payer: 'COMPANY' | 'PERSONAL') => api.setWalletPayer(payer),
+    onSuccess: (wallet) => {
+      qc.setQueryData(['billing', 'wallet'], wallet);
+      qc.invalidateQueries({ queryKey: ['billing', 'quote'] });
+    },
+  });
+}
+
+/** Avvia la ricarica del wallet personale: ritorna l'indirizzo della pagina di pagamento. */
+export const useStartWalletTopup = () =>
+  useMutation({ mutationFn: (amountEur: number) => api.startWalletTopup(amountEur) });
+
 /** Preventivo in crediti di una generazione; non interroga l'API se l'azienda non paga a crediti. */
 export function useCreditQuote(items: CreditQuoteItem[]) {
   const wallet = useWallet();

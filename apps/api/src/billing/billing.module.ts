@@ -1,6 +1,7 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
 import { BillingController } from './billing.controller.js';
 import { BillingService } from './billing.service.js';
+import { PayerMiddleware } from './payer-context.js';
 
 /** Addebito in crediti delle generazioni sopra il wallet di Manager. Globale: serve a più moduli. */
 @Global()
@@ -9,4 +10,8 @@ import { BillingService } from './billing.service.js';
   providers: [BillingService],
   exports: [BillingService],
 })
-export class BillingModule {}
+export class BillingModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(PayerMiddleware).forRoutes('*');
+  }
+}

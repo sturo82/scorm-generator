@@ -154,6 +154,10 @@ model User {
   email          String
   displayName    String?
   role           UserRole @default(VIEWER)
+  // Wallet che paga le generazioni: 'COMPANY' (azienda) o 'PERSONAL' (wallet personale di Manager).
+  walletPayer    String   @default("COMPANY")
+  // company_id del wallet personale assegnato da Manager ("p-…"), noto dopo la prima attivazione.
+  personalWalletId String?
   ssoTickets     SsoTicket[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

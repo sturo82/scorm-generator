@@ -26,6 +26,7 @@ import { ModulesService } from '../courses/modules.service.js';
 import { MediaService } from './media.service.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { BillingService, type BillItem, type Reservation } from '../billing/billing.service.js';
+import { currentPayer, runWithPayer, type Payer } from '../billing/payer-context.js';
 import { RetrievalService } from '../knowledge/retrieval.service.js';
 import { buildRetrievalQuery } from '../knowledge/query-builder.js';
 import {
@@ -55,6 +56,8 @@ export interface GenJobPayload {
   focus?: string;
   /** Modulo di riferimento per i test intermedi (serve al gating). */
   moduleId?: string;
+  /** Wallet che paga il job (azienda o personale): serve al worker, che non ha una richiesta. */
+  payer?: Payer;
 }
 
 type GenJobPayloadWithId = GenJobPayload & { jobId: string };
@@ -176,7 +179,7 @@ export class GenerationService {
         params: (reservation ? { ...payload, billing: { reservation } } : payload) as unknown as object,
       },
     });
-    await this.jobs.enqueue(type, { ...payload, jobId }, ctx);
+    await this.jobs.enqueue(type, { ...payload, payer: currentPayer(), jobId }, ctx);
     } catch (err) {
       await this.billing.release(ctx.tenant.tenantId, reservation);
       throw err;
@@ -293,6 +296,11 @@ export class GenerationService {
 
   /** Dispatch del worker per i job di generazione. */
   async handleJob(payload: GenJobPayloadWithId & { type: GenJobType }, ctx: RequestContext): Promise<void> {
+    // Il worker non ha una richiesta: le chiamate di fatturazione (immagini, quiz…) usano il pagatore del job.
+    return runWithPayer(payload.payer, () => this.dispatchJob(payload, ctx));
+  }
+
+  private async dispatchJob(payload: GenJobPayloadWithId & { type: GenJobType }, ctx: RequestContext): Promise<void> {
     switch (payload.type) {
       case 'course.generate_outline':
         await this.executeJob(payload.jobId, () => this.runOutline(ctx, payload.courseId, payload.jobId));

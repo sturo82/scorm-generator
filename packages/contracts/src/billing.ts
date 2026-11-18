@@ -25,12 +25,31 @@ export interface CreditQuoteView {
   priced: boolean;
 }
 
-/** Stato del wallet mostrato in app. */
+/** Wallet a crediti di un soggetto pagante (azienda o personale). */
+export interface WalletBlock {
+  balance?: number;
+  available?: number;
+}
+
+/**
+ * Stato dei wallet mostrato in app. I campi `enabled/balance/available/topupUrl/canTopup` riguardano
+ * il wallet che paga le generazioni in corso (`payer`); `company` e `personal` descrivono i due
+ * wallet per la pagina di gestione.
+ */
 export interface WalletView {
+  /** True se le generazioni di chi sta usando l'app si addebitano in crediti. */
   enabled: boolean;
+  /** Wallet scelto per pagare: azienda o personale. */
+  payer: 'COMPANY' | 'PERSONAL';
   balance?: number;
   available?: number;
   currency: 'CREDITS';
   topupUrl?: string;
   canTopup: boolean;
+  /** Wallet dell'azienda; assente se l'azienda non paga a crediti. */
+  company: (WalletBlock & { topupUrl?: string; canTopup: boolean }) | null;
+  /** Wallet personale: `active` è false finché l'utente non lo attiva (Manager lo crea alla prima richiesta). */
+  personal: WalletBlock & { active: boolean };
+  /** True se il wallet è abilitato sull'installazione (quindi l'utente può attivare quello personale). */
+  personalAvailable: boolean;
 }

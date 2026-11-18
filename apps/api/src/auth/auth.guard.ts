@@ -14,6 +14,7 @@ import { mapEcoRoleToInternal } from '../ecosystem/eco-role.js';
 import { AUTH_PROVIDER, type AuthProvider } from './auth-provider.js';
 import { AUTH_CONTEXT_KEY, type AuthContext } from './auth-context.js';
 import { IS_PUBLIC_KEY } from './public.decorator.js';
+import { setRequestPayer } from '../billing/payer-context.js';
 
 interface IncomingRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -76,11 +77,17 @@ export class AuthGuard implements CanActivate {
     // lancia 403; fail-open su errori infrastrutturali (vedi service).
     await this.entitlements.assertCompanyEntitled(claims.tenantId);
 
-    let user = await this.prisma.user.findUnique({
+    let user: {
+      id: string;
+      role: AuthContext['role'];
+      tenantId: string;
+      walletPayer?: string;
+      personalWalletId?: string | null;
+    } | null = await this.prisma.user.findUnique({
       where: {
         tenantId_externalId: { tenantId: claims.tenantId, externalId: claims.subject },
       },
-      select: { id: true, role: true, tenantId: true },
+      select: { id: true, role: true, tenantId: true, walletPayer: true, personalWalletId: true },
     });
 
     // In modalità dev, auto-provisiona tenant/utente al primo accesso così il
@@ -114,6 +121,13 @@ export class AuthGuard implements CanActivate {
       correlationId,
     };
     request[AUTH_CONTEXT_KEY] = authContext;
+    // Wallet che paga le generazioni di questa richiesta: quello personale se l'utente l'ha scelto
+    // (id assegnato da Manager), altrimenti l'azienda (default, gestito da BillingService).
+    setRequestPayer(
+      user.walletPayer === 'PERSONAL' && user.personalWalletId
+        ? { companyId: user.personalWalletId, kind: 'personal' }
+        : undefined,
+    );
     return true;
   }
 

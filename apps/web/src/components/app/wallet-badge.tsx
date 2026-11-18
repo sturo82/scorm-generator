@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { Coins } from 'lucide-react';
 import { useWallet } from '@/lib/api/hooks';
 
@@ -9,25 +10,32 @@ export function WalletBadge() {
   const amount = data.available ?? data.balance;
   return (
     <div className="flex items-center gap-2 rounded-full border border-white/15 bg-white/10 py-1 pl-3 pr-1 text-sm text-white">
-      <Coins className="size-4 text-white/70" aria-hidden />
-      <span title={data.balance !== undefined ? `Saldo ${data.balance.toLocaleString('it-IT')} crediti` : undefined}>
-        {amount !== undefined ? (
-          <>
-            <strong>{amount.toLocaleString('it-IT')}</strong> crediti
-          </>
-        ) : (
-          'Crediti'
-        )}
-      </span>
-      {data.canTopup && data.topupUrl && (
-        <a
-          href={data.topupUrl}
-          target="_blank"
+      <Link
+        href="/wallet"
+        className="flex items-center gap-2 hover:text-white/80"
+        title={`Paga: ${data.payer === 'PERSONAL' ? 'wallet personale' : 'wallet azienda'}. Gestisci wallet`}
+      >
+        <Coins className="size-4 text-white/70" aria-hidden />
+        <span className="hidden text-xs text-white/60 sm:inline">{data.payer === 'PERSONAL' ? 'Personale' : 'Azienda'}</span>
+        <span>
+          {amount !== undefined ? (
+            <>
+              <strong>{amount.toLocaleString('it-IT')}</strong> crediti
+            </>
+          ) : (
+            'Crediti'
+          )}
+        </span>
+      </Link>
+      {data.canTopup && (
+        <Link
+          href={data.payer === 'PERSONAL' || !data.topupUrl ? '/wallet' : data.topupUrl}
+          target={data.payer === 'PERSONAL' || !data.topupUrl ? undefined : '_blank'}
           rel="noreferrer"
           className="rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90"
         >
           Ricarica
-        </a>
+        </Link>
       )}
     </div>
   );

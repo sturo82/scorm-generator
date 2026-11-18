@@ -61,6 +61,21 @@ export class InsufficientCreditsException extends HttpException {
   }
 }
 
+/** Errore quando il wallet personale non è ammesso su questo prodotto. */
+export class PersonalWalletNotAllowedException extends HttpException {
+  constructor() {
+    super(
+      { error: 'personal_wallet_not_allowed', message: 'Il wallet personale non è abilitato per questa funzione.' },
+      HttpStatus.FORBIDDEN,
+    );
+  }
+}
+
+/** Wallet personale di un utente: Manager lo tratta come una company con id "p-…". */
+export interface PersonalWallet extends WalletBalance {
+  company_id: string;
+}
+
 /** Errore quando la feature non ha ancora un prezzo nel listino di Manager. */
 export class FeatureNotPricedException extends HttpException {
   constructor(readonly feature: string) {
@@ -139,6 +154,53 @@ export class WalletService {
   }
 
   /**
+   * Ottiene (e crea se manca) il wallet personale dell'utente. Lo stesso `sub` dà sempre lo stesso
+   * `company_id`, che va usato così com'è. Chiamarlo solo quando l'utente apre o sceglie il wallet
+   * personale, non a ogni accesso: crea il wallet se non esiste.
+   */
+  async getOrCreatePersonal(sub: string, email: string): Promise<PersonalWallet> {
+    if (!(await this.isEnabled())) throw new WalletUnavailableException();
+    try {
+      return await this.http.post<PersonalWallet>('wallet/personal', { product: this.productKey, sub, email });
+    } catch (err) {
+      if (err instanceof EcosystemRequestError && err.status === 403) throw new PersonalWalletNotAllowedException();
+      this.logger.error(`Attivazione wallet personale fallita: ${describe(err)}`);
+      throw new WalletUnavailableException();
+    }
+  }
+
+  /**
+   * Pagina di pagamento Stripe per ricaricare il wallet personale. I crediti arrivano solo dal
+   * webhook firmato di Stripe, anche dopo il ritorno dell'utente.
+   */
+  async createPersonalTopupSession(input: {
+    companyId: string;
+    amountEur: number;
+    successUrl: string;
+    cancelUrl: string;
+  }): Promise<{ url: string }> {
+    if (!(await this.isEnabled())) throw new WalletUnavailableException();
+    try {
+      return await this.http.post<{ url: string }>('wallet/personal/topup-session', {
+        product: this.productKey,
+        company_id: input.companyId,
+        amount_eur: input.amountEur,
+        success_url: input.successUrl,
+        cancel_url: input.cancelUrl,
+      });
+    } catch (err) {
+      if (err instanceof EcosystemRequestError) {
+        const code = asManagerError(err.body).error;
+        if (err.status === 400 && code === 'invalid_amount') {
+          throw new HttpException({ error: 'invalid_amount', message: 'Importo di ricarica non valido.' }, HttpStatus.BAD_REQUEST);
+        }
+      }
+      this.logger.error(`Sessione di ricarica personale fallita: ${describe(err)}`);
+      throw new WalletUnavailableException();
+    }
+  }
+
+  /**
    * Riserva crediti PRIMA di eseguire la feature. Lancia InsufficientCreditsException se il
    * saldo non basta e FeatureNotPricedException se la feature non è prezzata. Se disabilitato,
    * no-op.
@@ -159,6 +221,9 @@ export class WalletService {
     } catch (err) {
       if (err instanceof EcosystemRequestError) {
         const body = asManagerError(err.body);
+        if (err.status === 403 && body.error === 'personal_wallet_not_allowed') {
+          throw new PersonalWalletNotAllowedException();
+        }
         if (err.status === 409 && body.error === 'feature_not_priced') {
           throw new FeatureNotPricedException(input.feature);
         }

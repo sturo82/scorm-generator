@@ -573,6 +573,10 @@ export interface ApiClient {
   getWallet(): Promise<WalletView>;
   /** Preventivo in crediti di una generazione. */
   quoteCredits(items: CreditQuoteItem[]): Promise<CreditQuoteView>;
+  /** Sceglie il wallet che paga le generazioni (azienda o personale). */
+  setWalletPayer(payer: 'COMPANY' | 'PERSONAL'): Promise<WalletView>;
+  /** Pagina di pagamento per ricaricare il wallet personale. */
+  startWalletTopup(amountEur: number): Promise<{ url: string }>;
   listAudit(): Promise<AuditEventView[]>;
 
   // Costi / pricing
