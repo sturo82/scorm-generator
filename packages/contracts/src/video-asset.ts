@@ -58,6 +58,16 @@ export const VideoAssetView = z.object({
   transcriptStatus: VideoTranscriptStatus.default('none'),
   /** Import "video da slide" da cui è nato il video (modificabile da lì), se creato da slide. */
   slideImportId: z.string().nullable().default(null),
+  /** Costo di generazione (consuntivo misurato, USD) per i video creati da slide. */
+  generationCost: z
+    .object({
+      totalUsd: z.number(),
+      breakdown: z.array(z.object({ label: z.string(), usd: z.number() })),
+      /** Video nati dallo stesso import (con più sezioni il costo è dell'intero import). */
+      sharedBy: z.number().int().positive(),
+    })
+    .nullable()
+    .default(null),
   createdAt: z.string(),
 });
 export type VideoAssetView = z.infer<typeof VideoAssetView>;

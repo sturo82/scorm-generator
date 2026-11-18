@@ -387,6 +387,7 @@ export class SlideClipsService {
             await this.meter.record({
               tenantId,
               courseId: meterCourseId(doc.courseId),
+              slideImportId: doc.importId,
               provider: 'HEYGEN',
               model: `heygen-${doc.engine}-${doc.avatarType}`,
               unit: 'SECONDS',

@@ -263,6 +263,21 @@ export default function VideosPage() {
                   {v.channel && <span className="rounded bg-accent px-1.5 py-0.5">{v.channel}</span>}
                   {v.source === 'upload' && <TranscriptBadge status={v.transcriptStatus} />}
                 </div>
+                {v.generationCost && (
+                  <p
+                    className="mt-1.5 text-xs text-muted-foreground"
+                    title={
+                      v.generationCost.sharedBy > 1
+                        ? `Costo dell'intero import da slide, da cui sono nati ${v.generationCost.sharedBy} video.`
+                        : 'Costo misurato della generazione (avatar, montaggio, testi AI), rigenerazioni comprese.'
+                    }
+                  >
+                    Costo di generazione <strong className="text-foreground">{fmtUsd(v.generationCost.totalUsd)}</strong>
+                    {v.generationCost.sharedBy > 1 ? ` (import di ${v.generationCost.sharedBy} video)` : ''}
+                    {' · '}
+                    {v.generationCost.breakdown.map((b) => `${b.label} ${fmtUsd(b.usd)}`).join(' · ')}
+                  </p>
+                )}
               </CardContent>
             </Card>
           ))}
@@ -389,6 +404,9 @@ function VideoPlayerDialog({ video, onClose }: { video: VideoAssetView | null; o
       )}
     </Dialog>
   );
+}
+function fmtUsd(v: number): string {
+  return v > 0 && v < 0.01 ? '<$0.01' : `$${v.toFixed(2)}`;
 }
 function TranscriptBadge({ status }: { status: string }) {
   if (status === 'ready') return <span className="rounded bg-success/15 px-1.5 py-0.5 text-success">Trascrizione ✓</span>;

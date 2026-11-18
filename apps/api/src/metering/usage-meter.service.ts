@@ -10,6 +10,8 @@ export interface UsageEvent {
   tenantId: string;
   courseId?: string | null;
   jobId?: string | null;
+  /** Import "video da slide" a cui appartiene il consumo (costo per video). */
+  slideImportId?: string | null;
   provider: MeterProvider;
   /** Model id reale usato (inference profile, image model, voce Polly). */
   model: string;
@@ -110,6 +112,7 @@ export class UsageMeterService {
           tenantId: event.tenantId,
           courseId: event.courseId ?? null,
           jobId: event.jobId ?? null,
+          slideImportId: event.slideImportId ?? null,
           provider: event.provider,
           model: event.model,
           unit: event.unit,

@@ -644,11 +644,14 @@ model UsageRecord {
   // Fase/operazione sorgente (es. "outline", "lesson_content", "image_prompt",
   // "image", "cover", "narration") per il breakdown nel pannello costi.
   source    String
+  // Import "video da slide" che ha originato il consumo (costo per video, anche in libreria).
+  slideImportId String?
   createdAt DateTime      @default(now())
 
   @@index([tenantId])
   @@index([courseId])
   @@index([jobId])
+  @@index([slideImportId])
   @@index([tenantId, createdAt])
 }
 

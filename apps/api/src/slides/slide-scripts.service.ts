@@ -493,6 +493,7 @@ export class SlideScriptsService {
         await this.meter.record({
           tenantId,
           courseId: meterCourseId(courseId),
+          slideImportId: manifest.importId,
           provider: 'BEDROCK_LLM',
           model: result.model,
           unit,

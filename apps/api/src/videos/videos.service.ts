@@ -141,6 +141,43 @@ export class VideosService {
     return this.toView(row);
   }
 
+  /**
+   * Costo di generazione misurato (consuntivo, non prezzo di vendita) dei video creati da slide:
+   * somma dei consumi dell'import (copioni, clip avatar, montaggio, riepiloghi), raggruppati per fase.
+   */
+  private async generationCost(
+    tenantId: string | undefined,
+    slideImportId: string | null | undefined,
+  ): Promise<VideoAssetView['generationCost']> {
+    if (!tenantId || !slideImportId) return null;
+    const [groups, sharedBy] = await Promise.all([
+      this.prisma.usageRecord.groupBy({
+        by: ['source'],
+        where: { tenantId, slideImportId },
+        _sum: { costUsd: true },
+      }),
+      this.prisma.videoAsset.count({ where: { tenantId, slideImportId } }),
+    ]);
+    if (groups.length === 0) return null;
+    const label = (source: string): string =>
+      source === 'slide_clip'
+        ? 'Avatar (HeyGen)'
+        : source === 'slide_video'
+          ? 'Montaggio video'
+          : source === 'slide_script'
+            ? 'Copioni (AI)'
+            : 'Testi AI';
+    const byLabel = new Map<string, number>();
+    for (const g of groups) {
+      byLabel.set(label(g.source), (byLabel.get(label(g.source)) ?? 0) + Number(g._sum.costUsd ?? 0));
+    }
+    const breakdown = [...byLabel.entries()]
+      .map(([l, usd]) => ({ label: l, usd: Math.round(usd * 100) / 100 }))
+      .sort((a, b) => b.usd - a.usd);
+    const total = [...byLabel.values()].reduce((n, v) => n + v, 0);
+    return { totalUsd: Math.round(total * 100) / 100, breakdown, sharedBy: Math.max(1, sharedBy) };
+  }
+
   private async removeFile(key: string | null): Promise<void> {
     if (!key) return;
     await this.storage.deleteObject(key).catch(() => undefined);
@@ -200,6 +237,7 @@ export class VideosService {
 
   private async toView(row: {
     id: string;
+    tenantId?: string;
     title: string;
     description: string;
     source: string;
@@ -242,6 +280,7 @@ export class VideosService {
       transcript: Array.isArray(row.transcript) ? (row.transcript as VideoAssetView['transcript']) : [],
       transcriptStatus: row.transcriptStatus.toLowerCase() as VideoAssetView['transcriptStatus'],
       slideImportId: row.slideImportId ?? null,
+      generationCost: await this.generationCost(row.tenantId, row.slideImportId),
       createdAt: row.createdAt.toISOString(),
     };
   }

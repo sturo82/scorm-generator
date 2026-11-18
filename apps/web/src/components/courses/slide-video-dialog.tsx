@@ -58,12 +58,6 @@ const TEXTAREA =
 const SELECT =
   'h-9 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70';
 
-const AVATAR_TYPES: Array<{ id: SlideAvatarType; label: string }> = [
-  { id: 'photo', label: 'Avatar da foto' },
-  { id: 'studio', label: 'Avatar del catalogo HeyGen' },
-  { id: 'digital_twin', label: 'Digital twin (da video)' },
-];
-
 /** In libreria non c'è un corso: niente fonti del corso, riepilogo e quiz; il risultato sono video riutilizzabili. */
 const LibraryContext = React.createContext<{ library: boolean; language?: string }>({ library: false });
 
@@ -1099,15 +1093,13 @@ view: import('@/lib/api/types').SlideClipsView | null;
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
-            <label className="space-y-1 text-sm">
+            <div className="space-y-1 text-sm">
               <span className="font-medium">Tipo di avatar</span>
-              <select className={SELECT} value={avatarType} onChange={(e) => setAvatarType(e.target.value as SlideAvatarType)}>
-                {AVATAR_TYPES.map((t) => (
-                  <option key={t.id} value={t.id}>{t.label}</option>
-                ))}
-              </select>
-              <span className="block text-[11px] text-muted-foreground">Impostato dall&apos;avatar scelto; determina la tariffa HeyGen.</span>
-            </label>
+              <p className="flex h-9 items-center rounded-md border bg-muted/40 px-2">
+                {selected ? heygenAvatarTypeLabel({ source: selected.source, groupType: selected.groupType }) : 'Scegli un avatar'}
+              </p>
+              <span className="block text-[11px] text-muted-foreground">Riconosciuto dall&apos;avatar scelto: determina la tariffa HeyGen.</span>
+            </div>
             <label className="space-y-1 text-sm">
               <span className="font-medium">Qualità (engine)</span>
               <select className={SELECT} value={engine} onChange={(e) => setEngine(e.target.value as typeof engine)}>
@@ -1117,6 +1109,7 @@ view: import('@/lib/api/types').SlideClipsView | null;
                   </option>
                 ))}
               </select>
+              <span className="block text-[11px] text-muted-foreground">Solo le qualità disponibili per questo avatar; di partenza la più economica.</span>
             </label>
             <label className="space-y-1 text-sm">
               <span className="font-medium">Voce</span>

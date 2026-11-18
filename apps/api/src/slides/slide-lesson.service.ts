@@ -240,7 +240,7 @@ export class SlideLessonService {
       temperature: 0.2,
       maxTokens: 1500,
     });
-    await this.recordLlm(tenantId, courseId, result, 'slide_sections');
+    await this.recordLlm(tenantId, courseId, importId, result, 'slide_sections');
     const parsed = JSON.parse(result.text) as { sections?: Array<{ title?: string; startIndex?: number }> };
     const max = manifest.slides.length;
     const out: SectionInput[] = [];
@@ -578,6 +578,7 @@ export class SlideLessonService {
     await this.meter.record({
       tenantId,
       courseId: meterCourseId(courseId),
+      slideImportId: importId,
       provider: 'BEDROCK_VIDEO',
       model: 'remotion-slide-video',
       unit: 'SECONDS',
@@ -848,7 +849,7 @@ if (!input) return undefined;
       temperature: 0.3,
       maxTokens: 2500,
     });
-    await this.recordLlm(tenantId, doc.courseId, result, 'slide_summary');
+    await this.recordLlm(tenantId, doc.courseId, doc.importId, result, 'slide_summary');
     const parsed = JSON.parse(result.text) as { summary?: string; keyPoints?: string[] };
     if (!parsed.summary?.trim() || !Array.isArray(parsed.keyPoints) || parsed.keyPoints.length === 0) {
       throw new Error('Riepilogo non valido');
@@ -1023,7 +1024,7 @@ if (!input) return undefined;
           temperature: i === 0 ? 0.4 : 0.2,
           maxTokens: scope === 'final' ? 12000 : 8000,
         });
-        await this.recordLlm(tenantId, doc.courseId, result, 'slide_quiz');
+        await this.recordLlm(tenantId, doc.courseId, doc.importId, result, 'slide_quiz');
         if (result.finishReason === 'max_tokens') throw new Error('Quiz troncato');
         return Assessment.parse(JSON.parse(result.text));
       } catch (err) {
@@ -1055,6 +1056,7 @@ if (!input) return undefined;
   private async recordLlm(
     tenantId: string,
     courseId: string,
+    importId: string,
     result: { model: string; usage: { inputTokens: number; outputTokens: number } },
     source: string,
   ): Promise<void> {
@@ -1062,6 +1064,7 @@ if (!input) return undefined;
       await this.meter.record({
         tenantId,
         courseId: meterCourseId(courseId),
+        slideImportId: importId,
         provider: 'BEDROCK_LLM',
         model: result.model,
         unit,
