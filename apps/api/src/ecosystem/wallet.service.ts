@@ -84,6 +84,18 @@ export class InsufficientCreditsException extends HttpException {
   }
 }
 
+/** Errore quando l'azienda non ha un wallet su Manager: non può generare finché non lo attiva. */
+export class CompanyWalletMissingException extends HttpException {
+  constructor(readonly companyId: string) {
+    super(
+      {
+        error: 'company_wallet_missing',
+        message: "La tua azienda non ha un wallet attivo: per generare serve il wallet aziendale o quello personale.",
+      },
+      HttpStatus.PAYMENT_REQUIRED,
+    );
+  }
+}
 /** Errore quando il wallet personale non è ammesso su questo prodotto. */
 export class PersonalWalletNotAllowedException extends HttpException {
   constructor() {
@@ -176,6 +188,20 @@ export class WalletService {
     }
   }
 
+  /**
+   * Wallet della company su Manager: `ok` con saldo, `missing` se Manager non ha la company,
+   * `error` se non raggiungibile (in quel caso non si blocca qui: ci pensa l'hold).
+   */
+  async companyWallet(companyId: string): Promise<{ status: 'ok'; balance: WalletBalance } | { status: 'missing' | 'error' }> {
+    if (!(await this.isEnabled())) return { status: 'error' };
+    try {
+      return { status: 'ok', balance: await this.http.get<WalletBalance>('wallet', { company_id: companyId }) };
+    } catch (err) {
+      if (err instanceof EcosystemRequestError && err.status === 404) return { status: 'missing' };
+      this.logger.warn(`Lettura wallet company fallita (company=${companyId}): ${describe(err)}`);
+      return { status: 'error' };
+    }
+  }
   /** Movimenti del wallet (una pagina). Null se il wallet non è abilitato o non raggiungibile. */
   async getTransactions(companyId: string, page: number, pageSize: number): Promise<WalletMovementsPage | null> {
     if (!(await this.isEnabled())) return null;
@@ -261,6 +287,9 @@ export class WalletService {
         const body = asManagerError(err.body);
         if (err.status === 403 && body.error === 'personal_wallet_not_allowed') {
           throw new PersonalWalletNotAllowedException();
+        }
+        if (err.status === 404 && body.error === 'company_not_found') {
+          throw new CompanyWalletMissingException(input.companyId);
         }
         if (err.status === 409 && body.error === 'feature_not_priced') {
           throw new FeatureNotPricedException(input.feature);

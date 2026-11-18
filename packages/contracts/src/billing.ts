@@ -35,12 +35,12 @@ export interface WalletBlock {
 
 /**
  * Accesso dell'utente a un wallet di azienda:
- * - `active`: l'azienda paga a crediti e il suo wallet è raggiungibile;
- * - `billing_off`: l'utente ha un'azienda ma non paga a crediti;
+ * - `active`: Manager ha un wallet per l'azienda;
+ * - `missing`: Manager non ha un wallet per l'azienda: si genera solo con il wallet personale;
  * - `unavailable`: wallet non abilitato o non raggiungibile in questo momento;
  * - `none`: nessuna azienda (spazio personale).
  */
-export type CompanyWalletAccess = 'active' | 'billing_off' | 'unavailable' | 'none';
+export type CompanyWalletAccess = 'active' | 'missing' | 'unavailable' | 'none';
 
 /** Movimento del wallet che cambia il saldo (ricarica, addebito, rettifica, rimborso). */
 export interface WalletTransaction {
@@ -66,7 +66,7 @@ export interface WalletTransactionsView {
  * wallet per la pagina di gestione.
  */
 export interface WalletView {
-  /** True se le generazioni di chi sta usando l'app si addebitano in crediti. */
+  /** True se le generazioni si pagano in crediti (wallet abilitato sull'installazione da Manager). */
   enabled: boolean;
   /** Wallet scelto per pagare: azienda o personale. */
   payer: 'COMPANY' | 'PERSONAL';
@@ -75,7 +75,7 @@ export interface WalletView {
   currency: 'CREDITS';
   topupUrl?: string;
   canTopup: boolean;
-  /** Wallet dell'azienda; assente se l'azienda non paga a crediti. */
+  /** Wallet dell'azienda; assente se Manager non ne ha uno per l'azienda. */
   company: (WalletBlock & { topupUrl?: string; canTopup: boolean }) | null;
   /** Se e perché l'utente può usare un wallet di azienda. */
   companyAccess: CompanyWalletAccess;

@@ -4,6 +4,7 @@ import { avatarFeature, type CompanyWalletAccess, type WalletTransactionsView, t
 import type { AppConfig } from '../config/configuration.js';
 import { FeatureCatalogService } from '../ecosystem/feature-catalog.service.js';
 import {
+  CompanyWalletMissingException,
   FeatureNotPricedException,
   InsufficientCreditsException,
   WalletService,
@@ -55,14 +56,15 @@ const BILLED_CACHE_MS = 30_000;
  * Manager (`FeatureCatalogService`); qui si prenota prima (`reserve`), si addebita il consumo
  * reale a fine lavoro (`settle`) e si libera su errore (`release`).
  *
- * L'addebito è attivo solo se il wallet è abilitato sull'installazione E l'azienda ha il flag
- * `walletBilling`: altrimenti ogni metodo è un no-op (le aziende non addebitate continuano a
- * generare senza crediti).
+ * Con il wallet abilitato sull'installazione (deciso da Manager) ogni generazione si paga: con il
+ * wallet dell'azienda, se Manager ne ha uno per quella company, oppure con il wallet personale
+ * scelto dall'utente. Un'azienda senza wallet su Manager non può generare (402
+ * `company_wallet_missing`). Con il wallet spento sull'installazione ogni metodo è un no-op.
  */
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
-  private readonly billedCache = new Map<string, { value: boolean; until: number }>();
+  private readonly companyCache = new Map<string, { value: 'ok' | 'missing'; until: number }>();
   /** Stripe in modalità di prova (sandbox): noto da `livemode` di Manager o dall'indirizzo di una sessione di pagamento. */
   private stripeTest: boolean | undefined;
 
@@ -83,15 +85,15 @@ export class BillingService {
    * True se la generazione in corso si addebita in crediti: wallet abilitato sull'installazione e
    * (azienda con addebito attivo oppure utente che ha scelto di pagare con il wallet personale).
    */
-  async isBilled(tenantId: string): Promise<boolean> {
-    if (!(await this.wallet.isEnabled())) return false;
-    if (this.payerFor(tenantId).kind === 'personal') return true;
-    const hit = this.billedCache.get(tenantId);
-    if (hit && hit.until > Date.now()) return hit.value;
-    const row = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { walletBilling: true } });
-    const value = row?.walletBilling === true;
-    this.billedCache.set(tenantId, { value, until: Date.now() + BILLED_CACHE_MS });
-    return value;
+  async isBilled(_tenantId: string): Promise<boolean> {
+    return this.wallet.isEnabled();
+  }
+  /** Blocca se paga l'azienda e Manager non ha un wallet per lei. */
+  private async assertPayerWallet(tenantId: string): Promise<void> {
+    const payer = this.payerFor(tenantId);
+    if (payer.kind === 'company' && (await this.companyState(tenantId)) === 'missing') {
+      throw new CompanyWalletMissingException(tenantId);
+    }
   }
 
   /** Preventivo in crediti (calcolo puro sul listino, senza toccare il wallet). */
@@ -114,6 +116,7 @@ export class BillingService {
    */
   async reserve(tenantId: string, ref: string, items: BillItem[]): Promise<Reservation | null> {
     if (!(await this.isBilled(tenantId))) return null;
+    await this.assertPayerWallet(tenantId);
     const payer = this.payerFor(tenantId);
     const lines = normalize(items, this.catalog);
     if (lines.length === 0) return { ref, companyId: payer.companyId, holds: [] };
@@ -186,6 +189,7 @@ export class BillingService {
    */
   async assertAvailable(tenantId: string, items: BillItem[]): Promise<void> {
     if (!(await this.isBilled(tenantId))) return;
+    await this.assertPayerWallet(tenantId);
     const q = this.quote(items);
     if (!q.priced) throw new FeatureNotPricedException(q.lines.find((l) => l.credits === null)?.feature ?? '');
     const bal = await this.wallet.getBalance(this.payerFor(tenantId).companyId);
@@ -230,21 +234,21 @@ export class BillingService {
     const personalSpace = isPersonalTenant(tenantId);
     const payer: 'COMPANY' | 'PERSONAL' =
       personalSpace || (user?.walletPayer === 'PERSONAL' && user.personalWalletId) ? 'PERSONAL' : 'COMPANY';
-    const companyBilled = !personalSpace && walletOn && (await this.companyBilled(tenantId));
-    const [companyBal, personalBal] = await Promise.all([
-      companyBilled ? this.wallet.getBalance(tenantId) : null,
-      walletOn && user?.personalWalletId ? this.wallet.getBalance(user.personalWalletId) : null,
-    ]);
+    const companyRes = !personalSpace && walletOn ? await this.wallet.companyWallet(tenantId) : null;
+    this.rememberCompany(tenantId, companyRes?.status);
+    const companyBal = companyRes?.status === 'ok' ? companyRes.balance : null;
+    const companyBilled = companyBal !== null;
+    const personalBal = walletOn && user?.personalWalletId ? await this.wallet.getBalance(user.personalWalletId) : null;
     const livemode = [companyBal, personalBal].find((b) => typeof b?.livemode === 'boolean')?.livemode;
     if (typeof livemode === 'boolean') this.stripeTest = !livemode;
     const current = payer === 'PERSONAL' ? personalBal : companyBal;
     let companyAccess: CompanyWalletAccess = 'active';
     if (personalSpace) companyAccess = 'none';
     else if (!walletOn) companyAccess = 'unavailable';
-    else if (!companyBilled) companyAccess = 'billing_off';
-    else if (!companyBal) companyAccess = 'unavailable';
+    else if (companyRes?.status === 'missing') companyAccess = 'missing';
+    else if (!companyBilled) companyAccess = 'unavailable';
     return {
-      enabled: walletOn && (payer === 'PERSONAL' || companyBilled),
+      enabled: walletOn,
       payer,
       balance: current?.balance,
       available: current?.available,
@@ -283,7 +287,7 @@ export class BillingService {
     const empty: WalletTransactionsView = { page, pages: 0, total: 0, results: [] };
     let companyId: string | null | undefined;
     if (wallet === 'company') {
-      if (isPersonalTenant(tenantId) || !(await this.companyBilled(tenantId))) return empty;
+      if (isPersonalTenant(tenantId) || (await this.companyState(tenantId)) !== 'ok') return empty;
       // Il dettaglio dei movimenti dell'azienda è per chi la amministra.
       if (role !== 'OWNER' && role !== 'ADMIN') throw new ForbiddenException('Movimenti riservati agli amministratori');
       companyId = tenantId;
@@ -353,14 +357,19 @@ if (kind === 'PERSONAL') await this.ensurePersonalWallet(tenantId, userId);
     return personal.company_id;
   }
 
-  /** L'azienda ha l'addebito a crediti attivo (flag per azienda), indipendentemente da chi paga la richiesta. */
-  private async companyBilled(tenantId: string): Promise<boolean> {
-    const hit = this.billedCache.get(tenantId);
+  /** Stato del wallet dell'azienda su Manager, con una cache breve. */
+  private async companyState(tenantId: string): Promise<'ok' | 'missing' | 'error'> {
+    const hit = this.companyCache.get(tenantId);
     if (hit && hit.until > Date.now()) return hit.value;
-    const row = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { walletBilling: true } });
-    const value = row?.walletBilling === true;
-    this.billedCache.set(tenantId, { value, until: Date.now() + BILLED_CACHE_MS });
-    return value;
+    const res = await this.wallet.companyWallet(tenantId);
+    this.rememberCompany(tenantId, res.status);
+    return res.status;
+  }
+  private rememberCompany(tenantId: string, status: 'ok' | 'missing' | 'error' | undefined): void {
+    // Gli errori di rete non si ricordano: alla richiesta dopo si riprova.
+    if (status === 'ok' || status === 'missing') {
+      this.companyCache.set(tenantId, { value: status, until: Date.now() + BILLED_CACHE_MS });
+    }
   }
 
   /** Portale owner di Manager, dove l'azienda si ricarica con Stripe. */

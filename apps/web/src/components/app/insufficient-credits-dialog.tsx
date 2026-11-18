@@ -18,6 +18,29 @@ export function InsufficientCreditsDialog() {
     return () => window.removeEventListener(INSUFFICIENT_CREDITS_EVENT, onEvent);
   }, []);
   const w = wallet.data;
+  if (detail?.error === 'company_wallet_missing') {
+    return (
+      <Dialog open onClose={() => setDetail(null)} title="Wallet aziendale non attivo">
+        <div className="space-y-4">
+          <p className="text-sm">
+            La tua azienda non ha un wallet attivo, quindi non puoi generare con i suoi crediti. Puoi usare il tuo
+            wallet personale oppure chiedere al titolare di attivare il wallet aziendale.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDetail(null)}>
+              Chiudi
+            </Button>
+            <a
+              href="/wallet"
+              className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90"
+            >
+              Usa il wallet personale
+            </a>
+          </div>
+        </div>
+      </Dialog>
+    );
+  }
   return (
     <Dialog open={detail !== null} onClose={() => setDetail(null)} title="Crediti insufficienti">
       <div className="space-y-4">

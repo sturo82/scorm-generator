@@ -18,7 +18,9 @@ export function WalletBadge() {
         <Coins className="size-4 text-white/70" aria-hidden />
         <span className="hidden text-xs text-white/60 sm:inline">{data.payer === 'PERSONAL' ? 'Personale' : 'Azienda'}</span>
         <span>
-          {amount !== undefined ? (
+          {data.payer === 'COMPANY' && data.companyAccess === 'missing' ? (
+            'Wallet non attivo'
+          ) : amount !== undefined ? (
             <>
               <strong>{amount.toLocaleString('it-IT')}</strong> crediti
             </>

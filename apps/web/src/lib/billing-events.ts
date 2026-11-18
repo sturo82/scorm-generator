@@ -9,6 +9,8 @@ export interface InsufficientCreditsDetail {
   required?: number;
   available?: number;
   feature?: string;
+  /** Codice d'errore dell'API (es. `company_wallet_missing`). */
+  error?: string;
 }
 
 let lastAt = 0;
@@ -28,6 +30,7 @@ export function notifyInsufficientCredits(bodyText: string): void {
       required: typeof b.required === 'number' ? b.required : undefined,
       available: typeof b.available === 'number' ? b.available : undefined,
       feature: typeof b.feature === 'string' ? b.feature : undefined,
+      error: typeof b.error === 'string' ? b.error : undefined,
     };
   } catch {
     /* corpo non JSON: l'avviso resta generico */

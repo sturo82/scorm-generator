@@ -218,8 +218,8 @@ function companyMessage(access: string): string | undefined {
   switch (access) {
     case 'none':
       return 'Non appartieni a nessuna azienda: usi solo il wallet personale.';
-    case 'billing_off':
-      return "La tua azienda non paga a crediti: non c'è un wallet aziendale da usare.";
+    case 'missing':
+      return 'La tua azienda non ha un wallet attivo su Manager: per generare usa il wallet personale.';
     case 'unavailable':
       return 'Il wallet aziendale non è raggiungibile in questo momento.';
     default:
