@@ -36,11 +36,15 @@ import { createHash } from 'node:crypto';
 import { SlideClipsService } from './slide-clips.service.js';
 import { SlideScriptsService } from './slide-scripts.service.js';
 import { isLibrary, meterCourseId } from './slide-owner.js';
+import { BillingService, type Reservation } from '../billing/billing.service.js';
 import { SlidesService } from './slides.service.js';
 
 const MEDIA_URL_TTL_SEC = 3 * 3600;
 const LEASE_MS = 90_000;
 const HEARTBEAT_MS = 30_000;
+/** Durata (secondi) delle schede di copertina e finale. */
+const CARD_COVER_SEC = 4;
+const CARD_OUTRO_SEC = 5;
 /** Indice oltre ogni slide reale: l'ultima parte include anche le slide "extra" (indici alti). */
 const OPEN_END = 1_000_000;
 
@@ -106,6 +110,11 @@ export interface SlideLessonDoc {
   finalQuizReady?: boolean;
   /** True durante il rimontaggio dei video con le slide aggiornate (le clip avatar non si rigenerano). */
   remaster?: boolean;
+  /**
+   * Crediti prenotati per questa esecuzione (wallet di Manager) e consumo reale finora: a fine
+   * esecuzione si addebita il reale (montaggio in secondi, riepiloghi, quiz) e si libera il resto.
+   */
+  billing?: { reservation: Reservation; renderedSec: number; summaries: number; quizzes: number };
   createdAt: string;
   updatedAt: string;
   owner?: string;
@@ -197,6 +206,7 @@ export class SlideLessonService {
     private readonly clips: SlideClipsService,
     private readonly modules: ModulesService,
     private readonly meter: UsageMeterService,
+    private readonly billing: BillingService,
     private readonly config: ConfigService<AppConfig, true>,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(LLM_PROVIDER) private readonly llm: LLMProvider,
@@ -216,6 +226,13 @@ export class SlideLessonService {
 
   /** Propone la divisione in sezioni (titoli e slide di inizio) leggendo il testo delle slide. */
   async proposeSections(tenantId: string, courseId: string, importId: string): Promise<SectionInput[]> {
+    // Una proposta di sezioni è una piccola operazione di testo (`text_light`).
+    return this.billing.run(tenantId, `kscorm:slide-sections:${importId}:${randomUUID()}`, [{ feature: 'text_light', units: 1 }], async () => ({
+      result: await this.proposeSectionsUnbilled(tenantId, courseId, importId),
+    }));
+  }
+
+  private async proposeSectionsUnbilled(tenantId: string, courseId: string, importId: string): Promise<SectionInput[]> {
     const manifest = await this.slides.loadManifest(tenantId, courseId, importId);
     const language = await this.courseLanguage(tenantId, courseId, importId);
     const deck = manifest.slides
@@ -322,6 +339,7 @@ export class SlideLessonService {
         updatedAt: now,
       };
     }
+    doc.billing = await this.reserveLesson(tenantId, doc, clipsView.clips, 'build');
     await this.save(tenantId, doc);
     this.launch(tenantId, courseId, importId);
     return this.view(doc);
@@ -393,6 +411,7 @@ export class SlideLessonService {
       parts: existing.parts.map((p) => ({ ...p, remasterDone: false })),
       updatedAt: new Date().toISOString(),
     };
+    doc.billing = await this.reserveLesson(tenantId, doc, clipsNow.clips, 'remaster');
     await this.save(tenantId, doc);
     this.launch(tenantId, courseId, importId);
     return this.view(doc);
@@ -492,6 +511,7 @@ export class SlideLessonService {
       throw err;
     } finally {
       clearInterval(heartbeat);
+      await this.settleLesson(tenantId, doc);
     }
   }
 
@@ -599,11 +619,61 @@ export class SlideLessonService {
     );
     part.videoKey = key;
     part.videoDurationSec = result.durationSec;
+    if (doc.billing) doc.billing.renderedSec += result.durationSec;
     await this.save(tenantId, doc);
   }
 
   /**
-   * Regia automatica delle slide incluse nel video (inquadratura + angolo libero), con cache su
+   * Prenota i crediti del lavoro che sta per partire: montaggio (minuti di video, copertina e
+   * finale compresi) e, per un corso, riepilogo e quiz delle parti ancora da fare. Null se
+   * l'azienda non è addebitata o non c'è nulla da fare.
+   */
+  private async reserveLesson(
+    tenantId: string,
+    doc: SlideLessonDoc,
+    clips: Array<{ index: number; durationSec?: number }>,
+    mode: 'build' | 'remaster',
+  ): Promise<SlideLessonDoc['billing']> {
+    const course = !isLibrary(doc.courseId);
+    let renderSec = 0;
+    let summaries = 0;
+    let quizzes = 0;
+    for (const p of doc.parts) {
+      if (mode === 'remaster' || !p.videoKey) {
+        const sec = clips
+          .filter((c) => c.index >= p.from && c.index <= p.to)
+          .reduce((n, c) => n + (c.durationSec ?? 0), 0);
+        renderSec += sec + (doc.cover ? CARD_COVER_SEC : 0) + (doc.outro ? CARD_OUTRO_SEC : 0);
+      }
+      if (mode === 'build' && course) {
+        if (!p.summaryHtml) summaries += 1;
+        if (!p.quizReady) quizzes += 1;
+      }
+    }
+    if (mode === 'build' && course && doc.mode === 'sections' && doc.parts.length > 1 && !doc.finalQuizReady) quizzes += 1;
+    const reservation = await this.billing.reserve(tenantId, `kscorm:slide-lesson:${doc.importId}:${randomUUID()}`, [
+      { feature: 'video_render', units: renderSec / 60 },
+      { feature: 'text_light', units: summaries },
+      { feature: 'text_standard', units: quizzes },
+    ]);
+    return reservation ? { reservation, renderedSec: 0, summaries: 0, quizzes: 0 } : undefined;
+  }
+
+  /** Addebita il consumo reale del lavoro (montaggi, riepiloghi, quiz fatti) e libera il resto. */
+  private async settleLesson(tenantId: string, doc: SlideLessonDoc): Promise<void> {
+    const b = doc.billing;
+    if (!b) return;
+    doc.billing = undefined;
+    await this.billing.settle(tenantId, b.reservation, {
+      video_render: b.renderedSec / 60,
+      text_light: b.summaries,
+      text_standard: b.quizzes,
+    });
+    await this.save(tenantId, doc, false).catch(() => undefined);
+  }
+
+  /**
+   * Regia automatica delle slide incluse (inquadratura + angolo libero), con cache su
    * storage invalidata quando cambiano le slide (es. dopo «Sostituisci con PDF aggiornato»).
    */
   async direction(tenantId: string, courseId: string, importId: string): Promise<SlideDirection[]> {
@@ -743,7 +813,7 @@ if (!input) return undefined;
         };
       }
     }
-    return { title, subtitle: input.subtitle?.trim() || undefined, durationSec: kind === 'cover' ? 4 : 5, logoUrl, background };
+    return { title, subtitle: input.subtitle?.trim() || undefined, durationSec: kind === 'cover' ? CARD_COVER_SEC : CARD_OUTRO_SEC, logoUrl, background };
   }
 
   private async readCues(part: LessonPart): Promise<Array<{ id: string; start: number; end: number; text: string }>> {
@@ -856,6 +926,7 @@ if (!input) return undefined;
     }
     part.summaryHtml = parsed.summary.trim();
     part.keyPointsHtml = `<ul>${parsed.keyPoints.map((p) => `<li>${escapeHtml(p.trim())}</li>`).join('')}</ul>`;
+    if (doc.billing) doc.billing.summaries += 1;
     await this.save(tenantId, doc);
   }
 
@@ -956,6 +1027,7 @@ if (!input) return undefined;
       await this.modules.addQuestion(tenantId, doc.courseId, created.id, q);
     }
     part.quizReady = true;
+    if (doc.billing) doc.billing.quizzes += 1;
     await this.save(tenantId, doc);
   }
 
@@ -980,6 +1052,7 @@ if (!input) return undefined;
       await this.modules.addQuestion(tenantId, doc.courseId, created.id, q);
     }
     doc.finalQuizReady = true;
+    if (doc.billing) doc.billing.quizzes += 1;
     await this.save(tenantId, doc);
   }
 

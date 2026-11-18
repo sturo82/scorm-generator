@@ -1,4 +1,5 @@
-import type { Assessment, Block, Brief, BriefDraft, FeedCategory } from '@scorm/contracts';
+import type { Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CreditQuoteView, FeedCategory, WalletView } from '@scorm/contracts';
+import { notifyInsufficientCredits } from '../billing-events';
 import { getSession, handleSessionExpired } from '../auth';
 import type {
   AdminUserView,
@@ -81,6 +82,8 @@ export class HttpApiClient implements ApiClient {
       // invece di propagare errori fuorvianti (es. "corso non trovato").
       if (res.status === 401) void handleSessionExpired();
       const body = await res.text();
+      // Crediti insufficienti: avviso globale con il link di ricarica (vedi InsufficientCreditsDialog).
+      if (res.status === 402) notifyInsufficientCredits(body);
       throw new Error(`API ${res.status}: ${body.slice(0, 300)}`);
     }
     if (res.status === 204) return undefined as T;
@@ -352,6 +355,10 @@ export class HttpApiClient implements ApiClient {
     });
   }
   getUsage() { return this.request<UsageView>('/usage'); }
+  getWallet() { return this.request<WalletView>('/billing/wallet'); }
+  quoteCredits(items: CreditQuoteItem[]) {
+    return this.request<CreditQuoteView>('/billing/quote', { method: 'POST', body: JSON.stringify({ items }) });
+  }
   listAudit() { return this.request<AuditEventView[]>('/audit'); }
   getCourseCost(courseId: string) {
     return this.request<CourseCostSummary>(`/courses/${courseId}/cost`);
@@ -509,7 +516,11 @@ export class HttpApiClient implements ApiClient {
     if (session) headers.set('Authorization', `Bearer ${session.token}`);
     const res = await fetch(`${this.baseUrl}/tenant/avatars/photo`, { method: 'POST', headers, body: form });
     if (res.status === 401) void handleSessionExpired();
-    if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    if (!res.ok) {
+      const body = await res.text();
+      if (res.status === 402) notifyInsufficientCredits(body);
+      throw new Error(`API ${res.status}: ${body.slice(0, 300)}`);
+    }
     return (await res.json()) as CreateAvatarResult;
   }
   createPromptAvatar(name: string, prompt: string) {

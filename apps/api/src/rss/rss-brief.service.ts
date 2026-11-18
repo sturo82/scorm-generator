@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { LLMProvider } from '@scorm/domain';
 import { BriefDraft, type BriefDraft as BriefDraftType, type LessonFormat } from '@scorm/contracts';
 import { languageDirective } from '../generation/prompts.js';
+import { BillingService } from '../billing/billing.service.js';
 import { CoursesService } from '../courses/courses.service.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { LLM_PROVIDER } from '../providers/provider.constants.js';
@@ -162,6 +164,7 @@ export class RssBriefService {
   constructor(
     private readonly courses: CoursesService,
     private readonly meter: UsageMeterService,
+    private readonly billing: BillingService,
     @Inject(LLM_PROVIDER) private readonly llm: LLMProvider,
   ) {}
 
@@ -174,7 +177,13 @@ export class RssBriefService {
     if (this.hasUsablePreview(input.preview)) {
       return this.draftBriefFromPreview(input);
     }
+    // Crediti: la bozza dall'LLM è una piccola operazione di testo.
+    return this.billing.run(input.tenantId, `kscorm:rss-brief:${input.courseId}:${randomUUID()}`, [{ feature: 'text_light', units: 1 }], async () => ({
+      result: await this.draftBriefViaLlm(input),
+    }));
+  }
 
+  private async draftBriefViaLlm(input: DraftBriefInput): Promise<boolean> {
     const context = input.articles
       .slice(0, 20)
       .map((a, i) => `${i + 1}. ${a.title}\n${a.summary}`)
@@ -336,6 +345,13 @@ export class RssBriefService {
    * a quella del corso (anche se le fonti sono in un'altra lingua).
    */
   async previewFromArticles(input: PreviewInput): Promise<PreviewOutput> {
+    // Crediti: l'anteprima è una piccola operazione di testo.
+    return this.billing.run(input.tenantId, `kscorm:rss-preview:${randomUUID()}`, [{ feature: 'text_light', units: 1 }], async () => ({
+      result: await this.previewViaLlm(input),
+    }));
+  }
+
+  private async previewViaLlm(input: PreviewInput): Promise<PreviewOutput> {
     const context = input.articles
       .slice(0, 24)
       .map((a, i) => `${i + 1}. ${a.title}\n${a.summary}`)

@@ -1,4 +1,4 @@
-import type { Assessment, Block, Brief, BriefDraft } from '@scorm/contracts';
+import type { Assessment, Block, Brief, BriefDraft, CreditQuoteView, WalletView } from '@scorm/contracts';
 import { computeQuote } from '@scorm/contracts';
 import type {
   AdminUserView,
@@ -679,6 +679,12 @@ export class MockApiClient implements ApiClient {
       sizeBytes: 12_340,
       warnings: [],
     };
+  }
+  async getWallet(): Promise<WalletView> {
+    return { enabled: false, currency: 'CREDITS', canTopup: false };
+  }
+  async quoteCredits(): Promise<CreditQuoteView> {
+    return { billed: false, lines: [], total: 0, priced: true };
   }
   async getUsage(): Promise<UsageView> {
     await delay();

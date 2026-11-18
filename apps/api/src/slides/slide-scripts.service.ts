@@ -11,6 +11,8 @@ import {
 } from '../providers/provider.constants.js';
 import { SlidesService, type SlideImportManifest } from './slides.service.js';
 import { meterCourseId } from './slide-owner.js';
+import { BillingService } from '../billing/billing.service.js';
+import { randomUUID } from 'node:crypto';
 
 /** Velocità di parlato stimata (parole/secondo) per prevedere la durata del video. */
 const WORDS_PER_SEC = 2.4;
@@ -188,6 +190,7 @@ export class SlideScriptsService {
     private readonly prisma: PrismaService,
     private readonly slides: SlidesService,
     private readonly meter: UsageMeterService,
+    private readonly billing: BillingService,
     @Inject(DOCUMENT_EXTRACTORS) extractors: DocumentExtractor[],
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(LLM_PROVIDER) private readonly llm: LLMProvider,
@@ -265,6 +268,11 @@ export class SlideScriptsService {
     });
     const language = languageName(course?.language ?? manifest.language ?? 'it');
 
+    // Crediti: una generazione di copioni è un'operazione `text_standard`; si prenota prima di partire
+    // (402 immediato se il saldo non basta) e si addebita solo se la generazione riesce.
+    const reservation = await this.billing.reserve(tenantId, `kscorm:slide-scripts:${importId}:${randomUUID()}`, [
+      { feature: 'text_standard', units: 1 },
+    ]);
     const now = new Date().toISOString();
     const state: ScriptsGenerationState = { status: 'running', startedAt: now, updatedAt: now, leaseUntil: Date.now() + JOB_LEASE_MS };
     await this.saveGenerationState(tenantId, courseId, importId, state);
@@ -279,7 +287,9 @@ export class SlideScriptsService {
       try {
         await this.runGenerate(tenantId, courseId, importId, manifest, language, knowledge);
         state.status = 'completed';
+        await this.billing.settle(tenantId, reservation);
       } catch (err) {
+        await this.billing.release(tenantId, reservation);
         state.status = 'failed';
         state.error = err instanceof Error ? err.message.slice(0, 300) : 'errore sconosciuto';
         this.logger.error(`Generazione copioni fallita (import ${importId}): ${state.error}`);

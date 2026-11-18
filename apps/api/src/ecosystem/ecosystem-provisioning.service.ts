@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { EcosystemCredentialsService } from './ecosystem-credentials.service.js';
 import { EcosystemHttpService } from './ecosystem-http.service.js';
 import { EcosystemSettingsService } from './ecosystem-settings.service.js';
+import { FeatureCatalogService, KSCORM_FEATURES } from './feature-catalog.service.js';
 import { buildSignedStsRequest } from './sts-request.js';
 
 /** Riga singola persistente che rappresenta questa installazione. */
@@ -44,6 +45,9 @@ interface ProvisioningKit {
     enforce?: unknown;
     walletEnabled?: unknown;
   };
+  /** Listino in crediti per feature e feature a unità (wallet). */
+  featureCatalog?: unknown;
+  featureUnits?: unknown;
 }
 
 /**
@@ -71,6 +75,8 @@ export class EcosystemProvisioningService implements OnModuleInit {
 
   /** Intervallo di retry quando siamo in `pending_approval` (ms). */
   private static readonly RETRY_MS = 60_000;
+  /** Intervallo di rilettura del kit (listino, flag wallet) a installazione già attiva. */
+  private static readonly REFRESH_MS = 60 * 60_000;
 
   constructor(
     config: ConfigService<AppConfig, true>,
@@ -78,6 +84,7 @@ export class EcosystemProvisioningService implements OnModuleInit {
     private readonly settings: EcosystemSettingsService,
     private readonly credentials: EcosystemCredentialsService,
     private readonly http: EcosystemHttpService,
+    private readonly catalog: FeatureCatalogService,
   ) {
     this.cfg = config.get('ecosystem', { infer: true });
     this.secrets = new SecretsManagerClient({ region: this.cfg.installationRegion });
@@ -100,6 +107,9 @@ export class EcosystemProvisioningService implements OnModuleInit {
         this.applySettings(existing.enforce, existing.walletEnabled);
         this.logger.log('Installazione già provisionata: kit caricato dal DB');
         void this.refreshViaBearer();
+        // Il listino e il flag del wallet possono cambiare su Manager: si rileggono ogni ora.
+        const timer = setInterval(() => void this.refreshViaBearer(), EcosystemProvisioningService.REFRESH_MS);
+        timer.unref?.();
         return;
       }
       this.logger.warn(
@@ -120,14 +130,18 @@ export class EcosystemProvisioningService implements OnModuleInit {
    */
   private async refreshViaBearer(): Promise<void> {
     try {
-      await this.http.post('installations/self', {
+      const kit = await this.http.post<ProvisioningKit | undefined>('installations/self', {
         product: this.cfg.productKey,
         installationId: this.cfg.installationId,
         region: this.cfg.installationRegion,
         domains: this.cfg.installationDomains,
         ecoRoleMap: KSCORM_ECO_ROLE_MAP,
+        // Feature a consumo di K Scorm: Manager le prezza nel listino del wallet.
+        features: KSCORM_FEATURES,
         card: this.buildCard(),
       });
+      this.catalog.applyKit(kit);
+      if (kit?.settings) this.applySettings(this.normalizeEnforce(kit.settings.enforce), kit.settings.walletEnabled === true);
       this.logger.log('Self-register refresh (Bearer): metadati/card aggiornati su Manager');
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -153,6 +167,7 @@ export class EcosystemProvisioningService implements OnModuleInit {
           region: this.cfg.installationRegion,
           domains: this.cfg.installationDomains,
           ecoRoleMap: KSCORM_ECO_ROLE_MAP,
+          features: KSCORM_FEATURES,
           // Card del prodotto per l'hub owner (opzionale, merge lato Manager).
           card: this.buildCard(),
           ...(rotateM2m ? { rotateM2m: true } : {}),
@@ -258,6 +273,7 @@ export class EcosystemProvisioningService implements OnModuleInit {
     });
 
     this.applySettings(enforce, walletEnabled);
+    this.catalog.applyKit(kit);
     // Le credenziali M2M sono cambiate (nuovo kit): invalida la cache così gate
     // e wallet usano subito le nuove, senza aspettare la scadenza.
     this.credentials.invalidate();

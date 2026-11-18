@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { CheckCircle2, XCircle, Info, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { insufficientCreditsJustShown } from '@/lib/billing-events';
 
 type ToastKind = 'success' | 'error' | 'info';
 interface Toast {
@@ -35,6 +36,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = React.useState<Toast[]>([]);
 
   const show = React.useCallback((message: string, kind: ToastKind = 'info') => {
+    // Con «crediti insufficienti» già mostrato in un dialog, il toast d'errore generico sarebbe un doppione.
+    if (kind === 'error' && insufficientCreditsJustShown()) return;
     const id = Date.now() + Math.random();
     setToasts((t) => [...t, { id, kind, message }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);

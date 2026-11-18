@@ -136,6 +136,9 @@ model Tenant {
   integrationClients IntegrationClient[]
   ssoTickets  SsoTicket[]
   feeds       TenantFeed[]
+  // Le generazioni dell'azienda si addebitano in crediti sul wallet di Manager (richiede anche
+  // il wallet abilitato sull'installazione). Default off: le aziende restano senza addebito.
+  walletBilling Boolean      @default(false)
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 

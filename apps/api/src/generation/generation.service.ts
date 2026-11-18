@@ -25,6 +25,7 @@ import { JOB_QUEUE, LLM_PROVIDER } from '../providers/provider.constants.js';
 import { ModulesService } from '../courses/modules.service.js';
 import { MediaService } from './media.service.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
+import { BillingService, type BillItem, type Reservation } from '../billing/billing.service.js';
 import { RetrievalService } from '../knowledge/retrieval.service.js';
 import { buildRetrievalQuery } from '../knowledge/query-builder.js';
 import {
@@ -89,7 +90,19 @@ export class GenerationService {
     private readonly modules: ModulesService,
     private readonly media: MediaService,
     private readonly meter: UsageMeterService,
+    private readonly billing: BillingService,
   ) {}
+
+  /** Consumo reale per job e feature (in memoria: il job gira in un solo processo). Serve all'addebito a fine job. */
+  private readonly jobActual = new Map<string, Record<string, number>>();
+
+  /** Registra operazioni riuscite del job (addebitate a fine job fino alla riserva). */
+  private track(jobId: string | undefined, feature: string, n = 1): void {
+    if (!jobId) return;
+    const cur = this.jobActual.get(jobId) ?? {};
+    cur[feature] = (cur[feature] ?? 0) + n;
+    this.jobActual.set(jobId, cur);
+  }
 
   // === Accodamento (API) ====================================================
   // Gli endpoint non eseguono più il modello dentro la request: creano un
@@ -100,7 +113,7 @@ export class GenerationService {
   /** Accoda la generazione dell'outline. Ritorna il jobId per il polling. */
   async enqueueOutline(ctx: RequestContext, courseId: string): Promise<{ jobId: string }> {
     await this.requireCourse(ctx.tenant.tenantId, courseId);
-    return this.enqueue(ctx, courseId, 'course.generate_outline', { courseId });
+    return this.enqueue(ctx, courseId, 'course.generate_outline', { courseId }, [{ feature: 'text_standard', units: 1 }]);
   }
 
   /** Accoda la generazione dei contenuti di una lezione. */
@@ -111,11 +124,13 @@ export class GenerationService {
     toneInstruction?: string,
   ): Promise<{ jobId: string }> {
     await this.requireCourse(ctx.tenant.tenantId, courseId);
-    return this.enqueue(ctx, courseId, 'course.generate_content', {
+    return this.enqueue(
+      ctx,
       courseId,
-      lessonId,
-      toneInstruction,
-    });
+      'course.generate_content',
+      { courseId, lessonId, toneInstruction },
+      [{ feature: 'text_standard', units: 1 }],
+    );
   }
 
   /** Accoda la generazione di un assessment. */
@@ -127,7 +142,9 @@ export class GenerationService {
     moduleId?: string,
   ): Promise<{ jobId: string }> {
     await this.requireCourse(ctx.tenant.tenantId, courseId);
-    return this.enqueue(ctx, courseId, 'course.generate_assessment', { courseId, scope, focus, moduleId });
+    return this.enqueue(ctx, courseId, 'course.generate_assessment', { courseId, scope, focus, moduleId }, [
+      { feature: 'text_standard', units: 1 },
+    ]);
   }
 
   /**
@@ -139,8 +156,12 @@ export class GenerationService {
     courseId: string,
     type: GenJobType,
     payload: GenJobPayload,
+    /** Voci da addebitare (wallet): si prenotano prima di accodare, così un saldo insufficiente dà 402 subito. */
+    bill: BillItem[] = [],
   ): Promise<{ jobId: string }> {
     const jobId = randomUUID();
+    const reservation: Reservation | null = bill.length > 0 ? await this.billing.reserve(ctx.tenant.tenantId, `kscorm:job:${jobId}`, bill) : null;
+    try {
     await this.prisma.generationJob.create({
       data: {
         id: jobId,
@@ -152,10 +173,14 @@ export class GenerationService {
         status: 'QUEUED',
         correlationId: ctx.correlationId,
         // Snapshot dei parametri per audit/ripresa (es. toneInstruction, scope).
-        params: payload as unknown as object,
+        params: (reservation ? { ...payload, billing: { reservation } } : payload) as unknown as object,
       },
     });
     await this.jobs.enqueue(type, { ...payload, jobId }, ctx);
+    } catch (err) {
+      await this.billing.release(ctx.tenant.tenantId, reservation);
+      throw err;
+    }
     return { jobId };
   }
 
@@ -166,7 +191,9 @@ export class GenerationService {
    */
   async enqueueAllContent(ctx: RequestContext, courseId: string): Promise<{ jobId: string }> {
     await this.requireCourse(ctx.tenant.tenantId, courseId);
-    return this.enqueue(ctx, courseId, 'course.generate_all_content', { courseId });
+    // Lezioni ancora vuote + test previsti dal brief (stima per eccesso: ciò che non si genera si libera).
+    const units = (await this.countPendingLessons(courseId)) + (await this.plannedAssessmentCount(ctx.tenant.tenantId, courseId));
+    return this.enqueue(ctx, courseId, 'course.generate_all_content', { courseId }, units > 0 ? [{ feature: 'text_standard', units }] : []);
   }
 
   /**
@@ -177,7 +204,8 @@ export class GenerationService {
    */
   async enqueueAllAssessments(ctx: RequestContext, courseId: string): Promise<{ jobId: string }> {
     await this.requireCourse(ctx.tenant.tenantId, courseId);
-    return this.enqueue(ctx, courseId, 'course.generate_all_assessments', { courseId });
+    const units = await this.plannedAssessmentCount(ctx.tenant.tenantId, courseId);
+    return this.enqueue(ctx, courseId, 'course.generate_all_assessments', { courseId }, units > 0 ? [{ feature: 'text_standard', units }] : []);
   }
 
   /** Stato di un job (per il polling del client). Isolato per tenant. */
@@ -206,6 +234,8 @@ export class GenerationService {
    */
   async recoverStaleJobs(staleAfterMs = 2 * 60_000): Promise<number> {
     const threshold = new Date(Date.now() - staleAfterMs);
+    // I job interrotti non completeranno: si libera la riserva di crediti che avevano prenotato.
+    await this.releaseStaleReservations(threshold);
     const res = await this.prisma.generationJob.updateMany({
       where: {
         status: { in: ['QUEUED', 'RUNNING'] },
@@ -305,6 +335,7 @@ export class GenerationService {
         where: { id: jobId },
         data: { status: 'COMPLETED', finishedAt: new Date() },
       });
+      await this.settleJob(jobId);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Errore sconosciuto';
       await this.prisma.generationJob.update({
@@ -312,9 +343,90 @@ export class GenerationService {
         data: { status: 'FAILED', error: message, finishedAt: new Date() },
       });
       this.logger.error(`Generazione job ${jobId} fallita: ${message}`);
+      // Addebita solo il lavoro riuscito prima dell'errore (es. lezioni già generate) e libera il resto.
+      await this.settleJob(jobId);
       // Rilancia: la coda (SQS) applicherà il retry/DLQ.
       throw err;
     }
+  }
+
+  /**
+   * Chiude l'addebito del job: addebita le operazioni realmente riuscite (tracciate con `track`) e
+   * libera il resto della riserva. Idempotente: la riserva si rimuove dai parametri del job.
+   */
+  private async settleJob(jobId: string): Promise<void> {
+    try {
+      const job = await this.prisma.generationJob.findUnique({
+        where: { id: jobId },
+        select: { tenantId: true, params: true },
+      });
+      const params = (job?.params && typeof job.params === 'object' ? job.params : {}) as Record<string, unknown>;
+      const reservation = (params.billing as { reservation?: Reservation } | undefined)?.reservation;
+      if (!job || !reservation) return;
+      const tracked = this.jobActual.get(jobId) ?? {};
+      const actual: Record<string, number> = {};
+      for (const h of reservation.holds) actual[h.feature] = tracked[h.feature] ?? 0;
+      await this.billing.settle(job.tenantId, reservation, actual);
+      const { billing: _b, ...rest } = params;
+      await this.prisma.generationJob.update({ where: { id: jobId }, data: { params: rest as object } });
+    } catch (err) {
+      this.logger.warn(`Chiusura addebito job ${jobId} non riuscita: ${err instanceof Error ? err.message : 'errore'}`);
+    } finally {
+      this.jobActual.delete(jobId);
+    }
+  }
+
+  private async releaseStaleReservations(threshold: Date): Promise<void> {
+    try {
+      const stale = await this.prisma.generationJob.findMany({
+        where: { status: { in: ['QUEUED', 'RUNNING'] }, createdAt: { lt: threshold } },
+        select: { tenantId: true, params: true },
+      });
+      for (const j of stale) {
+        const params = (j.params && typeof j.params === 'object' ? j.params : {}) as Record<string, unknown>;
+        const reservation = (params.billing as { reservation?: Reservation } | undefined)?.reservation;
+        if (reservation) await this.billing.release(j.tenantId, reservation);
+      }
+    } catch (err) {
+      this.logger.warn(`Rilascio riserve dei job interrotti non riuscito: ${err instanceof Error ? err.message : 'errore'}`);
+    }
+  }
+
+  /** Lezioni ancora senza contenuti (le stesse che `runAllContent` genererà). */
+  private async countPendingLessons(courseId: string): Promise<number> {
+    const modules = await this.prisma.module.findMany({
+      where: { courseId },
+      include: { lessons: { select: { blocks: true } } },
+    });
+    return modules
+      .flatMap((m) => m.lessons)
+      .filter((l) => !Array.isArray(l.blocks) || (l.blocks as unknown[]).length === 0).length;
+  }
+
+  /**
+   * Test che il brief prevede e non esistono ancora: limite superiore delle operazioni di quiz del
+   * corso (non conta se i contenuti sono già pronti). Serve a prenotare i crediti; ciò che poi non
+   * si genera viene liberato.
+   */
+  private async plannedAssessmentCount(tenantId: string, courseId: string): Promise<number> {
+    const course = await this.requireCourse(tenantId, courseId);
+    const brief = course.brief ? Brief.safeParse(course.brief) : null;
+    const requested = brief?.success ? brief.data.requestedAssessments : [];
+    const outline = course.outline ? CourseOutline.safeParse(course.outline) : null;
+    const wantsIntermediate =
+      requested.includes('intermediate') ||
+      (!!outline?.success && outline.data.modules.some((m) => m.hasIntermediateAssessment));
+    const wantsFinal = requested.includes('final') || (!!outline?.success && outline.data.hasFinalAssessment);
+    if (!wantsIntermediate && !wantsFinal) return 0;
+    const existing = await this.prisma.assessment.findMany({ where: { courseId }, select: { scope: true, moduleId: true } });
+    const existingSet = new Set(existing.map((a) => `${a.scope}:${a.moduleId ?? 'final'}`));
+    let n = 0;
+    if (wantsIntermediate) {
+      const modules = await this.prisma.module.findMany({ where: { courseId }, select: { id: true } });
+      n += modules.filter((m) => !existingSet.has(`INTERMEDIATE:${m.id}`)).length;
+    }
+    if (wantsFinal && !existingSet.has('FINAL:final')) n += 1;
+    return n;
   }
 
   /**
@@ -423,6 +535,7 @@ export class GenerationService {
       where: { id: courseId },
       data: { outline: outline as object },
     });
+    this.track(jobId, 'text_standard');
 
     // Materializzazione automatica: crea subito moduli/lezioni dall'outline, così
     // la struttura è pronta senza un passo manuale. Idempotente: non duplica e
@@ -585,6 +698,7 @@ export class GenerationService {
       where: { id: lessonId },
       data: { blocks: withCitations as object, schemaVersion: CONTRACTS_VERSION, contentInputHash },
     });
+    this.track(jobId, 'text_standard');
 
     // Immagini automatiche: scorporate dalla generazione dei contenuti e lanciate
     // come task parallele DOPO il salvataggio dei block. Questo evita che la
@@ -957,6 +1071,7 @@ export class GenerationService {
     // dal contesto di generazione), così lo step entra nella sequenza e fa da
     // gate. L'LLM non popola moduleId: lo impone il backend.
     await this.persistAssessment(courseId, assessment, scope === 'intermediate' ? moduleId : undefined);
+    this.track(jobId, 'text_standard');
     return assessment;
   }
 

@@ -6,6 +6,7 @@ import { EcosystemCredentialsService } from './ecosystem-credentials.service.js'
 import { EcosystemProvisioningService } from './ecosystem-provisioning.service.js';
 import { EntitlementService } from './entitlement.service.js';
 import { WalletService } from './wallet.service.js';
+import { FeatureCatalogService } from './feature-catalog.service.js';
 import { EcosystemConfigController } from './ecosystem-config.controller.js';
 
 /**
@@ -26,6 +27,7 @@ import { EcosystemConfigController } from './ecosystem-config.controller.js';
     EcosystemProvisioningService,
     EntitlementService,
     WalletService,
+    FeatureCatalogService,
   ],
   exports: [
     EcosystemCredentialsService,
@@ -34,6 +36,7 @@ import { EcosystemConfigController } from './ecosystem-config.controller.js';
     EcosystemSettingsService,
     EntitlementService,
     WalletService,
+    FeatureCatalogService,
   ],
 })
 export class EcosystemModule {}

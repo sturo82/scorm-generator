@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { StructureKnowledge } from '@scorm/contracts';
 import type { DocumentExtractor, JobQueue, LLMProvider, ObjectStorage } from '@scorm/domain';
 import { DocumentExtractorRegistry } from '@scorm/adapters/extractors';
+import { BillingService } from '../billing/billing.service.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -80,6 +81,7 @@ export class KnowledgeStructureService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly meter: UsageMeterService,
+    private readonly billing: BillingService,
     @Inject(DOCUMENT_EXTRACTORS) extractors: DocumentExtractor[],
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(LLM_PROVIDER) private readonly llm: LLMProvider,
@@ -112,6 +114,14 @@ export class KnowledgeStructureService {
       throw new BadRequestException(`Documenti non ancora pronti: ${notReady.join(', ')}`);
     }
 
+    // Crediti: una chiamata di struttura per testi brevi, più chiamate (mappa + fusione) per testi
+    // lunghi. Le parole si sanno solo a estrazione fatta: si prenota per eccesso dalla dimensione dei
+    // file e si addebitano le chiamate realmente fatte.
+    const estWords = Math.min(60000, sources.reduce((n, s) => n + s.sizeBytes, 0) / 6);
+    const reservedUnits = estWords <= 9000 ? 1 : Math.ceil(estWords / 6000) + 1;
+    const reservation = await this.billing.reserve(tenantId, `kscorm:knowledge-structure:${randomUUID()}`, [
+      { feature: 'text_standard', units: reservedUnits },
+    ]);
     const docId = randomUUID();
     const safe = input.title.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80) || 'knowledge';
     const filename = `${safe}.md`;
@@ -130,7 +140,10 @@ export class KnowledgeStructureService {
       },
     });
 
-    void this.run(tenantId, doc.id, storageKey, input, sources, correlationId).catch(async (err) => {
+    void this.run(tenantId, doc.id, storageKey, input, sources, correlationId)
+      .then((used) => this.billing.settle(tenantId, reservation, { text_standard: used }))
+      .catch(async (err) => {
+      await this.billing.release(tenantId, reservation);
       const message = err instanceof Error ? err.message : 'errore sconosciuto';
       this.logger.error(`Knowledge strutturata ${doc.id} fallita: ${message}`);
       await this.prisma.knowledgeDoc
@@ -156,7 +169,7 @@ export class KnowledgeStructureService {
     input: StructureKnowledge,
     sources: Array<{ id: string; filename: string; mimeType: string; storageKey: string; courseId: string | null }>,
     correlationId?: string,
-  ): Promise<void> {
+  ): Promise<number> {
     const language = LANGUAGE_NAMES[input.language.slice(0, 2).toLowerCase()] ?? input.language;
     const meterCourseId: string | null = input.scope === 'COURSE' ? (input.courseId ?? null) : null;
 
@@ -177,6 +190,8 @@ export class KnowledgeStructureService {
 
     // 2. Struttura: una chiamata se il testo è breve, altrimenti mappa + fusione.
     let markdown: string;
+    // Chiamate LLM effettuate (0 = nessuna ancora): è l'unità di addebito.
+    let llmCalls = 1;
     const sourceNames = texts.map((t) => t.name).join(', ');
     if (totalWords <= SINGLE_PASS_WORDS) {
       const body = texts.map((t) => `### Fonte: ${t.name}\n${t.text}`).join('\n\n');
@@ -198,6 +213,7 @@ export class KnowledgeStructureService {
         }
       };
       await Promise.all(Array.from({ length: Math.min(MAP_CONCURRENCY, segments.length) }, worker));
+      llmCalls = segments.length + 1;
       markdown = await this.writeDocument(
         tenantId, meterCourseId, input.title, language, sourceNames, notes.join('\n\n'), 'note',
       );
@@ -219,6 +235,7 @@ export class KnowledgeStructureService {
       { tenant: { tenantId }, correlationId: correlationId ?? randomUUID() },
     );
     this.logger.log(`Knowledge strutturata ${docId} creata (${totalWords} parole in ingresso)`);
+    return llmCalls;
   }
 
   /** Fase mappa: note strutturate di un segmento, in forma testuale compatta. */

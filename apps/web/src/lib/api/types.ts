@@ -1,3 +1,4 @@
+import type { CreditQuoteItem, CreditQuoteView, WalletView } from '@scorm/contracts';
 import type {
   Brief,
   BriefDraft,
@@ -568,6 +569,10 @@ export interface ApiClient {
 
   // Usage / audit
   getUsage(): Promise<UsageView>;
+  /** Saldo del wallet a crediti (solo se l'azienda paga a crediti). */
+  getWallet(): Promise<WalletView>;
+  /** Preventivo in crediti di una generazione. */
+  quoteCredits(items: CreditQuoteItem[]): Promise<CreditQuoteView>;
   listAudit(): Promise<AuditEventView[]>;
 
   // Costi / pricing

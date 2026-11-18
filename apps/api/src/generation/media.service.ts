@@ -28,6 +28,7 @@ import { DEFAULT_HEYGEN_ENGINE, defaultEngineForAvatarType } from '@scorm/contra
 import type { AppConfig } from '../config/configuration.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
+import { avatarFeature, BillingService, type Reservation } from '../billing/billing.service.js';
 import {
   IMAGE_PROVIDER,
   LLM_PROVIDER,
@@ -180,6 +181,7 @@ export class MediaService implements OnModuleInit {
     @Inject(LLM_PROVIDER) private readonly llm: LLMProvider,
     @Inject(TRANSCRIPTION_PROVIDER) private readonly transcription: TranscriptionProvider,
     private readonly meter: UsageMeterService,
+    private readonly billing: BillingService,
     // Opzionale: null se PROVIDER_VIDEO non è configurato (o manca l'API key).
     // In quel caso generateConceptVideo risponde 501, come lo stock image.
     @Optional() @Inject(VIDEO_GEN_PROVIDER) private readonly videoGen: VideoGenerationProvider | null,
@@ -258,6 +260,14 @@ export class MediaService implements OnModuleInit {
 
     // Attraversa in profondità i block cercando i MediaRef immagine.
     const refs = this.collectImageRefs(blocks);
+    // Crediti: si prenotano le immagini che verranno davvero generate e si addebitano quelle riuscite.
+    const todo = refs.filter(
+      (r) => (force || !(r.storageKey && r.storageKey.length > 0)) && Boolean(r.placeholderPrompt || r.alt),
+    ).length;
+    const reservation = todo > 0
+      ? await this.billing.reserve(tenantId, `kscorm:images:${lessonId}:${randomUUID()}`, [{ feature: 'image_generation', units: todo }])
+      : null;
+    try {
     for (const ref of refs) {
       // Con force si rigenerano anche i media già presenti (es. per sostituire
       // immagini non soddisfacenti); altrimenti si saltano.
@@ -309,6 +319,11 @@ export class MediaService implements OnModuleInit {
         failed++;
       }
     }
+    } catch (err) {
+      await this.billing.release(tenantId, reservation);
+      throw err;
+    }
+    await this.billing.settle(tenantId, reservation, { image_generation: generated });
 
     if (generated > 0) {
       await this.prisma.lesson.update({
@@ -325,6 +340,12 @@ export class MediaService implements OnModuleInit {
    * per l'anteprima. Formato panoramico (16:9), senza testo nell'immagine.
    */
   async generateCourseCover(tenantId: string, courseId: string): Promise<{ url: string }> {
+    return this.billing.run(tenantId, `kscorm:cover:${courseId}:${randomUUID()}`, [{ feature: 'image_generation', units: 1 }], async () => ({
+      result: await this.generateCourseCoverUnbilled(tenantId, courseId),
+    }));
+  }
+
+  private async generateCourseCoverUnbilled(tenantId: string, courseId: string): Promise<{ url: string }> {
     const course = await this.prisma.course.findFirst({ where: { id: courseId, tenantId } });
     if (!course) throw new NotFoundException('Corso non trovato');
 
@@ -366,6 +387,16 @@ export class MediaService implements OnModuleInit {
    * formato panoramico (16:9) e stesse regole "no text" della copertina corso.
    */
   async generateModuleCover(
+    tenantId: string,
+    courseId: string,
+    moduleId: string,
+  ): Promise<{ url: string }> {
+    return this.billing.run(tenantId, `kscorm:module-cover:${moduleId}:${randomUUID()}`, [{ feature: 'image_generation', units: 1 }], async () => ({
+      result: await this.generateModuleCoverUnbilled(tenantId, courseId, moduleId),
+    }));
+  }
+
+  private async generateModuleCoverUnbilled(
     tenantId: string,
     courseId: string,
     moduleId: string,
@@ -430,11 +461,22 @@ export class MediaService implements OnModuleInit {
     // (neural) quando vuole, con un default sicuro/economico a livello istanza.
     const engine = this.resolveSpeechEngine(engineOverride, (course as { speechEngine?: string } | null)?.speechEngine);
 
-    const result = await this.speech.synthesize({
-      text,
-      language: ttsLocale(course?.language),
-      engine,
-    });
+    // Crediti: l'audio si tariffa a blocchi di 1.000 caratteri, noti prima di sintetizzare.
+    const reservation = await this.billing.reserve(tenantId, `kscorm:narration:${lessonId}:${randomUUID()}`, [
+      { feature: 'audio_narration', units: text.length / 1000 },
+    ]);
+    let result: Awaited<ReturnType<SpeechProvider['synthesize']>>;
+    try {
+      result = await this.speech.synthesize({
+        text,
+        language: ttsLocale(course?.language),
+        engine,
+      });
+    } catch (err) {
+      await this.billing.release(tenantId, reservation);
+      throw err;
+    }
+    await this.billing.settle(tenantId, reservation);
     const key = `media/${tenantId}/${courseId}/audio/${lessonId}.mp3`;
     await this.storage.putObject(key, Buffer.from(result.bytes), {
       contentType: result.contentType,
@@ -851,6 +893,10 @@ export class MediaService implements OnModuleInit {
       throw new BadRequestException('Tipo avatar non supportato (usa "photo" o "prompt")');
     }
 
+    // Crediti: la creazione di un avatar da foto o da prompt è un'operazione a importo fisso.
+    const reservation = await this.billing.reserve(tenantId, `kscorm:avatar-creation:${tenantId}:${randomUUID()}`, [
+      { feature: 'avatar_creation_photo' },
+    ]);
     let result: CreateAvatarResult;
     try {
       result = await this.videoGen.createAvatar({
@@ -860,11 +906,13 @@ export class MediaService implements OnModuleInit {
         prompt: input.prompt?.trim(),
       });
     } catch (err) {
+      await this.billing.release(tenantId, reservation);
       const detail = rawVideoGenError(err);
       this.logger.warn(`Creazione avatar fallita (tenant ${tenantId}): ${detail}`);
       throw new BadRequestException(`Creazione avatar non riuscita: ${describeVideoGenError(detail)}`);
     }
 
+    await this.billing.settle(tenantId, reservation);
     // Metering: 1 chiamata di creazione avatar (costo una tantum). courseId
     // null: è un'operazione a livello di tenant, non legata a un corso.
     await this.meter.record({
@@ -1001,6 +1049,12 @@ export class MediaService implements OnModuleInit {
       );
     }
 
+    // Crediti: il copione è limitato (VIDEO_SCRIPT_MAX_WORDS, meno di 1 minuto), quindi si prenota
+    // 1 minuto alla tariffa dell'avatar e a fine rendering si addebita la durata reale.
+    const videoFeature = avatarFeature(engine, avatarType);
+    const reservation = await this.billing.reserve(tenantId, `kscorm:video:${lessonId}:${blockId}:${randomUUID()}`, [
+      { feature: videoFeature, units: 1 },
+    ]);
     // Avvia il job sul provider PRIMA di persistere, così salviamo il jobRef.
     let jobRef: string;
     try {
@@ -1018,6 +1072,7 @@ export class MediaService implements OnModuleInit {
       });
       jobRef = started.jobRef;
     } catch (err) {
+      await this.billing.release(tenantId, reservation);
       const detail = rawVideoGenError(err);
       this.logger.warn(`Avvio generazione video fallito (lezione ${lessonId}): ${detail}`);
       throw new BadRequestException(`Generazione video non avviata: ${detail}`);
@@ -1034,6 +1089,8 @@ export class MediaService implements OnModuleInit {
     // Persiste anche l'engine scelto: il metering a fine rendering (background,
     // resiliente ai riavvii) applica la tariffa per-engine corretta.
     payload.videoGenEngine = engine;
+    // Riserva di crediti da chiudere a fine rendering (persistita: sopravvive a un riavvio).
+    if (reservation) payload.videoGenBilling = { reservation, feature: videoFeature };
     delete payload.videoGenError;
     vcBlock.payload = payload;
     await this.prisma.lesson.update({
@@ -1341,8 +1398,11 @@ export class MediaService implements OnModuleInit {
     // prudenziali (studio = tariffa più alta; engine da config/default).
     let avatarType: 'photo' | 'studio' = 'studio';
     let engine = (this.config.get('heygen', { infer: true }).engine || DEFAULT_HEYGEN_ENGINE).toLowerCase();
+    let videoBilling: { reservation: Reservation; feature: string } | undefined;
     if (vcBlock) {
       const payload = (vcBlock.payload ?? {}) as Record<string, unknown>;
+      videoBilling = payload.videoGenBilling as typeof videoBilling;
+      delete payload.videoGenBilling;
       if (payload.videoGenAvatarType === 'photo') avatarType = 'photo';
       if (typeof payload.videoGenEngine === 'string' && payload.videoGenEngine) {
         engine = payload.videoGenEngine.toLowerCase();
@@ -1387,7 +1447,10 @@ export class MediaService implements OnModuleInit {
       source: 'concept_video',
       region: 'global',
     });
-
+    // Crediti: si addebitano i minuti realmente generati e si libera il resto della riserva.
+    if (videoBilling) {
+      await this.billing.settle(ctx.tenantId, videoBilling.reservation, { [videoBilling.feature]: seconds / 60 });
+    }
     this.logger.log(
       `Video avatar generato (lezione ${ctx.lessonId}, ${durationSec ?? '?'}s): ${key}` +
         (hasSubtitles ? ` — trascrizione dai sottotitoli HeyGen (${subtitleCues.length} cue)` : ''),
@@ -1435,6 +1498,10 @@ export class MediaService implements OnModuleInit {
     const vcBlock = this.findVideoCheckpointBlock(blocks, ctx.blockId);
     if (!vcBlock) return;
     const payload = (vcBlock.payload ?? {}) as Record<string, unknown>;
+    // Generazione non riuscita: si libera la riserva di crediti.
+    const failedBilling = payload.videoGenBilling as { reservation: Reservation } | undefined;
+    if (failedBilling) await this.billing.release(ctx.tenantId, failedBilling.reservation);
+    delete payload.videoGenBilling;
     payload.videoGenStatus = 'failed';
     payload.videoGenError = reason;
     delete payload.videoGenJobRef;
@@ -1685,6 +1752,12 @@ export class MediaService implements OnModuleInit {
       throw new BadRequestException('Nessun cartoon avviato (storyboard mancante in tutte le scene).');
     }
 
+    // Crediti: una sola riserva per tutte le scene avviate (la tariffa è al minuto: una riserva per
+    // scena arrotonderebbe ogni scena a un minuto intero). Si addebita a fine lavorazione.
+    const cartoonFeature = cfg.provider === 'remotion' ? 'video_cartoon' : 'video_cartoon_ai';
+    const cartoonReservation = await this.billing.reserve(tenantId, `kscorm:cartoon:${lessonId}:${randomUUID()}`, [
+      { feature: cartoonFeature, units: (toStart.length * cfg.sceneDurationSec) / 60 },
+    ]);
     // Marca subito TUTTE le scene candidate come 'processing' e persiste, così
     // la UI mostra l'avanzamento anche prima che i singoli job partano (gli
     // avvii avvengono uno alla volta in background, con retry).
@@ -1715,6 +1788,7 @@ export class MediaService implements OnModuleInit {
         speechEngine,
       },
       toStart,
+      cartoonReservation ? { reservation: cartoonReservation, feature: cartoonFeature } : undefined,
     );
 
     return { started: toStart.length, remainingThisMonth: Math.max(0, room - toStart.length) };
@@ -1736,8 +1810,14 @@ export class MediaService implements OnModuleInit {
       speechEngine?: 'standard' | 'neural' | 'generative';
     },
     scenes: Array<{ blockId: string; sceneId: string; prompt: string; multiScene?: boolean }>,
+    billing?: { reservation: Reservation; feature: string },
   ): Promise<void> {
-    if (!this.cartoonGen) return;
+    if (!this.cartoonGen) {
+      if (billing) await this.billing.release(base.tenantId, billing.reservation);
+      return;
+    }
+    let deliveredSec = 0;
+    try {
     for (const s of scenes) {
       const ctx = { ...base, blockId: s.blockId, sceneId: s.sceneId };
       const jobRef = await this.startCartoonJobWithRetry(s.prompt, base, s.multiScene === true).catch((err) => {
@@ -1751,7 +1831,13 @@ export class MediaService implements OnModuleInit {
         continue;
       }
       await this.setCartoonJobRef(ctx, jobRef).catch(() => undefined);
-      await this.pollCartoonJob(ctx, jobRef);
+      deliveredSec += await this.pollCartoonJob(ctx, jobRef);
+    }
+    } finally {
+      // Si addebitano solo le scene consegnate; con zero scene la riserva si libera.
+      if (billing) {
+        await this.billing.settle(base.tenantId, billing.reservation, { [billing.feature]: deliveredSec / 60 });
+      }
     }
   }
 
@@ -1813,14 +1899,14 @@ export class MediaService implements OnModuleInit {
   private async pollCartoonJob(
     ctx: { tenantId: string; courseId: string; lessonId: string; blockId: string; sceneId: string },
     jobRef: string,
-  ): Promise<void> {
-    if (!this.cartoonGen) return;
+  ): Promise<number> {
+    if (!this.cartoonGen) return 0;
     const deadline = Date.now() + VIDEOGEN_POLL_TIMEOUT_MS;
     try {
       for (;;) {
         if (Date.now() > deadline) {
           await this.writeCartoonError(ctx, 'La generazione del cartoon ha impiegato troppo tempo.').catch(() => undefined);
-          return;
+          return 0;
         }
         await sleep(VIDEOGEN_POLL_INTERVAL_MS);
         const r = await this.cartoonGen.fetchJob(jobRef);
@@ -1828,14 +1914,14 @@ export class MediaService implements OnModuleInit {
         if (r.status === 'failed') {
           this.logger.warn(`Cartoon scena ${ctx.sceneId} fallito: ${r.reason}`);
           await this.writeCartoonError(ctx, r.reason).catch(() => undefined);
-          return;
+          return 0;
         }
-        await this.applyCartoonResult(ctx, r.bytes, r.contentType, r.durationSec);
-        return;
+        return await this.applyCartoonResult(ctx, r.bytes, r.contentType, r.durationSec);
       }
     } catch (err) {
       this.logger.warn(`Polling cartoon scena ${ctx.sceneId} fallito: ${rawVideoGenError(err)}`);
       await this.writeCartoonError(ctx, rawVideoGenError(err)).catch(() => undefined);
+      return 0;
     }
   }
 
@@ -1856,7 +1942,7 @@ export class MediaService implements OnModuleInit {
     bytes: Uint8Array,
     contentType: string | undefined,
     durationSec: number | undefined,
-  ): Promise<void> {
+  ): Promise<number> {
     const key = `media/${ctx.tenantId}/${ctx.courseId}/video/${randomUUID()}.mp4`;
     await this.storage.putObject(key, Buffer.from(bytes), { contentType: contentType ?? 'video/mp4' });
 
@@ -1913,6 +1999,7 @@ export class MediaService implements OnModuleInit {
       });
     }
     this.logger.log(`Cartoon scena ${ctx.sceneId} pronto (${seconds}s, ${cfg.provider}): ${key}`);
+    return seconds;
   }
 
   /** Scrive lo stato di errore della generazione cartoon nel media della scena. */

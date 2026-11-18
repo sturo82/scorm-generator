@@ -25,6 +25,7 @@ import { OBJECT_STORAGE, VIDEO_GEN_PROVIDER } from '../providers/provider.consta
 import { SlideScriptsService } from './slide-scripts.service.js';
 import { meterCourseId } from './slide-owner.js';
 import { applyGlossary, restoreGlossary } from './slide-glossary.js';
+import { avatarFeature, BillingService, ESTIMATE_MARGIN, type Reservation } from '../billing/billing.service.js';
 
 const CONCURRENCY = 3;
 const POLL_INTERVAL_MS = 8_000;
@@ -64,10 +65,15 @@ export interface SlideClipsDoc {
   /** Lease di esecuzione: evita che due istanze API portino avanti lo stesso lavoro. */
   owner?: string;
   leaseUntil?: number;
+  /**
+   * Crediti prenotati per questa esecuzione (wallet di Manager) e secondi di clip realmente
+   * generati finora: a fine esecuzione si addebita il reale e si libera il resto.
+   */
+  billing?: { reservation: Reservation; feature: string; actualSec: number };
   clips: SlideClip[];
 }
 
-export interface SlideClipsView extends Omit<SlideClipsDoc, 'owner' | 'leaseUntil' | 'clips'> {
+export interface SlideClipsView extends Omit<SlideClipsDoc, 'owner' | 'leaseUntil' | 'clips' | 'billing'> {
   clips: Array<SlideClip & { clipUrl?: string }>;
   progress: { total: number; completed: number; failed: number; processing: number };
   totalDurationSec: number;
@@ -106,6 +112,7 @@ export class SlideClipsService {
   constructor(
     private readonly scripts: SlideScriptsService,
     private readonly meter: UsageMeterService,
+    private readonly billing: BillingService,
     private readonly config: ConfigService<AppConfig, true>,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Optional() @Inject(VIDEO_GEN_PROVIDER) private readonly videoGen: VideoGenerationProvider | null,
@@ -203,10 +210,12 @@ export class SlideClipsService {
         }
         return { index: s.index, scriptHash: hash, state: 'pending' as const, attempts: 0 };
       });
+    const billing = await this.reserveClips(tenantId, importId, engine, avatarType, est.minutes);
     const doc: SlideClipsDoc = {
       importId,
       courseId,
       status: 'running',
+      billing,
       avatarId: existing?.avatarId ?? input.avatarId,
       avatarType,
       voiceId: existing?.voiceId ?? input.voiceId,
@@ -251,9 +260,11 @@ export class SlideClipsService {
     }
     const cfg = this.config.get('heygen', { infer: true });
     const now = new Date().toISOString();
+    const billing = await this.reserveClips(tenantId, importId, engine, avatarType, est.minutes);
     const doc: SlideClipsDoc = {
       ...existing,
       status: 'running',
+      billing,
       avatarId: input.avatarId,
       avatarType,
       voiceId: input.voiceId,
@@ -268,6 +279,34 @@ export class SlideClipsService {
     this.logger.log(`Cambio avatar import ${importId}: ${doc.clips.length} clip con ${input.avatarId}`);
     this.launch(tenantId, courseId, importId);
     return this.toView(doc);
+  }
+
+  /**
+   * Prenota i crediti delle clip da generare: stima dai copioni più un margine (la durata reale si
+   * sa solo a clip finite e l'addebito non può superare la riserva). Null se l'azienda non è
+   * addebitata o non c'è nulla da generare.
+   */
+  private async reserveClips(
+    tenantId: string,
+    importId: string,
+    engine: string,
+    avatarType: string,
+    minutes: number,
+  ): Promise<SlideClipsDoc['billing']> {
+    if (minutes <= 0) return undefined;
+    const feature = avatarFeature(engine, avatarType);
+    const reservation = await this.billing.reserve(tenantId, `kscorm:slide-clips:${importId}:${randomUUID()}`, [
+      { feature, units: Math.ceil(minutes * ESTIMATE_MARGIN * 10) / 10 },
+    ]);
+    return reservation ? { reservation, feature, actualSec: 0 } : undefined;
+  }
+
+  /** Addebita i minuti di clip realmente generati e libera il resto della riserva. */
+  private async settleClips(tenantId: string, doc: SlideClipsDoc): Promise<void> {
+    const b = doc.billing;
+    if (!b) return;
+    doc.billing = undefined;
+    await this.billing.settle(tenantId, b.reservation, { [b.feature]: b.actualSec / 60 });
   }
 
   /** Stato corrente. Se il lavoro risulta orfano (lease scaduto) lo riprende. */
@@ -331,6 +370,7 @@ export class SlideClipsService {
     }
     const failed = doc.clips.some((c) => c.state === 'failed');
     doc.status = failed ? 'failed' : 'completed';
+    await this.settleClips(tenantId, doc);
     doc.owner = undefined;
     doc.leaseUntil = undefined;
     await this.save(tenantId, doc, false);
@@ -382,6 +422,7 @@ export class SlideClipsService {
               }
             }
             clip.durationSec = res.durationSec;
+            if (doc.billing) doc.billing.actualSec += Math.max(1, Math.ceil(res.durationSec ?? 0));
             clip.state = 'completed';
             clip.error = undefined;
             await this.meter.record({
@@ -442,7 +483,7 @@ export class SlideClipsService {
   }
 
   private async toView(doc: SlideClipsDoc): Promise<SlideClipsView> {
-    const { owner: _o, leaseUntil: _l, clips, ...rest } = doc;
+    const { owner: _o, leaseUntil: _l, billing: _b, clips, ...rest } = doc;
     const withUrls = await Promise.all(
       clips.map(async (c) => ({
         ...c,

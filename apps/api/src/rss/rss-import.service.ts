@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { EmbeddingsProvider, FeedProvider, FeedListItem } from '@scorm/domain';
 import { DEFAULT_FEEDS, FEED_CATEGORIES, defaultFeedsForCategory, type FeedCategory, type LessonFormat } from '@scorm/contracts';
 import type { AppConfig } from '../config/configuration.js';
+import { BillingService } from '../billing/billing.service.js';
 import { CoursesService } from '../courses/courses.service.js';
 import { KnowledgeService } from '../knowledge/knowledge.service.js';
 import { RetrievalService } from '../knowledge/retrieval.service.js';
@@ -164,6 +165,7 @@ export class RssImportService {
     private readonly tenantFeeds: TenantFeedService,
     private readonly briefService: RssBriefService,
     private readonly meter: UsageMeterService,
+    private readonly billing: BillingService,
     private readonly config: ConfigService<AppConfig, true>,
     @Inject(FEED_PROVIDER) private readonly feeds: FeedProvider,
     @Inject(EMBEDDINGS_PROVIDER) private readonly embeddings: EmbeddingsProvider,
@@ -172,6 +174,8 @@ export class RssImportService {
   async createCourseFromRss(input: CreateCourseFromRssInput): Promise<CreateCourseFromRssResult> {
     const topic = input.topic?.trim();
     if (!topic) throw new BadRequestException('Indica un argomento per il corso');
+    // Senza anteprima approvata il brief si scrive con l'LLM (a pagamento): meglio saperlo prima di creare il corso.
+    if (!input.preview) await this.billing.assertAvailable(input.tenantId, [{ feature: 'text_light', units: 1 }]);
     const maxArticles = Math.max(1, Math.min(Math.trunc(input.maxArticles || 0) || DEFAULT_MAX_ARTICLES, HARD_MAX_ARTICLES));
 
     // 1-3. Scoperta multi-fonte + dedup esatta (helper condiviso con la preview).

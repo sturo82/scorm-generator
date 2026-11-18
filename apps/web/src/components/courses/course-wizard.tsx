@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { Check, ChevronRight, ChevronDown, FileText, ListTree, Wand2, Image as ImageIcon, Eye, Search, Database } from 'lucide-react';
 import type { Brief } from '@scorm/contracts';
+import { CreditCost } from '@/components/ui/credit-cost';
 import { Button } from '@/components/ui/button';
 import { Input, Label } from '@/components/ui/input';
 import { BriefWizard } from '@/components/courses/brief-wizard';
@@ -451,6 +452,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
               <Button variant="outline" size="sm" onClick={handleGenerateCover} disabled={genCover.isPending}>
                 <ImageIcon className="size-4" />
                 {genCover.isPending ? 'Generazione…' : course.data?.coverImageUrl ? 'Rigenera copertina' : 'Genera copertina'}
+                {!genCover.isPending && <CreditCost items={[{ feature: 'image_generation', units: 1 }]} />}
               </Button>
             </div>
           </div>

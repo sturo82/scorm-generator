@@ -6,6 +6,7 @@ import { LogOut, Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { SidebarNav } from './sidebar';
+import { WalletBadge } from './wallet-badge';
 import { AppBrand } from './app-brand';
 import { getSession, logout, type DevSession } from '@/lib/auth';
 import { oidcLogoutUrl } from '@/lib/oidc';
@@ -70,6 +71,7 @@ export function AppHeader() {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <WalletBadge />
           <ThemeToggle />
           <div className="flex items-center gap-3 rounded-full border border-white/15 bg-white/10 py-1 pl-3 pr-1">
             <div className="hidden text-right sm:block">

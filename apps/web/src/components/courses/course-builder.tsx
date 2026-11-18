@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { CreditCost } from '@/components/ui/credit-cost';
 import { Plus, Sparkles, Wand2, Trash2, Pencil, Image as ImageIcon, Volume2, Video, Captions, Search, Check, ChevronRight, Eye, UserRound, Film, Clapperboard } from 'lucide-react';
 import type { Block } from '@scorm/contracts';
 import {
@@ -159,6 +160,7 @@ export function CourseBuilder({
                 <Button className="mt-auto self-start" onClick={handleGenerateStructure} disabled={genOutline.isPending}>
                   <Wand2 className="size-4" />
                   {hasStructure ? 'Rigenera struttura' : 'Genera struttura'}
+                  <CreditCost items={[{ feature: 'text_standard', units: 1 }]} />
                 </Button>
               )}
             </CardContent>
@@ -383,6 +385,7 @@ function ContentBuilder({ courseId, highlightTests = false }: { courseId: string
             <Button onClick={handleGenerateAll} disabled={batchActive || pendingCount === 0}>
               <Wand2 className="size-4" />
               {batchActive ? 'Generazione in corso…' : `Genera tutti i contenuti (${pendingCount})`}
+              {!batchActive && <CreditCost items={[{ feature: 'text_standard', units: pendingCount }]} />}
             </Button>
           </div>
         </CardContent>
@@ -1107,6 +1110,7 @@ function LessonCard({
             >
               <Wand2 className="size-4" />
               {generating ? 'Rigenero…' : 'Rigenera'}
+              {!generating && <CreditCost items={[{ feature: 'text_standard', units: 1 }]} />}
             </Button>
           )}
           <StatusControls
@@ -1389,6 +1393,7 @@ function LessonCard({
         <Button size="sm" onClick={handleGenerate} disabled={generating}>
           <Wand2 className="size-4" />
           {generating ? 'Generazione…' : lesson.blocks.length ? 'Rigenera' : 'Genera contenuti'}
+          {!generating && <CreditCost items={[{ feature: 'text_standard', units: 1 }]} />}
         </Button>
         {lesson.blocks.length > 0 && !generating && (
           <>

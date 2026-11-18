@@ -12,6 +12,7 @@ import type { RetrievalService } from '../knowledge/retrieval.service.js';
 import type { ModulesService } from '../courses/modules.service.js';
 import type { MediaService } from './media.service.js';
 import type { UsageMeterService } from '../metering/usage-meter.service.js';
+import type { BillingService } from '../billing/billing.service.js';
 
 const ctx: RequestContext = { tenant: { tenantId: 't1' }, correlationId: 'corr-1' };
 
@@ -67,9 +68,10 @@ function makeService(opts?: { course?: unknown }) {
   } as unknown as MediaService;
   const meterRecord = vi.fn(async () => 0);
   const meter = { record: meterRecord } as unknown as UsageMeterService;
-
+  // Addebito in crediti non attivo: reserve/settle/release sono no-op.
+  const billing = { reserve: async () => null, settle: async () => undefined, release: async () => undefined } as unknown as BillingService;
   return {
-    service: new GenerationService(prisma, llm, jobs, retrieval, modules, media, meter),
+    service: new GenerationService(prisma, llm, jobs, retrieval, modules, media, meter, billing),
     jobCreate,
     jobUpdate,
     jobUpdateMany,

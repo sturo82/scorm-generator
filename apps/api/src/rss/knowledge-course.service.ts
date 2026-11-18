@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BillingService } from '../billing/billing.service.js';
 import { CoursesService } from '../courses/courses.service.js';
 import { RetrievalService } from '../knowledge/retrieval.service.js';
 import type { LessonFormat } from '@scorm/contracts';
@@ -53,6 +54,7 @@ export class KnowledgeCourseService {
     private readonly courses: CoursesService,
     private readonly retrieval: RetrievalService,
     private readonly briefService: RssBriefService,
+    private readonly billing: BillingService,
   ) {}
 
   /** Argomento effettivo: quello indicato o un segnaposto neutro. */
@@ -106,6 +108,8 @@ export class KnowledgeCourseService {
       throw new BadRequestException('Seleziona almeno un documento della tua knowledge.');
     }
     const preview = input.preview;
+    // Senza anteprima approvata il brief si scrive con l'LLM (a pagamento): meglio saperlo prima di creare il corso.
+    if (!preview) await this.billing.assertAvailable(input.tenantId, [{ feature: 'text_light', units: 1 }]);
     const topic = this.topicOf(input);
     const title = input.title?.trim() || preview?.proposedTitle?.trim() || topic;
     const description = preview?.description?.trim() || `Corso costruito dal materiale selezionato.`;

@@ -3,8 +3,10 @@
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Check, Clapperboard, FileUp, Wand2 } from 'lucide-react';
+import { CreditCost } from '@/components/ui/credit-cost';
 import {
   avatarCrop,
+  avatarFeature,
   HEYGEN_ENGINES,
   heygenAvatarTypeLabel,
   heygenBillingTypeFor,
@@ -51,6 +53,7 @@ useSlideClips,
   useChangeSlideAvatar,
   useVideoAvatars,
   useVideoVoices,
+  useWallet,
 } from '@/lib/api/hooks';
 
 const TEXTAREA =
@@ -546,6 +549,7 @@ function StepScripts({
             ) : (
               <>
                 <Wand2 className="size-4" /> Genera i copioni{kbIds.size ? ` con ${kbIds.size} documento/i di knowledge` : ''}
+                <CreditCost items={[{ feature: 'text_standard', units: 1 }]} />
               </>
             )}
           </Button>
@@ -966,7 +970,9 @@ view: import('@/lib/api/types').SlideClipsView | null;
   const [engine, setEngine] = React.useState<'avatar_iii' | 'avatar_iv' | 'avatar_v'>('avatar_iii');
 
   const started = Boolean(view) && !changing;
-  const avatars = useVideoAvatars(courseId, !started, { source });
+  // Con i crediti attivi il cliente vede il costo in crediti, non il costo del fornitore in dollari.
+  const billed = useWallet().data?.enabled === true;
+const avatars = useVideoAvatars(courseId, !started, { source });
   const voices = useVideoVoices(courseId, !started, language ? { language } : undefined);
   const avatarItems = React.useMemo(() => avatars.data?.pages.flatMap((p) => p.items) ?? [], [avatars.data]);
   const voiceItems = React.useMemo(() => voices.data?.pages.flatMap((p) => p.items) ?? [], [voices.data]);
@@ -1131,8 +1137,17 @@ view: import('@/lib/api/types').SlideClipsView | null;
             ) : estimate.data ? (
               <>
                 <p>
-                  <strong>{estimate.data.slides}</strong> clip · circa <strong>{estimate.data.minutes} min</strong> di video ·
-                  costo HeyGen stimato <strong>${estimate.data.costUsd.toFixed(2)}</strong>
+                  <strong>{estimate.data.slides}</strong> clip · circa <strong>{estimate.data.minutes} min</strong> di video
+                  {billed ? (
+                    <CreditCost
+                      className="font-semibold"
+                      items={[{ feature: avatarFeature(engine, avatarType), units: estimate.data.minutes }]}
+                    />
+                  ) : (
+                    <>
+                      {' · '}costo HeyGen stimato <strong>${estimate.data.costUsd.toFixed(2)}</strong>
+                    </>
+                  )}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Tetto per esecuzione: {estimate.data.maxMinutes} min. Il costo reale dipende dalla durata effettiva delle clip.
@@ -1182,8 +1197,18 @@ view: import('@/lib/api/types').SlideClipsView | null;
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-900">
           <p>
             <strong>{regen.data.slides}</strong> {regen.data.slides === 1 ? 'clip va rigenerata' : 'clip vanno rigenerate'} per le
-            modifiche a pronuncia o copioni: circa <strong>{regen.data.minutes} min</strong> di video, costo HeyGen stimato{' '}
-            <strong>${regen.data.costUsd.toFixed(2)}</strong>. Le altre clip restano quelle già generate.
+            modifiche a pronuncia o copioni: circa <strong>{regen.data.minutes} min</strong> di video
+            {billed ? (
+              <CreditCost
+                className="font-semibold"
+                items={[{ feature: avatarFeature(view?.engine ?? 'avatar_iii', view?.avatarType ?? 'digital_twin'), units: regen.data.minutes }]}
+              />
+            ) : (
+              <>
+                , costo HeyGen stimato <strong>${regen.data.costUsd.toFixed(2)}</strong>
+              </>
+            )}
+            . Le altre clip restano quelle già generate.
           </p>
           <Button size="sm" onClick={handleRegenerate} disabled={start.isPending}>
             {start.isPending ? <AiWorkingInline label="Avvio…" /> : `Rigenera ${regen.data.slides} clip`}
@@ -1380,6 +1405,20 @@ function StepLesson({
     }
   }
 
+  // Costo in crediti del montaggio: minuti di video (copertina e finale compresi) e, in un corso,
+  // riepilogo e quiz di ogni parte più il quiz finale.
+  const totalVideoMin =
+    (clips.clips.reduce((n, c) => n + (c.durationSec ?? 0), 0) + (cover ? 4 : 0) + (outro ? 5 : 0)) / 60;
+  const partCount = mode === 'sections' ? Math.max(1, sections.length) : 1;
+  const buildCostItems = [
+    { feature: 'video_render', units: totalVideoMin },
+    ...(library
+      ? []
+      : [
+          { feature: 'text_light', units: partCount },
+          { feature: 'text_standard', units: partCount + (partCount > 1 ? 1 : 0) },
+        ]),
+  ];
   const cardsBlock = (
     <div className="space-y-3">
       <p className="text-sm font-medium">Copertina e schermata finale</p>
@@ -1577,6 +1616,7 @@ function StepLesson({
                       : library
                         ? 'Crea il video'
                         : 'Crea la video-lezione'}
+                  <CreditCost items={buildCostItems} />
                 </>
               )}
             </Button>
@@ -1684,7 +1724,10 @@ function StepLesson({
                 videoOutdated
                   ? 'Rimonta con le clip aggiornate'
                   : 'Rimonta con le slide e le clip attuali'
-)}
+              )}
+              {!remaster.isPending && (
+                <CreditCost items={[{ feature: 'video_render', units: totalVideoMin }]} />
+              )}
             </Button>
             <Button onClick={onClose}>Chiudi</Button>
           </div>

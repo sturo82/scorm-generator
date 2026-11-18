@@ -1,7 +1,6 @@
 'use client';
-
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Block, Brief, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
+import type { Block, Brief, CreditQuoteItem, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
 import { getApiClient } from './client';
 import type { PronunciationEntry, SlideAvatarType, StartSlideClipsInput, BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole, AttachStockImageInput, AttachStockCoverInput } from './types';
 
@@ -725,6 +724,30 @@ export function useExportCourse(courseId: string) {
   return useMutation({
     mutationFn: (vars: { brandId: string; profile: ScormProfile; allowUnapproved?: boolean; includeSemanticSearch?: boolean }) =>
       api.exportCourse(courseId, vars.brandId, vars.profile, vars.allowUnapproved, vars.includeSemanticSearch),
+  });
+}
+
+/** Stato del wallet a crediti: saldo, ricarica e se l'azienda paga a crediti. Si aggiorna da solo. */
+export const useWallet = () =>
+  useQuery({
+    queryKey: ['billing', 'wallet'],
+    queryFn: () => api.getWallet(),
+    staleTime: 15_000,
+    refetchInterval: (q) => (q.state.data?.enabled ? 20_000 : false),
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
+
+/** Preventivo in crediti di una generazione; non interroga l'API se l'azienda non paga a crediti. */
+export function useCreditQuote(items: CreditQuoteItem[]) {
+  const wallet = useWallet();
+  const usable = items.filter((i) => i.units === undefined || i.units > 0);
+  return useQuery({
+    queryKey: ['billing', 'quote', JSON.stringify(usable)],
+    queryFn: () => api.quoteCredits(usable),
+    enabled: wallet.data?.enabled === true && usable.length > 0,
+    staleTime: 5 * 60_000,
+    retry: false,
   });
 }
 
