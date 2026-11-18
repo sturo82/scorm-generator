@@ -123,6 +123,11 @@ export interface AppConfig {
     /** Timeout (ms) delle chiamate HTTP verso Manager. */
     httpTimeoutMs: number;
   };
+  /** Registrazione pubblica degli account personali: captcha opzionale (Cloudflare Turnstile). */
+  signup: {
+    turnstileSiteKey?: string;
+    turnstileSecret?: string;
+  };
   /** URL base della web app (per i redirect SSO documentati). */
   webAppUrl: string;
   /** Origini CORS consentite (CSV). */
@@ -349,6 +354,10 @@ export function loadConfiguration(): AppConfig {
       entitlementCacheTtlSec: Number(env('ENTITLEMENT_CACHE_TTL_SEC', '60')),
       walletEnabled: env('WALLET_ENABLED', 'false') === 'true',
       httpTimeoutMs: Number(env('ECOSYSTEM_HTTP_TIMEOUT_MS', '5000')),
+    },
+    signup: {
+      turnstileSiteKey: process.env['TURNSTILE_SITE_KEY'],
+      turnstileSecret: process.env['TURNSTILE_SECRET_KEY'],
     },
     webAppUrl: env('WEB_APP_URL', 'http://localhost:3100'),
     corsOrigins: env('CORS_ORIGINS', 'http://localhost:3100')

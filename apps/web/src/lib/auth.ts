@@ -93,7 +93,9 @@ export function loginWithOidc(args: {
   // Senza company (utente personale) il tenant è il suo spazio personale, derivato dal `sub` come fa l'API.
   const personal = !str(claims['custom:tenant_id'], str(claims.tenant_id, ''));
   const tenantId = personal ? `personal-${str(claims.sub, 'u-oidc')}` : str(claims['custom:tenant_id'], str(claims.tenant_id, 'tenant'));
-  const role = str(claims['custom:role'], str(claims.role, 'OWNER'));
+  // Un utente personale (custom:role = PERSONAL) è il titolare del proprio spazio.
+  const claimedRole = str(claims['custom:role'], str(claims.role, 'OWNER'));
+  const role = claimedRole === 'PERSONAL' ? 'OWNER' : claimedRole;
   const session: DevSession = {
     token: bearerToken,
     user: {

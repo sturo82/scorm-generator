@@ -356,6 +356,12 @@ export class HttpApiClient implements ApiClient {
   }
   getUsage() { return this.request<UsageView>('/usage'); }
   getWallet() { return this.request<WalletView>('/billing/wallet'); }
+  getSignupConfig() {
+    return this.request<{ enabled: boolean; captcha: { provider: 'turnstile'; siteKey: string } | null }>('/public/signup-config');
+  }
+  signup(input: { email: string; captchaToken?: string; website?: string }) {
+    return this.request<{ ok: true }>('/public/signup', { method: 'POST', body: JSON.stringify(input) });
+  }
   setWalletPayer(payer: 'COMPANY' | 'PERSONAL') {
     return this.request<WalletView>('/billing/payer', { method: 'PUT', body: JSON.stringify({ payer }) });
   }

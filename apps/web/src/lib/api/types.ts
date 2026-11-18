@@ -573,6 +573,9 @@ export interface ApiClient {
   getWallet(): Promise<WalletView>;
   /** Preventivo in crediti di una generazione. */
   quoteCredits(items: CreditQuoteItem[]): Promise<CreditQuoteView>;
+  /** Registrazione di un account personale: se è aperta e quale captcha usare. */
+  getSignupConfig(): Promise<{ enabled: boolean; captcha: { provider: 'turnstile'; siteKey: string } | null }>;
+  signup(input: { email: string; captchaToken?: string; website?: string }): Promise<{ ok: true }>;
   /** Sceglie il wallet che paga le generazioni (azienda o personale). */
   setWalletPayer(payer: 'COMPANY' | 'PERSONAL'): Promise<WalletView>;
   /** Pagina di pagamento per ricaricare il wallet personale. */

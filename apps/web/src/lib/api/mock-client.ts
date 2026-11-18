@@ -683,6 +683,12 @@ export class MockApiClient implements ApiClient {
   async getWallet(): Promise<WalletView> {
     return { enabled: false, payer: 'COMPANY', currency: 'CREDITS', canTopup: false, company: null, personal: { active: false }, personalAvailable: false, personalSpace: false };
   }
+  async getSignupConfig(): Promise<{ enabled: boolean; captcha: null }> {
+    return { enabled: false, captcha: null };
+  }
+  async signup(): Promise<{ ok: true }> {
+    throw new Error('Registrazione non disponibile in modalità demo');
+  }
   async setWalletPayer(): Promise<WalletView> {
     return this.getWallet();
   }

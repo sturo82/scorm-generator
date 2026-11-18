@@ -25,6 +25,7 @@ import { IntegrationModule } from './integration/integration.module.js';
 import { SsoModule } from './sso/sso.module.js';
 import { EcosystemModule } from './ecosystem/ecosystem.module.js';
 import { BillingModule } from './billing/billing.module.js';
+import { SignupModule } from './signup/signup.module.js';
 import { SlidesModule } from './slides/slides.module.js';
 import { HealthController } from './health/health.controller.js';
 
@@ -58,7 +59,8 @@ import { HealthController } from './health/health.controller.js';
     SsoModule,
     EcosystemModule,
     BillingModule,
-    SlidesModule,
+    SignupModule,
+SlidesModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

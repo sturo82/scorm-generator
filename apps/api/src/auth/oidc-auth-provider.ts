@@ -110,7 +110,10 @@ export class OidcAuthProvider implements AuthProvider {
       throw new Error('Token OIDC privo di subject (sub)');
     }
     const companyTenant = this.resolveTenant(payload);
-    if (!companyTenant && !this.options.allowPersonal) {
+    // Lo spazio personale si apre solo con il segno esplicito di Manager: nessun tenant E ruolo PERSONAL.
+    // Un token senza tenant e senza quel ruolo (es. un utente di un altro prodotto) resta rifiutato.
+    const isPersonal = !companyTenant && this.options.allowPersonal === true && payload['custom:role'] === 'PERSONAL';
+    if (!companyTenant && !isPersonal) {
       throw new Error(`Token OIDC privo del claim tenant (${this.tenantClaims.join(' | ')})`);
     }
     const tenantId = companyTenant ?? personalTenantId(subject);

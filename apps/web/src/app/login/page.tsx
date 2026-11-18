@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { login } from '@/lib/auth';
 import { beginLogin, isOidcEnabled } from '@/lib/oidc';
+import { getApiClient } from '@/lib/api/client';
 
 /**
  * Pagina di login. Con NEXT_PUBLIC_AUTH_MODE=oidc avvia il flusso Authorization
@@ -21,7 +22,14 @@ export default function LoginPage() {
   // beginLogin() (SSO silenzioso grazie alla sessione di pool già attiva).
   const [autoSso, setAutoSso] = React.useState(false);
   const oidc = isOidcEnabled();
-
+  // Registrazione di un account personale: il link compare solo se è aperta.
+  const [signupOpen, setSignupOpen] = React.useState(false);
+  React.useEffect(() => {
+    getApiClient()
+      .getSignupConfig()
+      .then((c) => setSignupOpen(c.enabled))
+      .catch(() => setSignupOpen(false));
+  }, []);
   // "Torna indietro" dinamico: la destinazione dipende da dove si proviene.
   // Priorità: parametro ?return_to= (passato dalla piattaforma di origine) →
   // referrer esterno → home di K Coach. Solo URL assolute http(s) sono accettate
@@ -138,6 +146,14 @@ export default function LoginPage() {
               {oidc
                 ? 'Il token rilasciato dall’IdP viene validato dall’API via JWKS.'
                 : 'L’autenticazione reale (OIDC/SSO) si collega senza modifiche al dominio.'}
+            </p>
+          )}
+          {signupOpen && (
+            <p className="text-center text-xs text-muted-foreground">
+              Non hai un account aziendale?{' '}
+              <a href="/signup" className="font-medium underline" data-testid="signup-link">
+                Crea un account personale
+              </a>
             </p>
           )}
           <a
