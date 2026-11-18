@@ -52,4 +52,8 @@ export interface WalletView {
   personal: WalletBlock & { active: boolean };
   /** True se il wallet è abilitato sull'installazione (quindi l'utente può attivare quello personale). */
   personalAvailable: boolean;
+  /** True se l'utente lavora nel proprio spazio personale (senza company): paga sempre il wallet personale. */
+  personalSpace: boolean;
+  /** True se Stripe è in modalità di prova: le ricariche non sono reali. Assente se non ancora noto. */
+  stripeTestMode?: boolean;
 }

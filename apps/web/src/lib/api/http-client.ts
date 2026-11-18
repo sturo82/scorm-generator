@@ -360,7 +360,7 @@ export class HttpApiClient implements ApiClient {
     return this.request<WalletView>('/billing/payer', { method: 'PUT', body: JSON.stringify({ payer }) });
   }
   startWalletTopup(amountEur: number) {
-    return this.request<{ url: string }>('/billing/topup', { method: 'POST', body: JSON.stringify({ amountEur }) });
+    return this.request<{ url: string; testMode: boolean }>('/billing/topup', { method: 'POST', body: JSON.stringify({ amountEur }) });
   }
   quoteCredits(items: CreditQuoteItem[]) {
     return this.request<CreditQuoteView>('/billing/quote', { method: 'POST', body: JSON.stringify({ items }) });

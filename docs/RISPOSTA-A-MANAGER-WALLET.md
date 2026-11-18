@@ -180,3 +180,43 @@ La rigenerazione di clip pesa: ogni cambio di avatar o di pronuncia ripaga tutte
 7. **Attivazione per azienda:** `walletEnabled` è per installazione; decidiamo noi lato K Scorm quali aziende addebitare, con un nostro flag per azienda.
 8. **Azienda di prova `sportwig-dev`:** serve almeno un utente di quell'azienda che acceda a K Scorm tramite SSO (così l'azienda esiste anche da noi) e un saldo di test.
 9. **`features` nel self-register:** aggiorniamo l'elenco con i nomi sopra. Finché non sono prezzate, l'hold resta bloccato con `feature_not_priced`, come previsto.
+
+---
+
+# Richieste aggiuntive a Manager: wallet personale e spazio personale
+
+Recepito il contratto del wallet personale (`POST /wallet/personal`, `company_id` "p-…" da usare così
+com'è in holds, capture, release e `GET /wallet`, ricarica da K Scorm con `topup-session`). K Scorm
+ora lo supporta: ogni utente sceglie se pagare con il wallet dell'azienda o con il personale, e gli
+utenti senza company hanno uno **spazio personale** (un tenant individuale creato al primo accesso,
+sempre pagato dal wallet personale). Per completare e metterlo in sicurezza ci servono queste risposte.
+
+## 1. Chi può entrare senza company (sicurezza)
+Uno spazio personale si apre quando il token non ha `custom:tenant_id`. Oggi non c'è un controllo di
+«contratto» come per le company.
+- Qualunque utente del pool senza `custom:tenant_id` può avere uno spazio su K Scorm, o serve un segno
+  esplicito che l'utente è un account standalone ammesso (es. un claim `custom:account_type=personal`,
+  oppure una verifica `GET /entitlements?sub=<sub>`)? Preferiamo un segno esplicito, per non aprire K Scorm
+  agli utenti di altri prodotti.
+- Il token porta `email_verified`? Il wallet personale è legato a `sub` ed email: cosa succede se l'utente
+  cambia email?
+- K Scorm mette il suo spazio personale dietro un interruttore (`PERSONAL_SPACE_ENABLED`) finché non
+  avete risposto.
+
+## 2. Modalità di prova di Stripe
+- Potete aggiungere un campo `livemode` (booleano) alle risposte di `GET /wallet` e di
+  `POST /wallet/personal`, e al portale owner? K Scorm avvisa l'utente quando Stripe è in sandbox e oggi
+  lo capisce solo dall'indirizzo della sessione di pagamento (`cs_test_…`), cioè dopo il primo click.
+
+## 3. Movimenti e ricevute
+- Non c'è un elenco dei movimenti. Servirebbe, almeno per il wallet personale, un endpoint (es.
+  `GET /wallet/transactions?company_id=…`) con data, feature, `reference` e importo, per mostrare lo
+  storico in app. In alternativa un campo `last_topup_at` per capire quando una ricarica è arrivata.
+
+## 4. Cancellazione dello spazio personale
+- Se un utente chiede la cancellazione dei dati, K Scorm cancella lo spazio personale. Cosa fate del
+  wallet personale e del saldo residuo (rimborso, chiusura, mantenimento)?
+
+## 5. Regola per azienda
+- Una regola «questa azienda non ammette il wallet personale» non esiste. Se serve ai clienti, ve la
+  chiediamo come funzione nuova (la imposterebbe Manager e K Scorm la leggerebbe dal kit).

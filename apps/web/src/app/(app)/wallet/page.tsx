@@ -65,7 +65,16 @@ export default function WalletPage() {
   async function startTopup(amountEur: number) {
     try {
       window.sessionStorage.setItem(BEFORE_KEY, String(personal?.balance ?? 0));
-      const { url } = await topup.mutateAsync(amountEur);
+      const { url, testMode } = await topup.mutateAsync(amountEur);
+      // Stripe in prova: si avvisa prima di aprire la pagina di pagamento (non è una ricarica reale).
+      if (
+        testMode &&
+        !window.confirm(
+          'Stripe è in modalità di prova: la ricarica non è reale e non verrà addebitato nulla (usa la carta di prova 4242 4242 4242 4242). Continuare?',
+        )
+      ) {
+        return;
+      }
       window.location.assign(url);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
@@ -97,6 +106,12 @@ export default function WalletPage() {
         title="Wallet e crediti"
         description="Scegli quale wallet paga le generazioni e ricarica il tuo wallet personale."
       />
+      {w.stripeTestMode && (
+        <div className="mb-4 rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-900" role="status">
+          <strong>Pagamenti in modalità di prova.</strong> Stripe è ancora in sandbox: le ricariche non sono reali e non
+          addebitano nulla.
+        </div>
+      )}
       {ret === 'success' && (
         <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm" role="status">
           {waiting ? (
@@ -115,6 +130,7 @@ export default function WalletPage() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
+        {!w.personalSpace && (
         <WalletCard
           icon={<Building2 className="size-5" />}
           title="Wallet azienda"
@@ -141,12 +157,14 @@ export default function WalletPage() {
             </>
           )}
         </WalletCard>
+        )}
 
         <WalletCard
           icon={<UserRound className="size-5" />}
           title="Wallet personale"
           selected={w.payer === 'PERSONAL'}
           disabled={setPayer.isPending}
+          hideChoose={w.personalSpace}
           onChoose={() => void choose('PERSONAL')}
         >
           {w.personal.active ? (
@@ -193,6 +211,7 @@ function WalletCard({
   selected,
   disabled,
   unavailable,
+  hideChoose = false,
   onChoose,
   children,
 }: {
@@ -201,6 +220,8 @@ function WalletCard({
   selected: boolean;
   disabled: boolean;
   unavailable?: string;
+  /** Nello spazio personale il wallet è uno solo: niente scelta. */
+  hideChoose?: boolean;
   onChoose: () => void;
   children: React.ReactNode;
 }) {
@@ -210,7 +231,7 @@ function WalletCard({
         <CardTitle className="flex items-center gap-2 text-base">
           {icon} {title}
         </CardTitle>
-        {selected ? (
+        {hideChoose ? null : selected ? (
           <span className="rounded-full bg-primary px-2.5 py-0.5 text-xs font-semibold text-primary-foreground">Paga le generazioni</span>
         ) : (
           <Button size="sm" variant="outline" disabled={disabled} onClick={onChoose}>

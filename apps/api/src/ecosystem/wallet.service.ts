@@ -39,6 +39,8 @@ export interface WalletBalance {
   balance: number;
   available: number;
   currency?: string;
+  /** Se Manager lo espone: false = pagamenti Stripe in modalità di prova. */
+  livemode?: boolean;
 }
 
 /** Errore quando il wallet della company non ha crediti sufficienti. */

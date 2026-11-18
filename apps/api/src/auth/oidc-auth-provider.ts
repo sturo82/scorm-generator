@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from 'jose';
 import type { AuthProvider, VerifiedClaims } from './auth-provider.js';
+import { personalTenantId } from '../tenancy/personal-space.js';
 
 export interface OidcAuthProviderOptions {
   /** Issuer dell'IdP (claim `iss` atteso). */
@@ -39,6 +40,11 @@ export interface OidcAuthProviderOptions {
    * sempre `undefined`.
    */
   keyResolver?: JWTVerifyGetKey;
+  /**
+   * Se true, un token senza claim tenant non è rifiutato: l'utente lavora nel suo spazio personale
+   * (tenant derivato dal `sub`). Il guard decide se ammetterlo (wallet attivo, ecc.).
+   */
+  allowPersonal?: boolean;
 }
 
 const DEFAULT_TENANT_CLAIMS = ['custom:tenant_id', 'tenant_id'];
@@ -103,13 +109,15 @@ export class OidcAuthProvider implements AuthProvider {
     if (typeof subject !== 'string' || subject.length === 0) {
       throw new Error('Token OIDC privo di subject (sub)');
     }
-    const tenantId = this.resolveTenant(payload);
-    if (!tenantId) {
+    const companyTenant = this.resolveTenant(payload);
+    if (!companyTenant && !this.options.allowPersonal) {
       throw new Error(`Token OIDC privo del claim tenant (${this.tenantClaims.join(' | ')})`);
     }
+    const tenantId = companyTenant ?? personalTenantId(subject);
     return {
       subject,
       tenantId,
+      ...(companyTenant ? {} : { personal: true }),
       email: typeof payload.email === 'string' ? payload.email : undefined,
       ecoRole: this.resolveEcoRole(payload),
       raw: payload,

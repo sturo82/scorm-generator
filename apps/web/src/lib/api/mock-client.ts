@@ -681,12 +681,12 @@ export class MockApiClient implements ApiClient {
     };
   }
   async getWallet(): Promise<WalletView> {
-    return { enabled: false, payer: 'COMPANY', currency: 'CREDITS', canTopup: false, company: null, personal: { active: false }, personalAvailable: false };
+    return { enabled: false, payer: 'COMPANY', currency: 'CREDITS', canTopup: false, company: null, personal: { active: false }, personalAvailable: false, personalSpace: false };
   }
   async setWalletPayer(): Promise<WalletView> {
     return this.getWallet();
   }
-  async startWalletTopup(): Promise<{ url: string }> {
+  async startWalletTopup(): Promise<{ url: string; testMode: boolean }> {
     throw new Error('Ricarica non disponibile in modalità demo');
   }
   async quoteCredits(): Promise<CreditQuoteView> {

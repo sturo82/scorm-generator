@@ -32,6 +32,11 @@ export interface AppConfig {
     oidcTenantClaim?: string;
     /** OIDC: impone token_use ("access" | "id"), utile con Cognito. */
     oidcTokenUse?: 'access' | 'id';
+    /**
+     * Spazio personale: accetta utenti senza company (token privo del claim tenant) e li ospita in un
+     * tenant individuale pagato dal loro wallet personale. Richiede anche il wallet attivo.
+     */
+    personalSpaceEnabled: boolean;
   };
   /**
    * Integrazioni B2B (accesso macchina-a-macchina via OAuth2 client-credentials).
@@ -290,6 +295,7 @@ export function loadConfiguration(): AppConfig {
       oidcJwksUri: process.env['OIDC_JWKS_URI'],
       oidcTenantClaim: process.env['OIDC_TENANT_CLAIM'],
       oidcTokenUse: process.env['OIDC_TOKEN_USE'] as AppConfig['auth']['oidcTokenUse'],
+      personalSpaceEnabled: env('PERSONAL_SPACE_ENABLED', 'false') === 'true',
     },
     integration: {
       jwtSecret: env('INTEGRATION_JWT_SECRET', 'dev-insecure-integration-secret-change-me'),

@@ -10,6 +10,8 @@ export interface VerifiedClaims {
   /** Tenant a cui appartiene il token. */
   tenantId: string;
   email?: string;
+  /** True se l'utente non ha una company: il tenant è il suo spazio personale (derivato dal `sub`). */
+  personal?: boolean;
   /**
    * Ruolo d'ecosistema grezzo dal claim (`custom:eco_role`, fallback
    * `custom:role`/`role`), non ancora mappato sul ruolo interno. Usato dal JIT

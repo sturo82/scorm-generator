@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto';
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Inject,
   Injectable,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -15,6 +17,8 @@ import { AUTH_PROVIDER, type AuthProvider } from './auth-provider.js';
 import { AUTH_CONTEXT_KEY, type AuthContext } from './auth-context.js';
 import { IS_PUBLIC_KEY } from './public.decorator.js';
 import { setRequestPayer } from '../billing/payer-context.js';
+import { BillingService } from '../billing/billing.service.js';
+import { EcosystemSettingsService } from '../ecosystem/ecosystem-settings.service.js';
 
 interface IncomingRequest {
   headers: Record<string, string | string[] | undefined>;
@@ -38,6 +42,8 @@ export class AuthGuard implements CanActivate {
     private readonly prisma: PrismaService,
     private readonly userTokens: UserTokenService,
     private readonly entitlements: EntitlementService,
+    private readonly settings: EcosystemSettingsService,
+    private readonly billing: BillingService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -58,7 +64,7 @@ export class AuthGuard implements CanActivate {
     //  2) il provider configurato (dev/jwt/oidc).
     // Il token SSO si riconosce da un verify che va a buon fine con la sua chiave;
     // in caso contrario si ricade sul provider principale.
-    let claims: { subject: string; tenantId: string; email?: string; ecoRole?: string };
+    let claims: { subject: string; tenantId: string; email?: string; ecoRole?: string; personal?: boolean };
     const ssoClaims = this.tryVerifySsoToken(token);
     if (ssoClaims) {
       claims = ssoClaims;
@@ -75,8 +81,16 @@ export class AuthGuard implements CanActivate {
     // di verità) PRIMA di risolvere/creare l'utente, così il JIT non crea utenti
     // per company non abilitate. No-op se ENTITLEMENT_ENFORCE=off; in 'hard'
     // lancia 403; fail-open su errori infrastrutturali (vedi service).
-    await this.entitlements.assertCompanyEntitled(claims.tenantId);
-
+    const personal = claims.personal === true;
+    if (personal) {
+      // Spazio personale (utente senza company): non c'è un contratto da verificare, ma si lavora
+      // solo con il wallet attivo, perché le generazioni le paga l'utente col suo wallet personale.
+      if (!this.settings.walletEnabled) {
+        throw new ForbiddenException('Lo spazio personale non è ancora disponibile.');
+      }
+    } else {
+      await this.entitlements.assertCompanyEntitled(claims.tenantId);
+    }
     let user: {
       id: string;
       role: AuthContext['role'];
@@ -106,6 +120,7 @@ export class AuthGuard implements CanActivate {
         claims.subject,
         claims.email,
         claims.ecoRole,
+        personal,
       );
     }
 
@@ -123,9 +138,18 @@ export class AuthGuard implements CanActivate {
     request[AUTH_CONTEXT_KEY] = authContext;
     // Wallet che paga le generazioni di questa richiesta: quello personale se l'utente l'ha scelto
     // (id assegnato da Manager), altrimenti l'azienda (default, gestito da BillingService).
+    // Nello spazio personale paga sempre il wallet personale: l'id lo assegna Manager alla prima volta.
+    let personalWalletId = user.personalWalletId ?? undefined;
+    if (personal && !personalWalletId) {
+      try {
+        personalWalletId = await this.billing.ensurePersonalWallet(user.tenantId, user.id);
+      } catch {
+        throw new ServiceUnavailableException('Wallet personale momentaneamente non disponibile: riprova tra poco.');
+      }
+    }
     setRequestPayer(
-      user.walletPayer === 'PERSONAL' && user.personalWalletId
-        ? { companyId: user.personalWalletId, kind: 'personal' }
+      personalWalletId && (personal || user.walletPayer === 'PERSONAL')
+        ? { companyId: personalWalletId, kind: 'personal' }
         : undefined,
     );
     return true;
@@ -172,17 +196,23 @@ export class AuthGuard implements CanActivate {
     externalId: string,
     email: string | undefined,
     ecoRole: string | undefined,
+    personal = false,
   ) {
-    const role = mapEcoRoleToInternal(ecoRole);
+    // Nello spazio personale l'utente è l'unico del suo tenant, quindi ne è il titolare.
+    const role = personal ? 'OWNER' : mapEcoRoleToInternal(ecoRole);
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.current_tenant', ${tenantId}, true)`;
       const existingTenant = await tx.tenant.findUnique({ where: { id: tenantId } });
       if (!existingTenant) {
         // Company nuova (pilota/cliente interno): crea un piano di default.
         const plan = await tx.plan.create({
-          data: { tier: 'ENTERPRISE', limits: {}, featureFlags: {} },
+          data: personal
+            ? { tier: 'PREMIUM', limits: { maxUsers: 1, maxBrands: 3, maxKnowledgeMb: 500 }, featureFlags: {} }
+            : { tier: 'ENTERPRISE', limits: {}, featureFlags: {} },
         });
-        await tx.tenant.create({ data: { id: tenantId, name: tenantId, planId: plan.id } });
+        await tx.tenant.create({
+          data: { id: tenantId, name: personal ? (email ?? 'Spazio personale') : tenantId, planId: plan.id },
+        });
       }
       await tx.user.upsert({
         where: { tenantId_externalId: { tenantId, externalId } },
@@ -193,15 +223,15 @@ export class AuthGuard implements CanActivate {
           email: email ? email.toLowerCase() : `${externalId}@no-email.local`,
           displayName: email ?? 'Owner',
           role,
+          ...(personal ? { walletPayer: 'PERSONAL' } : {}),
         },
       });
     });
     return this.prisma.user.findUnique({
       where: { tenantId_externalId: { tenantId, externalId } },
-      select: { id: true, role: true, tenantId: true },
+      select: { id: true, role: true, tenantId: true, walletPayer: true, personalWalletId: true },
     });
   }
-
   /**
    * Prova a interpretare il bearer come token utente SSO (kind=user). Ritorna i
    * claim normalizzati se valido, altrimenti undefined (non è un token SSO o è

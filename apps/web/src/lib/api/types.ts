@@ -576,7 +576,7 @@ export interface ApiClient {
   /** Sceglie il wallet che paga le generazioni (azienda o personale). */
   setWalletPayer(payer: 'COMPANY' | 'PERSONAL'): Promise<WalletView>;
   /** Pagina di pagamento per ricaricare il wallet personale. */
-  startWalletTopup(amountEur: number): Promise<{ url: string }>;
+  startWalletTopup(amountEur: number): Promise<{ url: string; testMode: boolean }>;
   listAudit(): Promise<AuditEventView[]>;
 
   // Costi / pricing

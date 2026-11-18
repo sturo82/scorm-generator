@@ -22,7 +22,9 @@ export function AppHeader() {
   // Nome visibile del TENANT (sotto-brand): è il nome scelto in /settings/branding,
   // non l'id tecnico del tenant che arriva nella sessione. Fallback al nome app.
   const { data: branding } = useBranding();
-  const tenantLabel = branding?.appName?.trim() || APP_NAME;
+  const tenantLabel = session?.tenant.id.startsWith('personal-')
+    ? 'Spazio personale'
+    : branding?.appName?.trim() || APP_NAME;
 
   // Chiusura del drawer con Esc (accessibilità da tastiera).
   React.useEffect(() => {

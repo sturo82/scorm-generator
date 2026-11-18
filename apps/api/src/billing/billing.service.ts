@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { avatarFeature, type WalletView } from '@scorm/contracts';
 import type { AppConfig } from '../config/configuration.js';
@@ -11,6 +11,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service.js';
 import { TenantPrismaService } from '../tenancy/tenant-prisma.service.js';
 import { currentPayer, type Payer } from './payer-context.js';
+import { isPersonalTenant } from '../tenancy/personal-space.js';
 
 /** Voce di spesa: feature del listino e, per le feature a unità, le unità (elementi o minuti). */
 export interface BillItem {
@@ -62,6 +63,8 @@ const BILLED_CACHE_MS = 30_000;
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
   private readonly billedCache = new Map<string, { value: boolean; until: number }>();
+  /** Stripe in modalità di prova (sandbox): noto da `livemode` di Manager o dall'indirizzo di una sessione di pagamento. */
+  private stripeTest: boolean | undefined;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -223,12 +226,17 @@ export class BillingService {
       where: { id: userId, tenantId },
       select: { walletPayer: true, personalWalletId: true },
     });
-    const payer: 'COMPANY' | 'PERSONAL' = user?.walletPayer === 'PERSONAL' && user.personalWalletId ? 'PERSONAL' : 'COMPANY';
-    const companyBilled = walletOn && (await this.companyBilled(tenantId));
+    // Nello spazio personale non c'è un wallet aziendale: paga sempre quello personale.
+    const personalSpace = isPersonalTenant(tenantId);
+    const payer: 'COMPANY' | 'PERSONAL' =
+      personalSpace || (user?.walletPayer === 'PERSONAL' && user.personalWalletId) ? 'PERSONAL' : 'COMPANY';
+    const companyBilled = !personalSpace && walletOn && (await this.companyBilled(tenantId));
     const [companyBal, personalBal] = await Promise.all([
       companyBilled ? this.wallet.getBalance(tenantId) : null,
       walletOn && user?.personalWalletId ? this.wallet.getBalance(user.personalWalletId) : null,
     ]);
+    const livemode = [companyBal, personalBal].find((b) => typeof b?.livemode === 'boolean')?.livemode;
+    if (typeof livemode === 'boolean') this.stripeTest = !livemode;
     const current = payer === 'PERSONAL' ? personalBal : companyBal;
     return {
       enabled: walletOn && (payer === 'PERSONAL' || companyBilled),
@@ -248,31 +256,40 @@ export class BillingService {
         available: personalBal?.available,
       },
       personalAvailable: walletOn,
+      personalSpace,
+      stripeTestMode: this.stripeTest,
     };
   }
 
   /** Cambia il wallet che paga le generazioni dell'utente; il personale si attiva alla prima scelta. */
   async setPayer(tenantId: string, userId: string, kind: 'COMPANY' | 'PERSONAL'): Promise<void> {
-    if (kind === 'PERSONAL') await this.ensurePersonalWallet(tenantId, userId);
+    if (kind === 'COMPANY' && isPersonalTenant(tenantId)) {
+      throw new BadRequestException("Nello spazio personale paga sempre il wallet personale.");
+    }
+if (kind === 'PERSONAL') await this.ensurePersonalWallet(tenantId, userId);
     await this.tenantPrisma.runInTenant(tenantId, (tx) =>
       tx.user.updateMany({ where: { id: userId, tenantId }, data: { walletPayer: kind } }),
     );
   }
 
   /** Pagina di pagamento Stripe per ricaricare il wallet personale dell'utente. */
-  async startPersonalTopup(tenantId: string, userId: string, amountEur: number): Promise<{ url: string }> {
+  async startPersonalTopup(tenantId: string, userId: string, amountEur: number): Promise<{ url: string; testMode: boolean }> {
     const companyId = await this.ensurePersonalWallet(tenantId, userId);
     const web = this.config.get('webAppUrl', { infer: true }).replace(/\/+$/, '');
-    return this.wallet.createPersonalTopupSession({
+    const session = await this.wallet.createPersonalTopupSession({
       companyId,
       amountEur,
       successUrl: `${web}/wallet?topup=success`,
       cancelUrl: `${web}/wallet?topup=cancel`,
     });
+    // Le sessioni di Stripe in prova hanno un id che inizia con cs_test_ (cs_live_ in produzione).
+    const testMode = /\/cs_test_/.test(session.url);
+    if (testMode || /\/cs_live_/.test(session.url)) this.stripeTest = testMode;
+    return { url: session.url, testMode };
   }
 
   /** company_id del wallet personale: lo chiede a Manager la prima volta e lo salva (mai ricostruito da noi). */
-  private async ensurePersonalWallet(tenantId: string, userId: string): Promise<string> {
+  async ensurePersonalWallet(tenantId: string, userId: string): Promise<string> {
     const user = await this.prisma.user.findFirst({
       where: { id: userId, tenantId },
       select: { externalId: true, email: true, personalWalletId: true },

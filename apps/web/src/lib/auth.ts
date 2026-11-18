@@ -90,7 +90,9 @@ export function loginWithOidc(args: {
   const str = (v: unknown, fallback: string) => (typeof v === 'string' && v ? v : fallback);
   // Cognito espone i custom attribute come `custom:tenant_id` / `custom:role`;
   // altri IdP possono usare claim piatti. Proviamo entrambe le forme.
-  const tenantId = str(claims['custom:tenant_id'], str(claims.tenant_id, 'tenant'));
+  // Senza company (utente personale) il tenant è il suo spazio personale, derivato dal `sub` come fa l'API.
+  const personal = !str(claims['custom:tenant_id'], str(claims.tenant_id, ''));
+  const tenantId = personal ? `personal-${str(claims.sub, 'u-oidc')}` : str(claims['custom:tenant_id'], str(claims.tenant_id, 'tenant'));
   const role = str(claims['custom:role'], str(claims.role, 'OWNER'));
   const session: DevSession = {
     token: bearerToken,
@@ -102,7 +104,7 @@ export function loginWithOidc(args: {
     },
     tenant: {
       id: tenantId,
-      name: str(claims.tenant_name, tenantId),
+      name: personal ? 'Spazio personale' : str(claims.tenant_name, tenantId),
     },
   };
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(session));

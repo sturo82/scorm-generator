@@ -62,6 +62,7 @@ import { RolesGuard } from './roles.guard.js';
               jwksUri,
               tenantClaim,
               expectedTokenUse: auth.oidcTokenUse,
+              allowPersonal: auth.personalSpaceEnabled,
             });
           }
           default:
