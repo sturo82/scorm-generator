@@ -60,8 +60,8 @@ const SYSTEM_BASE =
  */
 export const PROMPT_LIMITS = {
   title: 300,
-  item: 500,
-  items: 30,
+  item: 300,
+  items: 15,
   audience: 1000,
   focus: 2000,
   tone: 500,

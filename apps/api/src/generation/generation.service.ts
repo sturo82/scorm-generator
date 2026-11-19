@@ -14,6 +14,8 @@ import {
   lessonContentInputHash,
   lessonImageCap,
   GENERATION_MAX_ATTEMPTS,
+  GENERATION_LIMITS,
+  lessonGenerationLimits,
   type LessonFormat,
   type CourseOutline as CourseOutlineType,
   type Block as BlockType,
@@ -28,6 +30,7 @@ import { ModulesService } from '../courses/modules.service.js';
 import { MediaService } from './media.service.js';
 import { capLessonImages } from './image-cap.js';
 import { enforceOutlinePlan } from './outline-plan.js';
+import { fitContext } from './fit-context.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { BillingService, type BillItem, type Reservation } from '../billing/billing.service.js';
 import { currentPayer, runWithPayer, type Payer } from '../billing/payer-context.js';
@@ -35,7 +38,6 @@ import { RetrievalService } from '../knowledge/retrieval.service.js';
 import { buildRetrievalQuery } from '../knowledge/query-builder.js';
 import {
   assessmentPrompt,
-  formatContext,
   lessonContentPrompt,
   outlinePrompt,
   systemPrompt,
@@ -432,6 +434,13 @@ export class GenerationService {
     return b?.success ? b.data.autoGenerateImages !== false : true;
   }
 
+  /** Segnala (nei log) una chiamata che ha superato il limite di ingresso del pacchetto: la stima va rivista. */
+  private warnIfOverInput(what: string, result: LLMResult, maxInputTokens: number): void {
+    if (result.usage.inputTokens > maxInputTokens) {
+      this.logger.warn(`Ingresso oltre il limite del pacchetto (${what}): ${result.usage.inputTokens} > ${maxInputTokens} token`);
+    }
+  }
+
   /** Formato di una lezione del corso. */
   private async lessonFormatOf(courseId: string, lessonId: string): Promise<LessonFormat> {
     const l = await this.prisma.lesson.findFirst({
@@ -549,15 +558,19 @@ export class GenerationService {
       documentIds: brief.knowledgeDocIds,
     });
 
+    // Limiti del pacchetto "struttura" (ingresso stimato e uscita): il prezzo è calcolato su questi.
+    const limits = GENERATION_LIMITS.structure;
+    const system = systemPrompt(voice);
+    const fitted = fitContext((context) => outlinePrompt(brief, context), retrieved.chunks, { system, schema: outlineJsonSchema }, limits.inputTokens);
+    if (fitted.droppedChunks > 0) this.logger.log(`Outline corso ${courseId}: ${fitted.droppedChunks} estratti di knowledge tolti per il limite di ingresso`);
     const result = await this.llm.generate({
-      system: systemPrompt(voice),
-      messages: [{ role: 'user', content: outlinePrompt(brief, formatContext(retrieved.chunks)) }],
+      system,
+      messages: [{ role: 'user', content: fitted.content }],
       schema: outlineJsonSchema as Record<string, unknown>,
       temperature: 0.4,
-      // Spazio ampio: Claude Sonnet 4.6 è più verboso e con 4000 troncava il
-      // JSON tool-use (stop=max_tokens) lasciando `modules` incompleto/assente.
-      maxTokens: 8000,
+      maxTokens: limits.outputTokens,
     });
+    this.warnIfOverInput('outline', result, limits.inputTokens);
     // La struttura si riporta al piano del brief (lezioni, moduli, formati): è il preventivo del corso.
     const planned = enforceOutlinePlan(CourseOutline.parse(JSON.parse(result.text)), brief);
     if (planned.changes.length > 0) this.logger.log(`Outline corso ${courseId}: ${planned.changes.join('; ')}`);
@@ -654,35 +667,41 @@ export class GenerationService {
     // NON DETERMINISTICA: occasionalmente il modello produce output malformato
     // (JSON non parsabile, blocchi avvolti in stringa, 0 block, troncamento).
     // Questi errori sono RECUPERABILI: un nuovo tentativo quasi sempre riesce.
+    // Limiti del pacchetto lezione per formato (ingresso stimato e uscita): il prezzo è calcolato su questi.
+    const limits = lessonGenerationLimits(lessonFormat);
+    const system = systemPrompt(voice);
+    // Lo schema di un singolo Block guida il modello; ne richiediamo un array
+    // avvolgendolo in un oggetto per la generazione strutturata.
+    const schema = wrapArraySchema(blockJsonSchema, 'blocks');
+    const fitted = fitContext(
+      (context) =>
+        lessonContentPrompt({
+          courseTitle: course.title,
+          moduleTitle: lesson.module.title,
+          lessonTitle: lesson.title,
+          objectives,
+          language: course.language,
+          context,
+          toneInstruction,
+          videoFirst,
+          courseFocus: brief?.success ? brief.data.courseFocus : undefined,
+          format: promptFormat,
+          maxImages: lessonImageCap(lessonFormat),
+        }),
+      retrieved.chunks,
+      { system, schema },
+      limits.inputTokens,
+    );
+    if (fitted.droppedChunks > 0) this.logger.log(`Lezione ${lessonId}: ${fitted.droppedChunks} estratti di knowledge tolti per il limite di ingresso`);
     const attempt = async (temperature: number): Promise<{ blocks: BlockType[]; result: LLMResult }> => {
       const result = await this.llm.generate({
-        system: systemPrompt(voice),
-        messages: [
-          {
-            role: 'user',
-            content: lessonContentPrompt({
-              courseTitle: course.title,
-              moduleTitle: lesson.module.title,
-              lessonTitle: lesson.title,
-              objectives,
-              language: course.language,
-              context: formatContext(retrieved.chunks),
-              toneInstruction,
-              videoFirst,
-              courseFocus: brief?.success ? brief.data.courseFocus : undefined,
-              format: promptFormat,
-              maxImages: lessonImageCap(lessonFormat),
-            }),
-          },
-        ],
-        // Lo schema di un singolo Block guida il modello; ne richiediamo un array
-        // avvolgendolo in un oggetto per la generazione strutturata.
-        schema: wrapArraySchema(blockJsonSchema, 'blocks'),
+        system,
+        messages: [{ role: 'user', content: fitted.content }],
+        schema,
         temperature,
-        // Contenuti didattici approfonditi: ampio spazio di output per evitare
-        // troncamenti del JSON tool-use (Claude Sonnet 4.5 supporta output grandi).
-        maxTokens: 16000,
+        maxTokens: limits.outputTokens,
       });
+      this.warnIfOverInput(`lesson ${lessonFormat}`, result, limits.inputTokens);
       if (result.finishReason === 'max_tokens') {
         throw new Error('Generazione contenuti troncata (limite token)');
       }
@@ -1068,29 +1087,25 @@ export class GenerationService {
     // Un singolo tentativo: genera e valida l'assessment. Come per i contenuti,
     // la chiamata è non deterministica e può produrre JSON malformato o non
     // conforme (ZodError): errori RECUPERABILI con un nuovo tentativo.
+    // Limiti del pacchetto test (ingresso stimato e uscita): il prezzo è calcolato su questi.
+    const limits = GENERATION_LIMITS.test;
+    const system = systemPrompt(voice);
+    const fitted = fitContext(
+      (context) => assessmentPrompt({ courseTitle: course.title, scope, focus, language: course.language, context }),
+      retrieved.chunks,
+      { system, schema: assessmentJsonSchema },
+      limits.inputTokens,
+    );
+    if (fitted.droppedChunks > 0) this.logger.log(`Test ${scope}: ${fitted.droppedChunks} estratti di knowledge tolti per il limite di ingresso`);
     const attempt = async (temperature: number): Promise<{ assessment: AssessmentType; result: LLMResult }> => {
       const result = await this.llm.generate({
-        system: systemPrompt(voice),
-        messages: [
-          {
-            role: 'user',
-            content: assessmentPrompt({
-              courseTitle: course.title,
-              scope,
-              focus,
-              language: course.language,
-              context: formatContext(retrieved.chunks),
-            }),
-          },
-        ],
+        system,
+        messages: [{ role: 'user', content: fitted.content }],
         schema: assessmentJsonSchema as Record<string, unknown>,
         temperature,
-        // Il test FINALE copre l'intero corso ed è il più lungo: con 8000 token
-        // il JSON tool-use veniva troncato (finishReason=max_tokens) e scartato.
-        // 16000 (come i contenuti lezione) dà margine sufficiente; gli intermedi
-        // restano ben sotto il limite.
-        maxTokens: 16000,
+        maxTokens: limits.outputTokens,
       });
+      this.warnIfOverInput(`test ${scope}`, result, limits.inputTokens);
       if (result.finishReason === 'max_tokens') {
         throw new Error('Generazione test troncata (limite token)');
       }

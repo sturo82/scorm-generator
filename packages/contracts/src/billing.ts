@@ -118,6 +118,39 @@ export interface SlideImportEstimateView {
   withKnowledge: { minutes: number; lines: SlideEstimateLine[]; total: number; priced: boolean };
 }
 
+/**
+ * Limiti di token delle chiamate AI dei pacchetti (ingresso stimato prima della chiamata, uscita
+ * come `maxTokens`). Sono i limiti su cui Manager ha calcolato i prezzi: alzarli richiede di
+ * rialzare il listino. Massimi osservati in produzione: lezione 11.298 in / 12.292 out, pillola
+ * 2.629 out, pillola interattiva 4.051 out, test 6.295 in / 7.798 out, struttura 5.144 in / 5.225 out.
+ */
+export const GENERATION_LIMITS = {
+  structure: { inputTokens: 8_000, outputTokens: 7_000 },
+  test: { inputTokens: 9_000, outputTokens: 10_000 },
+  lesson: {
+    standard: { inputTokens: 16_000, outputTokens: 13_000 },
+    pillola: { inputTokens: 16_000, outputTokens: 6_000 },
+    pillola_interattiva: { inputTokens: 16_000, outputTokens: 8_000 },
+    video_first: { inputTokens: 16_000, outputTokens: 10_000 },
+  },
+} as const;
+
+/** Limiti della lezione per formato (formati sconosciuti: lezione standard). */
+export function lessonGenerationLimits(format: string | null | undefined): { inputTokens: number; outputTokens: number } {
+  return GENERATION_LIMITS.lesson[(format ?? 'standard') as keyof typeof GENERATION_LIMITS.lesson] ?? GENERATION_LIMITS.lesson.standard;
+}
+
+/**
+ * Stima per eccesso dei token di ingresso di una chiamata: il testo (system e messaggio) a 2,5
+ * caratteri per token, lo schema JSON dello strumento a 2 (il JSON è più denso), più 500 token di
+ * istruzioni che il provider aggiunge per l'uso degli strumenti. Tarata sui consumi reali.
+ */
+export function estimateInputTokens(text: Array<string | undefined>, schema?: object): number {
+  const textChars = text.reduce<number>((n, p) => n + (p?.length ?? 0), 0);
+  const schemaChars = schema ? JSON.stringify(schema).length : 0;
+  return Math.ceil(textChars / 2.5 + schemaChars / 2 + (schema ? 500 : 0));
+}
+
 /** Tentativi massimi di generazione di una lezione o di un test (anche questo entra nel caso peggiore). */
 export const GENERATION_MAX_ATTEMPTS = 2;
 
