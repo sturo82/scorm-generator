@@ -8,9 +8,12 @@ import { Plus, Sparkles, Wand2, Trash2, Pencil, Image as ImageIcon, Volume2, Vid
 import type { Block } from '@scorm/contracts';
 import {
   DEFAULT_HEYGEN_ENGINE,
+  MEDIA_CAPS,
+  avatarFeature,
   heygenCustomerPricePerMinUsd,
   heygenAvatarTypeLabel,
 } from '@scorm/contracts';
+import { CreditCost } from '@/components/ui/credit-cost';
 import { cn } from '@/lib/cn';
 import type { ModuleView, LessonView } from '@/lib/api/types';
 import { Button } from '@/components/ui/button';
@@ -59,6 +62,8 @@ import {
   useGenerateAssessment,
   useRepairAssessments,
   useExistingCourseEstimate,
+  useLessonEstimate,
+  useWallet,
   qk,
 } from '@/lib/api/hooks';
 import { AiWorking, AiWorkingInline } from '@/components/courses/ai-working';
@@ -444,6 +449,7 @@ function AssessmentManager({
   highlight?: boolean;
 }) {
   const assessments = useAssessments(courseId);
+  const estimate = useExistingCourseEstimate(courseId);
   const del = useDeleteAssessment(courseId);
   const gen = useGenerateAssessment(courseId);
   const repair = useRepairAssessments(courseId);
@@ -575,6 +581,13 @@ function AssessmentManager({
             >
               <Wand2 className="size-4" />
               {batchRunning ? 'Generazione…' : `Genera ${readyCount} pronti`}
+              {!batchRunning && (
+                <CreditsTag
+                  value={estimate.data?.prices.test === null || estimate.data?.prices.test === undefined ? estimate.data?.prices.test : estimate.data.prices.test * readyCount}
+                  billed={estimate.data?.billed}
+                  prefix=" · max "
+                />
+              )}
             </Button>
           )}
         </div>
@@ -657,6 +670,7 @@ function AssessmentManager({
                 >
                   <Wand2 className="size-4" />
                   {`Intermedio: ${m.title.length > 24 ? m.title.slice(0, 24) + '…' : m.title}`}
+                  <CreditsTag value={estimate.data?.prices.test} billed={estimate.data?.billed} />
                 </Button>
               );
             })}
@@ -674,6 +688,7 @@ function AssessmentManager({
             >
               <Wand2 className="size-4" />
               {generating ? 'Generazione…' : 'Test finale'}
+              {!generating && <CreditsTag value={estimate.data?.prices.test} billed={estimate.data?.billed} />}
             </Button>
           </div>
         </div>
@@ -864,6 +879,7 @@ function LessonCard({
   // Dialog di generazione video avatar (HeyGen): block target su cui generare.
   const [videoGenTargetBlock, setVideoGenTargetBlock] = React.useState<string | null>(null);
   const genConceptVideo = useGenerateConceptVideo(courseId);
+  const lessonEstimate = useLessonEstimate(courseId, lesson.id, lesson.blocks.length > 0);
   const genScenesCartoon = useGenerateScenesCartoon(courseId);
   // jobId locale per la generazione del singolo contenuto.
   const [localJobId, setLocalJobId] = React.useState<string | null>(null);
@@ -1329,6 +1345,11 @@ function LessonCard({
                       }}
                     >
                       <Clapperboard className="size-4 text-primary" />
+                      <CreditsTag
+                        value={lessonEstimate.data?.cartoon?.scenes.find((s) => s.blockId === b.id && s.sceneId === firstPendingCartoonNodeId(b))?.credits}
+                        billed={lessonEstimate.data?.billed}
+                        prefix=" "
+                      />
                     </Button>
                   )}
                   {/* Pillole: genera i mini-cartoon di TUTTE le scene con video
@@ -1358,6 +1379,11 @@ function LessonCard({
                       }}
                     >
                       <Film className="size-4 text-primary" />
+                      <CreditsTag
+                        value={sumOrNull(lessonEstimate.data?.cartoon?.scenes.filter((s) => s.blockId === b.id).slice(0, MEDIA_CAPS.interactiveMaxScenes).map((s) => s.credits))}
+                        billed={lessonEstimate.data?.billed}
+                        prefix=" "
+                      />
                     </Button>
                   )}
                   <Button
@@ -1409,6 +1435,9 @@ function LessonCard({
             <Button size="sm" variant="outline" onClick={handleGenerateImages} disabled={genImages.isPending}>
               <ImageIcon className="size-4" />
               {genImages.isPending ? <AiWorkingInline label="Immagini…" /> : 'Genera immagini'}
+              {!genImages.isPending && lessonEstimate.data && lessonEstimate.data.images.missing > 0 && (
+                <CreditsTag value={lessonEstimate.data.images.missingCredits} billed={lessonEstimate.data.billed} />
+              )}
             </Button>
             {imageBlocks.length > 0 && (
               <Button
@@ -1430,6 +1459,9 @@ function LessonCard({
             >
               <Volume2 className="size-4" />
               {genNarration.isPending ? <AiWorkingInline label="Narrazione…" /> : 'Genera narrazione'}
+              {!genNarration.isPending && (
+                <CreditsTag value={lessonEstimate.data?.narration?.credits} billed={lessonEstimate.data?.billed} />
+              )}
             </Button>
             <Button
               size="sm"
@@ -1440,6 +1472,7 @@ function LessonCard({
             >
               <Volume2 className="size-4 text-primary" />
               Voce HD
+              <CreditsTag value={lessonEstimate.data?.narration?.credits} billed={lessonEstimate.data?.billed} />
             </Button>
             {videoBlock && (
               <>
@@ -1901,6 +1934,7 @@ function GenerateAvatarVideoDialog({
   // Sorgente avatar: 'mine' (account) o 'stock' (catalogo HeyGen). Ricerca
   // avatar e voci con debounce (interrogano il server, paginato).
   const [avatarSource, setAvatarSource] = React.useState<'mine' | 'stock'>('stock');
+  const billed = useWallet().data?.enabled === true;
   const [avatarQuery, setAvatarQuery] = React.useState('');
   const avatarQ = useDebounced(avatarQuery, 350);
   const avatars = useVideoAvatars(courseId, open, { source: avatarSource, q: avatarQ || undefined });
@@ -2215,7 +2249,15 @@ function GenerateAvatarVideoDialog({
                   </p>
                 </div>
                 <span className="shrink-0 rounded bg-primary/10 px-2 py-1 text-sm font-semibold text-primary">
-                  ${pricePerMin.toFixed(2)}/min
+                  {billed ? (
+                    <CreditCost
+                      prefix=""
+                      suffix=" (fino a 1 min)"
+                      items={[{ feature: avatarFeature(DEFAULT_HEYGEN_ENGINE, billingType), units: MEDIA_CAPS.avatarVideoMaxMinutes }]}
+                    />
+                  ) : (
+                    `$${pricePerMin.toFixed(2)}/min`
+                  )}
                 </span>
               </div>
             );
@@ -2359,4 +2401,10 @@ function StatusControls({
       )}
     </div>
   );
+}
+
+/** Somma di prezzi; null se uno manca (non prezzato). */
+function sumOrNull(vals: Array<number | null> | undefined): number | null | undefined {
+  if (!vals || vals.length === 0) return undefined;
+  return vals.some((v) => v === null) ? null : vals.reduce<number>((n, v) => n + (v ?? 0), 0);
 }

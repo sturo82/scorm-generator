@@ -19,7 +19,7 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: cfg.get('corsOrigins', { infer: true }),
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-correlation-id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-correlation-id', 'x-credit-confirm'],
   });
 
   // Validazione input globale (Requisito 12.2).

@@ -54,6 +54,8 @@ useSlideClips,
   useVideoAvatars,
   useVideoVoices,
   useWallet,
+  useCreditQuote,
+  useSlideImportEstimate,
 } from '@/lib/api/hooks';
 
 const TEXTAREA =
@@ -396,6 +398,7 @@ function StepScripts({
 }) {
   const toast = useToast();
   const generate = useGenerateSlideScripts(courseId, importId);
+  const slideEstimate = useSlideImportEstimate(courseId, importId, false, !doc);
   const save = useSaveSlideScripts(courseId, importId);
   const { library } = React.useContext(LibraryContext);
   const courseDocs = useKnowledge('COURSE', courseId);
@@ -542,6 +545,9 @@ function StepScripts({
               label={kbIds.size ? 'Confronto slide e knowledge…' : 'Scrivo i copioni…'}
               hint="Gira sul server e richiede uno o due minuti: puoi chiudere la finestra e tornare più tardi."
             />
+          )}
+          {!generating && slideEstimate.data?.billed && (
+            <SlideEstimateCard data={kbIds.size ? slideEstimate.data.withKnowledge : slideEstimate.data.slidesOnly} slides={slideEstimate.data.slides} />
           )}
           <Button onClick={handleGenerate} disabled={generating}>
             {generate.isPending ? (
@@ -983,6 +989,10 @@ const avatars = useVideoAvatars(courseId, !started, { source });
   }, [avatarType, engine]);
 
   const estimate = useSlideClipsEstimate(courseId, importId, engine, avatarType, !started, changing);
+  // Prezzo al minuto di ogni qualità in crediti (al cliente non si mostrano i costi del fornitore).
+  const engineOptions = HEYGEN_ENGINES.filter((e) => heygenEngineSupports(e.id, avatarType));
+  const engineQuote = useCreditQuote(engineOptions.map((e) => ({ feature: avatarFeature(e.id, avatarType), units: 1 })));
+  const engineCredits = (id: string) => engineQuote.data?.lines.find((l) => l.feature === avatarFeature(id, avatarType))?.credits;
   const selected = avatarItems.find((a) => a.id === avatarId);
   // Il tipo (e quindi la tariffa) segue l'avatar scelto: digital twin, da foto o del catalogo.
   React.useEffect(() => {
@@ -1109,9 +1119,14 @@ const avatars = useVideoAvatars(courseId, !started, { source });
             <label className="space-y-1 text-sm">
               <span className="font-medium">Qualità (engine)</span>
               <select className={SELECT} value={engine} onChange={(e) => setEngine(e.target.value as typeof engine)}>
-                {HEYGEN_ENGINES.filter((e) => heygenEngineSupports(e.id, avatarType)).map((e) => (
+                {engineOptions.map((e) => (
                   <option key={e.id} value={e.id}>
-                    {e.label} · ${heygenCostPerMinUsd(e.id, avatarType).toFixed(2)}/min
+                    {e.label} ·{' '}
+                    {billed
+                      ? engineCredits(e.id) != null
+                        ? `${engineCredits(e.id)!.toLocaleString('it-IT')} crediti/min`
+                        : 'prezzo n.d.'
+                      : `$${heygenCostPerMinUsd(e.id, avatarType).toFixed(2)}/min`}
                   </option>
                 ))}
               </select>
@@ -2183,4 +2198,49 @@ function apiErrorMessage(err: unknown): string {
   }
   const m = /"message"\s*:\s*"((?:[^"\\]|\\.)*)/.exec(raw);
   return (m ? m[1]!.replace(/\\"/g, '"') : raw).slice(0, 400);
+}
+
+const SLIDE_LINE_LABEL: Record<string, string> = {
+  scripts: 'Copioni',
+  sections: 'Proposta delle sezioni',
+  clips: 'Clip con avatar',
+  render: 'Montaggio del video',
+  summaries: 'Riepiloghi',
+  quizzes: 'Quiz',
+};
+
+/** Preventivo massimo del video da slide (prima dei copioni). */
+function SlideEstimateCard({
+  data,
+  slides,
+}: {
+  data: { minutes: number; lines: Array<{ kind: string; quantity: number; credits: number | null }>; total: number; priced: boolean };
+  slides: number;
+}) {
+  const fmt = (n: number) => n.toLocaleString('it-IT');
+  return (
+    <div className="rounded-lg border bg-card p-3 text-sm">
+      <div className="mb-1.5 flex items-center justify-between gap-3">
+        <p className="font-medium">Preventivo del video</p>
+        <p>
+          <strong>{data.priced ? fmt(data.total) : '—'}</strong> <span className="text-xs text-muted-foreground">crediti al massimo</span>
+        </p>
+      </div>
+      <ul className="space-y-0.5 text-xs text-muted-foreground">
+        {data.lines.map((l) => (
+          <li key={l.kind} className="flex justify-between gap-3">
+            <span>
+              {SLIDE_LINE_LABEL[l.kind] ?? l.kind}
+              {l.kind === 'clips' || l.kind === 'render' ? ` (fino a ${fmt(l.quantity)} min)` : ''}
+            </span>
+            <span className="font-mono text-foreground">{l.credits === null ? 'n.d.' : fmt(l.credits)}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Massimo per {slides} slide con copioni della lunghezza prevista e avatar di qualità base. Dopo i copioni vedrai il
+        prezzo esatto delle clip; qualità superiori o copioni più lunghi costano di più e te lo chiediamo prima.
+      </p>
+    </div>
+  );
 }

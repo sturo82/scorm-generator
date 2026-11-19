@@ -5,6 +5,7 @@ import { AppHeader } from '@/components/app/app-header';
 import { AppVersion } from '@/components/app/app-version';
 import { UpdatingOverlay } from '@/components/app/updating-overlay';
 import { InsufficientCreditsDialog } from '@/components/app/insufficient-credits-dialog';
+import { OverBudgetDialog } from '@/components/app/over-budget-dialog';
 import { DeployStatusProvider } from '@/lib/use-deploy-status';
 
 /** Layout dell'area applicativa autenticata: sidebar desktop + header + contenuto. */
@@ -16,6 +17,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Overlay di cortesia durante gli aggiornamenti dell'API (deploy). */}
         <UpdatingOverlay />
         <InsufficientCreditsDialog />
+        <OverBudgetDialog />
         {/* Skip-link (WCAG 2.4.1): visibile solo al focus da tastiera, porta
             direttamente al contenuto principale saltando sidebar e header. */}
         <a

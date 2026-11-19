@@ -38,3 +38,54 @@ export function notifyInsufficientCredits(bodyText: string): void {
   lastAt = Date.now();
   window.dispatchEvent(new CustomEvent<InsufficientCreditsDetail>(INSUFFICIENT_CREDITS_EVENT, { detail }));
 }
+
+/**
+ * Evento globale «fuori preventivo»: l'API risponde 409 `over_budget` quando una spesa supererebbe
+ * il budget del corso. L'http-client chiede conferma con il dialog nel layout e, se l'utente
+ * conferma, ripete la stessa richiesta autorizzando i crediti in più.
+ */
+export const OVER_BUDGET_EVENT = 'scorm:over-budget';
+
+export interface OverBudgetDetail {
+  /** Crediti oltre il budget. */
+  over: number;
+  budget: number;
+  committed: number;
+  /** Costo massimo dell'operazione. */
+  cost: number;
+  resolve: (confirmed: boolean) => void;
+}
+
+/** Ritorna i dati del 409 se è un "fuori preventivo", altrimenti null. */
+export function parseOverBudget(bodyText: string): Omit<OverBudgetDetail, 'resolve'> | null {
+  try {
+    const b = JSON.parse(bodyText) as Record<string, unknown>;
+    if (b.error !== 'over_budget') return null;
+    const n = (v: unknown) => (typeof v === 'number' ? v : 0);
+    return { over: n(b.over), budget: n(b.budget), committed: n(b.committed), cost: n(b.cost) };
+  } catch {
+    return null;
+  }
+}
+
+let declinedAt = 0;
+
+/** True se l'utente ha appena rifiutato una spesa fuori preventivo (per non mostrare un toast d'errore). */
+export function overBudgetJustDeclined(windowMs = 2500): boolean {
+  return Date.now() - declinedAt < windowMs;
+}
+
+/** Chiede conferma all'utente; senza dialog montato (es. fuori dall'app) rifiuta. */
+export function confirmOverBudget(detail: Omit<OverBudgetDetail, 'resolve'>): Promise<boolean> {
+  if (typeof window === 'undefined') return Promise.resolve(false);
+  return new Promise((resolve) => {
+    let answered = false;
+    const done = (ok: boolean) => {
+      if (answered) return;
+      answered = true;
+      if (!ok) declinedAt = Date.now();
+      resolve(ok);
+    };
+    window.dispatchEvent(new CustomEvent<OverBudgetDetail>(OVER_BUDGET_EVENT, { detail: { ...detail, resolve: done } }));
+  });
+}

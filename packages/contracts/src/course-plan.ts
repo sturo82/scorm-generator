@@ -63,6 +63,22 @@ export function plannedLessonFormats(b: Partial<PlanBrief>): Array<LessonFormat 
 }
 
 /**
+ * Componenti del corso scelte nel preventivo, oltre a struttura, lezioni, immagini e test. Si
+ * generano dopo, con un clic, ma il loro massimo entra nel budget del corso.
+ */
+export const CourseEstimateOptions = z.object({
+  /** Video delle pillole (video-lezione animata) e delle scene delle pillole interattive. */
+  lessonVideos: z.boolean().default(true),
+  /** Voce narrante di ogni lezione. */
+  narration: z.boolean().default(false),
+  /** Un video avatar per lezione. */
+  avatarVideo: z.boolean().default(false),
+  /** Copertina di ogni modulo. */
+  moduleCovers: z.boolean().default(false),
+});
+export type CourseEstimateOptions = z.infer<typeof CourseEstimateOptions>;
+
+/**
  * Richiesta di preventivo di un corso non ancora creato: gli stessi campi del brief che decidono
  * quante lezioni, di che formato e quanti test (vedi `plannedLessonFormats`).
  */
@@ -78,15 +94,32 @@ export const CourseEstimateInput = z.object({
   autoGenerateImages: z.boolean().default(true),
   /** Copertina generata con l'AI. */
   cover: z.boolean().default(true),
+  options: CourseEstimateOptions.default({}),
 });
 export type CourseEstimateInput = z.infer<typeof CourseEstimateInput>;
 
+
+
 /** Voce del preventivo: `kind` dice cos'è, `format` il formato delle lezioni. */
 export interface CourseEstimateLine {
-  kind: 'structure' | 'lessons' | 'images' | 'tests' | 'cover';
+  kind: 'structure' | 'lessons' | 'images' | 'tests' | 'cover' | 'lesson_videos' | 'narration' | 'avatar_videos' | 'module_covers';
   format?: LessonFormat;
   quantity: number;
   credits: number | null;
+}
+
+/** Prezzo massimo delle operazioni di una lezione, per i pulsanti (null = non prezzato o non disponibile). */
+export interface LessonEstimateView {
+  billed: boolean;
+  /** Immagini mancanti (fino al tetto del formato) e rigenerazione di tutte. */
+  images: { missing: number; missingCredits: number | null; all: number; allCredits: number | null };
+  /** Voce narrante: caratteri reali della lezione. Null se non c'è testo. */
+  narration: { chars: number; credits: number | null } | null;
+  /** Video animati ancora da generare: tutte le scene e ciascuna. Null se il generatore non è configurato. */
+  cartoon: {
+    credits: number | null;
+    scenes: Array<{ blockId: string; sceneId: string; credits: number | null }>;
+  } | null;
 }
 
 /**
@@ -108,6 +141,10 @@ export interface CourseEstimateView {
   aiChosenFormats: number;
   /** Crediti disponibili del wallet che paga; assente se non leggibile. */
   available?: number;
+  /** Opzioni usate per il preventivo. */
+  options: CourseEstimateOptions;
+  /** Budget confermato del corso e crediti già impegnati (spesi + in corso). Solo per un corso esistente. */
+  budget?: { credits: number | null; committed: number };
   /**
    * Prezzo massimo di un singolo pezzo, per i pulsanti (rigenera struttura, una lezione, un test).
    * Una lezione comprende le sue immagini automatiche fino al tetto del formato; `image` è il prezzo

@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import type { StructureKnowledge } from '@scorm/contracts';
+import { knowledgeStructureUnits, type StructureKnowledge } from '@scorm/contracts';
 import type { DocumentExtractor, JobQueue, LLMProvider, ObjectStorage } from '@scorm/domain';
 import { DocumentExtractorRegistry } from '@scorm/adapters/extractors';
 import { BillingService } from '../billing/billing.service.js';
@@ -117,8 +117,7 @@ export class KnowledgeStructureService {
     // Crediti: una chiamata di struttura per testi brevi, più chiamate (mappa + fusione) per testi
     // lunghi. Le parole si sanno solo a estrazione fatta: si prenota per eccesso dalla dimensione dei
     // file e si addebitano le chiamate realmente fatte.
-    const estWords = Math.min(60000, sources.reduce((n, s) => n + s.sizeBytes, 0) / 6);
-    const reservedUnits = estWords <= 9000 ? 1 : Math.ceil(estWords / 6000) + 1;
+    const reservedUnits = knowledgeStructureUnits(sources.reduce((n, s) => n + s.sizeBytes, 0));
     const reservation = await this.billing.reserve(tenantId, `kscorm:knowledge-structure:${randomUUID()}`, [
       { feature: 'text_standard', units: reservedUnits },
     ]);

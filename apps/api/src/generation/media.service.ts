@@ -24,7 +24,7 @@ import type {
   VoiceOption,
 } from '@scorm/domain';
 import { ConfigService } from '@nestjs/config';
-import { DEFAULT_HEYGEN_ENGINE, defaultEngineForAvatarType, lessonImageCap, resolveLessonLayout } from '@scorm/contracts';
+import { DEFAULT_HEYGEN_ENGINE, MEDIA_CAPS, defaultEngineForAvatarType, lessonImageCap, resolveLessonLayout } from '@scorm/contracts';
 import type { AppConfig } from '../config/configuration.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
@@ -1749,7 +1749,7 @@ export class MediaService implements OnModuleInit {
       );
     }
     const toStart = candidates
-      .slice(0, room)
+      .slice(0, Math.min(room, MEDIA_CAPS.interactiveMaxScenes))
       .map((s) => ({ blockId: s.blockId, sceneId: s.sceneId, prompt: s.prompt, multiScene: s.multiScene === true }))
       .filter((s) => s.prompt.length > 0);
 
@@ -1758,10 +1758,11 @@ export class MediaService implements OnModuleInit {
     }
 
     // Crediti: una sola riserva per tutte le scene avviate (la tariffa è al minuto: una riserva per
-    // scena arrotonderebbe ogni scena a un minuto intero). Si addebita a fine lavorazione.
+    // scena arrotonderebbe ogni scena a un minuto intero). Si prenota la durata MASSIMA (il voiceover
+    // è limitato a MEDIA_CAPS) e a fine lavorazione si addebitano i secondi consegnati.
     const cartoonFeature = cfg.provider === 'remotion' ? 'video_cartoon' : 'video_cartoon_ai';
     const cartoonReservation = await this.billing.reserve(tenantId, `kscorm:cartoon:${lessonId}:${randomUUID()}`, [
-      { feature: cartoonFeature, units: (toStart.length * cfg.sceneDurationSec) / 60 },
+      { feature: cartoonFeature, units: cartoonMaxMinutes(toStart) },
     ]);
     // Marca subito TUTTE le scene candidate come 'processing' e persiste, così
     // la UI mostra l'avanzamento anche prima che i singoli job partano (gli
@@ -2292,4 +2293,9 @@ function htmlToText(html: string): string {
     .replace(/&gt;/g, '>')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/** Minuti massimi di un gruppo di scene cartoon: video-lezione della pillola o scena breve. */
+export function cartoonMaxMinutes(scenes: Array<{ multiScene?: boolean }>): number {
+  return scenes.reduce((n, s) => n + (s.multiScene ? MEDIA_CAPS.pillolaVideoMaxMinutes : MEDIA_CAPS.sceneMaxMinutes), 0);
 }

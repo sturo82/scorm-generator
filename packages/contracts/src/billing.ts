@@ -55,6 +55,69 @@ export const ALL_PACKAGE_FEATURES: readonly string[] = [
   ...Object.values(PACKAGE_FEATURES.lesson),
 ];
 
+/**
+ * Limiti dei media generati, verificati sui dati di produzione con margine sopra il massimo
+ * osservato (così non tagliano un contenuto premium). Servono a prenotare e a preventivare il
+ * massimo reale di ogni operazione.
+ */
+export const MEDIA_CAPS = {
+  /** Video-lezione della pillola: il prompt chiede 450-750 parole; massimo osservato 6,2 minuti. */
+  pillolaVideoMaxWords: 900,
+  /** 900 parole a circa 2,3 parole/s più le schede di sezione: entro 7 minuti. */
+  pillolaVideoMaxMinutes: 7,
+  /** Scena breve (libro-game, aggancio): il prompt chiede 2-4 frasi; mediana osservata 24 secondi. */
+  sceneMaxWords: 120,
+  sceneMaxMinutes: 1,
+  /** Scene video di una pillola interattiva per avvio (massimo osservato 9). */
+  interactiveMaxScenes: 12,
+  /** Narrazione di una lezione, per il preventivo (massimo osservato 8.377 caratteri). */
+  narrationMaxChars: 12_000,
+  /** Video avatar di una lezione: copione entro 140 parole (osservati 48-52 secondi). */
+  avatarVideoMaxMinutes: 1,
+} as const;
+
+/**
+ * Operazioni di testo (`text_standard`) prenotate per strutturare la knowledge: una per testi brevi,
+ * più chiamate (mappa + fusione) per testi lunghi. Stima per eccesso dalla dimensione dei file.
+ */
+export function knowledgeStructureUnits(totalBytes: number): number {
+  const estWords = Math.min(60000, totalBytes / 6);
+  return estWords <= 9000 ? 1 : Math.ceil(estWords / 6000) + 1;
+}
+
+/**
+ * Limiti dei copioni del video da slide, come li chiede il prompt: servono al preventivo prima dei
+ * copioni. Se poi l'autore allunga i copioni, il prezzo esatto compare al passo delle clip.
+ */
+export const SLIDE_SCRIPT_CAPS = {
+  /** Parole massime per slide con le sole slide. */
+  slidesOnlyMaxWords: 130,
+  /** Parole massime per slide con la knowledge (il prompt indica 80-250). */
+  knowledgeMaxWords: 250,
+  /** Slide aggiuntive dalla knowledge e loro parole massime. */
+  extraSlides: 8,
+  extraMaxWords: 120,
+  /** Parole al secondo del parlato (come la stima dei copioni). */
+  wordsPerSec: 2.4,
+  /** Sezioni massime proposte. */
+  maxSections: 8,
+} as const;
+
+/** Voce del preventivo di un video da slide. */
+export interface SlideEstimateLine {
+  kind: 'scripts' | 'sections' | 'clips' | 'render' | 'summaries' | 'quizzes';
+  quantity: number;
+  credits: number | null;
+}
+
+/** Preventivo massimo di un video da slide prima dei copioni (due ipotesi: solo slide o con knowledge). */
+export interface SlideImportEstimateView {
+  billed: boolean;
+  slides: number;
+  slidesOnly: { minutes: number; lines: SlideEstimateLine[]; total: number; priced: boolean };
+  withKnowledge: { minutes: number; lines: SlideEstimateLine[]; total: number; priced: boolean };
+}
+
 /** Tentativi massimi di generazione di una lezione o di un test (anche questo entra nel caso peggiore). */
 export const GENERATION_MAX_ATTEMPTS = 2;
 

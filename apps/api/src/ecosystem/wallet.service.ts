@@ -96,6 +96,22 @@ export class CompanyWalletMissingException extends HttpException {
     );
   }
 }
+/** Errore quando una spesa supererebbe il budget (preventivo) del corso: serve la conferma dell'utente. */
+export class OverBudgetException extends HttpException {
+  constructor(readonly over: number, readonly budget: number, readonly committed: number, readonly cost: number) {
+    super(
+      {
+        error: 'over_budget',
+        over,
+        budget,
+        committed,
+        cost,
+        message: `Questa operazione costa ${over} crediti oltre il preventivo del corso.`,
+      },
+      HttpStatus.CONFLICT,
+    );
+  }
+}
 /** Errore quando il wallet personale non è ammesso su questo prodotto. */
 export class PersonalWalletNotAllowedException extends HttpException {
   constructor() {

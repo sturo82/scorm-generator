@@ -131,12 +131,14 @@ export class GenerationService {
     toneInstruction?: string,
   ): Promise<{ jobId: string }> {
     await this.requireCourse(ctx.tenant.tenantId, courseId);
+    const format = await this.lessonFormatOf(courseId, lessonId);
     return this.enqueue(
       ctx,
       courseId,
       'course.generate_content',
       { courseId, lessonId, toneInstruction },
-      this.billing.lessonItems([await this.lessonFormatOf(courseId, lessonId)]),
+      this.billing.lessonItems([format]),
+      (await this.autoImagesOn(courseId)) ? this.billing.imageExtraCredits([format]) : 0,
     );
   }
 
@@ -163,9 +165,12 @@ export class GenerationService {
     payload: GenJobPayload,
     /** Voci da addebitare (wallet): si prenotano prima di accodare, così un saldo insufficiente dà 402 subito. */
     bill: BillItem[] = [],
+    /** Spesa che il lavoro farà dopo, in background (immagini con il listino per operazione): conta nel budget. */
+    extraCredits = 0,
   ): Promise<{ jobId: string }> {
     const jobId = randomUUID();
-    const reservation: Reservation | null = bill.length > 0 ? await this.billing.reserve(ctx.tenant.tenantId, `kscorm:job:${jobId}`, bill) : null;
+    const reservation: Reservation | null =
+      bill.length > 0 ? await this.billing.reserve(ctx.tenant.tenantId, `kscorm:job:${jobId}`, bill, { courseId, extraCredits }) : null;
     try {
     await this.prisma.generationJob.create({
       data: {
@@ -197,11 +202,13 @@ export class GenerationService {
   async enqueueAllContent(ctx: RequestContext, courseId: string): Promise<{ jobId: string }> {
     await this.requireCourse(ctx.tenant.tenantId, courseId);
     // Lezioni ancora vuote + test previsti dal brief (stima per eccesso: ciò che non si genera si libera).
+    const formats = await this.pendingLessonFormats(courseId);
     const bill = [
-      ...this.billing.lessonItems(await this.pendingLessonFormats(courseId)),
+      ...this.billing.lessonItems(formats),
       ...this.billing.testItems(await this.plannedAssessmentCount(ctx.tenant.tenantId, courseId)),
     ];
-    return this.enqueue(ctx, courseId, 'course.generate_all_content', { courseId }, bill);
+    const extra = (await this.autoImagesOn(courseId)) ? this.billing.imageExtraCredits(formats) : 0;
+    return this.enqueue(ctx, courseId, 'course.generate_all_content', { courseId }, bill, extra);
   }
 
   /**
@@ -416,6 +423,13 @@ export class GenerationService {
       .flatMap((m) => m.lessons)
       .filter((l) => !Array.isArray(l.blocks) || (l.blocks as unknown[]).length === 0)
       .map((l) => resolveLessonLayout({ format: l.format, videoFirst: l.videoFirst, pillola: l.pillola }));
+  }
+
+  /** True se il brief chiede le immagini automatiche dopo i contenuti (default sì). */
+  private async autoImagesOn(courseId: string): Promise<boolean> {
+    const c = await this.prisma.course.findUnique({ where: { id: courseId }, select: { brief: true } });
+    const b = c?.brief ? Brief.safeParse(c.brief) : null;
+    return b?.success ? b.data.autoGenerateImages !== false : true;
   }
 
   /** Formato di una lezione del corso. */

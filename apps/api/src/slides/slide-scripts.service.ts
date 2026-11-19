@@ -272,7 +272,7 @@ export class SlideScriptsService {
     // (402 immediato se il saldo non basta) e si addebita solo se la generazione riesce.
     const reservation = await this.billing.reserve(tenantId, `kscorm:slide-scripts:${importId}:${randomUUID()}`, [
       { feature: 'text_standard', units: 1 },
-    ]);
+    ], { courseId: meterCourseId(courseId) ?? undefined });
     const now = new Date().toISOString();
     const state: ScriptsGenerationState = { status: 'running', startedAt: now, updatedAt: now, leaseUntil: Date.now() + JOB_LEASE_MS };
     await this.saveGenerationState(tenantId, courseId, importId, state);

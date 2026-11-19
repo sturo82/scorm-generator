@@ -1,4 +1,6 @@
 'use client';
+import { knowledgeStructureUnits } from '@scorm/contracts';
+import { CreditCost } from '@/components/ui/credit-cost';
 
 import * as React from 'react';
 import { Wand2 } from 'lucide-react';
@@ -89,6 +91,17 @@ export function StructureKnowledgeDialog({
           </Button>
           <Button onClick={handleCreate} disabled={structure.isPending || selected.size === 0 || !title.trim()}>
             {structure.isPending ? <AiWorkingInline label="Avvio…" /> : (<><Wand2 className="size-4" /> Crea</>)}
+            {!structure.isPending && selected.size > 0 && (
+              <CreditCost
+                prefix=" · fino a "
+                items={[
+                  {
+                    feature: 'text_standard',
+                    units: knowledgeStructureUnits(docs.filter((d) => selected.has(d.id)).reduce((n, d) => n + d.sizeBytes, 0)),
+                  },
+                ]}
+              />
+            )}
           </Button>
         </div>
       </div>

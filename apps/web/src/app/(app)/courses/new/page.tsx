@@ -22,9 +22,11 @@ import { Input, Label } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Dropzone } from '@/components/knowledge/dropzone';
 import { CourseEstimate } from '@/components/app/course-estimate';
+import { CreditCost } from '@/components/ui/credit-cost';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
 import { slidesAutoOpenKey } from '@/lib/slides-autoopen';
+import { getApiClient } from '@/lib/api/client';
 import type { LessonFormatValue, RssPreviewResult } from '@/lib/api/types';
 import {
   useCreateCourseFromRss,
@@ -105,6 +107,8 @@ export default function NewCoursePage() {
   const [lessonFormats, setLessonFormats] = React.useState<Record<number, LessonFormatValue>>({});
   // Test del corso: entrano nel preventivo e nel brief.
   const [tests, setTests] = React.useState<Array<'intermediate' | 'final'>>(['final']);
+  // Componenti aggiuntive scelte nel preventivo (si generano dopo, ma il loro massimo entra nel budget).
+  const [extras, setExtras] = React.useState({ narration: false, avatarVideo: false, moduleCovers: false });
 
   const readyDocs = React.useMemo(
     () => (globalDocs.data ?? []).filter((d) => d.status === 'READY'),
@@ -246,6 +250,10 @@ export default function NewCoursePage() {
         });
         courseId = res.courseId;
       }
+      // Il preventivo mostrato diventa il budget del corso (spese oltre chiederanno conferma).
+      await getApiClient()
+        .confirmCourseBudget(courseId, { lessonVideos: true, ...extras })
+        .catch(() => undefined);
       toast.show('Corso creato: continua con la struttura', 'success');
       router.push(`/courses/${courseId}`);
     } catch (err) {
@@ -515,6 +523,7 @@ export default function NewCoursePage() {
                   <Button type="button" variant="outline" disabled={!canLeaveDetails || busyPreview} onClick={() => void handlePreview()}>
                     {busyPreview ? <Loader2 className="size-4 animate-spin" /> : <Eye className="size-4" />}
                     {busyPreview ? 'Anteprima…' : preview ? 'Rigenera anteprima' : 'Genera anteprima'}
+                    {!busyPreview && <CreditCost items={[{ feature: 'text_light', units: 1 }]} />}
                   </Button>
                 </div>
 
@@ -661,6 +670,29 @@ export default function NewCoursePage() {
                     </label>
                   ))}
                 </fieldset>
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium">Da aggiungere dopo (facoltativo)</legend>
+                  <p className="text-xs text-muted-foreground">
+                    Si generano con un clic quando vuoi: sceglierli ora li include nel preventivo.
+                  </p>
+                  {(
+                    [
+                      ['narration', 'Voce narrante per ogni lezione'],
+                      ['avatarVideo', 'Un video con avatar per ogni lezione'],
+                      ['moduleCovers', 'Copertina per ogni modulo'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <label key={key} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-[hsl(var(--primary))]"
+                        checked={extras[key]}
+                        onChange={(e) => setExtras((prev) => ({ ...prev, [key]: e.target.checked }))}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </fieldset>
                 <CourseEstimate
                   input={{
                     suggestedLessons: editedLessons.map((l) => l.trim()).filter((l) => l.length > 0),
@@ -669,6 +701,7 @@ export default function NewCoursePage() {
                     requestedAssessments: tests,
                     autoGenerateImages: true,
                     cover: true,
+                    options: { lessonVideos: true, ...extras },
                   }}
                   note="Creare il corso non costa nulla: i crediti si usano quando generi struttura, lezioni, test e copertina."
                 />

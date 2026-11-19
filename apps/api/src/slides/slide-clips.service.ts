@@ -210,7 +210,7 @@ export class SlideClipsService {
         }
         return { index: s.index, scriptHash: hash, state: 'pending' as const, attempts: 0 };
       });
-    const billing = await this.reserveClips(tenantId, importId, engine, avatarType, est.minutes);
+    const billing = await this.reserveClips(tenantId, courseId, importId, engine, avatarType, est.minutes);
     const doc: SlideClipsDoc = {
       importId,
       courseId,
@@ -260,7 +260,7 @@ export class SlideClipsService {
     }
     const cfg = this.config.get('heygen', { infer: true });
     const now = new Date().toISOString();
-    const billing = await this.reserveClips(tenantId, importId, engine, avatarType, est.minutes);
+    const billing = await this.reserveClips(tenantId, courseId, importId, engine, avatarType, est.minutes);
     const doc: SlideClipsDoc = {
       ...existing,
       status: 'running',
@@ -288,6 +288,7 @@ export class SlideClipsService {
    */
   private async reserveClips(
     tenantId: string,
+    courseId: string,
     importId: string,
     engine: string,
     avatarType: string,
@@ -297,7 +298,7 @@ export class SlideClipsService {
     const feature = avatarFeature(engine, avatarType);
     const reservation = await this.billing.reserve(tenantId, `kscorm:slide-clips:${importId}:${randomUUID()}`, [
       { feature, units: Math.ceil(minutes * ESTIMATE_MARGIN * 10) / 10 },
-    ]);
+    ], { courseId: meterCourseId(courseId) ?? undefined });
     return reservation ? { reservation, feature, actualSec: 0 } : undefined;
   }
 

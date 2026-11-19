@@ -11,8 +11,12 @@ import {
   resolveLessonLayout,
   Brief,
   CourseOutline,
+  CourseEstimateOptions,
+  DEFAULT_HEYGEN_ENGINE,
+  MEDIA_CAPS,
   type CourseEstimateInput,
   type CourseEstimateLine,
+  type LessonEstimateView,
   type CourseEstimateView,
   type LessonFormat,
   type CompanyWalletAccess, type CourseCreditsView, type WalletTransactionsView, type WalletView } from '@scorm/contracts';
@@ -21,13 +25,15 @@ import { FeatureCatalogService } from '../ecosystem/feature-catalog.service.js';
 import {
   CompanyWalletMissingException,
   FeatureNotPricedException,
+  OverBudgetException,
   InsufficientCreditsException,
   WalletService,
 } from '../ecosystem/wallet.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { TenantPrismaService } from '../tenancy/tenant-prisma.service.js';
-import { currentPayer, type Payer } from './payer-context.js';
+import { currentCreditConfirm, currentPayer, inBackgroundJob, type Payer } from './payer-context.js';
 import { isPersonalTenant } from '../tenancy/personal-space.js';
+import { collectCartoonScenes, isPlaceholderVideo } from '../generation/cartoon-scenes.js';
 
 /** Voce di spesa: feature del listino e, per le feature a unità, le unità (elementi o minuti). */
 export interface BillItem {
@@ -69,6 +75,8 @@ export { avatarFeature };
 export const ESTIMATE_MARGIN = 1.25;
 
 const BILLED_CACHE_MS = 30_000;
+/** Oltre questo tempo una riserva aperta non conta più nel budget (gli hold di Manager scadono prima). */
+const OPEN_RESERVATION_MS = 3 * 3600_000;
 
 /**
  * Addebito in crediti delle generazioni, sopra il wallet di Manager. Il prezzo lo decide solo
@@ -140,6 +148,16 @@ export class BillingService {
     return [{ feature: this.packagesActive() ? PACKAGE_FEATURES.test : 'text_standard', units: n }];
   }
 
+  /**
+   * Crediti massimi delle immagini automatiche di un gruppo di lezioni con il listino per
+   * operazione (si prenotano dopo, nel lavoro in background). Con i pacchetti sono già incluse: 0.
+   */
+  imageExtraCredits(formats: Array<string | null | undefined>): number {
+    if (this.packagesActive()) return 0;
+    const n = formats.reduce((t, f) => t + lessonImageCap(f ?? 'standard'), 0);
+    return n > 0 ? (this.catalog.credits('image_generation', n) ?? 0) : 0;
+  }
+
   /** True se la riserva è a pacchetti: le immagini della lezione sono incluse e non si addebitano a parte. */
   static usesPackages(res: Reservation | null | undefined): boolean {
     return Boolean(res?.holds.some((h) => ALL_PACKAGE_FEATURES.includes(h.feature)));
@@ -168,52 +186,186 @@ export class BillingService {
 
   /**
    * Preventivo di un corso ancora da creare, dal piano del brief. È un tetto: lezioni, moduli,
-   * immagini e tentativi sono limitati nel codice, quindi l'addebito non lo supera.
+   * immagini, tentativi e durate dei media sono limitati nel codice.
    */
   async estimateCourse(tenantId: string, input: CourseEstimateInput): Promise<CourseEstimateView> {
     const formats = plannedLessonFormats(input);
     const modules = plannedModuleCount(formats.length);
     const tests = (input.requestedAssessments.includes('intermediate') ? modules : 0) + (input.requestedAssessments.includes('final') ? 1 : 0);
+    const o = input.options;
     return this.withBalance(tenantId, {
-      ...this.buildEstimate({ structure: true, formats, images: input.autoGenerateImages, tests, cover: input.cover }),
+      ...this.buildEstimate({
+        structure: true,
+        formats,
+        images: input.autoGenerateImages,
+        tests,
+        cover: input.cover,
+        pillolaVideos: o.lessonVideos ? formats.filter((f) => f === 'pillola').length : 0,
+        interactiveScenes: o.lessonVideos ? formats.filter((f) => f === 'pillola_interattiva').map(() => MEDIA_CAPS.interactiveMaxScenes) : [],
+        narrationChars: o.narration ? formats.map(() => MEDIA_CAPS.narrationMaxChars) : [],
+        avatarVideos: o.avatarVideo ? formats.length : 0,
+        moduleCovers: o.moduleCovers ? modules : 0,
+      }),
       modules,
+      options: o,
     });
   }
 
   /**
-   * Quanto manca per completare un corso esistente: struttura (se non c'è), lezioni ancora vuote con
-   * il loro formato e test previsti ancora da fare. Senza struttura vale il piano del brief.
+   * Quanto manca per completare un corso esistente: struttura (se non c'è), lezioni ancora vuote,
+   * test previsti ancora da fare e le componenti scelte nel preventivo non ancora generate. Senza
+   * struttura vale il piano del brief. Include il budget confermato e i crediti già impegnati.
    */
-  async estimateExistingCourse(tenantId: string, courseId: string): Promise<CourseEstimateView> {
-    const course = await this.prisma.course.findFirst({ where: { id: courseId, tenantId }, select: { brief: true, outline: true } });
+  async estimateExistingCourse(tenantId: string, courseId: string, optionsIn?: Partial<CourseEstimateOptions>): Promise<CourseEstimateView> {
+    const course = await this.prisma.course.findFirst({
+      where: { id: courseId, tenantId },
+      select: { brief: true, outline: true, coverImageKey: true, creditBudget: true, estimateOptions: true },
+    });
     if (!course) throw new NotFoundException('Corso non trovato');
+    const stored = CourseEstimateOptions.safeParse(course.estimateOptions ?? {});
+    const o: CourseEstimateOptions = { ...(stored.success ? stored.data : CourseEstimateOptions.parse({})), ...(optionsIn ?? {}) };
     const brief = course.brief ? Brief.safeParse(course.brief) : null;
     const b = brief?.success ? brief.data : null;
     const outline = course.outline ? CourseOutline.safeParse(course.outline) : null;
     const images = b ? b.autoGenerateImages !== false : true;
     const requested = b?.requestedAssessments ?? [];
+    const cover = !course.coverImageKey;
+    const budget = { credits: course.creditBudget, committed: await this.committedCredits(tenantId, courseId) };
     if (!outline?.success) {
-      const input = { ...(b ?? {}), requestedAssessments: requested };
-      const formats = plannedLessonFormats(input);
+      const formats = plannedLessonFormats(b ?? {});
       const modules = plannedModuleCount(formats.length);
       const tests = (requested.includes('intermediate') ? modules : 0) + (requested.includes('final') ? 1 : 0);
-      return this.withBalance(tenantId, { ...this.buildEstimate({ structure: true, formats, images, tests, cover: false }), modules });
+      const est = this.buildEstimate({
+        structure: true,
+        formats,
+        images,
+        tests,
+        cover,
+        pillolaVideos: o.lessonVideos ? formats.filter((f) => f === 'pillola').length : 0,
+        interactiveScenes: o.lessonVideos ? formats.filter((f) => f === 'pillola_interattiva').map(() => MEDIA_CAPS.interactiveMaxScenes) : [],
+        narrationChars: o.narration ? formats.map(() => MEDIA_CAPS.narrationMaxChars) : [],
+        avatarVideos: o.avatarVideo ? formats.length : 0,
+        moduleCovers: o.moduleCovers ? modules : 0,
+      });
+      return this.withBalance(tenantId, { ...est, modules, options: o, budget });
     }
     const mods = await this.prisma.module.findMany({
       where: { courseId },
-      select: { id: true, lessons: { select: { blocks: true, format: true, videoFirst: true, pillola: true } } },
+      select: {
+        id: true,
+        coverImageKey: true,
+        lessons: { select: { blocks: true, format: true, videoFirst: true, pillola: true, narrationKey: true } },
+      },
     });
-    const formats = mods
-      .flatMap((m) => m.lessons)
-      .filter((l) => !Array.isArray(l.blocks) || (l.blocks as unknown[]).length === 0)
-      .map((l) => resolveLessonLayout({ format: l.format, videoFirst: l.videoFirst, pillola: l.pillola }));
+    const lessons = mods.flatMap((m) => m.lessons).map((l) => ({
+      ...l,
+      fmt: resolveLessonLayout({ format: l.format, videoFirst: l.videoFirst, pillola: l.pillola }),
+      blocks: Array.isArray(l.blocks) ? (l.blocks as unknown[]) : [],
+    }));
+    const pending = lessons.filter((l) => l.blocks.length === 0);
+    const formats = pending.map((l) => l.fmt);
     const wantsIntermediate = requested.includes('intermediate') || outline.data.modules.some((m) => m.hasIntermediateAssessment);
     const wantsFinal = requested.includes('final') || outline.data.hasFinalAssessment;
     const existing = await this.prisma.assessment.findMany({ where: { courseId }, select: { scope: true, moduleId: true } });
     const done = new Set(existing.map((a) => `${a.scope}:${a.moduleId ?? 'final'}`));
     const tests =
       (wantsIntermediate ? mods.filter((m) => !done.has(`INTERMEDIATE:${m.id}`)).length : 0) + (wantsFinal && !done.has('FINAL:final') ? 1 : 0);
-    return this.withBalance(tenantId, { ...this.buildEstimate({ structure: false, formats, images, tests, cover: false }), modules: mods.length });
+    // Video delle pillole ancora da fare: lezioni vuote (massimo del formato) o con video segnaposto.
+    let pillolaVideos = 0;
+    const interactiveScenes: number[] = [];
+    if (o.lessonVideos) {
+      for (const l of lessons) {
+        if (l.fmt !== 'pillola' && l.fmt !== 'pillola_interattiva') continue;
+        const placeholders =
+          l.blocks.length === 0 ? null : collectCartoonScenes(l.blocks, undefined, undefined, l.fmt).filter((sc) => isPlaceholderVideo(sc.media)).length;
+        if (l.fmt === 'pillola') pillolaVideos += placeholders === null || placeholders > 0 ? 1 : 0;
+        else if (placeholders === null) interactiveScenes.push(MEDIA_CAPS.interactiveMaxScenes);
+        else if (placeholders > 0) interactiveScenes.push(Math.min(placeholders, MEDIA_CAPS.interactiveMaxScenes));
+      }
+    }
+    // Narrazione delle lezioni che non l'hanno: caratteri reali se il testo c'è, altrimenti il massimo.
+    const narrationChars = o.narration
+      ? lessons.filter((l) => !l.narrationKey).map((l) => (l.blocks.length === 0 ? MEDIA_CAPS.narrationMaxChars : narrationLength(l.blocks)))
+      : [];
+    const est = this.buildEstimate({
+      structure: false,
+      formats,
+      images,
+      tests,
+      cover,
+      pillolaVideos,
+      interactiveScenes,
+      narrationChars: narrationChars.filter((n) => n > 0),
+      avatarVideos: o.avatarVideo ? lessons.filter((l) => !hasAvatarVideo(l.blocks)).length : 0,
+      moduleCovers: o.moduleCovers ? mods.filter((m) => !m.coverImageKey).length : 0,
+    });
+    return this.withBalance(tenantId, { ...est, modules: mods.length, options: o, budget });
+  }
+
+  /** Prezzi massimi delle operazioni di una lezione (immagini, voce narrante, video animati). */
+  async estimateLesson(tenantId: string, courseId: string, lessonId: string): Promise<LessonEstimateView> {
+    const lesson = await this.prisma.lesson.findFirst({
+      where: { id: lessonId, module: { course: { id: courseId, tenantId } } },
+      select: { blocks: true, format: true, videoFirst: true, pillola: true },
+    });
+    if (!lesson) throw new NotFoundException('Lezione non trovata');
+    const fmt = resolveLessonLayout({ format: lesson.format, videoFirst: lesson.videoFirst, pillola: lesson.pillola });
+    const blocks = Array.isArray(lesson.blocks) ? structuredClone(lesson.blocks as unknown[]) : [];
+    const c = (feature: string, units: number) => (units > 0 ? (this.catalog.credits(feature, units) ?? null) : 0);
+    // Immagini: come generateLessonImages, entro il tetto del formato.
+    const refs: Array<{ storageKey?: string; placeholderPrompt?: string; alt?: string }> = [];
+    const visit = (n: unknown): void => {
+      if (Array.isArray(n)) return n.forEach(visit);
+      if (!n || typeof n !== 'object') return;
+      const o = n as Record<string, unknown>;
+      if (o.kind === 'image') refs.push(o as never);
+      Object.values(o).forEach(visit);
+    };
+    visit(blocks);
+    const cap = lessonImageCap(fmt);
+    const promptable = refs.filter((r) => Boolean(r.placeholderPrompt || r.alt));
+    const withKey = refs.filter((r) => r.storageKey).length;
+    const missing = Math.min(Math.max(0, cap - withKey), promptable.filter((r) => !r.storageKey).length);
+    const all = Math.min(cap, promptable.length);
+    const chars = narrationLength(blocks);
+    const feature = this.cartoonFeature();
+    let cartoon: LessonEstimateView['cartoon'] = null;
+    if (feature) {
+      const scenes = collectCartoonScenes(blocks, undefined, undefined, fmt).filter((s) => isPlaceholderVideo(s.media));
+      const perScene = (multi: boolean | undefined) => c(feature, multi ? MEDIA_CAPS.pillolaVideoMaxMinutes : MEDIA_CAPS.sceneMaxMinutes);
+      const first = scenes.slice(0, MEDIA_CAPS.interactiveMaxScenes);
+      const minutes = first.reduce((n, s) => n + (s.multiScene ? MEDIA_CAPS.pillolaVideoMaxMinutes : MEDIA_CAPS.sceneMaxMinutes), 0);
+      cartoon = {
+        credits: c(feature, minutes),
+        scenes: scenes.map((s) => ({ blockId: s.blockId, sceneId: s.sceneId, credits: perScene(s.multiScene) })),
+      };
+    }
+    return {
+      billed: await this.isBilled(tenantId),
+      images: { missing, missingCredits: c('image_generation', missing), all, allCredits: c('image_generation', all) },
+      narration: chars > 0 ? { chars, credits: c('audio_narration', chars / 1000) } : null,
+      cartoon,
+    };
+  }
+
+  /**
+   * Conferma il preventivo del corso: il budget diventa quanto già impegnato più quanto manca per
+   * completarlo con le opzioni scelte. Le spese oltre il budget chiedono poi una conferma.
+   */
+  async confirmBudget(tenantId: string, courseId: string, options?: Partial<CourseEstimateOptions>): Promise<CourseEstimateView> {
+    const est = await this.estimateExistingCourse(tenantId, courseId, options);
+    const credits = (est.budget?.committed ?? 0) + est.total;
+    await this.tenantPrisma.runInTenant(tenantId, (tx) =>
+      tx.course.updateMany({ where: { id: courseId, tenantId }, data: { creditBudget: credits, estimateOptions: est.options as object } }),
+    );
+    return { ...est, budget: { credits, committed: est.budget?.committed ?? 0 } };
+  }
+
+  /** Feature dei video animati, o null se il generatore non è configurato. */
+  private cartoonFeature(): string | null {
+    const provider = this.config.get('cartoonVideo', { infer: true }).provider;
+    if (provider === 'none' || provider === 'mock') return null;
+    return provider === 'remotion' ? 'video_cartoon' : 'video_cartoon_ai';
   }
 
   /** Voci e totale del preventivo, con i pacchetti se Manager li ha prezzati, altrimenti per operazione. */
@@ -223,9 +375,18 @@ export class BillingService {
     images: boolean;
     tests: number;
     cover: boolean;
-  }): Omit<CourseEstimateView, 'billed' | 'available' | 'modules'> {
+    /** Video-lezioni di pillole da generare. */
+    pillolaVideos: number;
+    /** Scene da generare per ogni pillola interattiva. */
+    interactiveScenes: number[];
+    /** Caratteri da narrare per ogni lezione. */
+    narrationChars: number[];
+    avatarVideos: number;
+    moduleCovers: number;
+  }): Omit<CourseEstimateView, 'billed' | 'available' | 'modules' | 'options' | 'budget'> {
     const packages = this.packagesActive();
     const c = (feature: string, units: number) => this.catalog.credits(feature, units) ?? null;
+    const sum = (vals: Array<number | null>) => (vals.some((v) => v === null) ? null : vals.reduce<number>((n, v) => n + (v ?? 0), 0));
     const lines: CourseEstimateLine[] = [];
     if (p.structure) lines.push({ kind: 'structure', quantity: 1, credits: c(packages ? PACKAGE_FEATURES.structure : 'text_standard', 1) });
     // Le lezioni con formato scelto dall'AI valgono come standard (il pacchetto più caro).
@@ -240,6 +401,40 @@ export class BillingService {
     }
     if (p.tests > 0) lines.push({ kind: 'tests', quantity: p.tests, credits: c(packages ? PACKAGE_FEATURES.test : 'text_standard', p.tests) });
     if (p.cover) lines.push({ kind: 'cover', quantity: 1, credits: c('image_generation', 1) });
+    // Video animati: ogni avvio si addebita a minuti iniziati, quindi si somma per video.
+    const cartoon = this.cartoonFeature();
+    if (cartoon && p.pillolaVideos > 0) {
+      lines.push({
+        kind: 'lesson_videos',
+        format: 'pillola',
+        quantity: p.pillolaVideos,
+        credits: sum(Array.from({ length: p.pillolaVideos }, () => c(cartoon, MEDIA_CAPS.pillolaVideoMaxMinutes))),
+      });
+    }
+    if (cartoon && p.interactiveScenes.length > 0) {
+      lines.push({
+        kind: 'lesson_videos',
+        format: 'pillola_interattiva',
+        quantity: p.interactiveScenes.reduce((n, v) => n + v, 0),
+        credits: sum(p.interactiveScenes.map((n) => c(cartoon, n * MEDIA_CAPS.sceneMaxMinutes))),
+      });
+    }
+    if (p.narrationChars.length > 0) {
+      lines.push({
+        kind: 'narration',
+        quantity: p.narrationChars.length,
+        credits: sum(p.narrationChars.map((ch) => c('audio_narration', ch / 1000))),
+      });
+    }
+    if (p.avatarVideos > 0) {
+      // Avatar non ancora scelto: si prende la tariffa più alta tra foto e digital twin dell'engine di default.
+      const perVideo = Math.max(
+        c(avatarFeature(DEFAULT_HEYGEN_ENGINE, 'photo'), MEDIA_CAPS.avatarVideoMaxMinutes) ?? 0,
+        c(avatarFeature(DEFAULT_HEYGEN_ENGINE, 'digital_twin'), MEDIA_CAPS.avatarVideoMaxMinutes) ?? 0,
+      );
+      lines.push({ kind: 'avatar_videos', quantity: p.avatarVideos, credits: perVideo > 0 ? perVideo * p.avatarVideos : null });
+    }
+    if (p.moduleCovers > 0) lines.push({ kind: 'module_covers', quantity: p.moduleCovers, credits: c('image_generation', p.moduleCovers) });
     // Prezzo massimo di una lezione: il pacchetto, oppure testo + immagini fino al tetto del formato.
     const lessonPrice = (f: LessonFormat) => {
       const text = c(packages ? lessonPackageFeature(f) : 'text_standard', 1);
@@ -294,12 +489,25 @@ export class BillingService {
    * Prenota i crediti prima di eseguire. Ritorna null se l'azienda non è addebitata. Se una voce
    * non basta, libera quelle già prenotate e lancia 402; se non è prezzata lancia 503.
    */
-  async reserve(tenantId: string, ref: string, items: BillItem[]): Promise<Reservation | null> {
+  async reserve(
+    tenantId: string,
+    ref: string,
+    items: BillItem[],
+    /**
+     * `courseId`: corso a cui va la spesa (se il `ref` non basta a ricavarlo). `extraCredits`: spesa
+     * che il lavoro farà dopo, in background, senza una nuova richiesta (conta nel budget ora).
+     */
+    opts: { courseId?: string; extraCredits?: number } = {},
+  ): Promise<Reservation | null> {
     if (!(await this.isBilled(tenantId))) return null;
     await this.assertPayerWallet(tenantId);
     const payer = this.payerFor(tenantId);
     const lines = normalize(items, this.catalog);
     if (lines.length === 0) return { ref, companyId: payer.companyId, holds: [] };
+    const cost = lines.reduce((n, l) => n + (this.catalog.credits(l.feature, l.units) ?? 0), 0);
+    const courseId = opts.courseId ?? (await this.scopeOf(tenantId, ref)).courseId;
+    // I lavori in background sono già stati controllati quando sono partiti (con la loro spesa futura).
+    if (courseId && !inBackgroundJob()) await this.checkBudget(tenantId, courseId, cost + (opts.extraCredits ?? 0));
     const holds: Reservation['holds'] = [];
     try {
       for (const l of lines) {
@@ -337,7 +545,70 @@ export class BillingService {
       await Promise.all(holds.map((h) => this.wallet.release(payer.companyId, h.holdId)));
       throw err;
     }
+    await this.openReservation(tenantId, ref, courseId, cost);
     return { ref, companyId: payer.companyId, holds };
+  }
+
+  /**
+   * Budget del corso (preventivo confermato): se la spesa lo supererebbe serve la conferma
+   * dell'utente (header `x-credit-confirm` con almeno i crediti in più), che alza il budget.
+   * Senza budget non c'è controllo. Conta la spesa già fatta e le riserve ancora aperte.
+   */
+  private async checkBudget(tenantId: string, courseId: string, cost: number): Promise<void> {
+    const course = await this.prisma.course.findFirst({ where: { id: courseId, tenantId }, select: { creditBudget: true } });
+    const budget = course?.creditBudget;
+    if (budget === null || budget === undefined) return;
+    const committed = await this.committedCredits(tenantId, courseId);
+    const over = committed + cost - budget;
+    if (over <= 0) return;
+    if (currentCreditConfirm() >= over) {
+      await this.tenantPrisma.runInTenant(tenantId, (tx) =>
+        tx.course.updateMany({ where: { id: courseId, tenantId }, data: { creditBudget: committed + cost } }),
+      );
+      this.logger.log(`Budget del corso ${courseId} alzato da ${budget} a ${committed + cost} (confermato dall'utente)`);
+      return;
+    }
+    throw new OverBudgetException(over, budget, committed, cost);
+  }
+
+  /** Crediti del corso già spesi più quelli prenotati da lavori ancora in corso. */
+  async committedCredits(tenantId: string, courseId: string): Promise<number> {
+    const since = new Date(Date.now() - OPEN_RESERVATION_MS);
+    const [spent, open] = await Promise.all([
+      this.prisma.creditCharge.aggregate({ where: { tenantId, courseId }, _sum: { credits: true } }),
+      this.prisma.creditReservation.aggregate({
+        where: { tenantId, courseId, closedAt: null, createdAt: { gte: since } },
+        _sum: { credits: true },
+      }),
+    ]);
+    return (spent._sum.credits ?? 0) + (open._sum.credits ?? 0);
+  }
+
+  /** Registra una riserva aperta del corso (conta nel budget finché non si chiude). Best-effort. */
+  private async openReservation(tenantId: string, ref: string, courseId: string | undefined, credits: number): Promise<void> {
+    if (!courseId || credits <= 0) return;
+    try {
+      await this.tenantPrisma.runInTenant(tenantId, (tx) =>
+        tx.creditReservation.upsert({
+          where: { id: ref },
+          create: { id: ref, tenantId, courseId, credits },
+          update: { credits, closedAt: null },
+        }),
+      );
+    } catch (err) {
+      this.logger.warn(`Registrazione riserva aperta fallita (ref=${ref}): ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /** Chiude la riserva aperta (dopo addebito o rilascio). Best-effort. */
+  private async closeReservation(tenantId: string, ref: string): Promise<void> {
+    try {
+      await this.tenantPrisma.runInTenant(tenantId, (tx) =>
+        tx.creditReservation.updateMany({ where: { id: ref, tenantId, closedAt: null }, data: { closedAt: new Date() } }),
+      );
+    } catch {
+      /* best-effort */
+    }
   }
 
   /**
@@ -352,6 +623,7 @@ export class BillingService {
       await this.settleHolds(res, actual, charged);
     } finally {
       await this.recordCharges(tenantId, res, charged);
+      await this.closeReservation(tenantId, res.ref);
     }
   }
 
@@ -503,9 +775,10 @@ export class BillingService {
   }
 
   /** Libera tutta la riserva (operazione fallita o annullata). */
-  async release(_tenantId: string, res: Reservation | null): Promise<void> {
+  async release(tenantId: string, res: Reservation | null): Promise<void> {
     if (!res) return;
     await Promise.all(res.holds.map((h) => this.wallet.release(res.companyId, h.holdId)));
+    await this.closeReservation(tenantId, res.ref);
   }
 
   /**
@@ -532,8 +805,9 @@ export class BillingService {
     ref: string,
     items: BillItem[],
     work: () => Promise<{ result: T; actual?: Record<string, number> }>,
+    opts: { courseId?: string; extraCredits?: number } = {},
   ): Promise<T> {
-    const res = await this.reserve(tenantId, ref, items);
+    const res = await this.reserve(tenantId, ref, items, opts);
     try {
       const { result, actual } = await work();
       await this.settle(tenantId, res, actual);
@@ -720,4 +994,21 @@ function normalize(items: BillItem[], catalog: FeatureCatalogService): Array<{ f
     merged.set(i.feature, (merged.get(i.feature) ?? 0) + u);
   }
   return [...merged.entries()].map(([feature, units]) => ({ feature, units }));
+}
+
+/** Caratteri da narrare di una lezione (testo dei block rich_text), come li conta la narrazione. */
+function narrationLength(blocks: unknown[]): number {
+  let n = 0;
+  for (const b of blocks) {
+    const block = b as { type?: string; payload?: { content?: { html?: string } } };
+    if (block.type === 'rich_text' && block.payload?.content?.html) {
+      n += block.payload.content.html.replace(/<[^>]+>/g, '').replace(/&[a-z#0-9]+;/gi, ' ').length + 2;
+    }
+  }
+  return n;
+}
+
+/** True se la lezione ha già un video avatar generato. */
+function hasAvatarVideo(blocks: unknown[]): boolean {
+  return JSON.stringify(blocks).includes('"videoGenEngine"');
 }

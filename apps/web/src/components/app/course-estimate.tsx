@@ -1,7 +1,7 @@
 'use client';
 import * as React from 'react';
 import { AlertTriangle, Coins, ShieldCheck } from 'lucide-react';
-import { LESSON_IMAGE_CAP, type CourseEstimateInput, type CourseEstimateView } from '@scorm/contracts';
+import { LESSON_IMAGE_CAP, MEDIA_CAPS, type CourseEstimateInput, type CourseEstimateView } from '@scorm/contracts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/cn';
 import { useCourseEstimate, useExistingCourseEstimate } from '@/lib/api/hooks';
@@ -31,6 +31,16 @@ function lineLabel(l: CourseEstimateView['lines'][number], mode: CourseEstimateV
       return `${l.quantity} ${l.quantity === 1 ? 'test' : 'test'} (intermedi e/o finale)`;
     case 'cover':
       return 'Copertina';
+    case 'lesson_videos':
+      return l.format === 'pillola_interattiva'
+        ? `Video delle pillole interattive (fino a ${l.quantity} scene da ${MEDIA_CAPS.sceneMaxMinutes} min)`
+        : `Video delle pillole: ${l.quantity} (fino a ${MEDIA_CAPS.pillolaVideoMaxMinutes} min ciascuno)`;
+    case 'narration':
+      return `Voce narrante: ${l.quantity} ${l.quantity === 1 ? 'lezione' : 'lezioni'}`;
+    case 'avatar_videos':
+      return `Video con avatar: ${l.quantity} (fino a ${MEDIA_CAPS.avatarVideoMaxMinutes} min ciascuno)`;
+    case 'module_covers':
+      return `Copertine dei moduli: ${l.quantity}`;
   }
 }
 
@@ -75,7 +85,8 @@ export function CourseEstimate(
       <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
         <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-600" aria-hidden />
         <span>
-          Non ti addebiteremo di più: è il massimo. Paghi solo quello che viene generato.
+          È il massimo per quanto indicato: paghi solo quello che viene davvero generato. Per ogni spesa oltre questo
+          preventivo (contenuti aggiunti, rigenerazioni, altri media) ti chiediamo conferma prima.
           {e.aiChosenFormats > 0 && ' Le lezioni con formato scelto dall\u2019AI sono calcolate come standard (il formato più caro).'}
           {props.note ? ` ${props.note}` : ''}
         </span>

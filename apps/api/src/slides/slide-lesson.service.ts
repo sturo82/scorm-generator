@@ -22,6 +22,8 @@ import {
   type SlideShot,
   type SlideVideoLayout,
   type SlideVideoTheme,
+  SLIDE_SCRIPT_CAPS,
+  type SlideImportEstimateView,
 } from '@scorm/contracts';
 import type { LLMProvider, ObjectStorage } from '@scorm/domain';
 import type { AppConfig } from '../config/configuration.js';
@@ -36,7 +38,7 @@ import { createHash } from 'node:crypto';
 import { SlideClipsService } from './slide-clips.service.js';
 import { SlideScriptsService } from './slide-scripts.service.js';
 import { isLibrary, meterCourseId } from './slide-owner.js';
-import { BillingService, type Reservation } from '../billing/billing.service.js';
+import { BillingService, ESTIMATE_MARGIN, avatarFeature, type Reservation } from '../billing/billing.service.js';
 import { SlidesService } from './slides.service.js';
 
 const MEDIA_URL_TTL_SEC = 3 * 3600;
@@ -229,7 +231,7 @@ export class SlideLessonService {
     // Una proposta di sezioni è una piccola operazione di testo (`text_light`).
     return this.billing.run(tenantId, `kscorm:slide-sections:${importId}:${randomUUID()}`, [{ feature: 'text_light', units: 1 }], async () => ({
       result: await this.proposeSectionsUnbilled(tenantId, courseId, importId),
-    }));
+    }), { courseId: meterCourseId(courseId) ?? undefined });
   }
 
   private async proposeSectionsUnbilled(tenantId: string, courseId: string, importId: string): Promise<SectionInput[]> {
@@ -271,6 +273,56 @@ export class SlideLessonService {
     if (out.length === 0) return [{ title: 'Sezione 1', from: 1 }];
     out[0]!.from = 1;
     return out;
+  }
+
+  /**
+   * Preventivo massimo del video prima dei copioni, dal numero di slide e dai limiti di parole dei
+   * copioni (SLIDE_SCRIPT_CAPS): copioni, clip avatar (con il margine che si prenota), montaggio e,
+   * in un corso, riepiloghi e quiz. Sezioni: fino a SLIDE_SCRIPT_CAPS.maxSections parti.
+   */
+  async estimateImport(
+    tenantId: string,
+    courseId: string,
+    importId: string,
+    q: { engine?: string; avatarType?: string; sections?: boolean },
+  ): Promise<SlideImportEstimateView> {
+    const manifest = await this.slides.loadManifest(tenantId, courseId, importId);
+    const n = manifest.slides.length;
+    const engine = (q.engine || this.config.get('heygen', { infer: true }).engine || 'avatar_iii').toLowerCase();
+    const type = q.avatarType ?? 'photo';
+    const course = !isLibrary(courseId);
+    const parts = q.sections ? Math.min(SLIDE_SCRIPT_CAPS.maxSections, Math.max(1, Math.ceil(n / 3))) : 1;
+    const build = (knowledge: boolean) => {
+      const words =
+        n * (knowledge ? SLIDE_SCRIPT_CAPS.knowledgeMaxWords : SLIDE_SCRIPT_CAPS.slidesOnlyMaxWords) +
+        (knowledge ? SLIDE_SCRIPT_CAPS.extraSlides * SLIDE_SCRIPT_CAPS.extraMaxWords : 0);
+      const speechMin = words / SLIDE_SCRIPT_CAPS.wordsPerSec / 60;
+      const clipsMin = Math.ceil(speechMin * ESTIMATE_MARGIN * 10) / 10;
+      const renderMin = speechMin + (parts * (CARD_COVER_SEC + CARD_OUTRO_SEC)) / 60;
+      const lines = [
+        { kind: 'scripts' as const, quantity: 1, credits: this.billing.quote([{ feature: 'text_standard', units: 1 }]) },
+        ...(q.sections ? [{ kind: 'sections' as const, quantity: 1, credits: this.billing.quote([{ feature: 'text_light', units: 1 }]) }] : []),
+        { kind: 'clips' as const, quantity: clipsMin, credits: this.billing.quote([{ feature: avatarFeature(engine, type), units: clipsMin }]) },
+        { kind: 'render' as const, quantity: renderMin, credits: this.billing.quote([{ feature: 'video_render', units: renderMin }]) },
+        ...(course
+          ? [
+              { kind: 'summaries' as const, quantity: parts, credits: this.billing.quote([{ feature: 'text_light', units: parts }]) },
+              {
+                kind: 'quizzes' as const,
+                quantity: parts + (q.sections && parts > 1 ? 1 : 0),
+                credits: this.billing.quote([{ feature: 'text_standard', units: parts + (q.sections && parts > 1 ? 1 : 0) }]),
+              },
+            ]
+          : []),
+      ].map((l) => ({ ...l, quantity: Math.round(l.quantity * 10) / 10, credits: l.credits.priced ? l.credits.total : null }));
+      return {
+        minutes: Math.round(speechMin * 10) / 10,
+        lines,
+        total: lines.reduce((t, l) => t + (l.credits ?? 0), 0),
+        priced: lines.every((l) => l.credits !== null),
+      };
+    };
+    return { billed: await this.billing.isBilled(tenantId), slides: n, slidesOnly: build(false), withKnowledge: build(true) };
   }
 
   // --- Avvio e stato -----------------------------------------------------------
@@ -655,7 +707,7 @@ export class SlideLessonService {
       { feature: 'video_render', units: renderSec / 60 },
       { feature: 'text_light', units: summaries },
       { feature: 'text_standard', units: quizzes },
-    ]);
+    ], { courseId: meterCourseId(doc.courseId) ?? undefined });
     return reservation ? { reservation, renderedSec: 0, summaries: 0, quizzes: 0 } : undefined;
   }
 

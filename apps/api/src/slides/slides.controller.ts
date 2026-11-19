@@ -121,6 +121,19 @@ export class SlidesController {
     return this.scripts.setGlossary(ctx.tenant.tenantId, courseId, importId, body.glossary);
   }
 
+  /** Preventivo massimo del video prima dei copioni (solo slide / con knowledge). */
+  @Get('imports/:importId/estimate')
+  estimateImport(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+    @Query('engine') engine?: string,
+    @Query('avatarType') avatarType?: string,
+    @Query('sections') sections?: string,
+  ) {
+    const type = avatarType === 'digital_twin' || avatarType === 'studio' ? avatarType : 'photo';
+    return this.lessons.estimateImport(ctx.tenant.tenantId, courseId, importId, { engine, avatarType: type, sections: sections === 'true' });
+  }
   @Get('imports/:importId/clips/estimate')
   estimateClips(
     @CurrentContext() ctx: AuthContext,

@@ -1,4 +1,4 @@
-import { VideoSpec, videoSpecJsonSchema, type VideoSpec as VideoSpecType, type Scene } from '@scorm/contracts';
+import { MEDIA_CAPS, VideoSpec, videoSpecJsonSchema, type VideoSpec as VideoSpecType, type Scene } from '@scorm/contracts';
 import type { LLMProvider, TokenUsage } from '@scorm/domain';
 import { videoSpecPrompt } from './prompts.js';
 
@@ -71,7 +71,10 @@ export async function generateVideoSpec(
   // Video-lezione multi-scena: NON collassare (serve il multi-scena) e dare più
   // token (lo spec con N scene + voiceover esteso è molto più grande).
   const multi = input.multiScene === true;
-  const normalize = (spec: VideoSpecType): VideoSpecType => (multi ? spec : collapseToSingleScene(spec));
+  // Tetto di parole del voiceover: la durata del video segue il voiceover, e la riserva di crediti
+  // copre al massimo questa durata (vedi MEDIA_CAPS).
+  const maxWords = multi ? MEDIA_CAPS.pillolaVideoMaxWords : MEDIA_CAPS.sceneMaxWords;
+  const normalize = (spec: VideoSpecType): VideoSpecType => capVoiceover(multi ? spec : collapseToSingleScene(spec), maxWords);
   const maxTokens = multi ? 12000 : 4000;
 
   // Tentativo 1.
@@ -164,4 +167,39 @@ function summarizeZodError(err: { issues: Array<{ path: Array<string | number>; 
     .slice(0, 8)
     .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
     .join('; ');
+}
+
+/**
+ * Limita il voiceover a `maxWords` parole, tagliando alla fine dell'ultima frase completa entro il
+ * limite. Riallinea le finestre di parole delle scene e gli ancoraggi dei layer, e toglie le scene
+ * che cadrebbero oltre il taglio. Il prompt chiede già meno parole: qui si garantisce il massimo.
+ */
+export function capVoiceover(spec: VideoSpecType, maxWords: number): VideoSpecType {
+  const words = spec.voiceover.text.trim().split(/\s+/);
+  if (words.length <= maxWords) return spec;
+  let cut = maxWords;
+  for (let i = maxWords; i > Math.floor(maxWords * 0.6); i--) {
+    if (/[.!?…]["»”)]?$/.test(words[i - 1] ?? '')) {
+      cut = i;
+      break;
+    }
+  }
+  const clampWord = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(clampWord);
+    if (!node || typeof node !== 'object') return;
+    const o = node as Record<string, unknown>;
+    if (typeof o.word === 'number' && o.word > cut - 1) o.word = cut - 1;
+    for (const v of Object.values(o)) clampWord(v);
+  };
+  const scenes = structuredClone(spec.scenes)
+    .filter((sc) => !sc.wordRange || sc.wordRange.start < cut)
+    .map((sc) => (sc.wordRange ? { ...sc, wordRange: { start: sc.wordRange.start, end: Math.min(sc.wordRange.end, cut) } } : sc));
+  const last = scenes[scenes.length - 1];
+  if (last?.wordRange) last.wordRange.end = cut;
+  clampWord(scenes);
+  return {
+    ...spec,
+    voiceover: { ...spec.voiceover, text: words.slice(0, cut).join(' ') },
+    scenes: scenes.length > 0 ? scenes : spec.scenes.slice(0, 1),
+  };
 }

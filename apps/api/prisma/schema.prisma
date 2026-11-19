@@ -144,6 +144,7 @@ model Tenant {
 
   @@index([planId])
   creditCharges CreditCharge[]
+  creditReservations CreditReservation[]
 }
 
 model User {
@@ -334,6 +335,11 @@ model Course {
   // Catalogo integrazioni: filtra rapidamente i corsi condivisibili per tenant.
   @@index([tenantId, shareable])
   creditCharges CreditCharge[]
+  /// Budget in crediti confermato (preventivo); null = nessun controllo.
+  creditBudget  Int?
+  /// Opzioni scelte nel preventivo (video pillole, narrazione, video avatar, copertine moduli).
+  estimateOptions Json?
+  creditReservations CreditReservation[]
 }
 
 model Module {
@@ -775,4 +781,18 @@ model CreditCharge {
   @@unique([reference, feature])
   @@index([tenantId, courseId])
   @@index([tenantId, slideImportId])
+}
+
+/// Riserva di crediti aperta (hold non ancora catturato o liberato), contata nel budget del corso.
+model CreditReservation {
+  id        String    @id
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  courseId  String?
+  course    Course?   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  credits   Int
+  createdAt DateTime  @default(now())
+  closedAt  DateTime?
+
+  @@index([tenantId, courseId])
 }

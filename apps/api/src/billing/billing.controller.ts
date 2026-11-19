@@ -1,7 +1,8 @@
 import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { z } from 'zod';
-import { CourseEstimateInput, type CourseEstimateInput as CourseEstimateInputType } from '@scorm/contracts';
+import { CourseEstimateInput, CourseEstimateOptions, type CourseEstimateInput as CourseEstimateInputType } from '@scorm/contracts';
 import { CurrentContext, type AuthContext } from '../auth/auth-context.js';
+import { Roles } from '../auth/roles.decorator.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { BillingService } from './billing.service.js';
 
@@ -21,6 +22,8 @@ const TxQuery = z.object({
   page: z.coerce.number().int().min(1).max(1000).default(1),
 });
 type TxQueryType = z.infer<typeof TxQuery>;
+const ConfirmBudgetBody = z.object({ options: CourseEstimateOptions.partial().optional() });
+type ConfirmBudgetBodyType = z.infer<typeof ConfirmBudgetBody>;
 /** Importi di ricarica del wallet personale consentiti (euro; 1 EUR = 100 crediti). */
 const TopupBody = z.object({ amountEur: z.number().int().min(5).max(500) });
 type TopupBodyType = z.infer<typeof TopupBody>;
@@ -50,6 +53,24 @@ export class BillingController {
   @Get('estimate/courses/:courseId')
   estimateExisting(@CurrentContext() ctx: AuthContext, @Param('courseId') courseId: string) {
     return this.billing.estimateExistingCourse(ctx.tenant.tenantId, courseId);
+  }
+  /** Prezzi massimi delle operazioni di una lezione, per i pulsanti. */
+  @Get('estimate/courses/:courseId/lessons/:lessonId')
+  estimateLesson(@CurrentContext() ctx: AuthContext, @Param('courseId') courseId: string, @Param('lessonId') lessonId: string) {
+    return this.billing.estimateLesson(ctx.tenant.tenantId, courseId, lessonId);
+  }
+  /**
+   * Conferma il preventivo del corso (con le opzioni scelte): diventa il budget. Le spese che lo
+   * supererebbero chiedono poi una conferma esplicita.
+   */
+  @Post('courses/:courseId/budget/confirm')
+  @Roles('EDITOR')
+  confirmBudget(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Body(new ZodValidationPipe(ConfirmBudgetBody)) body: ConfirmBudgetBodyType,
+  ) {
+    return this.billing.confirmBudget(ctx.tenant.tenantId, courseId, body.options);
   }
   /** Movimenti del wallet dell'azienda o personale (solo quelli che cambiano il saldo). */
   @Get('transactions')

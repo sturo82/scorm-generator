@@ -9,6 +9,7 @@ import { Input, Label, Textarea } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
+import { CreditCost } from '@/components/ui/credit-cost';
 import {
   heygenAvatarCreationCustomerPriceUsd,
   heygenAvatarTypeLabel,
@@ -18,6 +19,7 @@ import {
   useMyAvatars,
   useRefreshMyAvatars,
   useCreatePhotoAvatar,
+  useWallet,
   useCreatePromptAvatar,
   useDeleteAvatar,
 } from '@/lib/api/hooks';
@@ -47,6 +49,7 @@ export default function AvatarsSettingsPage() {
   const { data, isLoading, isError } = useMyAvatars();
   const refreshAvatars = useRefreshMyAvatars();
   const createPhoto = useCreatePhotoAvatar();
+  const billed = useWallet().data?.enabled === true;
   const createPrompt = useCreatePromptAvatar();
   const del = useDeleteAvatar();
 
@@ -138,8 +141,10 @@ export default function AvatarsSettingsPage() {
         <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
         <p className="text-muted-foreground">
           La creazione di un avatar ha un costo una tantum di{' '}
-          <span className="font-medium text-foreground">{AVATAR_CREATION_PRICE_LABEL}</span> (prezzo
-          al cliente, markup incluso). Gli avatar creati sono riutilizzabili in tutti i corsi del team.
+          <span className="font-medium text-foreground">
+            {billed ? <CreditCost prefix="" items={[{ feature: 'avatar_creation_photo' }]} /> : AVATAR_CREATION_PRICE_LABEL}
+          </span>
+          . Gli avatar creati sono riutilizzabili in tutti i corsi del team.
         </p>
       </div>
 
@@ -323,7 +328,8 @@ export default function AvatarsSettingsPage() {
 
               <Button type="submit" disabled={!canCreate} className="w-full">
                 {creating ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-                Crea avatar ({AVATAR_CREATION_PRICE_LABEL})
+                Crea avatar
+                {billed ? <CreditCost items={[{ feature: 'avatar_creation_photo' }]} /> : ` (${AVATAR_CREATION_PRICE_LABEL})`}
               </Button>
             </form>
           </CardContent>

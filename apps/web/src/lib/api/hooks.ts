@@ -1,6 +1,6 @@
 'use client';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Block, Brief, CourseEstimateInput, CreditQuoteItem, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
+import type { Block, Brief, CourseEstimateInput, CourseEstimateOptions, CreditQuoteItem, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
 import { getApiClient } from './client';
 import type { PronunciationEntry, SlideAvatarType, StartSlideClipsInput, BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole, AttachStockImageInput, AttachStockCoverInput } from './types';
 
@@ -763,6 +763,37 @@ export function useExistingCourseEstimate(courseId: string) {
     // Cambia man mano che si generano struttura, lezioni e test.
     refetchInterval: 15_000,
     retry: false,
+  });
+}
+/** Preventivo massimo di un video da slide prima dei copioni; solo con i crediti attivi. */
+export function useSlideImportEstimate(courseId: string, importId: string, sections = false, enabled = true) {
+  const wallet = useWallet();
+  return useQuery({
+    queryKey: ['billing', 'estimate', 'slides', courseId, importId, sections],
+    queryFn: () => api.estimateSlideImport(courseId, importId, sections),
+    enabled: enabled && wallet.data?.enabled === true && Boolean(importId),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+/** Prezzi massimi delle operazioni di una lezione (immagini, voce, video animati); solo con i crediti attivi. */
+export function useLessonEstimate(courseId: string, lessonId: string, enabled = true) {
+  const wallet = useWallet();
+  return useQuery({
+    queryKey: ['billing', 'estimate', 'lesson', courseId, lessonId],
+    queryFn: () => api.estimateLesson(courseId, lessonId),
+    enabled: enabled && wallet.data?.enabled === true,
+    staleTime: 5_000,
+    refetchInterval: 20_000,
+    retry: false,
+  });
+}
+/** Conferma il preventivo del corso come budget. */
+export function useConfirmCourseBudget(courseId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (options?: Partial<CourseEstimateOptions>) => api.confirmCourseBudget(courseId, options),
+    onSuccess: (view) => qc.setQueryData(['billing', 'estimate', 'course', courseId], view),
   });
 }
 /** Crediti addebitati per un corso (solo con i crediti attivi). */

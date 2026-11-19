@@ -1,5 +1,5 @@
-import type { Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CourseCreditsView, CourseEstimateInput, CourseEstimateView, CreditQuoteView, FeedCategory, WalletTransactionsView, WalletView } from '@scorm/contracts';
-import { notifyInsufficientCredits } from '../billing-events';
+import type { Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteView, FeedCategory, WalletTransactionsView, WalletView } from '@scorm/contracts';
+import { confirmOverBudget, notifyInsufficientCredits, parseOverBudget } from '../billing-events';
 import { getSession, handleSessionExpired } from '../auth';
 import type {
   AdminUserView,
@@ -69,9 +69,11 @@ import type {
 export class HttpApiClient implements ApiClient {
   constructor(private readonly baseUrl: string) {}
 
-  private async request<T>(path: string, init?: RequestInit): Promise<T> {
+  private async request<T>(path: string, init?: RequestInit, creditConfirm?: number): Promise<T> {
     const session = getSession();
     const headers = new Headers(init?.headers);
+    // Crediti oltre il preventivo del corso già confermati dall'utente (vedi 409 over_budget).
+    if (creditConfirm) headers.set('x-credit-confirm', String(creditConfirm));
     headers.set('Content-Type', 'application/json');
     if (session) headers.set('Authorization', `Bearer ${session.token}`);
     headers.set('x-correlation-id', crypto.randomUUID());
@@ -84,6 +86,12 @@ export class HttpApiClient implements ApiClient {
       const body = await res.text();
       // Crediti insufficienti: avviso globale con il link di ricarica (vedi InsufficientCreditsDialog).
       if (res.status === 402) notifyInsufficientCredits(body);
+      // Fuori preventivo del corso: si chiede conferma e, se confermato, si ripete la richiesta.
+      const over = res.status === 409 && !creditConfirm ? parseOverBudget(body) : null;
+      if (over) {
+        if (await confirmOverBudget(over)) return this.request<T>(path, init, over.over);
+        throw new Error('Operazione annullata: supera il preventivo del corso');
+      }
       throw new Error(`API ${res.status}: ${body.slice(0, 300)}`);
     }
     if (res.status === 204) return undefined as T;
@@ -361,6 +369,20 @@ export class HttpApiClient implements ApiClient {
   }
   estimateExistingCourse(courseId: string) {
     return this.request<CourseEstimateView>(`/billing/estimate/courses/${encodeURIComponent(courseId)}`);
+  }
+  estimateSlideImport(courseId: string, importId: string, sections: boolean) {
+    return this.request<SlideImportEstimateView>(
+      `/courses/${encodeURIComponent(courseId)}/slides/imports/${encodeURIComponent(importId)}/estimate?sections=${sections}`,
+    );
+  }
+  estimateLesson(courseId: string, lessonId: string) {
+    return this.request<LessonEstimateView>(`/billing/estimate/courses/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}`);
+  }
+  confirmCourseBudget(courseId: string, options?: Partial<CourseEstimateOptions>) {
+    return this.request<CourseEstimateView>(`/billing/courses/${encodeURIComponent(courseId)}/budget/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ options }),
+    });
   }
   getCourseCredits(courseId: string) {
     return this.request<CourseCreditsView>(`/billing/courses/${encodeURIComponent(courseId)}`);

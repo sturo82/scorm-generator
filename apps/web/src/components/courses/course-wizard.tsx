@@ -11,6 +11,7 @@ import { CourseSourcesPanel } from '@/components/courses/course-sources-panel';
 import { CourseBuilder } from '@/components/courses/course-builder';
 import { CoursePreview } from '@/components/courses/course-preview';
 import { CoursePricingPanel } from '@/components/courses/course-pricing-panel';
+import { CourseBudget } from '@/components/app/course-budget';
 import { ExportDialog } from '@/components/courses/export-dialog';
 import { useToast } from '@/components/ui/toast';
 import {
@@ -26,6 +27,7 @@ import {
   useActiveJobs,
   useBrands,
   useWallet,
+  useConfirmCourseBudget,
 } from '@/lib/api/hooks';
 import { StockPhotoPicker } from '@/components/courses/stock-photo-picker';
 import { CoverFramer, COVER_ASPECT } from '@/components/courses/cover-framer';
@@ -63,6 +65,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
   const creditsOn = useWallet().data?.enabled === true;
   const modules = useModules(courseId);
   const saveBrief = useSaveBrief(courseId);
+  const confirmBudget = useConfirmCourseBudget(courseId);
   const genCover = useGenerateCover(courseId);
   const attachStockCover = useAttachStockCover(courseId);
   const uploadCover = useUploadCover(courseId);
@@ -148,6 +151,8 @@ export function CourseWizard({ courseId }: { courseId: string }) {
   async function handleSaveBrief(brief: Brief) {
     try {
       await saveBrief.mutateAsync(brief);
+      // Il preventivo mostrato nel brief diventa il budget del corso.
+      await confirmBudget.mutateAsync(undefined).catch(() => undefined);
       toast.show('Brief salvato', 'success');
       setActive('structure');
     } catch {
@@ -315,6 +320,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
           <p className="text-sm font-medium">Avanzamento</p>
           <span className="text-xs text-muted-foreground">{progressPct}%</span>
         </div>
+        <CourseBudget courseId={courseId} className="mb-3" />
         <div className="mb-4 h-2 w-full overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
           <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progressPct}%` }} />
         </div>

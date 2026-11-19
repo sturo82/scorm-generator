@@ -1,4 +1,4 @@
-import type { Assessment, Block, Brief, BriefDraft, CourseCreditsView, CourseEstimateView, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
+import type { Assessment, Block, Brief, BriefDraft, CourseCreditsView, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import { computeQuote } from '@scorm/contracts';
 import type {
   AdminUserView,
@@ -694,10 +694,21 @@ export class MockApiClient implements ApiClient {
       modules: 0,
       tests: 0,
       aiChosenFormats: 0,
+      options: { lessonVideos: true, narration: false, avatarVideo: false, moduleCovers: false },
       prices: { structure: null, test: null, image: null, lesson: { standard: null, pillola: null, pillola_interattiva: null, video_first: null } },
     };
   }
   async estimateExistingCourse(): Promise<CourseEstimateView> {
+    return this.estimateCourse();
+  }
+  async estimateSlideImport(): Promise<SlideImportEstimateView> {
+    const empty = { minutes: 0, lines: [], total: 0, priced: true };
+    return { billed: false, slides: 0, slidesOnly: empty, withKnowledge: empty };
+  }
+  async estimateLesson(): Promise<LessonEstimateView> {
+    return { billed: false, images: { missing: 0, missingCredits: 0, all: 0, allCredits: 0 }, narration: null, cartoon: null };
+  }
+  async confirmCourseBudget(): Promise<CourseEstimateView> {
     return this.estimateCourse();
   }
   async getCourseCredits(courseId: string): Promise<CourseCreditsView> {

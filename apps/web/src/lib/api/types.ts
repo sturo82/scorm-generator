@@ -1,4 +1,4 @@
-import type { CourseCreditsView, CourseEstimateInput, CourseEstimateView, CreditQuoteItem, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
+import type { CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteItem, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import type {
   Brief,
   BriefDraft,
@@ -577,6 +577,12 @@ export interface ApiClient {
   estimateCourse(input: Partial<CourseEstimateInput>): Promise<CourseEstimateView>;
   /** Quanto manca per completare un corso esistente. */
   estimateExistingCourse(courseId: string): Promise<CourseEstimateView>;
+  /** Preventivo massimo di un video da slide prima dei copioni. */
+  estimateSlideImport(courseId: string, importId: string, sections: boolean): Promise<SlideImportEstimateView>;
+  /** Prezzi massimi delle operazioni di una lezione. */
+  estimateLesson(courseId: string, lessonId: string): Promise<LessonEstimateView>;
+  /** Conferma il preventivo del corso come budget (con le opzioni scelte). */
+  confirmCourseBudget(courseId: string, options?: Partial<CourseEstimateOptions>): Promise<CourseEstimateView>;
   /** Crediti addebitati per un corso, per funzione. */
   getCourseCredits(courseId: string): Promise<CourseCreditsView>;
   /** Movimenti che cambiano il saldo del wallet aziendale o personale. */
