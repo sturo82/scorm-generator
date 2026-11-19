@@ -29,3 +29,4 @@ export * from './video-spec-timing.js';
 export * from './billing.js';
 export * from './slide-video.js';
 export * from './knowledge-structure.js';
+export * from './course-plan.js';

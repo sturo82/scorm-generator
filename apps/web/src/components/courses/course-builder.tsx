@@ -2,7 +2,8 @@
 
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { CreditCost } from '@/components/ui/credit-cost';
+import { CreditsTag } from '@/components/app/credits-tag';
+import { CourseEstimate } from '@/components/app/course-estimate';
 import { Plus, Sparkles, Wand2, Trash2, Pencil, Image as ImageIcon, Volume2, Video, Captions, Search, Check, ChevronRight, Eye, UserRound, Film, Clapperboard } from 'lucide-react';
 import type { Block } from '@scorm/contracts';
 import {
@@ -57,6 +58,7 @@ import {
   useDeleteAssessment,
   useGenerateAssessment,
   useRepairAssessments,
+  useExistingCourseEstimate,
   qk,
 } from '@/lib/api/hooks';
 import { AiWorking, AiWorkingInline } from '@/components/courses/ai-working';
@@ -83,6 +85,7 @@ export function CourseBuilder({
   highlightTests?: boolean;
 }) {
   const modules = useModules(courseId);
+  const estimate = useExistingCourseEstimate(courseId);
   const addModule = useAddModule(courseId);
   const genOutline = useGenerateOutline(courseId);
   const qc = useQueryClient();
@@ -160,7 +163,7 @@ export function CourseBuilder({
                 <Button className="mt-auto self-start" onClick={handleGenerateStructure} disabled={genOutline.isPending}>
                   <Wand2 className="size-4" />
                   {hasStructure ? 'Rigenera struttura' : 'Genera struttura'}
-                  <CreditCost items={[{ feature: 'text_standard', units: 1 }]} />
+                  <CreditsTag value={estimate.data?.prices.structure} billed={estimate.data?.billed} />
                 </Button>
               )}
             </CardContent>
@@ -229,6 +232,9 @@ export function CourseBuilder({
             Nessun modulo ancora. Scegli una delle due strade qui sopra, oppure aggiungi un modulo a mano.
           </p>
         )}
+        {!hasStructure && !generatingStructure && (
+          <CourseEstimate courseId={courseId} title="Preventivo del corso (moduli di testo)" />
+        )}
 
         <SlideVideoDialog courseId={courseId} open={slideVideoOpen} onClose={() => setSlideVideoOpen(false)} />
       </div>
@@ -245,6 +251,7 @@ export function CourseBuilder({
  */
 function ContentBuilder({ courseId, highlightTests = false }: { courseId: string; highlightTests?: boolean }) {
   const modules = useModules(courseId);
+  const estimate = useExistingCourseEstimate(courseId);
   const genAll = useGenerateAllContent(courseId);
   const approveAll = useSetStatusAll(courseId);
   const activeJobs = useActiveJobs(courseId);
@@ -349,6 +356,7 @@ function ContentBuilder({ courseId, highlightTests = false }: { courseId: string
 
   return (
     <div className="space-y-6">
+      {pendingCount > 0 && !batchActive && <CourseEstimate courseId={courseId} title="Per completare il corso" />}
       <Card className="border-primary/20 bg-accent/30">
         <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
@@ -385,7 +393,7 @@ function ContentBuilder({ courseId, highlightTests = false }: { courseId: string
             <Button onClick={handleGenerateAll} disabled={batchActive || pendingCount === 0}>
               <Wand2 className="size-4" />
               {batchActive ? 'Generazione in corso…' : `Genera tutti i contenuti (${pendingCount})`}
-              {!batchActive && <CreditCost items={[{ feature: 'text_standard', units: pendingCount }]} />}
+              {!batchActive && <CreditsTag value={estimate.data?.total} billed={estimate.data?.billed} prefix=" · max " />}
             </Button>
           </div>
         </CardContent>
@@ -821,6 +829,7 @@ function LessonCard({
   onToggle?: () => void;
 }) {
   const qc = useQueryClient();
+  const estimate = useExistingCourseEstimate(courseId);
   const genContent = useGenerateLessonContent(courseId);
   const genImages = useGenerateLessonImages(courseId);
   const genNarration = useGenerateLessonNarration(courseId);
@@ -1110,7 +1119,7 @@ function LessonCard({
             >
               <Wand2 className="size-4" />
               {generating ? 'Rigenero…' : 'Rigenera'}
-              {!generating && <CreditCost items={[{ feature: 'text_standard', units: 1 }]} />}
+              {!generating && <CreditsTag value={estimate.data?.prices.lesson[lessonFormatOf(lesson)]} billed={estimate.data?.billed} prefix=" · max " />}
             </Button>
           )}
           <StatusControls
@@ -1393,7 +1402,7 @@ function LessonCard({
         <Button size="sm" onClick={handleGenerate} disabled={generating}>
           <Wand2 className="size-4" />
           {generating ? 'Generazione…' : lesson.blocks.length ? 'Rigenera' : 'Genera contenuti'}
-          {!generating && <CreditCost items={[{ feature: 'text_standard', units: 1 }]} />}
+          {!generating && <CreditsTag value={estimate.data?.prices.lesson[lessonFormatOf(lesson)]} billed={estimate.data?.billed} prefix=" · max " />}
         </Button>
         {lesson.blocks.length > 0 && !generating && (
           <>

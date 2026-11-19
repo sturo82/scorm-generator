@@ -11,6 +11,53 @@ export function avatarFeature(engine: string, avatarType: string): string {
   return avatarType === 'digital_twin' ? 'video_avatar_iii_twin' : 'video_avatar_iii';
 }
 
+/**
+ * Tetto di immagini generate per lezione, per formato. È un limite rigido (il codice non ne genera
+ * oltre) e fa parte del prezzo dei pacchetti lezione: alzarlo cambia il caso peggiore su cui Manager
+ * calcola il prezzo.
+ */
+export const LESSON_IMAGE_CAP: Readonly<Record<'standard' | 'pillola' | 'pillola_interattiva' | 'video_first', number>> = {
+  standard: 6,
+  pillola: 2,
+  pillola_interattiva: 2,
+  video_first: 1,
+};
+
+/** Tetto di immagini della lezione per un formato (formati sconosciuti: quello della lezione standard). */
+export function lessonImageCap(format: string | null | undefined): number {
+  return LESSON_IMAGE_CAP[(format ?? 'standard') as keyof typeof LESSON_IMAGE_CAP] ?? LESSON_IMAGE_CAP.standard;
+}
+
+/**
+ * Pacchetti a prezzo fisso (listino di Manager): un pezzo di corso finito, non una chiamata AI.
+ * Se Manager non li ha ancora prezzati si usa il listino per operazione (`text_standard`, `image_generation`).
+ */
+export const PACKAGE_FEATURES = {
+  structure: 'course_structure',
+  test: 'course_test',
+  lesson: {
+    standard: 'lesson_standard',
+    pillola: 'lesson_pillola',
+    pillola_interattiva: 'lesson_pillola_interattiva',
+    video_first: 'lesson_video_first',
+  },
+} as const;
+
+/** Pacchetto della lezione per formato (formati sconosciuti: lezione standard). */
+export function lessonPackageFeature(format: string | null | undefined): string {
+  return PACKAGE_FEATURES.lesson[(format ?? 'standard') as keyof typeof PACKAGE_FEATURES.lesson] ?? PACKAGE_FEATURES.lesson.standard;
+}
+
+/** Tutte le feature dei pacchetti. */
+export const ALL_PACKAGE_FEATURES: readonly string[] = [
+  PACKAGE_FEATURES.structure,
+  PACKAGE_FEATURES.test,
+  ...Object.values(PACKAGE_FEATURES.lesson),
+];
+
+/** Tentativi massimi di generazione di una lezione o di un test (anche questo entra nel caso peggiore). */
+export const GENERATION_MAX_ATTEMPTS = 2;
+
 /** Voce di un preventivo in crediti: feature e, per quelle a unità, le unità (elementi o minuti). */
 export interface CreditQuoteItem {
   feature: string;

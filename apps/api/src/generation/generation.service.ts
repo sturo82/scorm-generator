@@ -12,6 +12,8 @@ import {
   CONTRACTS_VERSION,
   resolveLessonLayout,
   lessonContentInputHash,
+  lessonImageCap,
+  GENERATION_MAX_ATTEMPTS,
   type LessonFormat,
   type CourseOutline as CourseOutlineType,
   type Block as BlockType,
@@ -24,6 +26,8 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { JOB_QUEUE, LLM_PROVIDER } from '../providers/provider.constants.js';
 import { ModulesService } from '../courses/modules.service.js';
 import { MediaService } from './media.service.js';
+import { capLessonImages } from './image-cap.js';
+import { enforceOutlinePlan } from './outline-plan.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { BillingService, type BillItem, type Reservation } from '../billing/billing.service.js';
 import { currentPayer, runWithPayer, type Payer } from '../billing/payer-context.js';
@@ -116,7 +120,7 @@ export class GenerationService {
   /** Accoda la generazione dell'outline. Ritorna il jobId per il polling. */
   async enqueueOutline(ctx: RequestContext, courseId: string): Promise<{ jobId: string }> {
     await this.requireCourse(ctx.tenant.tenantId, courseId);
-    return this.enqueue(ctx, courseId, 'course.generate_outline', { courseId }, [{ feature: 'text_standard', units: 1 }]);
+    return this.enqueue(ctx, courseId, 'course.generate_outline', { courseId }, this.billing.structureItems());
   }
 
   /** Accoda la generazione dei contenuti di una lezione. */
@@ -132,7 +136,7 @@ export class GenerationService {
       courseId,
       'course.generate_content',
       { courseId, lessonId, toneInstruction },
-      [{ feature: 'text_standard', units: 1 }],
+      this.billing.lessonItems([await this.lessonFormatOf(courseId, lessonId)]),
     );
   }
 
@@ -145,9 +149,7 @@ export class GenerationService {
     moduleId?: string,
   ): Promise<{ jobId: string }> {
     await this.requireCourse(ctx.tenant.tenantId, courseId);
-    return this.enqueue(ctx, courseId, 'course.generate_assessment', { courseId, scope, focus, moduleId }, [
-      { feature: 'text_standard', units: 1 },
-    ]);
+    return this.enqueue(ctx, courseId, 'course.generate_assessment', { courseId, scope, focus, moduleId }, this.billing.testItems(1));
   }
 
   /**
@@ -195,8 +197,11 @@ export class GenerationService {
   async enqueueAllContent(ctx: RequestContext, courseId: string): Promise<{ jobId: string }> {
     await this.requireCourse(ctx.tenant.tenantId, courseId);
     // Lezioni ancora vuote + test previsti dal brief (stima per eccesso: ciò che non si genera si libera).
-    const units = (await this.countPendingLessons(courseId)) + (await this.plannedAssessmentCount(ctx.tenant.tenantId, courseId));
-    return this.enqueue(ctx, courseId, 'course.generate_all_content', { courseId }, units > 0 ? [{ feature: 'text_standard', units }] : []);
+    const bill = [
+      ...this.billing.lessonItems(await this.pendingLessonFormats(courseId)),
+      ...this.billing.testItems(await this.plannedAssessmentCount(ctx.tenant.tenantId, courseId)),
+    ];
+    return this.enqueue(ctx, courseId, 'course.generate_all_content', { courseId }, bill);
   }
 
   /**
@@ -208,7 +213,7 @@ export class GenerationService {
   async enqueueAllAssessments(ctx: RequestContext, courseId: string): Promise<{ jobId: string }> {
     await this.requireCourse(ctx.tenant.tenantId, courseId);
     const units = await this.plannedAssessmentCount(ctx.tenant.tenantId, courseId);
-    return this.enqueue(ctx, courseId, 'course.generate_all_assessments', { courseId }, units > 0 ? [{ feature: 'text_standard', units }] : []);
+    return this.enqueue(ctx, courseId, 'course.generate_all_assessments', { courseId }, this.billing.testItems(units));
   }
 
   /** Stato di un job (per il polling del client). Isolato per tenant. */
@@ -372,8 +377,7 @@ export class GenerationService {
       const reservation = (params.billing as { reservation?: Reservation } | undefined)?.reservation;
       if (!job || !reservation) return;
       const tracked = this.jobActual.get(jobId) ?? {};
-      const actual: Record<string, number> = {};
-      for (const h of reservation.holds) actual[h.feature] = tracked[h.feature] ?? 0;
+      const actual = BillingService.jobActual(reservation, tracked);
       await this.billing.settle(job.tenantId, reservation, actual);
       const { billing: _b, ...rest } = params;
       await this.prisma.generationJob.update({ where: { id: jobId }, data: { params: rest as object } });
@@ -381,6 +385,7 @@ export class GenerationService {
       this.logger.warn(`Chiusura addebito job ${jobId} non riuscita: ${err instanceof Error ? err.message : 'errore'}`);
     } finally {
       this.jobActual.delete(jobId);
+      this.jobPackages.delete(jobId);
     }
   }
 
@@ -401,14 +406,39 @@ export class GenerationService {
   }
 
   /** Lezioni ancora senza contenuti (le stesse che `runAllContent` genererà). */
-  private async countPendingLessons(courseId: string): Promise<number> {
+  /** Formato delle lezioni ancora senza contenuti (decide il pacchetto di ciascuna). */
+  private async pendingLessonFormats(courseId: string): Promise<LessonFormat[]> {
     const modules = await this.prisma.module.findMany({
       where: { courseId },
-      include: { lessons: { select: { blocks: true } } },
+      include: { lessons: { select: { blocks: true, format: true, videoFirst: true, pillola: true } } },
     });
     return modules
       .flatMap((m) => m.lessons)
-      .filter((l) => !Array.isArray(l.blocks) || (l.blocks as unknown[]).length === 0).length;
+      .filter((l) => !Array.isArray(l.blocks) || (l.blocks as unknown[]).length === 0)
+      .map((l) => resolveLessonLayout({ format: l.format, videoFirst: l.videoFirst, pillola: l.pillola }));
+  }
+
+  /** Formato di una lezione del corso. */
+  private async lessonFormatOf(courseId: string, lessonId: string): Promise<LessonFormat> {
+    const l = await this.prisma.lesson.findFirst({
+      where: { id: lessonId, module: { courseId } },
+      select: { format: true, videoFirst: true, pillola: true },
+    });
+    if (!l) throw new NotFoundException('Lezione non trovata');
+    return resolveLessonLayout({ format: l.format, videoFirst: l.videoFirst, pillola: l.pillola });
+  }
+
+  /** True se il job ha una riserva a pacchetti (immagini incluse nella lezione). Letto una volta per job. */
+  private readonly jobPackages = new Map<string, boolean>();
+  private async usesPackages(jobId: string | undefined): Promise<boolean> {
+    if (!jobId) return false;
+    const hit = this.jobPackages.get(jobId);
+    if (hit !== undefined) return hit;
+    const job = await this.prisma.generationJob.findUnique({ where: { id: jobId }, select: { params: true } });
+    const params = (job?.params && typeof job.params === 'object' ? job.params : {}) as Record<string, unknown>;
+    const value = BillingService.usesPackages((params.billing as { reservation?: Reservation } | undefined)?.reservation);
+    this.jobPackages.set(jobId, value);
+    return value;
   }
 
   /**
@@ -514,7 +544,10 @@ export class GenerationService {
       // JSON tool-use (stop=max_tokens) lasciando `modules` incompleto/assente.
       maxTokens: 8000,
     });
-    const generated = CourseOutline.parse(JSON.parse(result.text));
+    // La struttura si riporta al piano del brief (lezioni, moduli, formati): è il preventivo del corso.
+    const planned = enforceOutlinePlan(CourseOutline.parse(JSON.parse(result.text)), brief);
+    if (planned.changes.length > 0) this.logger.log(`Outline corso ${courseId}: ${planned.changes.join('; ')}`);
+    const generated = planned.outline;
     // I flag dei test NON sono una scelta libera del modello: derivano dal brief.
     // Il prompt chiede all'LLM di impostarli "secondo i test richiesti", ma il
     // modello a volte li applica a casaccio (es. un solo modulo). Qui li FORZIAMO
@@ -543,7 +576,7 @@ export class GenerationService {
       where: { id: courseId },
       data: { outline: outline as object },
     });
-    this.track(jobId, 'text_standard');
+    this.track(jobId, 'structure');
 
     // Materializzazione automatica: crea subito moduli/lezioni dall'outline, così
     // la struttura è pronta senza un passo manuale. Idempotente: non duplica e
@@ -624,6 +657,7 @@ export class GenerationService {
               videoFirst,
               courseFocus: brief?.success ? brief.data.courseFocus : undefined,
               format: promptFormat,
+              maxImages: lessonImageCap(lessonFormat),
             }),
           },
         ],
@@ -650,12 +684,12 @@ export class GenerationService {
       return { blocks, result };
     };
 
-    // Retry automatico sugli errori recuperabili dell'LLM (fino a 3 tentativi
-    // totali). L'utente non deve ritentare a mano: la variabilità del modello
+    // Retry automatico sugli errori recuperabili dell'LLM (fino a GENERATION_MAX_ATTEMPTS
+    // tentativi totali: è un limite del prezzo dei pacchetti). L'utente non deve ritentare a mano: la variabilità del modello
     // viene assorbita qui, lato server. Al retry abbassiamo la temperatura per
     // un output più aderente allo schema. Gli errori NON recuperabili (es.
     // provider non disponibile) vengono rilanciati subito senza ritentare.
-    const MAX_ATTEMPTS = 3;
+    const MAX_ATTEMPTS = GENERATION_MAX_ATTEMPTS;
     let success: { blocks: BlockType[]; result: LLMResult } | undefined;
     let lastErr: unknown;
     for (let i = 0; i < MAX_ATTEMPTS; i++) {
@@ -674,7 +708,13 @@ export class GenerationService {
       }
     }
     if (!success) throw lastErr ?? new Error('Generazione contenuti non riuscita');
-    const { blocks, result } = success;
+    const { result } = success;
+    // Tetto rigido di immagini per formato: oltre si tolgono (il prompt lo chiede, qui si garantisce).
+    const capped = capLessonImages(success.blocks, lessonImageCap(lessonFormat));
+    if (capped.removed > 0) {
+      this.logger.log(`Lezione ${lessonId}: ${capped.removed} immagini oltre il tetto del formato ${lessonFormat} rimosse`);
+    }
+    const blocks = capped.blocks;
 
     await this.recordUsage({
       tenantId: ctx.tenant.tenantId,
@@ -706,7 +746,7 @@ export class GenerationService {
       where: { id: lessonId },
       data: { blocks: withCitations as object, schemaVersion: CONTRACTS_VERSION, contentInputHash },
     });
-    this.track(jobId, 'text_standard');
+    this.track(jobId, `lesson:${lessonFormat}`);
 
     // Immagini automatiche: scorporate dalla generazione dei contenuti e lanciate
     // come task parallele DOPO il salvataggio dei block. Questo evita che la
@@ -719,7 +759,7 @@ export class GenerationService {
     if (wantsImages) {
       // Chiamata singola (non batch): genera immagini subito (best-effort).
       try {
-        await this.media.generateLessonImages(ctx.tenant.tenantId, courseId, lessonId);
+        await this.media.generateLessonImages(ctx.tenant.tenantId, courseId, lessonId, false, await this.usesPackages(jobId));
       } catch (err) {
         this.logger.warn(
           `Immagini automatiche non generate (lezione ${lessonId}): ${err instanceof Error ? err.message : 'errore'}`,
@@ -813,9 +853,10 @@ export class GenerationService {
     // Best-effort: un errore non cambia lo stato del job.
     if (imageQueue.length > 0) {
       this.logger.log(`Batch immagini: ${imageQueue.length} lezioni da illustrare`);
+      const includedInPackage = await this.usesPackages(jobId);
       await Promise.allSettled(
         imageQueue.map(({ lessonId }) =>
-          this.media.generateLessonImages(ctx.tenant.tenantId, courseId, lessonId).catch((err) => {
+          this.media.generateLessonImages(ctx.tenant.tenantId, courseId, lessonId, false, includedInPackage).catch((err) => {
             this.logger.warn(
               `Immagini batch (lezione ${lessonId}): ${err instanceof Error ? err.message : 'errore'}`,
             );
@@ -1045,7 +1086,7 @@ export class GenerationService {
 
     // Retry automatico sugli errori recuperabili (fino a 3 tentativi), così
     // l'utente non deve ritentare a mano un test fallito per variabilità LLM.
-    const MAX_ATTEMPTS = 3;
+    const MAX_ATTEMPTS = GENERATION_MAX_ATTEMPTS;
     let success: { assessment: AssessmentType; result: LLMResult } | undefined;
     let lastErr: unknown;
     for (let i = 0; i < MAX_ATTEMPTS; i++) {
@@ -1079,7 +1120,7 @@ export class GenerationService {
     // dal contesto di generazione), così lo step entra nella sequenza e fa da
     // gate. L'LLM non popola moduleId: lo impone il backend.
     await this.persistAssessment(courseId, assessment, scope === 'intermediate' ? moduleId : undefined);
-    this.track(jobId, 'text_standard');
+    this.track(jobId, 'test');
     return assessment;
   }
 

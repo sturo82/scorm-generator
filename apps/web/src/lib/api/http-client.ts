@@ -1,4 +1,4 @@
-import type { Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CourseCreditsView, CreditQuoteView, FeedCategory, WalletTransactionsView, WalletView } from '@scorm/contracts';
+import type { Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CourseCreditsView, CourseEstimateInput, CourseEstimateView, CreditQuoteView, FeedCategory, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import { notifyInsufficientCredits } from '../billing-events';
 import { getSession, handleSessionExpired } from '../auth';
 import type {
@@ -102,7 +102,7 @@ export class HttpApiClient implements ApiClient {
   createCourse(input: { title: string; description?: string; language: string }) {
     return this.request<CourseView>('/courses', { method: 'POST', body: JSON.stringify(input) });
   }
-  createCourseFromRss(input: { topic: string; title?: string; language: string; source: 'everywhere' | 'mine'; category?: FeedCategory; audience?: string; tone?: string; scope?: string; preview?: RssPreviewResult; maxArticles: number; lessonFormatDefault?: LessonFormatValue; lessonFormatHints?: Record<string, LessonFormatValue> }) {
+  createCourseFromRss(input: { topic: string; title?: string; language: string; source: 'everywhere' | 'mine'; category?: FeedCategory; audience?: string; tone?: string; scope?: string; preview?: RssPreviewResult; maxArticles: number; lessonFormatDefault?: LessonFormatValue; lessonFormatHints?: Record<string, LessonFormatValue>; requestedAssessments?: Array<'intermediate' | 'final'> }) {
     return this.request<CreateCourseFromRssResult>('/courses/from-rss', { method: 'POST', body: JSON.stringify(input) });
   }
   previewCourseFromRss(input: { topic: string; language: string; source: 'everywhere' | 'mine'; category?: FeedCategory; audience?: string; tone?: string; scope?: string }) {
@@ -111,7 +111,7 @@ export class HttpApiClient implements ApiClient {
   previewCourseFromKnowledge(input: { documentIds: string[]; language: string; topic?: string; audience?: string; tone?: string; scope?: string }) {
     return this.request<RssPreviewResult>('/courses/from-knowledge/preview', { method: 'POST', body: JSON.stringify(input) });
   }
-  createCourseFromKnowledge(input: { documentIds: string[]; language: string; topic?: string; title?: string; audience?: string; tone?: string; scope?: string; preview?: RssPreviewResult; lessonFormatDefault?: LessonFormatValue; lessonFormatHints?: Record<string, LessonFormatValue> }) {
+  createCourseFromKnowledge(input: { documentIds: string[]; language: string; topic?: string; title?: string; audience?: string; tone?: string; scope?: string; preview?: RssPreviewResult; lessonFormatDefault?: LessonFormatValue; lessonFormatHints?: Record<string, LessonFormatValue>; requestedAssessments?: Array<'intermediate' | 'final'> }) {
     return this.request<CreateCourseFromKnowledgeResult>('/courses/from-knowledge', { method: 'POST', body: JSON.stringify(input) });
   }
   listTenantFeeds() {
@@ -356,6 +356,12 @@ export class HttpApiClient implements ApiClient {
   }
   getUsage() { return this.request<UsageView>('/usage'); }
   getWallet() { return this.request<WalletView>('/billing/wallet'); }
+  estimateCourse(input: Partial<CourseEstimateInput>) {
+    return this.request<CourseEstimateView>('/billing/estimate', { method: 'POST', body: JSON.stringify(input) });
+  }
+  estimateExistingCourse(courseId: string) {
+    return this.request<CourseEstimateView>(`/billing/estimate/courses/${encodeURIComponent(courseId)}`);
+  }
   getCourseCredits(courseId: string) {
     return this.request<CourseCreditsView>(`/billing/courses/${encodeURIComponent(courseId)}`);
   }

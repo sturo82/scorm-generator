@@ -3,7 +3,8 @@
 import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Brief, type Brief as BriefType } from '@scorm/contracts';
+import { Brief, MAX_COURSE_LESSONS, plannedLessonCount, type Brief as BriefType } from '@scorm/contracts';
+import { CourseEstimate } from '@/components/app/course-estimate';
 import { Plus, X, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -52,6 +53,9 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
   const form = useForm<BriefType>({
     resolver: zodResolver(Brief),
     defaultValues: {
+      // Tutti i campi del brief salvato (lezioni dell'anteprima, formati, taglio…): il form ne mostra
+      // solo una parte, ma salvando non deve perdere gli altri.
+      ...initial,
       title: initial?.title ?? defaultTitle,
       language: initial?.language ?? defaultLanguage,
       targetAudience: initial?.targetAudience ?? '',
@@ -78,6 +82,9 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
   const knowledgeDocIds = watch('knowledgeDocIds');
   const courseSourceDocIds = watch('courseSourceDocIds');
   const autoGenerateImages = watch('autoGenerateImages');
+  const suggestedCount = initial?.suggestedLessons?.length ?? 0;
+  const desiredLessonCount = watch('desiredLessonCount');
+  const duration = watch('estimatedDurationMinutes');
   const format = watch('format') ?? (watch('videoFirst') ? 'video_first' : 'completo');
   // Documenti disponibili: globali (ready) + del corso (ready), deduplicati.
   const availableDocs = React.useMemo(() => {
@@ -187,6 +194,26 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
                 <Label htmlFor="b-duration">Durata stimata (min)</Label>
                 <Input id="b-duration" type="number" {...register('estimatedDurationMinutes', { valueAsNumber: true })} />
                 <FieldError msg={formState.errors.estimatedDurationMinutes?.message} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="b-lessons">Numero di lezioni</Label>
+                {suggestedCount > 0 ? (
+                  <p id="b-lessons" className="flex h-10 items-center text-sm text-muted-foreground">
+                    {suggestedCount} lezioni (dall&apos;anteprima)
+                  </p>
+                ) : (
+                  <Input
+                    id="b-lessons"
+                    type="number"
+                    min={1}
+                    max={MAX_COURSE_LESSONS}
+                    placeholder={String(plannedLessonCount({ estimatedDurationMinutes: duration }))}
+                    {...register('desiredLessonCount', {
+                      setValueAs: (v) => (v === '' || v === null || v === undefined ? undefined : Math.min(MAX_COURSE_LESSONS, Math.max(1, Math.round(Number(v))))),
+                    })}
+                  />
+                )}
+                <p className="text-xs text-muted-foreground">Il corso avrà esattamente queste lezioni: decide anche il preventivo.</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="b-lang">Lingua</Label>
@@ -415,6 +442,22 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
             </div>
           )}
 
+          {step === STEPS.length - 1 && (
+            <CourseEstimate
+              input={{
+                suggestedLessons: initial?.suggestedLessons ?? [],
+                desiredLessonCount: desiredLessonCount || undefined,
+                estimatedDurationMinutes: duration || undefined,
+                format,
+                lessonFormatDefault: initial?.lessonFormatDefault,
+                lessonFormatHints: initial?.lessonFormatHints ?? {},
+                requestedAssessments: assessments ?? [],
+                autoGenerateImages: autoGenerateImages !== false,
+                cover: false,
+              }}
+              note="Salvare il brief non costa nulla."
+            />
+          )}
           <div className="flex items-center justify-between pt-2">
             <Button type="button" variant="ghost" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>
               Indietro

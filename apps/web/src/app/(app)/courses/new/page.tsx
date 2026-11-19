@@ -21,6 +21,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input, Label } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Dropzone } from '@/components/knowledge/dropzone';
+import { CourseEstimate } from '@/components/app/course-estimate';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
 import { slidesAutoOpenKey } from '@/lib/slides-autoopen';
@@ -102,6 +103,8 @@ export default function NewCoursePage() {
   const [formatDefault, setFormatDefault] = React.useState<LessonFormatValue>('standard');
   // Eccezioni di formato per indice di lezione (mappate a titolo al submit).
   const [lessonFormats, setLessonFormats] = React.useState<Record<number, LessonFormatValue>>({});
+  // Test del corso: entrano nel preventivo e nel brief.
+  const [tests, setTests] = React.useState<Array<'intermediate' | 'final'>>(['final']);
 
   const readyDocs = React.useMemo(
     () => (globalDocs.data ?? []).filter((d) => d.status === 'READY'),
@@ -186,14 +189,19 @@ export default function NewCoursePage() {
   }
 
   // --- Crea ------------------------------------------------------------------
-  async function handleCreate() {
-    // Mappa le eccezioni di formato (per indice) a { titolo: formato }.
+  /** Eccezioni di formato (per indice) come { titolo: formato }. */
+  function formatHints(): Record<string, LessonFormatValue> {
     const hints: Record<string, LessonFormatValue> = {};
     editedLessons.forEach((l, i) => {
       const title0 = l.trim();
       const fmt = lessonFormats[i];
       if (title0 && fmt && fmt !== formatDefault) hints[title0] = fmt;
     });
+    return hints;
+  }
+
+  async function handleCreate() {
+    const hints = formatHints();
     const frozen: RssPreviewResult | undefined = preview
       ? {
           ...preview,
@@ -219,6 +227,7 @@ export default function NewCoursePage() {
           maxArticles,
           lessonFormatDefault: formatDefault,
           lessonFormatHints: Object.keys(hints).length > 0 ? hints : undefined,
+          requestedAssessments: tests,
         });
         courseId = res.courseId;
       } else {
@@ -233,6 +242,7 @@ export default function NewCoursePage() {
           preview: frozen,
           lessonFormatDefault: formatDefault,
           lessonFormatHints: Object.keys(hints).length > 0 ? hints : undefined,
+          requestedAssessments: tests,
         });
         courseId = res.courseId;
       }
@@ -630,6 +640,38 @@ export default function NewCoursePage() {
                     {' · '}{editedLessons.length} lezioni · default {FORMAT_OPTIONS.find((o) => o.value === formatDefault)?.label}
                   </p>
                 </div>
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-medium">Test del corso</legend>
+                  {(
+                    [
+                      ['intermediate', 'Un test alla fine di ogni modulo'],
+                      ['final', 'Test finale del corso'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <label key={value} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-[hsl(var(--primary))]"
+                        checked={tests.includes(value)}
+                        onChange={(e) =>
+                          setTests((prev) => (e.target.checked ? [...new Set([...prev, value])] : prev.filter((t) => t !== value)))
+                        }
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </fieldset>
+                <CourseEstimate
+                  input={{
+                    suggestedLessons: editedLessons.map((l) => l.trim()).filter((l) => l.length > 0),
+                    lessonFormatDefault: formatDefault,
+                    lessonFormatHints: formatHints(),
+                    requestedAssessments: tests,
+                    autoGenerateImages: true,
+                    cover: true,
+                  }}
+                  note="Creare il corso non costa nulla: i crediti si usano quando generi struttura, lezioni, test e copertina."
+                />
                 <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
                   <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
                   Creiamo il corso e prepariamo il brief. Poi proseguirai con la generazione della struttura e dei contenuti.

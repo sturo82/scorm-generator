@@ -24,7 +24,7 @@ import type {
   VoiceOption,
 } from '@scorm/domain';
 import { ConfigService } from '@nestjs/config';
-import { DEFAULT_HEYGEN_ENGINE, defaultEngineForAvatarType } from '@scorm/contracts';
+import { DEFAULT_HEYGEN_ENGINE, defaultEngineForAvatarType, lessonImageCap, resolveLessonLayout } from '@scorm/contracts';
 import type { AppConfig } from '../config/configuration.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
@@ -247,6 +247,8 @@ export class MediaService implements OnModuleInit {
     courseId: string,
     lessonId: string,
     force = false,
+    /** True se le immagini sono incluse nel pacchetto lezione già prenotato: non si addebitano a parte. */
+    includedInPackage = false,
   ): Promise<GenerateImagesResult> {
     const lesson = await this.requireLesson(tenantId, courseId, lessonId);
     const blocks = Array.isArray(lesson.blocks) ? (lesson.blocks as unknown[]) : [];
@@ -259,27 +261,30 @@ export class MediaService implements OnModuleInit {
     const warnings: string[] = [];
 
     // Attraversa in profondità i block cercando i MediaRef immagine.
-    const refs = this.collectImageRefs(blocks);
+    const allRefs = this.collectImageRefs(blocks);
+    // Tetto rigido di immagini per formato (parte del prezzo del pacchetto lezione): si generano al
+    // massimo `cap` immagini, contando quelle già presenti; le altre restano come sono.
+    const cap = lessonImageCap(
+      resolveLessonLayout({
+        format: (lesson as { format?: string | null }).format,
+        videoFirst: lesson.videoFirst,
+        pillola: (lesson as { pillola?: boolean }).pillola,
+      }),
+    );
+    const hasKey = (r: MediaRefLike) => Boolean(r.storageKey && r.storageKey.length > 0);
+    const eligible = allRefs.filter((r) => (force || !hasKey(r)) && Boolean(r.placeholderPrompt || r.alt));
+    const room = force ? cap : Math.max(0, cap - allRefs.filter(hasKey).length);
+    const refs = eligible.slice(0, room);
+    skipped += allRefs.length - refs.length;
     // Crediti: si prenotano le immagini che verranno davvero generate e si addebitano quelle riuscite.
-    const todo = refs.filter(
-      (r) => (force || !(r.storageKey && r.storageKey.length > 0)) && Boolean(r.placeholderPrompt || r.alt),
-    ).length;
-    const reservation = todo > 0
+    const todo = refs.length;
+    const reservation = todo > 0 && !includedInPackage
       ? await this.billing.reserve(tenantId, `kscorm:images:${lessonId}:${randomUUID()}`, [{ feature: 'image_generation', units: todo }])
       : null;
     try {
     for (const ref of refs) {
-      // Con force si rigenerano anche i media già presenti (es. per sostituire
-      // immagini non soddisfacenti); altrimenti si saltano.
-      if (!force && ref.storageKey && ref.storageKey.length > 0) {
-        skipped++;
-        continue;
-      }
       const prompt = ref.placeholderPrompt || ref.alt;
-      if (!prompt) {
-        skipped++;
-        continue;
-      }
+      if (!prompt) continue;
       try {
         const englishPrompt = await this.toEnglishPrompt(prompt, meterCtx);
         const result = await this.images.generate({

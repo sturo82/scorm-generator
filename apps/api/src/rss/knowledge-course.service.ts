@@ -29,6 +29,8 @@ export interface CreateFromKnowledgeInput extends PreviewFromKnowledgeInput {
   lessonFormatDefault?: LessonFormat;
   /** Eccezioni di formato per-lezione, indicizzate per titolo (onboarding). */
   lessonFormatHints?: Record<string, LessonFormat>;
+  /** Test richiesti alla creazione (intermedi di modulo, finale): entrano nel preventivo. */
+  requestedAssessments?: Array<'intermediate' | 'final'>;
 }
 
 export interface CreateFromKnowledgeResult {
@@ -139,6 +141,7 @@ export class KnowledgeCourseService {
         knowledgeDocIds: input.documentIds,
         lessonFormatDefault: input.lessonFormatDefault,
         lessonFormatHints: input.lessonFormatHints,
+        requestedAssessments: input.requestedAssessments,
         articles,
       });
     } catch (err) {

@@ -69,7 +69,14 @@ function makeService(opts?: { course?: unknown }) {
   const meterRecord = vi.fn(async () => 0);
   const meter = { record: meterRecord } as unknown as UsageMeterService;
   // Addebito in crediti non attivo: reserve/settle/release sono no-op.
-  const billing = { reserve: async () => null, settle: async () => undefined, release: async () => undefined } as unknown as BillingService;
+  const billing = {
+    reserve: async () => null,
+    settle: async () => undefined,
+    release: async () => undefined,
+    structureItems: () => [{ feature: 'text_standard', units: 1 }],
+    lessonItems: (f: unknown[]) => (f.length ? [{ feature: 'text_standard', units: f.length }] : []),
+    testItems: (n: number) => (n > 0 ? [{ feature: 'text_standard', units: n }] : []),
+  } as unknown as BillingService;
   return {
     service: new GenerationService(prisma, llm, jobs, retrieval, modules, media, meter, billing),
     jobCreate,

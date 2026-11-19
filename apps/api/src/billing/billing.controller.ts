@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { z } from 'zod';
+import { CourseEstimateInput, type CourseEstimateInput as CourseEstimateInputType } from '@scorm/contracts';
 import { CurrentContext, type AuthContext } from '../auth/auth-context.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { BillingService } from './billing.service.js';
@@ -39,6 +40,16 @@ export class BillingController {
   @Get('courses/:courseId')
   courseCredits(@CurrentContext() ctx: AuthContext, @Param('courseId') courseId: string) {
     return this.billing.courseCredits(ctx.tenant.tenantId, courseId);
+  }
+  /** Preventivo (tetto garantito) di un corso da creare, dal piano del brief. */
+  @Post('estimate')
+  estimate(@CurrentContext() ctx: AuthContext, @Body(new ZodValidationPipe(CourseEstimateInput)) body: CourseEstimateInputType) {
+    return this.billing.estimateCourse(ctx.tenant.tenantId, body);
+  }
+  /** Quanto manca per completare un corso esistente (struttura, lezioni vuote, test previsti). */
+  @Get('estimate/courses/:courseId')
+  estimateExisting(@CurrentContext() ctx: AuthContext, @Param('courseId') courseId: string) {
+    return this.billing.estimateExistingCourse(ctx.tenant.tenantId, courseId);
   }
   /** Movimenti del wallet dell'azienda o personale (solo quelli che cambiano il saldo). */
   @Get('transactions')

@@ -1,4 +1,4 @@
-import type { Brief, BrandVoice } from '@scorm/contracts';
+import { plannedLessonCount, plannedModuleCount, type Brief, type BrandVoice } from '@scorm/contracts';
 import type { RetrievedChunk } from '../knowledge/retrieval.service.js';
 
 /**
@@ -53,11 +53,38 @@ const SYSTEM_BASE =
   'contesto fornito quando disponibile e cita le fonti; se il contesto è assente, basati su ' +
   'conoscenza di dominio accurata.';
 
+/**
+ * Limiti di lunghezza dei testi inseriti dal cliente quando entrano in un prompt. Tengono limitato
+ * l'ingresso di ogni chiamata AI, che fa parte del caso peggiore su cui sono prezzati i pacchetti.
+ * Sono ampi: un brief normale non li raggiunge.
+ */
+export const PROMPT_LIMITS = {
+  title: 300,
+  item: 500,
+  items: 30,
+  audience: 1000,
+  focus: 2000,
+  tone: 500,
+  instruction: 1000,
+  assessmentFocus: 6000,
+} as const;
+
+/** Tronca un testo alla lunghezza massima (con "…" se tagliato). */
+export function clip(text: string | undefined, max: number): string {
+  if (!text) return '';
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+/** Tronca un elenco di testi: al massimo `PROMPT_LIMITS.items` voci, ciascuna entro `max`. */
+function clipList(items: readonly string[] | undefined, max: number = PROMPT_LIMITS.item): string[] {
+  return (items ?? []).slice(0, PROMPT_LIMITS.items).map((i) => clip(i, max));
+}
+
 export function systemPrompt(voice?: BrandVoice): string {
   if (!voice) return SYSTEM_BASE;
-  const parts = [SYSTEM_BASE, `Tono di voce del brand: ${voice.tone}.`];
+  const parts = [SYSTEM_BASE, `Tono di voce del brand: ${clip(voice.tone, PROMPT_LIMITS.tone)}.`];
   if (voice.dosAndDonts && voice.dosAndDonts.length > 0) {
-    parts.push(`Regole di stile: ${voice.dosAndDonts.join('; ')}.`);
+    parts.push(`Regole di stile: ${clipList(voice.dosAndDonts).join('; ')}.`);
   }
   return parts.join(' ');
 }
@@ -75,7 +102,17 @@ export function formatContext(chunks: RetrievedChunk[]): string {
 }
 
 /** Prompt per generare l'outline del corso dal brief (fase 1, Requisito 4.1). */
-export function outlinePrompt(brief: Brief, context: string): string {
+export function outlinePrompt(input: Brief, context: string): string {
+  const brief: Brief = {
+    ...input,
+    title: clip(input.title, PROMPT_LIMITS.title),
+    learningObjectives: clipList(input.learningObjectives),
+    targetAudience: clip(input.targetAudience, PROMPT_LIMITS.audience),
+    tone: input.tone === undefined ? undefined : clip(input.tone, PROMPT_LIMITS.tone),
+    courseFocus: input.courseFocus === undefined ? undefined : clip(input.courseFocus, PROMPT_LIMITS.focus),
+    suggestedLessons: clipList(input.suggestedLessons, PROMPT_LIMITS.title),
+    constraints: clipList(input.constraints),
+  };
   const parts = [
     languageDirective(brief.language),
     'Genera la struttura (outline) di un corso e-learning basato sul brief seguente.',
@@ -94,7 +131,9 @@ export function outlinePrompt(brief: Brief, context: string): string {
         'includili solo se strettamente indispensabili all\'obiettivo. In caso di dubbio, scegli la ' +
         'prospettiva d\'uso del pubblico, non quella teorica.'
       : '',
-    brief.desiredLessonCount ? `Numero lezioni desiderato: ${brief.desiredLessonCount}` : '',
+    // Numero di lezioni e moduli fissato dal piano del corso (è il preventivo): l'AI non ne aggiunge.
+    `NUMERO DI LEZIONI (vincolante): esattamente ${plannedLessonCount(brief)} lezioni in TOTALE, organizzate in ` +
+      `al massimo ${plannedModuleCount(plannedLessonCount(brief))} moduli. Non aggiungere lezioni oltre questo numero.`,
     // Lezioni suggerite dall'anteprima approvata: sono la STRUTTURA DI PARTENZA.
     // Il modello deve rispettarne l'impianto e la progressione, rifinendo titoli
     // e raggruppamento in moduli senza stravolgere né omettere i temi previsti.
@@ -102,8 +141,8 @@ export function outlinePrompt(brief: Brief, context: string): string {
       ? 'Struttura di partenza (lezioni previste, approvate dall\'autore): ' +
         `${brief.suggestedLessons!.map((l, i) => `${i + 1}) ${l}`).join('; ')}. ` +
         'Rispetta questo impianto e questi temi — puoi raggrupparli in moduli, ' +
-        'affinare i titoli e aggiungere al più una lezione introduttiva o di sintesi, ' +
-        'ma NON eliminare i temi previsti né cambiarne la progressione.'
+        'affinare i titoli, ma NON aggiungere lezioni, NON eliminare i temi previsti e NON cambiarne la ' +
+        'progressione: una lezione per ogni tema previsto, nello stesso ordine.'
       : '',
     brief.requestedAssessments.length > 0
       ? `Test richiesti: ${brief.requestedAssessments.join(', ')}`
@@ -142,8 +181,8 @@ export function outlinePrompt(brief: Brief, context: string): string {
             // orientamento, non un obbligo; se una lezione è chiaramente di altra
             // natura, scegli il formato più adatto.
             brief.lessonFormatDefault
-              ? `L'autore preferisce come DEFAULT il formato "${brief.lessonFormatDefault}": usalo per le ` +
-                'lezioni per cui non è indicata un\'eccezione, salvo quando un altro formato è chiaramente più adatto.'
+              ? `L'autore ha scelto come formato il "${brief.lessonFormatDefault}": usalo per TUTTE le ` +
+                'lezioni per cui non è indicata un\'eccezione.'
               : '',
             // Eccezioni per TITOLO: formato richiesto esplicitamente dall'autore
             // per specifiche lezioni suggerite. Vanno rispettate quando il titolo
@@ -396,10 +435,45 @@ export function lessonContentPrompt(input: {
    * standard.
    */
   format?: 'completo' | 'video_first' | 'pillole' | 'pillola_interattiva';
+  /** Tetto di immagini della lezione (limite rigido del pacchetto): il codice toglie quelle in più. */
+  maxImages?: number;
 }): string {
-  if (input.format === 'pillola_interattiva') return lessonPillolaInterattivaPrompt(input);
-  if (input.format === 'pillole') return lessonPillolePrompt(input);
-  if (input.videoFirst || input.format === 'video_first') return lessonVideoFirstPrompt(input);
+  input = {
+    ...input,
+    courseTitle: clip(input.courseTitle, PROMPT_LIMITS.title),
+    moduleTitle: clip(input.moduleTitle, PROMPT_LIMITS.title),
+    lessonTitle: clip(input.lessonTitle, PROMPT_LIMITS.title),
+    objectives: clipList(input.objectives),
+    courseFocus: input.courseFocus === undefined ? undefined : clip(input.courseFocus, PROMPT_LIMITS.focus),
+    toneInstruction: input.toneInstruction === undefined ? undefined : clip(input.toneInstruction, PROMPT_LIMITS.instruction),
+  };
+  const cap = input.maxImages === undefined ? '' : imageCapRule(input.maxImages);
+  if (input.format === 'pillola_interattiva') return [lessonPillolaInterattivaPrompt(input), cap].filter(Boolean).join('\n');
+  if (input.format === 'pillole') return [lessonPillolePrompt(input), cap].filter(Boolean).join('\n');
+  if (input.videoFirst || input.format === 'video_first') return [lessonVideoFirstPrompt(input), cap].filter(Boolean).join('\n');
+  return [lessonStandardPrompt(input), cap].filter(Boolean).join('\n');
+}
+
+/** Regola sul numero di immagini: si sceglie dove l'immagine serve di più. */
+function imageCapRule(max: number): string {
+  return (
+    `LIMITE IMMAGINI (vincolante): al massimo ${max} ${max === 1 ? 'immagine' : 'immagini'} in TUTTA la lezione, ` +
+    'contando i media di testi, carousel, timeline, hotspot e scene. Mettile dove illustrano meglio i concetti ' +
+    'chiave; dove non serve un\'immagine usa box evidenziati, elenchi o elementi interattivi. Le immagini oltre il ' +
+    'limite verranno rimosse.'
+  );
+}
+
+function lessonStandardPrompt(input: {
+  courseTitle: string;
+  moduleTitle: string;
+  lessonTitle: string;
+  objectives: string[];
+  language: string;
+  context: string;
+  toneInstruction?: string;
+  courseFocus?: string;
+}): string {
   const parts = [
     languageDirective(input.language),
     `Genera i contenuti didattici completi per la lezione seguente, in ${languageName(input.language)}.`,
@@ -421,14 +495,16 @@ export function lessonContentPrompt(input: {
     '',
     'STRUTTURA DIDATTICA della lezione, in questo ordine:',
     '1) TESTO GUIDA a CONCETTI: alterna block "rich_text" BREVI (un concetto ciascuno) a elementi visivi. ' +
-      'OGNI concetto ha un supporto grafico: aggiungi al rich_text un media immagine ' +
+      'OGNI concetto ha un supporto visivo: un media immagine nel rich_text per i concetti chiave (entro il limite ' +
+      'di immagini) oppure, per gli altri, box evidenziati, elenchi o schemi. Per l\'immagine aggiungi al rich_text ' +
       `(media: [{ kind: "image", alt, placeholderPrompt }]) con placeholderPrompt descrittivo in ${languageName(input.language)} ` +
       'della scena da illustrare (senza testo nell\'immagine). Usa BOX EVIDENZIATI dentro l\'HTML del rich_text per ' +
       'richiamare l\'attenzione, con questo markup: <div class="callout callout-tip">…</div> (consiglio pratico), ' +
       '<div class="callout callout-warning">…</div> (attenzione/errore comune), ' +
       '<div class="callout callout-def">…</div> (definizione di un termine). Inserisci i box dove servono davvero.',
     '2) ALMENO UN block "carousel_steps" come SEQUENZA DI SLIDE: 3-5 step, ognuno con title, testo breve (content) ' +
-      'e un media immagine (placeholderPrompt). Ideale per procedure, fasi, confronti o esempi passo-passo.',
+      'e, sugli step dove aiuta, un media immagine (placeholderPrompt), entro il limite di immagini. Ideale per ' +
+      'procedure, fasi, confronti o esempi passo-passo.',
     '3) VISUAL & SCHEMI quando aiutano: "timeline" per sequenze/procedure, "image_hotspot" per spiegare ' +
       'un\'immagine con punti cliccabili, "accordion_tabs" per dettagli secondari espandibili.',
     '4) WIDGET INTERATTIVI VICINO AL CONTENUTO (non ammassati in fondo): subito dopo il concetto a cui si ' +
@@ -440,8 +516,8 @@ export function lessonContentPrompt(input: {
     '',
     `Regole sui media: i media sono SEMPRE placeholder descrittivi (alt + placeholderPrompt in ` +
       `${languageName(input.language)}), MAI URL reali. NIENTE block video. Le immagini sono illustrative: il contenuto ` +
-      'informativo resta comprensibile anche senza di esse (accessibilità). Punta a più immagini distribuite ' +
-      '(indicativamente una per concetto) oltre alle slide del carousel.',
+      'informativo resta comprensibile anche senza di esse (accessibilità). Distribuiscile sui concetti più ' +
+      'importanti, entro il limite di immagini indicato.',
     input.context,
   ];
   return parts.filter((p) => p !== '').join('\n');
@@ -458,8 +534,8 @@ export function assessmentPrompt(input: {
   const scopeLabel = input.scope === 'final' ? 'finale di corso' : 'intermedio di modulo';
   const parts = [
     languageDirective(input.language),
-    `Genera un test ${scopeLabel} per il corso "${input.courseTitle}", in ${languageName(input.language)}.`,
-    `Argomenti su cui valutare: ${input.focus}`,
+    `Genera un test ${scopeLabel} per il corso "${clip(input.courseTitle, PROMPT_LIMITS.title)}", in ${languageName(input.language)}.`,
+    `Argomenti su cui valutare: ${clip(input.focus, PROMPT_LIMITS.assessmentFocus)}`,
     '',
     'Includi domande di tipologie diverse (scelta singola/multipla, vero/falso, abbinamento, ' +
       'riordino, completamento). Imposta risposte corrette, punteggi e feedback. ' +

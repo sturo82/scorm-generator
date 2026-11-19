@@ -1,6 +1,6 @@
 'use client';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Block, Brief, CreditQuoteItem, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
+import type { Block, Brief, CourseEstimateInput, CreditQuoteItem, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
 import { getApiClient } from './client';
 import type { PronunciationEntry, SlideAvatarType, StartSlideClipsInput, BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole, AttachStockImageInput, AttachStockCoverInput } from './types';
 
@@ -64,6 +64,7 @@ export function useCreateCourseFromRss() {
       maxArticles: number;
       lessonFormatDefault?: import('./types').LessonFormatValue;
       lessonFormatHints?: Record<string, import('./types').LessonFormatValue>;
+      requestedAssessments?: Array<'intermediate' | 'final'>;
     }) => api.createCourseFromRss(input),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.courses }),
   });
@@ -113,6 +114,7 @@ export function useCreateCourseFromKnowledge() {
       preview?: import('./types').RssPreviewResult;
       lessonFormatDefault?: import('./types').LessonFormatValue;
       lessonFormatHints?: Record<string, import('./types').LessonFormatValue>;
+      requestedAssessments?: Array<'intermediate' | 'final'>;
     }) => api.createCourseFromKnowledge(input),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.courses }),
   });
@@ -739,6 +741,30 @@ export const useWallet = () =>
     retry: 2,
   });
 
+/** Preventivo (tetto garantito) di un corso da creare; solo con i crediti attivi. */
+export function useCourseEstimate(input: Partial<CourseEstimateInput> | null) {
+  const wallet = useWallet();
+  return useQuery({
+    queryKey: ['billing', 'estimate', JSON.stringify(input)],
+    queryFn: () => api.estimateCourse(input ?? {}),
+    enabled: wallet.data?.enabled === true && input !== null,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+/** Quanto manca per completare un corso esistente; solo con i crediti attivi. */
+export function useExistingCourseEstimate(courseId: string) {
+  const wallet = useWallet();
+  return useQuery({
+    queryKey: ['billing', 'estimate', 'course', courseId],
+    queryFn: () => api.estimateExistingCourse(courseId),
+    enabled: wallet.data?.enabled === true && Boolean(courseId),
+    staleTime: 10_000,
+    // Cambia man mano che si generano struttura, lezioni e test.
+    refetchInterval: 15_000,
+    retry: false,
+  });
+}
 /** Crediti addebitati per un corso (solo con i crediti attivi). */
 export const useCourseCredits = (courseId: string, enabled = true) =>
   useQuery({

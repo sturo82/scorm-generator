@@ -1,6 +1,21 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { avatarFeature, type CompanyWalletAccess, type CourseCreditsView, type WalletTransactionsView, type WalletView } from '@scorm/contracts';
+import {
+  ALL_PACKAGE_FEATURES,
+  PACKAGE_FEATURES,
+  avatarFeature,
+  lessonPackageFeature,
+  lessonImageCap,
+  plannedLessonFormats,
+  plannedModuleCount,
+  resolveLessonLayout,
+  Brief,
+  CourseOutline,
+  type CourseEstimateInput,
+  type CourseEstimateLine,
+  type CourseEstimateView,
+  type LessonFormat,
+  type CompanyWalletAccess, type CourseCreditsView, type WalletTransactionsView, type WalletView } from '@scorm/contracts';
 import type { AppConfig } from '../config/configuration.js';
 import { FeatureCatalogService } from '../ecosystem/feature-catalog.service.js';
 import {
@@ -26,7 +41,11 @@ export interface Reservation {
   companyId: string;
   /** Prefisso del `reference` (ogni hold usa `${ref}:${feature}`). */
   ref: string;
-  holds: Array<{ feature: string; holdId: string; units?: number; credits: number }>;
+  /**
+   * Un hold per feature a unità; per le feature fisse un hold per pezzo (`fixed`), con l'importo del
+   * prezzo di listino: così un lavoro a più pezzi (es. 8 lezioni) addebita solo quelli riusciti.
+   */
+  holds: Array<{ feature: string; holdId: string; units?: number; credits: number; fixed?: boolean }>;
 }
 
 export interface QuoteLine {
@@ -96,6 +115,167 @@ export class BillingService {
     }
   }
 
+  /** True se Manager ha prezzato tutti i pacchetti del corso: allora struttura, lezioni e test si addebitano a pacchetto. */
+  packagesActive(): boolean {
+    return ALL_PACKAGE_FEATURES.every((f) => this.catalog.price(f) !== undefined);
+  }
+
+  /** Voce della struttura del corso: pacchetto, oppure un'operazione di testo del listino attuale. */
+  structureItems(): BillItem[] {
+    return this.packagesActive() ? [{ feature: PACKAGE_FEATURES.structure, units: 1 }] : [{ feature: 'text_standard', units: 1 }];
+  }
+
+  /** Voci di un gruppo di lezioni (formato di ciascuna): pacchetti per formato, o testi del listino attuale. */
+  lessonItems(formats: Array<string | null | undefined>): BillItem[] {
+    if (formats.length === 0) return [];
+    if (!this.packagesActive()) return [{ feature: 'text_standard', units: formats.length }];
+    const counts = new Map<string, number>();
+    for (const f of formats) counts.set(lessonPackageFeature(f), (counts.get(lessonPackageFeature(f)) ?? 0) + 1);
+    return [...counts.entries()].map(([feature, units]) => ({ feature, units }));
+  }
+
+  /** Voci di `n` test. */
+  testItems(n: number): BillItem[] {
+    if (n <= 0) return [];
+    return [{ feature: this.packagesActive() ? PACKAGE_FEATURES.test : 'text_standard', units: n }];
+  }
+
+  /** True se la riserva è a pacchetti: le immagini della lezione sono incluse e non si addebitano a parte. */
+  static usesPackages(res: Reservation | null | undefined): boolean {
+    return Boolean(res?.holds.some((h) => ALL_PACKAGE_FEATURES.includes(h.feature)));
+  }
+
+  /**
+   * Converte il lavoro riuscito di un job (`structure`, `test`, `lesson:<formato>`) nelle unità delle
+   * sue riserve, sia a pacchetti sia con il listino attuale (dove tutto è `text_standard`).
+   */
+  static jobActual(res: Reservation, done: Record<string, number>): Record<string, number> {
+    const lessonsOf = (feature?: string) =>
+      Object.entries(done)
+        .filter(([k]) => k.startsWith('lesson:') && (feature === undefined || lessonPackageFeature(k.slice(7)) === feature))
+        .reduce((n, [, v]) => n + v, 0);
+    const out: Record<string, number> = {};
+    for (const h of res.holds) {
+      if (h.feature in out) continue;
+      if (h.feature === PACKAGE_FEATURES.structure) out[h.feature] = done.structure ?? 0;
+      else if (h.feature === PACKAGE_FEATURES.test) out[h.feature] = done.test ?? 0;
+      else if (Object.values(PACKAGE_FEATURES.lesson).includes(h.feature as never)) out[h.feature] = lessonsOf(h.feature);
+      else if (h.feature === 'text_standard') out[h.feature] = (done.structure ?? 0) + (done.test ?? 0) + lessonsOf();
+      else out[h.feature] = done[h.feature] ?? 0;
+    }
+    return out;
+  }
+
+  /**
+   * Preventivo di un corso ancora da creare, dal piano del brief. È un tetto: lezioni, moduli,
+   * immagini e tentativi sono limitati nel codice, quindi l'addebito non lo supera.
+   */
+  async estimateCourse(tenantId: string, input: CourseEstimateInput): Promise<CourseEstimateView> {
+    const formats = plannedLessonFormats(input);
+    const modules = plannedModuleCount(formats.length);
+    const tests = (input.requestedAssessments.includes('intermediate') ? modules : 0) + (input.requestedAssessments.includes('final') ? 1 : 0);
+    return this.withBalance(tenantId, {
+      ...this.buildEstimate({ structure: true, formats, images: input.autoGenerateImages, tests, cover: input.cover }),
+      modules,
+    });
+  }
+
+  /**
+   * Quanto manca per completare un corso esistente: struttura (se non c'è), lezioni ancora vuote con
+   * il loro formato e test previsti ancora da fare. Senza struttura vale il piano del brief.
+   */
+  async estimateExistingCourse(tenantId: string, courseId: string): Promise<CourseEstimateView> {
+    const course = await this.prisma.course.findFirst({ where: { id: courseId, tenantId }, select: { brief: true, outline: true } });
+    if (!course) throw new NotFoundException('Corso non trovato');
+    const brief = course.brief ? Brief.safeParse(course.brief) : null;
+    const b = brief?.success ? brief.data : null;
+    const outline = course.outline ? CourseOutline.safeParse(course.outline) : null;
+    const images = b ? b.autoGenerateImages !== false : true;
+    const requested = b?.requestedAssessments ?? [];
+    if (!outline?.success) {
+      const input = { ...(b ?? {}), requestedAssessments: requested };
+      const formats = plannedLessonFormats(input);
+      const modules = plannedModuleCount(formats.length);
+      const tests = (requested.includes('intermediate') ? modules : 0) + (requested.includes('final') ? 1 : 0);
+      return this.withBalance(tenantId, { ...this.buildEstimate({ structure: true, formats, images, tests, cover: false }), modules });
+    }
+    const mods = await this.prisma.module.findMany({
+      where: { courseId },
+      select: { id: true, lessons: { select: { blocks: true, format: true, videoFirst: true, pillola: true } } },
+    });
+    const formats = mods
+      .flatMap((m) => m.lessons)
+      .filter((l) => !Array.isArray(l.blocks) || (l.blocks as unknown[]).length === 0)
+      .map((l) => resolveLessonLayout({ format: l.format, videoFirst: l.videoFirst, pillola: l.pillola }));
+    const wantsIntermediate = requested.includes('intermediate') || outline.data.modules.some((m) => m.hasIntermediateAssessment);
+    const wantsFinal = requested.includes('final') || outline.data.hasFinalAssessment;
+    const existing = await this.prisma.assessment.findMany({ where: { courseId }, select: { scope: true, moduleId: true } });
+    const done = new Set(existing.map((a) => `${a.scope}:${a.moduleId ?? 'final'}`));
+    const tests =
+      (wantsIntermediate ? mods.filter((m) => !done.has(`INTERMEDIATE:${m.id}`)).length : 0) + (wantsFinal && !done.has('FINAL:final') ? 1 : 0);
+    return this.withBalance(tenantId, { ...this.buildEstimate({ structure: false, formats, images, tests, cover: false }), modules: mods.length });
+  }
+
+  /** Voci e totale del preventivo, con i pacchetti se Manager li ha prezzati, altrimenti per operazione. */
+  private buildEstimate(p: {
+    structure: boolean;
+    formats: Array<LessonFormat | null>;
+    images: boolean;
+    tests: number;
+    cover: boolean;
+  }): Omit<CourseEstimateView, 'billed' | 'available' | 'modules'> {
+    const packages = this.packagesActive();
+    const c = (feature: string, units: number) => this.catalog.credits(feature, units) ?? null;
+    const lines: CourseEstimateLine[] = [];
+    if (p.structure) lines.push({ kind: 'structure', quantity: 1, credits: c(packages ? PACKAGE_FEATURES.structure : 'text_standard', 1) });
+    // Le lezioni con formato scelto dall'AI valgono come standard (il pacchetto più caro).
+    const byFormat = new Map<LessonFormat, number>();
+    for (const f of p.formats) byFormat.set(f ?? 'standard', (byFormat.get(f ?? 'standard') ?? 0) + 1);
+    for (const [format, n] of byFormat) {
+      lines.push({ kind: 'lessons', format, quantity: n, credits: c(packages ? lessonPackageFeature(format) : 'text_standard', n) });
+    }
+    if (!packages && p.images) {
+      const imgs = p.formats.reduce((n, f) => n + lessonImageCap(f ?? 'standard'), 0);
+      if (imgs > 0) lines.push({ kind: 'images', quantity: imgs, credits: c('image_generation', imgs) });
+    }
+    if (p.tests > 0) lines.push({ kind: 'tests', quantity: p.tests, credits: c(packages ? PACKAGE_FEATURES.test : 'text_standard', p.tests) });
+    if (p.cover) lines.push({ kind: 'cover', quantity: 1, credits: c('image_generation', 1) });
+    // Prezzo massimo di una lezione: il pacchetto, oppure testo + immagini fino al tetto del formato.
+    const lessonPrice = (f: LessonFormat) => {
+      const text = c(packages ? lessonPackageFeature(f) : 'text_standard', 1);
+      if (packages || !p.images || text === null) return text;
+      const img = c('image_generation', lessonImageCap(f));
+      return img === null ? null : text + img;
+    };
+    return {
+      mode: packages ? 'package' : 'operation',
+      prices: {
+        structure: c(packages ? PACKAGE_FEATURES.structure : 'text_standard', 1),
+        test: c(packages ? PACKAGE_FEATURES.test : 'text_standard', 1),
+        image: c('image_generation', 1),
+        lesson: {
+          standard: lessonPrice('standard'),
+          pillola: lessonPrice('pillola'),
+          pillola_interattiva: lessonPrice('pillola_interattiva'),
+          video_first: lessonPrice('video_first'),
+        },
+      },
+      lines,
+      total: lines.reduce((n, l) => n + (l.credits ?? 0), 0),
+      priced: lines.every((l) => l.credits !== null),
+      lessons: p.formats.length,
+      tests: p.tests,
+      aiChosenFormats: p.formats.filter((f) => f === null).length,
+    };
+  }
+
+  /** Aggiunge se i crediti sono attivi e il disponibile del wallet che paga. */
+  private async withBalance(tenantId: string, e: Omit<CourseEstimateView, 'billed' | 'available'>): Promise<CourseEstimateView> {
+    const billed = await this.isBilled(tenantId);
+    const bal = billed ? await this.wallet.getBalance(this.payerFor(tenantId).companyId) : null;
+    return { ...e, billed, ...(bal ? { available: bal.available } : {}) };
+  }
+
   /** Preventivo in crediti (calcolo puro sul listino, senza toccare il wallet). */
   quote(items: BillItem[]): Quote {
     const lines: QuoteLine[] = normalize(items, this.catalog).map((i) => ({
@@ -126,16 +306,30 @@ export class BillingService {
         const price = this.catalog.price(l.feature);
         if (price === undefined) throw new FeatureNotPricedException(l.feature);
         const unit = this.catalog.isUnit(l.feature);
+        if (!unit) {
+          // Feature fissa: un hold per pezzo, ciascuno con l'importo del prezzo di listino.
+          const count = Math.max(1, Math.round(l.units));
+          for (let i = 0; i < count; i++) {
+            const hold = await this.wallet.hold({
+              companyId: payer.companyId,
+              feature: l.feature,
+              reference: count === 1 ? `${ref}:${l.feature}` : `${ref}:${l.feature}:${i + 1}`,
+              amount: price,
+            });
+            holds.push({ feature: l.feature, holdId: hold.holdId, credits: price, fixed: true });
+          }
+          continue;
+        }
         const hold = await this.wallet.hold({
           companyId: payer.companyId,
           feature: l.feature,
           reference: `${ref}:${l.feature}`,
-          ...(unit ? { units: l.units } : { amount: price }),
+          units: l.units,
         });
         holds.push({
           feature: l.feature,
           holdId: hold.holdId,
-          ...(unit ? { units: l.units } : {}),
+          units: l.units,
           credits: this.catalog.credits(l.feature, l.units) ?? 0,
         });
       }
@@ -167,7 +361,28 @@ export class BillingService {
     charged: Array<{ feature: string; units?: number; credits: number }>,
   ): Promise<void> {
     const company = res.companyId;
+    // Feature fisse: si addebitano i primi `actual` pezzi e si liberano gli altri.
+    const fixedDone = new Set<string>();
     for (const h of res.holds) {
+      if (!(h.fixed || h.units === undefined) || fixedDone.has(h.feature)) continue;
+      fixedDone.add(h.feature);
+      const pieces = res.holds.filter((x) => x.feature === h.feature);
+      const a = actual?.[h.feature];
+      const take = a === undefined ? pieces.length : Math.max(0, Math.min(pieces.length, Math.ceil(a - 1e-9)));
+      if (a !== undefined && a > pieces.length + 1e-9) {
+        this.logger.warn(`Pezzi oltre la riserva (${h.feature}, ref=${res.ref}): ${a} > ${pieces.length}. Si addebita la riserva.`);
+      }
+      for (let i = 0; i < pieces.length; i++) {
+        const p = pieces[i]!;
+        if (i < take) {
+          if (await this.wallet.capture(company, p.holdId)) charged.push({ feature: p.feature, units: 1, credits: p.credits });
+        } else {
+          await this.wallet.release(company, p.holdId);
+        }
+      }
+    }
+    for (const h of res.holds) {
+      if (h.fixed || h.units === undefined) continue;
       const a = actual?.[h.feature];
       if (a === undefined) {
         if (await this.wallet.capture(company, h.holdId)) charged.push({ feature: h.feature, units: h.units, credits: h.credits });
@@ -175,10 +390,6 @@ export class BillingService {
       }
       if (a <= 0) {
         await this.wallet.release(company, h.holdId);
-        continue;
-      }
-      if (h.units === undefined) {
-        if (await this.wallet.capture(company, h.holdId)) charged.push({ feature: h.feature, credits: h.credits });
         continue;
       }
       if (a > h.units + 1e-9) {
@@ -201,6 +412,16 @@ export class BillingService {
     charged: Array<{ feature: string; units?: number; credits: number }>,
   ): Promise<void> {
     if (charged.length === 0) return;
+    // Una riga per feature (i pezzi fissi dello stesso lavoro si sommano).
+    const byFeature = new Map<string, { feature: string; units?: number; credits: number }>();
+    for (const c of charged) {
+      const cur = byFeature.get(c.feature);
+      if (cur) {
+        cur.credits += c.credits;
+        cur.units = cur.units === undefined || c.units === undefined ? undefined : cur.units + c.units;
+      } else byFeature.set(c.feature, { ...c });
+    }
+    charged = [...byFeature.values()];
     try {
       const scope = await this.scopeOf(tenantId, res.ref);
       const payer = res.companyId === tenantId ? 'COMPANY' : 'PERSONAL';
@@ -493,9 +714,10 @@ function normalize(items: BillItem[], catalog: FeatureCatalogService): Array<{ f
   const merged = new Map<string, number>();
   for (const i of items) {
     const unit = catalog.isUnit(i.feature);
-    const u = unit ? (i.units ?? 1) : 1;
-    if (!(u > 0)) continue;
-    merged.set(i.feature, unit ? (merged.get(i.feature) ?? 0) + u : 1);
+    // Feature fisse: `units` è il numero di pezzi (intero, minimo 1).
+    const u = unit ? (i.units ?? 1) : Math.max(1, Math.round(i.units ?? 1));
+    if (!(i.units === undefined || i.units > 0)) continue;
+    merged.set(i.feature, (merged.get(i.feature) ?? 0) + u);
   }
   return [...merged.entries()].map(([feature, units]) => ({ feature, units }));
 }

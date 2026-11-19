@@ -1,4 +1,4 @@
-import type { CourseCreditsView, CreditQuoteItem, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
+import type { CourseCreditsView, CourseEstimateInput, CourseEstimateView, CreditQuoteItem, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import type {
   Brief,
   BriefDraft,
@@ -440,6 +440,7 @@ export interface ApiClient {
     lessonFormatDefault?: LessonFormatValue;
     /** Eccezioni di formato per-lezione per titolo (onboarding). */
     lessonFormatHints?: Record<string, LessonFormatValue>;
+    requestedAssessments?: Array<'intermediate' | 'final'>;
   }): Promise<CreateCourseFromRssResult>;
   /** Anteprima (pre-sommario) del corso da un argomento, senza crearlo. */
   previewCourseFromRss(input: {
@@ -472,6 +473,7 @@ export interface ApiClient {
     preview?: RssPreviewResult;
     lessonFormatDefault?: LessonFormatValue;
     lessonFormatHints?: Record<string, LessonFormatValue>;
+    requestedAssessments?: Array<'intermediate' | 'final'>;
   }): Promise<CreateCourseFromKnowledgeResult>;
   deleteCourse(id: string): Promise<void>;
 
@@ -571,6 +573,10 @@ export interface ApiClient {
   getUsage(): Promise<UsageView>;
   /** Saldo del wallet a crediti (solo se l'azienda paga a crediti). */
   getWallet(): Promise<WalletView>;
+  /** Preventivo (tetto garantito) di un corso da creare. */
+  estimateCourse(input: Partial<CourseEstimateInput>): Promise<CourseEstimateView>;
+  /** Quanto manca per completare un corso esistente. */
+  estimateExistingCourse(courseId: string): Promise<CourseEstimateView>;
   /** Crediti addebitati per un corso, per funzione. */
   getCourseCredits(courseId: string): Promise<CourseCreditsView>;
   /** Movimenti che cambiano il saldo del wallet aziendale o personale. */

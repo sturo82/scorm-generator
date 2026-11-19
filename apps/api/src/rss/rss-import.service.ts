@@ -52,6 +52,8 @@ export interface CreateCourseFromRssInput {
   lessonFormatDefault?: LessonFormat;
   /** Eccezioni di formato per-lezione, indicizzate per titolo (onboarding). */
   lessonFormatHints?: Record<string, LessonFormat>;
+  /** Test richiesti alla creazione (intermedi di modulo, finale): entrano nel preventivo. */
+  requestedAssessments?: Array<'intermediate' | 'final'>;
   correlationId?: string;
 }
 
@@ -295,6 +297,7 @@ export class RssImportService {
         knowledgeDocIds,
         lessonFormatDefault: input.lessonFormatDefault,
         lessonFormatHints: input.lessonFormatHints,
+        requestedAssessments: input.requestedAssessments,
         articles: chosen.map((c) => ({ title: c.title, summary: c.summary })),
       });
     } catch (err) {

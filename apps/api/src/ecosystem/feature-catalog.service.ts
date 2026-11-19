@@ -25,6 +25,13 @@ export const FEATURE_TARIFF: Readonly<Record<string, FeatureTariff>> = {
   video_render: 'minute',
   video_cartoon: 'minute',
   video_cartoon_ai: 'minute',
+  // Pacchetti a prezzo fisso (pezzi di corso finiti): vedi docs/RICHIESTA-MANAGER-PACCHETTI.md.
+  course_structure: 'fixed',
+  lesson_standard: 'fixed',
+  lesson_pillola: 'fixed',
+  lesson_pillola_interattiva: 'fixed',
+  lesson_video_first: 'fixed',
+  course_test: 'fixed',
 };
 
 /** Elenco delle feature da dichiarare a Manager (campo `features` del self-register). */
@@ -108,13 +115,14 @@ export class FeatureCatalogService {
   }
 
   /**
-   * Costo in crediti: fissa = prezzo; a unità = prezzo × unità iniziate (arrotondate per eccesso,
-   * minimo 1). Ritorna undefined se la feature non è prezzata.
+   * Costo in crediti: fissa = prezzo × quantità (per i pacchetti `units` è il numero di pezzi, minimo
+   * 1); a unità = prezzo × unità iniziate (arrotondate per eccesso, minimo 1). Ritorna undefined se la
+   * feature non è prezzata.
    */
   credits(feature: string, units = 1): number | undefined {
     const p = this.price(feature);
     if (p === undefined) return undefined;
-    if (!this.isUnit(feature)) return p;
+    if (!this.isUnit(feature)) return p * Math.max(1, Math.round(units));
     return p * Math.max(1, Math.ceil(units - 1e-9));
   }
 }

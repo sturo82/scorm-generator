@@ -1,4 +1,4 @@
-import type { Assessment, Block, Brief, BriefDraft, CourseCreditsView, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
+import type { Assessment, Block, Brief, BriefDraft, CourseCreditsView, CourseEstimateView, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import { computeQuote } from '@scorm/contracts';
 import type {
   AdminUserView,
@@ -220,7 +220,7 @@ export class MockApiClient implements ApiClient {
     this.pushAudit('course.create', 'course', course.id);
     return course;
   }
-  async createCourseFromRss(input: { topic: string; title?: string; language: string; source: 'everywhere' | 'mine'; category?: string; audience?: string; tone?: string; scope?: string; preview?: RssPreviewResult; maxArticles: number; lessonFormatDefault?: LessonFormatValue; lessonFormatHints?: Record<string, LessonFormatValue> }): Promise<CreateCourseFromRssResult> {
+  async createCourseFromRss(input: { topic: string; title?: string; language: string; source: 'everywhere' | 'mine'; category?: string; audience?: string; tone?: string; scope?: string; preview?: RssPreviewResult; maxArticles: number; lessonFormatDefault?: LessonFormatValue; lessonFormatHints?: Record<string, LessonFormatValue>; requestedAssessments?: Array<'intermediate' | 'final'> }): Promise<CreateCourseFromRssResult> {
     await delay(900);
     const course = await this.createCourse({
       title: input.title?.trim() || (input.topic.charAt(0).toUpperCase() + input.topic.slice(1)),
@@ -263,7 +263,7 @@ export class MockApiClient implements ApiClient {
       examined: input.documentIds.length,
     };
   }
-  async createCourseFromKnowledge(input: { documentIds: string[]; language: string; topic?: string; title?: string; audience?: string; tone?: string; scope?: string; preview?: RssPreviewResult; lessonFormatDefault?: LessonFormatValue; lessonFormatHints?: Record<string, LessonFormatValue> }): Promise<CreateCourseFromKnowledgeResult> {
+  async createCourseFromKnowledge(input: { documentIds: string[]; language: string; topic?: string; title?: string; audience?: string; tone?: string; scope?: string; preview?: RssPreviewResult; lessonFormatDefault?: LessonFormatValue; lessonFormatHints?: Record<string, LessonFormatValue>; requestedAssessments?: Array<'intermediate' | 'final'> }): Promise<CreateCourseFromKnowledgeResult> {
     await delay(900);
     const course = await this.createCourse({
       title: input.title?.trim() || input.preview?.proposedTitle?.trim() || 'Corso dal mio materiale',
@@ -682,6 +682,23 @@ export class MockApiClient implements ApiClient {
   }
   async getWallet(): Promise<WalletView> {
     return { enabled: false, payer: 'COMPANY', currency: 'CREDITS', canTopup: false, company: null, companyAccess: 'unavailable', personal: { active: false }, personalAvailable: false, personalSpace: false };
+  }
+  async estimateCourse(): Promise<CourseEstimateView> {
+    return {
+      mode: 'operation',
+      billed: false,
+      lines: [],
+      total: 0,
+      priced: true,
+      lessons: 0,
+      modules: 0,
+      tests: 0,
+      aiChosenFormats: 0,
+      prices: { structure: null, test: null, image: null, lesson: { standard: null, pillola: null, pillola_interattiva: null, video_first: null } },
+    };
+  }
+  async estimateExistingCourse(): Promise<CourseEstimateView> {
+    return this.estimateCourse();
   }
   async getCourseCredits(courseId: string): Promise<CourseCreditsView> {
     return { courseId, total: 0, lines: [] };

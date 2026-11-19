@@ -53,6 +53,8 @@ const CreateCourseFromRss = z.object({
   lessonFormatDefault: LessonFormat.optional(),
   /** Eccezioni di formato per-lezione per titolo (onboarding). */
   lessonFormatHints: z.record(z.string(), LessonFormat).optional(),
+  /** Test richiesti (intermedi di modulo, finale). */
+  requestedAssessments: z.array(z.enum(['intermediate', 'final'])).max(2).optional(),
 });
 type CreateCourseFromRssType = z.infer<typeof CreateCourseFromRss>;
 
@@ -102,6 +104,7 @@ const CreateCourseFromKnowledge = PreviewCourseFromKnowledge.extend({
   preview: FrozenPreviewSchema.optional(),
   lessonFormatDefault: LessonFormat.optional(),
   lessonFormatHints: z.record(z.string(), LessonFormat).optional(),
+  requestedAssessments: z.array(z.enum(['intermediate', 'final'])).max(2).optional(),
 });
 type CreateCourseFromKnowledgeType = z.infer<typeof CreateCourseFromKnowledge>;
 
@@ -144,6 +147,7 @@ export class RssController {
       maxArticles: dto.maxArticles,
       lessonFormatDefault: dto.lessonFormatDefault,
       lessonFormatHints: dto.lessonFormatHints,
+      requestedAssessments: dto.requestedAssessments,
       correlationId: ctx.correlationId,
     });
   }
@@ -202,6 +206,7 @@ export class RssController {
       preview: dto.preview,
       lessonFormatDefault: dto.lessonFormatDefault,
       lessonFormatHints: dto.lessonFormatHints,
+      requestedAssessments: dto.requestedAssessments,
     });
   }
 

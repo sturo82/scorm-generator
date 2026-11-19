@@ -46,6 +46,8 @@ export interface DraftBriefInput {
   lessonFormatDefault?: LessonFormat;
   /** Eccezioni di formato per-lezione, indicizzate per titolo (onboarding). */
   lessonFormatHints?: Record<string, LessonFormat>;
+  /** Test richiesti alla creazione (intermedi di modulo, finale): entrano nel preventivo. */
+  requestedAssessments?: Array<'intermediate' | 'final'>;
   /** Titoli + sommari degli articoli selezionati (contesto per il brief). */
   articles: Array<{ title: string; summary: string }>;
 }
@@ -273,6 +275,7 @@ export class RssBriefService {
         input.lessonFormatHints && Object.keys(input.lessonFormatHints).length > 0
           ? input.lessonFormatHints
           : undefined,
+      ...(input.requestedAssessments?.length ? { requestedAssessments: input.requestedAssessments } : {}),
       language: input.language,
     });
 
@@ -331,6 +334,7 @@ export class RssBriefService {
         input.lessonFormatHints && Object.keys(input.lessonFormatHints).length > 0
           ? input.lessonFormatHints
           : undefined,
+      ...(input.requestedAssessments?.length ? { requestedAssessments: input.requestedAssessments } : {}),
       language: input.language,
     });
 
