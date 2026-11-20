@@ -236,8 +236,37 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     return fromError || b?.message || `HeyGen HTTP ${status}`;
   }
 
+  /** Look già risolti per id (un avatar del catalogo è un personaggio con molti look). */
+  private readonly lookIds = new Map<string, Promise<string>>();
+
+  /**
+   * La generazione video vuole l'id di un LOOK. Gli avatar del catalogo pubblico si elencano come
+   * personaggi (gruppi con molti look): se l'id non è un look si usa il primo look pronto del
+   * personaggio, così si può scegliere dall'elenco senza passi in più.
+   */
+  private resolveLookId(avatarId: string): Promise<string> {
+    const cached = this.lookIds.get(avatarId);
+    if (cached) return cached;
+    const p = (async (): Promise<string> => {
+      let res: Response;
+      try {
+        res = await this.fetchImpl(`${this.baseUrl}/v3/avatars/looks/${encodeURIComponent(avatarId)}`, { headers: this.headers() });
+      } catch {
+        return avatarId; // rete: si prova comunque con l'id dato
+      }
+      if (res.ok) return avatarId;
+      if (res.status !== 404) return avatarId;
+      const looks = await this.fetchGroupLooksV3(avatarId).catch(() => [] as V3LookItem[]);
+      const ready = looks.find((l) => (l.status ?? '').toLowerCase() === 'completed' && l.id);
+      return ready?.id ?? avatarId;
+    })();
+    this.lookIds.set(avatarId, p);
+    return p;
+  }
+
   async startJob(input: GenerateVideoInput): Promise<{ jobRef: string }> {
-    const avatarId = input.avatarId ?? this.defaultAvatarId;
+    const requestedAvatar = input.avatarId ?? this.defaultAvatarId;
+    const avatarId = requestedAvatar ? await this.resolveLookId(requestedAvatar) : requestedAvatar;
     if (!avatarId) {
       throw new ProviderUnavailableError(
         'heygen',
@@ -468,7 +497,8 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     if (query) {
       return this.searchStockAvatars(query, input?.token);
     }
-    const json = await this.getPage<ListAvatarsResponse>('/v3/avatars', input?.token);
+    // Solo il catalogo pubblico: senza `ownership` HeyGen mescola gli avatar dell'account.
+    const json = await this.getPage<ListAvatarsResponse>('/v3/avatars', input?.token, { ownership: 'public' });
     const raw = (Array.isArray(json.data) ? json.data : json.data?.avatars ?? []) as AvatarItem[];
     const items = raw
       .map((a) => HeyGenVideoProvider.mapAvatar(a, 'stock'))
@@ -482,7 +512,7 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     let token = startToken;
     const MAX_PAGES = 30; // ~600 avatar scanditi per ricerca; sufficiente e rapido.
     for (let i = 0; i < MAX_PAGES; i++) {
-      const json = await this.getPage<ListAvatarsResponse>('/v3/avatars', token);
+      const json = await this.getPage<ListAvatarsResponse>('/v3/avatars', token, { ownership: 'public' });
       const raw = (Array.isArray(json.data) ? json.data : json.data?.avatars ?? []) as AvatarItem[];
       for (const a of raw) {
         const opt = HeyGenVideoProvider.mapAvatar(a, 'stock');
