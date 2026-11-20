@@ -321,6 +321,7 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     // Sottotitoli: con un oggetto `caption` (senza `style`) HeyGen genera il
     // file SRT sidecar (subtitle_url) SENZA bruciarlo nel video. Da questo
     // ricaviamo la trascrizione karaoke, senza ASR esterno.
+    if (input.fit) body.fit = input.fit;
     if (input.caption) body.caption = {};
 
     let res: Response;

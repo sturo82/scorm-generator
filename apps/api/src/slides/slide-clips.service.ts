@@ -397,6 +397,8 @@ export class SlideClipsService {
             aspectRatio: '16:9',
             language: doc.language === 'italiano' ? 'it' : undefined,
             engine: doc.engine,
+            // Gli avatar del catalogo (studio) vengono ritagliati da HeyGen e perdono la testa: li si chiede interi.
+            ...(doc.avatarType === 'studio' ? { fit: 'contain' as const } : {}),
             caption: true,
           });
           clip.jobRef = started.jobRef;

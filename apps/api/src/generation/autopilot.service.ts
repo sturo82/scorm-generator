@@ -436,6 +436,8 @@ export class AutopilotService implements OnModuleInit {
             .start(tenantId, courseId, importId, {
               layout: 'dynamic',
               moduleTitle: sl.moduleTitle,
+              // Gli avatar del catalogo sono a figura intera: nel riquadro si avvicina il volto (modificabile dal montaggio).
+              ...(sl.avatarType === 'studio' ? { avatarFrame: { x: 50, y: 25, zoom: 1.4 } } : {}),
               ...(sections && sections.length > 1 ? { sections } : {}),
             })
             .catch((err) => {

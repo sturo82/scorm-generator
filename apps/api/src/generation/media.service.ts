@@ -1176,6 +1176,8 @@ export class MediaService implements OnModuleInit {
         language: course?.language,
         // Engine scelto per questa generazione (non più fisso in config).
         engine,
+        // Gli avatar del catalogo (studio) vengono ritagliati da HeyGen e perdono la testa: li si chiede interi.
+        ...(avatarType === 'studio' ? { fit: 'contain' as const } : {}),
         // Chiediamo i sottotitoli: ne ricaviamo la trascrizione karaoke gratis
         // (già sincronizzata col parlato), evitando un ASR esterno a pagamento.
         caption: true,

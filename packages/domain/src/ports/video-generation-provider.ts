@@ -34,6 +34,11 @@ export interface GenerateVideoInput {
    */
   engine?: string;
   /**
+   * Come il soggetto si adatta al quadro: 'contain' lo mostra intero (con sfondo), 'cover' riempie il
+   * quadro e può tagliarlo. Se assente decide il provider, che per gli avatar studio ritaglia la testa.
+   */
+  fit?: 'cover' | 'contain';
+  /**
    * Richiede al provider di produrre i SOTTOTITOLI sincronizzati (sidecar, es.
    * SRT) senza bruciarli nel video. Permette di ricavare la trascrizione
    * karaoke dai dati del provider (gratis, già sincronizzati col parlato reale)
