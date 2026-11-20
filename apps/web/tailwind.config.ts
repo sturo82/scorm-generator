@@ -121,6 +121,20 @@ const config: Config = {
           '0%': { transform: 'translateX(-120%)' },
           '100%': { transform: 'translateX(320%)' },
         },
+        // Wallet nell'intestazione: importo che sale e svanisce, moneta che gira, alone del badge.
+        'credit-float': {
+          '0%': { opacity: '0', transform: 'translate(-50%, 4px) scale(0.9)' },
+          '15%': { opacity: '1', transform: 'translate(-50%, 0) scale(1)' },
+          '100%': { opacity: '0', transform: 'translate(-50%, -22px) scale(1)' },
+        },
+        'coin-flip': {
+          '0%': { transform: 'rotateY(0deg)' },
+          '100%': { transform: 'rotateY(720deg)' },
+        },
+        'wallet-glow': {
+          '0%': { boxShadow: '0 0 0 0 hsl(var(--wallet-glow) / 0.55)' },
+          '100%': { boxShadow: '0 0 0 10px hsl(var(--wallet-glow) / 0)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -129,6 +143,9 @@ const config: Config = {
         'slide-up': 'slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
         'typing-dot': 'typing-dot 1.2s infinite ease-in-out both',
         indeterminate: 'indeterminate 1.4s ease-in-out infinite',
+        'credit-float': 'credit-float 1.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+        'coin-flip': 'coin-flip 0.9s cubic-bezier(0.16, 1, 0.3, 1)',
+        'wallet-glow': 'wallet-glow 1.1s ease-out',
       },
     },
   },

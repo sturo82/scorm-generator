@@ -32,6 +32,8 @@ export interface AutopilotView {
   /** Problemi non bloccanti (es. una lezione non generata): si risolvono dal corso. */
   issues: string[];
   error?: string;
+  /** `insufficient_credits`: il saldo non basta, si risolve ricaricando e riprendendo. */
+  errorCode?: 'insufficient_credits';
   progress: {
     lessons: { done: number; total: number };
     tests: { done: number; total: number };

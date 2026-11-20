@@ -1,5 +1,6 @@
 'use client';
 import * as React from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, Circle, Loader2, PartyPopper, XCircle } from 'lucide-react';
 import type { AutopilotView } from '@scorm/contracts';
 import { Button } from '@/components/ui/button';
@@ -72,6 +73,14 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
 
   const finished = view.status === 'completed' || view.status === 'failed' || view.status === 'cancelled';
 
+  // Il saldo nell'intestazione segue l'avanzamento: a ogni passo completato si rilegge il wallet.
+  const qc = useQueryClient();
+  const tick = `${p.lessons.done}-${p.tests.done}-${p.cover}-${p.videos.done}-${p.narration.done}-${view.status}`;
+  React.useEffect(() => {
+    void qc.invalidateQueries({ queryKey: ['billing', 'wallet'] });
+    void qc.invalidateQueries({ queryKey: ['billing', 'estimate', 'course', courseId] });
+  }, [tick, qc, courseId]);
+
   return (
     <div className="space-y-6">
       <Card>
@@ -104,7 +113,9 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
                       ? 'Contenuti, test e copertina sono pronti. Ora puoi rivederlo e modificarlo.'
                       : view.status === 'cancelled'
                         ? 'Hai fermato la generazione: paghi solo quello che è stato già generato.'
-                        : (view.error ?? 'Si è verificato un errore.')}
+                        : view.errorCode === 'insufficient_credits'
+                          ? 'I crediti sono finiti a metà: ricarica e riprendi, si riparte da dove si era fermata (quello già fatto non si paga di nuovo).'
+                          : (view.error ?? 'Si è verificato un errore.')}
               </p>
             </div>
             <CourseBudget courseId={courseId} />
@@ -159,6 +170,14 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
               <Button onClick={() => void run(() => actions.resume.mutateAsync(), 'Generazione ripresa')} disabled={actions.resume.isPending}>
                 Continua con i contenuti
               </Button>
+            )}
+            {view.errorCode === 'insufficient_credits' && (
+              <a
+                href="/wallet"
+                className="inline-flex h-9 items-center rounded-md border border-amber-400 bg-amber-50 px-4 text-sm font-medium text-amber-900 hover:bg-amber-100"
+              >
+                Ricarica i crediti
+              </a>
             )}
             {(view.status === 'failed' || view.status === 'cancelled') && (
               <Button

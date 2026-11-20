@@ -36,6 +36,7 @@ import {
   useKnowledge,
   useUploadKnowledge,
   useCreateCourse,
+  useCourseEstimate,
 } from '@/lib/api/hooks';
 
 const LANGUAGES = [
@@ -195,6 +196,22 @@ export default function NewCoursePage() {
   }
 
   // --- Crea ------------------------------------------------------------------
+  // Preventivo dello step Crea (stessa richiesta del riquadro, quindi stessa cache): blocca la
+  // generazione se il saldo non copre il massimo, prima di creare il corso.
+  const estimateInput = {
+    suggestedLessons: editedLessons.map((l) => l.trim()).filter((l) => l.length > 0),
+    lessonFormatDefault: formatDefault,
+    lessonFormatHints: formatHints(),
+    requestedAssessments: tests,
+    autoGenerateImages: true,
+    cover: true,
+    options: { lessonVideos: true, ...extras },
+  };
+  const estimate = useCourseEstimate(step === 3 ? estimateInput : null);
+  const notEnough = Boolean(
+    estimate.data?.billed && estimate.data.available !== undefined && estimate.data.available < estimate.data.total,
+  );
+
   /** Eccezioni di formato (per indice) come { titolo: formato }. */
   function formatHints(): Record<string, LessonFormatValue> {
     const hints: Record<string, LessonFormatValue> = {};
@@ -702,15 +719,7 @@ export default function NewCoursePage() {
                   ))}
                 </fieldset>
                 <CourseEstimate
-                  input={{
-                    suggestedLessons: editedLessons.map((l) => l.trim()).filter((l) => l.length > 0),
-                    lessonFormatDefault: formatDefault,
-                    lessonFormatHints: formatHints(),
-                    requestedAssessments: tests,
-                    autoGenerateImages: true,
-                    cover: true,
-                    options: { lessonVideos: true, ...extras },
-                  }}
+                  input={estimateInput}
                   note="Creare il corso non costa nulla: i crediti si usano quando generi struttura, lezioni, test e copertina."
                 />
                 <label className="flex items-start gap-2 text-sm">
@@ -730,7 +739,19 @@ export default function NewCoursePage() {
                   Creiamo il corso e lo generiamo per intero sul server: struttura, contenuti con immagini, test e copertina. Puoi
                   chiudere la pagina; alla fine trovi il corso pronto da rivedere e modificare.
                 </div>
-                <Button type="button" size="lg" disabled={busyCreate} onClick={() => void handleCreate()}>
+                {notEnough && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-900">
+                    <span>
+                      Servono fino a <strong>{estimate.data!.total.toLocaleString('it-IT')}</strong> crediti, ne hai{' '}
+                      <strong>{(estimate.data!.available ?? 0).toLocaleString('it-IT')}</strong>: ricarica o riduci il corso (meno
+                      lezioni, test o extra) prima di generarlo.
+                    </span>
+                    <a href="/wallet" className="font-medium underline">
+                      Ricarica
+                    </a>
+                  </div>
+                )}
+                <Button type="button" size="lg" disabled={busyCreate || notEnough} onClick={() => void handleCreate()}>
                   {busyCreate ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
                   {busyCreate ? 'Creazione…' : 'Crea e genera il corso'}
                 </Button>

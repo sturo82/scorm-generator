@@ -15,6 +15,8 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { TenantPrismaService } from '../tenancy/tenant-prisma.service.js';
 import { currentPayer, runWithPayer, type Payer } from '../billing/payer-context.js';
 import { GenerationService } from './generation.service.js';
+import { BillingService } from '../billing/billing.service.js';
+import { InsufficientCreditsException } from '../ecosystem/wallet.service.js';
 import { MediaService } from './media.service.js';
 import { collectCartoonScenes, isPlaceholderVideo } from './cartoon-scenes.js';
 
@@ -31,6 +33,7 @@ interface AutopilotDoc {
   payer?: Payer;
   issues: string[];
   error?: string;
+  errorCode?: 'insufficient_credits';
   startedAt: string;
   updatedAt: string;
   finishedAt?: string;
@@ -59,7 +62,19 @@ export class AutopilotService implements OnModuleInit {
     private readonly tenantPrisma: TenantPrismaService,
     private readonly generation: GenerationService,
     private readonly media: MediaService,
+    private readonly billing: BillingService,
   ) {}
+
+  /**
+   * Prima di partire: il saldo del wallet che paga deve coprire il massimo di quanto resta da
+   * generare, altrimenti la generazione si fermerebbe a metà. 402 con richiesti e disponibili.
+   */
+  private async assertCredits(tenantId: string, courseId: string, options?: Partial<CourseEstimateOptions>): Promise<void> {
+    const est = await this.billing.estimateExistingCourse(tenantId, courseId, options);
+    if (est.billed && est.available !== undefined && est.available < est.total) {
+      throw new InsufficientCreditsException('course', est.total, est.available);
+    }
+  }
 
   /** Riprende i lavori rimasti in corso dopo un riavvio. Non blocca l'avvio. */
   onModuleInit(): void {
@@ -92,6 +107,7 @@ export class AutopilotService implements OnModuleInit {
       throw new ConflictException('La generazione del corso è già in corso.');
     }
     const stored = CourseEstimateOptions.safeParse(course.estimateOptions ?? {});
+    await this.assertCredits(tenantId, courseId, { ...(stored.success ? stored.data : {}), ...(input.options ?? {}) });
     const now = new Date().toISOString();
     const doc: AutopilotDoc = {
       status: 'running',
@@ -113,6 +129,8 @@ export class AutopilotService implements OnModuleInit {
   async resume(tenantId: string, courseId: string): Promise<AutopilotView> {
     const doc = await this.load(tenantId, courseId);
     if (!doc || doc.status !== 'paused') throw new ConflictException('Nessuna generazione in attesa di conferma.');
+    // La struttura può essere stata modificata (lezioni aggiunte): si ricontrolla il saldo.
+    await this.assertCredits(tenantId, courseId, doc.options);
     doc.status = 'running';
     doc.structureApproved = true;
     await this.save(tenantId, courseId, doc);
@@ -243,6 +261,8 @@ export class AutopilotService implements OnModuleInit {
       if (d) {
         d.status = 'failed';
         d.error = errMsg(err);
+        const code = (err as { getStatus?: () => number }).getStatus?.() ?? (err as { status?: number }).status;
+        if (code === 402) d.errorCode = 'insufficient_credits';
         d.finishedAt = new Date().toISOString();
         d.owner = undefined;
         d.leaseUntil = undefined;
@@ -380,6 +400,7 @@ export class AutopilotService implements OnModuleInit {
       ...(doc.finishedAt ? { finishedAt: doc.finishedAt } : {}),
       issues: doc.issues,
       ...(doc.error ? { error: doc.error } : {}),
+      ...(doc.errorCode ? { errorCode: doc.errorCode } : {}),
       progress: {
         lessons: { done: withContent.length, total: lessons.length },
         tests: { done: assessments, total: assessments + remaining.plannedTests },
