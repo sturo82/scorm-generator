@@ -412,6 +412,11 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
                 Ricarica i crediti
               </a>
             )}
+            {slidesMode && view.status === 'failed' && (
+              <Button variant="outline" onClick={() => setReviewOpen(true)}>
+                Cambia avatar o voce
+              </Button>
+            )}
             {(view.status === 'failed' || view.status === 'cancelled') && (
               <Button
                 variant="outline"

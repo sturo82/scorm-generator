@@ -105,8 +105,12 @@ interface VoiceItem {
   preview_audio_url?: string;
 }
 /** Risposta di GET /v3/avatars/looks?group_id=…: TUTTI i look del gruppo, digital twin inclusi. */
+/** Parametri dell'elenco del catalogo: look pubblici di tipo studio. */
+const STOCK_LOOKS = { ownership: 'public', avatar_type: 'studio_avatar' } as const;
+
 interface V3LookItem {
   id?: string;
+  supported_api_engines?: string[];
   name?: string;
   status?: string;
   avatar_type?: string;
@@ -186,6 +190,14 @@ interface AvatarLookResponse {
   error?: { message?: string } | string | null;
 }
 
+/** Messaggio per un avatar che non gira sull'engine scelto (non si ritenta: non cambierebbe nulla). */
+function unsupportedEngineMessage(supported?: string[]): string {
+  const only6 = (supported ?? []).length > 0 && (supported ?? []).every((e) => e.startsWith('heygen-avatar-6'));
+  return only6
+    ? 'Questo avatar non è disponibile con le qualità offerte (richiede Avatar 6): scegline un altro.'
+    : 'Questo avatar non è disponibile con la qualità scelta: scegli un altro avatar o un\u2019altra qualità.';
+}
+
 export class HeyGenVideoProvider implements VideoGenerationProvider {
   readonly id = 'heygen';
   private readonly apiKey: string;
@@ -236,17 +248,20 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     return fromError || b?.message || `HeyGen HTTP ${status}`;
   }
 
-  /** Look già risolti per id (un avatar del catalogo è un personaggio con molti look). */
+  /** Look già risolti per id e engine (un avatar può essere un personaggio con molti look). */
   private readonly lookIds = new Map<string, Promise<string>>();
 
   /**
-   * La generazione video vuole l'id di un LOOK. Gli avatar del catalogo pubblico si elencano come
-   * personaggi (gruppi con molti look): se l'id non è un look si usa il primo look pronto del
-   * personaggio, così si può scegliere dall'elenco senza passi in più.
+   * La generazione video vuole l'id di un LOOK che supporti l'engine scelto. Se l'id è un
+   * personaggio si usa il primo look pronto compatibile; se nessun look lo è si dice chiaramente
+   * perché (ad esempio gli avatar foto del catalogo girano solo su Avatar 6).
    */
-  private resolveLookId(avatarId: string): Promise<string> {
-    const cached = this.lookIds.get(avatarId);
+  private resolveLookId(avatarId: string, engine?: string): Promise<string> {
+    const key = `${avatarId}|${engine ?? ''}`;
+    const cached = this.lookIds.get(key);
     if (cached) return cached;
+    const supports = (l: { supported_api_engines?: string[] }) =>
+      !engine || !l.supported_api_engines || l.supported_api_engines.length === 0 || l.supported_api_engines.includes(engine);
     const p = (async (): Promise<string> => {
       let res: Response;
       try {
@@ -254,19 +269,30 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
       } catch {
         return avatarId; // rete: si prova comunque con l'id dato
       }
-      if (res.ok) return avatarId;
+      if (res.ok) {
+        const look = ((await res.json().catch(() => null)) as { data?: V3LookItem } | null)?.data;
+        if (look && !supports(look)) {
+          throw new ProviderUnavailableError('heygen', new Error(unsupportedEngineMessage(look.supported_api_engines)));
+        }
+        return avatarId;
+      }
       if (res.status !== 404) return avatarId;
       const looks = await this.fetchGroupLooksV3(avatarId).catch(() => [] as V3LookItem[]);
-      const ready = looks.find((l) => (l.status ?? '').toLowerCase() === 'completed' && l.id);
-      return ready?.id ?? avatarId;
+      const ready = looks.filter((l) => (l.status ?? '').toLowerCase() === 'completed' && l.id);
+      const fit = ready.find(supports);
+      if (fit?.id) return fit.id;
+      if (ready.length > 0) throw new ProviderUnavailableError('heygen', new Error(unsupportedEngineMessage(ready[0]!.supported_api_engines)));
+      return avatarId;
     })();
-    this.lookIds.set(avatarId, p);
+    this.lookIds.set(key, p);
+    // Un errore non si ricorda: alla prossima richiesta si riprova.
+    p.catch(() => this.lookIds.delete(key));
     return p;
   }
 
   async startJob(input: GenerateVideoInput): Promise<{ jobRef: string }> {
     const requestedAvatar = input.avatarId ?? this.defaultAvatarId;
-    const avatarId = requestedAvatar ? await this.resolveLookId(requestedAvatar) : requestedAvatar;
+    const avatarId = requestedAvatar ? await this.resolveLookId(requestedAvatar, input.engine ?? this.defaultEngine) : requestedAvatar;
     if (!avatarId) {
       throw new ProviderUnavailableError(
         'heygen',
@@ -497,8 +523,10 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     if (query) {
       return this.searchStockAvatars(query, input?.token);
     }
-    // Solo il catalogo pubblico: senza `ownership` HeyGen mescola gli avatar dell'account.
-    const json = await this.getPage<ListAvatarsResponse>('/v3/avatars', input?.token, { ownership: 'public' });
+    // Catalogo pubblico a livello di LOOK (l'id è già quello da usare nel video) e solo gli avatar
+    // "studio", che funzionano con i nostri engine: i nuovi avatar foto del catalogo girano solo su
+    // Avatar 6. Senza `ownership` HeyGen mescolerebbe gli avatar dell'account.
+    const json = await this.getPage<ListAvatarsResponse>('/v3/avatars/looks', input?.token, STOCK_LOOKS);
     const raw = (Array.isArray(json.data) ? json.data : json.data?.avatars ?? []) as AvatarItem[];
     const items = raw
       .map((a) => HeyGenVideoProvider.mapAvatar(a, 'stock'))
@@ -512,7 +540,7 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     let token = startToken;
     const MAX_PAGES = 30; // ~600 avatar scanditi per ricerca; sufficiente e rapido.
     for (let i = 0; i < MAX_PAGES; i++) {
-      const json = await this.getPage<ListAvatarsResponse>('/v3/avatars', token, { ownership: 'public' });
+      const json = await this.getPage<ListAvatarsResponse>('/v3/avatars/looks', token, STOCK_LOOKS);
       const raw = (Array.isArray(json.data) ? json.data : json.data?.avatars ?? []) as AvatarItem[];
       for (const a of raw) {
         const opt = HeyGenVideoProvider.mapAvatar(a, 'stock');

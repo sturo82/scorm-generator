@@ -523,7 +523,7 @@ async function download(url: string): Promise<{ bytes: Buffer }> {
  * credenziali, crediti): inutile ripetere e rischioso, si fallisce subito.
  */
 function isPermanentError(msg: string): boolean {
-  return /consent|not[_ ]found|unauthori[sz]ed|forbidden|insufficient|credit|quota|invalid|required|non specificato/i.test(msg);
+  return /consent|not[_ ]found|unauthori[sz]ed|forbidden|insufficient|credit|quota|invalid|required|non specificato|non è disponibile con|available only with/i.test(msg);
 }
 
 function errMsg(err: unknown): string {

@@ -418,7 +418,10 @@ export class AutopilotService implements OnModuleInit {
         });
         if (done.status === 'completed') break;
         if (round === 1) {
-          throw new Error(`${done.progress.failed} clip non generate: riprendi la generazione per riprovare solo quelle.`);
+          const reason = done.clips.find((c) => c.state === 'failed' && c.error)?.error;
+          throw new Error(
+            `${done.progress.failed} clip non generate${reason ? `: ${reason.slice(0, 200)}` : ''}. Riprendi la generazione per riprovare solo quelle, o cambia avatar.`,
+          );
         }
       }
 
