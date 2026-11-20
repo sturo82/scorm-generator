@@ -24,8 +24,17 @@ const TxQuery = z.object({
 type TxQueryType = z.infer<typeof TxQuery>;
 const ConfirmBudgetBody = z.object({ options: CourseEstimateOptions.partial().optional() });
 type ConfirmBudgetBodyType = z.infer<typeof ConfirmBudgetBody>;
-/** Importi di ricarica del wallet personale consentiti (euro; 1 EUR = 100 crediti). */
-const TopupBody = z.object({ amountEur: z.number().int().min(5).max(500) });
+/** Importi di ricarica del wallet personale consentiti (euro; 1 EUR = 100 crediti): tagli fissi 50/100/500, libero da 600 a passi di 100. */
+const TOPUP_FIXED_EUR = [50, 100, 500];
+const TopupBody = z.object({
+  amountEur: z
+    .number()
+    .int()
+    .max(5000)
+    .refine((n) => TOPUP_FIXED_EUR.includes(n) || (n >= 600 && n % 100 === 0), {
+      message: 'Importo non valido: 50, 100, 500 oppure da 600 a passi di 100',
+    }),
+});
 type TopupBodyType = z.infer<typeof TopupBody>;
 
 /** Wallet a crediti e preventivi: saldi, scelta di chi paga, ricarica e costo di una generazione. */

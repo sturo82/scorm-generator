@@ -10,6 +10,8 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import type {
+  AvatarConsentRequest,
+  AvatarGroupSummary,
   AvatarLookStatus,
   AvatarOption,
   CreateAvatarResult,
@@ -27,6 +29,7 @@ import { ConfigService } from '@nestjs/config';
 import { DEFAULT_HEYGEN_ENGINE, MEDIA_CAPS, defaultEngineForAvatarType, lessonImageCap, resolveLessonLayout } from '@scorm/contracts';
 import type { AppConfig } from '../config/configuration.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { TenantPrismaService } from '../tenancy/tenant-prisma.service.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { avatarFeature, BillingService, type Reservation } from '../billing/billing.service.js';
 import {
@@ -126,6 +129,9 @@ const CARTOON_START_BACKOFF_MS = [5_000, 15_000, 30_000, 45_000, 60_000];
 /** Parole massime del copione per restare entro ~1 minuto di parlato (Free). */
 const VIDEO_SCRIPT_MAX_WORDS = 140;
 
+/** Video di addestramento di un digital twin: HeyGen ne consiglia circa 2 minuti; oltre questa soglia non si accetta. */
+const AVATAR_VIDEO_MAX_BYTES = 150 * 1024 * 1024;
+
 interface MediaRefLike {
   kind?: string;
   storageKey?: string;
@@ -174,6 +180,7 @@ export class MediaService implements OnModuleInit {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly tenantPrisma: TenantPrismaService,
     private readonly config: ConfigService<AppConfig, true>,
     @Inject(IMAGE_PROVIDER) private readonly images: ImageProvider,
     @Inject(SPEECH_PROVIDER) private readonly speech: SpeechProvider,
@@ -877,7 +884,16 @@ export class MediaService implements OnModuleInit {
    */
   async createAvatar(
     tenantId: string,
-    input: { type: 'photo' | 'prompt'; name: string; image?: { bytes: Buffer; contentType: string }; prompt?: string },
+    input: {
+      type: 'photo' | 'prompt' | 'digital_twin';
+      name: string;
+      image?: { bytes: Buffer; contentType: string };
+      video?: { bytes: Buffer; contentType: string };
+      prompt?: string;
+      /** L'utente dichiara di avere il consenso della persona ritratta (foto e digital twin). */
+      consentConfirmed?: boolean;
+      userId?: string;
+    },
   ): Promise<CreateAvatarResult> {
     if (!this.videoGen || typeof this.videoGen.createAvatar !== 'function') {
       throw this.videoNotConfigured();
@@ -892,15 +908,27 @@ export class MediaService implements OnModuleInit {
       if (input.image.bytes.byteLength > MAX_BYTES) {
         throw new BadRequestException('Immagine troppo grande (max 32MB).');
       }
+    } else if (input.type === 'digital_twin') {
+      if (!input.video) throw new BadRequestException('Video mancante per il digital twin (campo "file")');
+      if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(input.video.contentType)) {
+        throw new BadRequestException('Formato video non supportato (usa MP4, WebM o MOV).');
+      }
+      if (input.video.bytes.byteLength > AVATAR_VIDEO_MAX_BYTES) {
+        throw new BadRequestException('Video troppo grande (max 150MB): per addestrare il twin bastano circa 2 minuti.');
+      }
     } else if (input.type === 'prompt') {
       if (!input.prompt?.trim()) throw new BadRequestException('Descrizione (prompt) mancante per avatar da prompt');
     } else {
-      throw new BadRequestException('Tipo avatar non supportato (usa "photo" o "prompt")');
+      throw new BadRequestException('Tipo avatar non supportato (usa "photo", "prompt" o "digital_twin")');
+    }
+    // Un avatar che ritrae una persona reale richiede la dichiarazione di consenso dell'utente.
+    if ((input.type === 'photo' || input.type === 'digital_twin') && input.consentConfirmed !== true) {
+      throw new BadRequestException('Conferma di avere il consenso della persona ritratta prima di creare l\'avatar.');
     }
 
-    // Crediti: la creazione di un avatar da foto o da prompt è un'operazione a importo fisso.
+    // Crediti: la creazione di un avatar è un'operazione a importo fisso (il twin costa di più).
     const reservation = await this.billing.reserve(tenantId, `kscorm:avatar-creation:${tenantId}:${randomUUID()}`, [
-      { feature: 'avatar_creation_photo' },
+      { feature: input.type === 'digital_twin' ? 'avatar_creation_twin' : 'avatar_creation_photo' },
     ]);
     let result: CreateAvatarResult;
     try {
@@ -908,6 +936,7 @@ export class MediaService implements OnModuleInit {
         type: input.type,
         name,
         image: input.image ? { bytes: input.image.bytes, contentType: input.image.contentType } : undefined,
+        video: input.video ? { bytes: input.video.bytes, contentType: input.video.contentType } : undefined,
         prompt: input.prompt?.trim(),
       });
     } catch (err) {
@@ -931,9 +960,61 @@ export class MediaService implements OnModuleInit {
       region: 'global',
     });
     this.logger.log(`Avatar creato (tenant ${tenantId}): ${result.name} [${result.avatarId}] status=${result.status}`);
+    // Traccia della dichiarazione di consenso (per foto e twin): HeyGen non la conserva per le foto.
+    if (input.type !== 'prompt') {
+      await this.tenantPrisma
+        .runInTenant(tenantId, (tx) =>
+          tx.avatarConsentRecord.upsert({
+            where: { tenantId_groupId: { tenantId, groupId: result.groupId } },
+            create: { tenantId, groupId: result.groupId, avatarName: result.name, kind: input.type, attestedBy: input.userId ?? null },
+            update: {},
+          }),
+        )
+        .catch((err) => this.logger.warn(`Registrazione del consenso fallita (${result.groupId}): ${err instanceof Error ? err.message : String(err)}`));
+    }
     // Invalida la cache "mine": il nuovo avatar deve comparire alla prossima lista.
     this.videoGen.invalidateMineCache?.();
     return result;
+  }
+
+  /**
+   * Avatar dell'account come personaggi, con stato e consenso, anche quelli non ancora utilizzabili.
+   * Ogni voce riporta se la dichiarazione di consenso è stata registrata alla creazione.
+   */
+  async listAvatarGroups(tenantId: string, refresh = false): Promise<Array<AvatarGroupSummary & { attested: boolean }>> {
+    if (!this.videoGen || typeof this.videoGen.listAvatarGroups !== 'function') throw this.videoNotConfigured();
+    const [groups, records] = await Promise.all([
+      this.videoGen.listAvatarGroups(refresh),
+      this.prisma.avatarConsentRecord.findMany({ where: { tenantId }, select: { groupId: true } }),
+    ]);
+    const attested = new Set(records.map((r) => r.groupId));
+    return groups.map((g) => ({ ...g, attested: attested.has(g.groupId) }));
+  }
+
+  /**
+   * Avvia (o rinnova) la raccolta del consenso di un digital twin: ritorna il link, valido 24 ore,
+   * da far aprire alla persona ritratta per registrare una breve dichiarazione con la webcam.
+   */
+  async requestAvatarConsent(tenantId: string, groupId: string): Promise<AvatarConsentRequest> {
+    if (!this.videoGen || typeof this.videoGen.requestAvatarConsent !== 'function' || typeof this.videoGen.getAvatarGroup !== 'function') {
+      throw this.videoNotConfigured();
+    }
+    const group = await this.videoGen.getAvatarGroup(groupId).catch(() => null);
+    if (!group) throw new NotFoundException('Avatar non trovato');
+    if (group.kind !== 'digital_twin') {
+      throw new BadRequestException('Il consenso si raccoglie solo per i digital twin.');
+    }
+    if (group.consentStatus === 'accepted') throw new BadRequestException('Il consenso è già stato accettato.');
+    const web = this.config.get('webAppUrl', { infer: true }).replace(/\/+$/, '');
+    try {
+      const res = await this.videoGen.requestAvatarConsent(groupId, `${web}/settings/avatars?consent=done`);
+      this.videoGen.invalidateMineCache?.();
+      return res;
+    } catch (err) {
+      const detail = rawVideoGenError(err);
+      this.logger.warn(`Richiesta di consenso fallita (${groupId}, tenant ${tenantId}): ${detail}`);
+      throw new BadRequestException(`Richiesta di consenso non riuscita: ${describeVideoGenError(detail)}`);
+    }
   }
 
   /**

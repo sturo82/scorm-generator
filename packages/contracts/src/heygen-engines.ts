@@ -125,7 +125,7 @@ export function heygenCustomerPricePerMinUsd(
 }
 
 /** Tipo di avatar CREABILE dalla piattaforma (via API HeyGen). */
-export type HeyGenCreatableAvatarType = 'photo' | 'prompt';
+export type HeyGenCreatableAvatarType = 'photo' | 'prompt' | 'digital_twin';
 
 /**
  * Metadati dei tipi di avatar che l'utente può creare dalla piattaforma, con
@@ -152,6 +152,15 @@ export const HEYGEN_CREATABLE_AVATAR_TYPES: readonly HeyGenCreatableAvatarInfo[]
       'Parti da una singola foto di un volto reale (ben illuminato, frontale). ' +
       "L'avatar riprodurrà quel volto che parla, con lip-sync sul copione. " +
       'Ideale per dare un volto riconoscibile (es. un relatore reale).',
+  },
+  {
+    type: 'digital_twin',
+    label: 'Digital twin',
+    tagline: 'Carichi un tuo video',
+    description:
+      'Parti da un video di circa 2 minuti di una persona reale che parla in camera. ' +
+      "L'avatar replica volto, voce e gesti di quella persona. Richiede il consenso della persona " +
+      'ritratta, verificato da HeyGen prima di poter generare video. Addestramento: qualche minuto.',
   },
   {
     type: 'prompt',

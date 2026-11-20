@@ -1,4 +1,4 @@
-import type { AutopilotView, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteItem, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
+import type { DashboardSummary, AutopilotView, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteItem, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import type {
   Brief,
   BriefDraft,
@@ -268,6 +268,31 @@ export interface AvatarOption {
   groupType?: string;
   /** Nome del gruppo/personaggio di appartenenza. */
   group?: string;
+  /** Id del personaggio (per eliminazione e consenso). */
+  groupId?: string;
+}
+
+/** Avatar dell'account come personaggio, con stato di creazione e consenso. */
+export interface AvatarGroupView {
+  groupId: string;
+  name: string;
+  previewUrl?: string;
+  gender?: string;
+  kind: 'digital_twin' | 'photo' | 'prompt' | 'unknown';
+  status: 'processing' | 'pending_consent' | 'completed' | 'failed';
+  /** Consenso del digital twin (null per foto e descrizione). */
+  consentStatus: 'pending' | 'accepted' | 'rejected' | null;
+  /** Look utilizzabili. */
+  looks: number;
+  error?: string;
+  /** Dichiarazione di consenso registrata alla creazione. */
+  attested: boolean;
+}
+
+/** Link per far registrare il consenso alla persona ritratta in un digital twin (valido 24 ore). */
+export interface AvatarConsentRequest {
+  consentStatus: 'pending' | 'accepted' | 'rejected' | null;
+  url?: string;
 }
 
 /** Una voce HeyGen selezionabile per la generazione video. */
@@ -585,6 +610,8 @@ export interface ApiClient {
   dismissAutopilot(courseId: string): Promise<void>;
   /** Preventivo massimo di un video da slide prima dei copioni. */
   estimateSlideImport(courseId: string, importId: string, sections: boolean): Promise<SlideImportEstimateView>;
+  /** Riepilogo della dashboard: numeri, corsi recenti con copertina, consumo di crediti. */
+  getDashboardSummary(): Promise<DashboardSummary>;
   /** Prezzi massimi delle operazioni di una lezione. */
   estimateLesson(courseId: string, lessonId: string): Promise<LessonEstimateView>;
   /** Conferma il preventivo del corso come budget (con le opzioni scelte). */
@@ -689,7 +716,13 @@ export interface ApiClient {
   /** Elenca gli avatar dell'account (i "miei"). `q` cerca per nome. */
   listMyAvatars(q?: string, refresh?: boolean): Promise<Page<AvatarOption>>;
   /** Crea un avatar da FOTO (upload immagine). Asincrono: look in 'processing'. */
-  createPhotoAvatar(name: string, file: File): Promise<CreateAvatarResult>;
+  createPhotoAvatar(name: string, file: File, consentConfirmed: boolean): Promise<CreateAvatarResult>;
+  /** Crea un digital twin da un video (a pagamento una tantum). */
+  createDigitalTwin(name: string, file: File, consentConfirmed: boolean): Promise<CreateAvatarResult>;
+  /** Avatar come personaggi con stato e consenso (anche quelli non ancora utilizzabili). */
+  listAvatarGroups(refresh?: boolean): Promise<AvatarGroupView[]>;
+  /** Avvia o rinnova la raccolta del consenso di un digital twin. */
+  requestAvatarConsent(groupId: string): Promise<AvatarConsentRequest>;
   /** Crea un avatar da PROMPT testuale. Asincrono: look in 'processing'. */
   createPromptAvatar(name: string, prompt: string): Promise<CreateAvatarResult>;
   /** Stato di un look avatar in creazione (polling fino a 'completed'/'failed'). */

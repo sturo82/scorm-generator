@@ -10,6 +10,9 @@ import {
   type CreateAvatarInput,
   type CreateAvatarResult,
   type AvatarLookStatus,
+  type AvatarGroupSummary,
+  type AvatarConsentRequest,
+  type AvatarConsentStatus,
   ProviderUnavailableError,
 } from '@scorm/domain';
 
@@ -147,6 +150,30 @@ interface CreateAvatarApiResponse {
   message?: string;
 }
 
+/** Risposta di GET /v3/avatars/{group_id}: personaggio con stato e consenso. */
+interface AvatarGroupResponse {
+  data?: {
+    id?: string;
+    name?: string;
+    gender?: string;
+    preview_image_url?: string;
+    looks_count?: number;
+    status?: string;
+    consent_status?: string | null;
+    error?: { code?: string; message?: string } | null;
+  };
+}
+
+/** Risposta di POST /v3/avatars/{group_id}/consent: gruppo e link per la persona. */
+interface AvatarConsentResponse {
+  data?: { url?: string; avatar_group?: { consent_status?: string | null } };
+}
+
+/** Risposta di POST /v3/assets/direct-uploads: dove caricare i byte del file. */
+interface DirectUploadResponse {
+  data?: { asset_id?: string; upload_url?: string; upload_headers?: Record<string, string>; max_bytes?: number };
+}
+
 /** Risposta di GET /v3/avatars/looks/{id}: stato di un look. */
 interface AvatarLookResponse {
   data?: {
@@ -174,6 +201,8 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
   // la prima pagina. Gli stock/voci sono paginati on-demand (nessuna cache qui:
   // react-query lato client memorizza già le pagine viste).
   private mineCache?: { expires: number; promise: Promise<AvatarOption[]> };
+  // Cache breve dei personaggi con stato e consenso (la pagina avatar li rilegge spesso).
+  private groupsCache?: { expires: number; promise: Promise<AvatarGroupSummary[]> };
 
   constructor(opts: HeyGenProviderOptions) {
     this.apiKey = opts.apiKey;
@@ -192,6 +221,7 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
   /** Invalida la cache degli avatar dell'account (dopo create/delete). */
   invalidateMineCache(): void {
     this.mineCache = undefined;
+    this.groupsCache = undefined;
   }
 
   private headers(): Record<string, string> {
@@ -388,6 +418,7 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
               gender: l.gender ?? g.gender,
               source: 'mine',
               group: g.name,
+              groupId: g.id as string,
               // Tipo del LOOK (es. PHOTO_AVATAR, DIGITAL_TWIN): determina etichetta e tariffa.
               groupType: (l.avatar_type ?? 'photo_avatar').toUpperCase(),
             }));
@@ -564,13 +595,66 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     return assetId;
   }
 
+  /**
+   * Carica un file grande (video di addestramento) con il caricamento diretto: crea lo slot, invia i
+   * byte a S3 con le intestazioni firmate e conferma. Ritorna l'asset_id, subito utilizzabile.
+   */
+  private async uploadLargeAsset(file: { bytes: Uint8Array | Buffer; contentType: string }, name: string): Promise<string> {
+    const bytes = file.bytes instanceof Uint8Array ? file.bytes : new Uint8Array(file.bytes);
+    const ext = file.contentType.includes('webm') ? 'webm' : file.contentType.includes('quicktime') ? 'mov' : 'mp4';
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.baseUrl}/v3/assets/direct-uploads`, {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ filename: `${name}.${ext}`, content_type: file.contentType, size_bytes: bytes.byteLength }),
+      });
+    } catch (err) {
+      throw new ProviderUnavailableError('heygen', err);
+    }
+    const json = (await res.json().catch(() => null)) as DirectUploadResponse | null;
+    if (!res.ok) throw new ProviderUnavailableError('heygen', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
+    const assetId = json?.data?.asset_id;
+    const url = json?.data?.upload_url;
+    if (!assetId || !url) throw new ProviderUnavailableError('heygen', new Error('Caricamento diretto senza asset_id o indirizzo'));
+    let put: Response;
+    try {
+      // Esattamente le intestazioni firmate, nessuna in più (niente chiave API).
+      put = await this.fetchImpl(url, { method: 'PUT', headers: json?.data?.upload_headers ?? {}, body: bytes });
+    } catch (err) {
+      throw new ProviderUnavailableError('heygen', err);
+    }
+    if (!put.ok) throw new ProviderUnavailableError('heygen', new Error(`Caricamento del video non riuscito (HTTP ${put.status})`));
+    let done: Response;
+    try {
+      done = await this.fetchImpl(`${this.baseUrl}/v3/assets/${encodeURIComponent(assetId)}/complete`, {
+        method: 'POST',
+        headers: this.headers(),
+        body: '{}',
+      });
+    } catch (err) {
+      throw new ProviderUnavailableError('heygen', err);
+    }
+    if (!done.ok) {
+      const body = (await done.json().catch(() => null)) as unknown;
+      throw new ProviderUnavailableError('heygen', new Error(HeyGenVideoProvider.errMessage(done.status, body)));
+    }
+    return assetId;
+  }
+
   async createAvatar(input: CreateAvatarInput): Promise<CreateAvatarResult> {
     const name = input.name.trim();
     if (!name) {
       throw new ProviderUnavailableError('heygen', new Error('Nome avatar mancante'));
     }
     const body: Record<string, unknown> = { type: input.type, name };
-    if (input.type === 'photo') {
+    if (input.type === 'digital_twin') {
+      if (!input.video) {
+        throw new ProviderUnavailableError('heygen', new Error('Video mancante per il digital twin'));
+      }
+      // Il video di addestramento è grande: si carica direttamente su S3 (non passa da HeyGen).
+      body.file = { type: 'asset_id', asset_id: await this.uploadLargeAsset(input.video, 'training-footage') };
+    } else if (input.type === 'photo') {
       if (!input.image) {
         throw new ProviderUnavailableError('heygen', new Error('Immagine mancante per avatar photo'));
       }
@@ -608,6 +692,7 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     }
     // Un nuovo avatar invalida la cache "mine" così la lista si aggiorna.
     this.mineCache = undefined;
+    this.groupsCache = undefined;
     return {
       avatarId,
       groupId,
@@ -643,6 +728,110 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     };
   }
 
+  /** Stato e consenso di un personaggio. */
+  async getAvatarGroup(groupId: string): Promise<AvatarGroupSummary> {
+    const json = await this.getPage<AvatarGroupResponse>(`/v3/avatars/${encodeURIComponent(groupId)}`);
+    const looks = await this.fetchGroupLooksV3(groupId).catch(() => [] as V3LookItem[]);
+    return HeyGenVideoProvider.mapGroup(groupId, json.data, looks);
+  }
+
+  /**
+   * Tutti i personaggi dell'account con stato e consenso, anche quelli non ancora utilizzabili (in
+   * addestramento o in attesa del consenso), che l'elenco degli avatar non mostra. L'elenco dei
+   * gruppi non riporta il consenso: si legge gruppo per gruppo, in parallelo.
+   */
+  async listAvatarGroups(force = false): Promise<AvatarGroupSummary[]> {
+    const now = Date.now();
+    if (!force && this.groupsCache && this.groupsCache.expires > now && this.cacheTtlMs > 0) return this.groupsCache.promise;
+    const promise = (async (): Promise<AvatarGroupSummary[]> => {
+      const groups: AvatarItem[] = [];
+      let token: string | undefined;
+      for (let page = 0; page < 10; page++) {
+        const json = await this.getPage<ListAvatarsResponse>('/v3/avatars', token, { ownership: 'private', limit: '50' });
+        const raw = (Array.isArray(json.data) ? json.data : json.data?.avatars ?? []) as AvatarItem[];
+        groups.push(...raw.filter((g) => g.id));
+        if (!json.has_more || !json.next_token) break;
+        token = json.next_token;
+      }
+      const out = await Promise.all(
+        groups.map(async (g): Promise<AvatarGroupSummary> => {
+          const id = g.id as string;
+          const [detail, looks] = await Promise.all([
+            this.getPage<AvatarGroupResponse>(`/v3/avatars/${encodeURIComponent(id)}`).catch(() => null),
+            this.fetchGroupLooksV3(id).catch(() => [] as V3LookItem[]),
+          ]);
+          return HeyGenVideoProvider.mapGroup(id, detail?.data ?? { name: g.name, gender: g.gender, preview_image_url: g.preview_image_url }, looks);
+        }),
+      );
+      // I digital twin per primi, poi i più recenti per nome.
+      return out.sort((a, b) => Number(b.kind === 'digital_twin') - Number(a.kind === 'digital_twin') || a.name.localeCompare(b.name));
+    })();
+    if (this.cacheTtlMs > 0) this.groupsCache = { expires: now + Math.min(this.cacheTtlMs, 60_000), promise };
+    else this.groupsCache = undefined;
+    return promise;
+  }
+
+  private static mapGroup(groupId: string, g: AvatarGroupResponse['data'], looks: V3LookItem[]): AvatarGroupSummary {
+    const types = looks.map((l) => (l.avatar_type ?? '').toLowerCase());
+    const kind: AvatarGroupSummary['kind'] = types.some((t) => t.includes('twin'))
+      ? 'digital_twin'
+      : types.some((t) => t.includes('prompt'))
+        ? 'prompt'
+        : types.some((t) => t.includes('photo'))
+          ? 'photo'
+          : g?.consent_status
+            ? 'digital_twin'
+            : 'unknown';
+    const consent = (g?.consent_status ?? null) as string | null;
+    const consentStatus: AvatarConsentStatus | null = consent === 'accepted' || consent === 'rejected' || consent === 'pending' ? consent : null;
+    const ready = looks.filter((l) => (l.status ?? '').toLowerCase() === 'completed').length;
+    const raw = (g?.status ?? '').toLowerCase();
+    const status: AvatarGroupSummary['status'] =
+      raw === 'failed' || consentStatus === 'rejected'
+        ? 'failed'
+        : raw === 'pending_consent' || consentStatus === 'pending'
+          ? 'pending_consent'
+          : raw === 'processing' || (ready === 0 && looks.length > 0)
+            ? 'processing'
+            : 'completed';
+    return {
+      groupId,
+      name: g?.name ?? groupId,
+      previewUrl: g?.preview_image_url ?? looks[0]?.preview_image_url,
+      gender: g?.gender,
+      kind,
+      status,
+      consentStatus,
+      looks: ready,
+      ...(g?.error?.message ? { error: g.error.message } : {}),
+    };
+  }
+
+  /**
+   * Avvia la raccolta del consenso del digital twin: ritorna il link della pagina dove la persona
+   * ritratta registra una breve dichiarazione con la webcam (valido 24 ore; si può rinnovare).
+   */
+  async requestAvatarConsent(groupId: string, rerouteUrl?: string): Promise<AvatarConsentRequest> {
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.baseUrl}/v3/avatars/${encodeURIComponent(groupId)}/consent`, {
+        method: 'POST',
+        headers: { ...this.headers(), 'Idempotency-Key': `consent-${groupId}-${Math.floor(Date.now() / 60_000)}` },
+        body: JSON.stringify(rerouteUrl ? { reroute_url: rerouteUrl } : {}),
+      });
+    } catch (err) {
+      throw new ProviderUnavailableError('heygen', err);
+    }
+    const json = (await res.json().catch(() => null)) as AvatarConsentResponse | null;
+    if (!res.ok) throw new ProviderUnavailableError('heygen', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
+    this.groupsCache = undefined;
+    const c = json?.data?.avatar_group?.consent_status ?? null;
+    return {
+      consentStatus: c === 'accepted' || c === 'rejected' || c === 'pending' ? c : null,
+      ...(json?.data?.url ? { url: json.data.url } : {}),
+    };
+  }
+
   async deleteAvatar(groupId: string): Promise<void> {
     let res: Response;
     try {
@@ -659,6 +848,7 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     }
     // Elimina dalla cache "mine" così sparisce subito dalla lista.
     this.mineCache = undefined;
+    this.groupsCache = undefined;
   }
 }
 

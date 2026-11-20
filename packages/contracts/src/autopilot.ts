@@ -45,3 +45,50 @@ export interface AutopilotView {
     narration: { done: number; total: number };
   };
 }
+
+/** Corso nella dashboard: copertina, avanzamento e cosa ha speso. */
+export interface DashboardCourse {
+  id: string;
+  title: string;
+  description: string;
+  language: string;
+  status: 'DRAFT' | 'IN_REVIEW' | 'APPROVED';
+  coverImageUrl?: string;
+  coverPosition?: number;
+  updatedAt: string;
+  createdAt: string;
+  modules: number;
+  lessons: number;
+  /** Lezioni con i contenuti già generati. */
+  lessonsReady: number;
+  /** Video presenti nelle lezioni (caricati o generati). */
+  videos: number;
+  /** La generazione automatica è in corso o in attesa. */
+  generating: boolean;
+  /** Ci sono problemi da risolvere dopo la generazione automatica. */
+  needsAttention: boolean;
+  /** Crediti addebitati finora a questo corso. */
+  credits: number;
+}
+
+/** Riepilogo della dashboard: numeri, corsi recenti e consumo di crediti. */
+export interface DashboardSummary {
+  totals: {
+    courses: number;
+    byStatus: { draft: number; inReview: number; approved: number };
+    lessons: number;
+    lessonsReady: number;
+    brands: number;
+    knowledgeDocs: number;
+  };
+  media: {
+    /** Video nelle lezioni dei corsi. */
+    lessonVideos: number;
+    /** Video nella libreria: caricati, da slide, collegati da piattaforme esterne. */
+    library: { total: number; uploaded: number; fromSlides: number; external: number };
+    images: number;
+    narrations: number;
+  };
+  credits: { spentThisMonth: number; spentTotal: number };
+  recentCourses: DashboardCourse[];
+}

@@ -76,6 +76,40 @@ export interface AvatarOption {
   groupType?: string;
   /** Nome del gruppo/personaggio di appartenenza (per sottosezioni). */
   group?: string;
+  /** Id del gruppo/personaggio (serve per eliminare l'avatar e per il consenso). */
+  groupId?: string;
+}
+
+/** Consenso della persona ritratta in un digital twin (HeyGen). */
+export type AvatarConsentStatus = 'pending' | 'accepted' | 'rejected';
+
+/**
+ * Un avatar dell'account come PERSONAGGIO (gruppo), con lo stato di creazione e di consenso. A
+ * differenza di `AvatarOption` comprende anche gli avatar ancora in lavorazione o in attesa del
+ * consenso, che non compaiono tra quelli utilizzabili.
+ */
+export interface AvatarGroupSummary {
+  groupId: string;
+  name: string;
+  previewUrl?: string;
+  gender?: string;
+  /** 'digital_twin' se almeno un look è un digital twin; altrimenti 'photo' o 'prompt'. */
+  kind: 'digital_twin' | 'photo' | 'prompt' | 'unknown';
+  /** processing | pending_consent | completed | failed. */
+  status: 'processing' | 'pending_consent' | 'completed' | 'failed';
+  /** Consenso del gruppo: null per foto e prompt (nessun passaggio previsto dal provider). */
+  consentStatus: AvatarConsentStatus | null;
+  /** Look utilizzabili (completati). */
+  looks: number;
+  /** Motivo, se `status` è 'failed' (anche consenso rifiutato). */
+  error?: string;
+}
+
+/** Esito della richiesta di consenso: link per la persona ritratta (valido 24 ore). */
+export interface AvatarConsentRequest {
+  consentStatus: AvatarConsentStatus | null;
+  /** Pagina dove la persona registra il consenso con la webcam. */
+  url?: string;
 }
 
 /** Una voce TTS disponibile per la generazione. */
@@ -125,8 +159,8 @@ export interface ListVoicesInput {
   query?: string;
 }
 
-/** Tipo di avatar creabile via API (sottoinsieme supportato: foto e prompt). */
-export type CreateAvatarType = 'photo' | 'prompt';
+/** Tipo di avatar creabile via API (foto, prompt e digital twin da video). */
+export type CreateAvatarType = 'photo' | 'prompt' | 'digital_twin';
 
 /** Input per creare un avatar. Per 'photo' serve l'immagine; per 'prompt' il testo. */
 export interface CreateAvatarInput {
@@ -137,6 +171,8 @@ export interface CreateAvatarInput {
   image?: { bytes: Uint8Array | Buffer; contentType: string };
   /** Descrizione testuale del personaggio (solo 'prompt'). */
   prompt?: string;
+  /** Video di addestramento (solo 'digital_twin'): una persona, in primo piano, che parla. */
+  video?: { bytes: Uint8Array | Buffer; contentType: string };
 }
 
 /** Esito della creazione: il look creato (avatar_id) e lo stato iniziale. */
@@ -195,6 +231,12 @@ export interface VideoGenerationProvider {
   createAvatar?(input: CreateAvatarInput): Promise<CreateAvatarResult>;
   /** Stato di un look avatar (per il polling dopo createAvatar). Opzionale. */
   getAvatarLook?(lookId: string): Promise<AvatarLookStatus>;
+  /** Avatar dell'account come personaggi, con stato e consenso (anche quelli non ancora utilizzabili). Opzionale. */
+  listAvatarGroups?(force?: boolean): Promise<AvatarGroupSummary[]>;
+  /** Stato di un personaggio, consenso compreso. Opzionale. */
+  getAvatarGroup?(groupId: string): Promise<AvatarGroupSummary>;
+  /** Avvia (o rinnova) la raccolta del consenso del digital twin: ritorna il link per la persona. Opzionale. */
+  requestAvatarConsent?(groupId: string, rerouteUrl?: string): Promise<AvatarConsentRequest>;
   /** Elimina un avatar (gruppo + look). Opzionale. */
   deleteAvatar?(groupId: string): Promise<void>;
   /**

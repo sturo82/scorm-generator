@@ -145,6 +145,7 @@ model Tenant {
   @@index([planId])
   creditCharges CreditCharge[]
   creditReservations CreditReservation[]
+  avatarConsents AvatarConsentRecord[]
 }
 
 model User {
@@ -797,4 +798,19 @@ model CreditReservation {
   closedAt  DateTime?
 
   @@index([tenantId, courseId])
+}
+
+/// Dichiarazione di consenso alla creazione di un avatar da una persona reale (foto o digital twin).
+model AvatarConsentRecord {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  groupId    String
+  avatarName String
+  /// 'photo' | 'digital_twin'.
+  kind       String
+  attestedBy String?
+  attestedAt DateTime @default(now())
+
+  @@unique([tenantId, groupId])
 }

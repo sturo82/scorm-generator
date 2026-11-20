@@ -47,6 +47,25 @@ export class AvatarsController {
     return this.media.listMyAvatars(q, refresh === 'true');
   }
 
+  /**
+   * Avatar come personaggi, con stato di creazione e consenso: comprende anche quelli ancora in
+   * addestramento o in attesa del consenso, che l'elenco sopra non mostra.
+   */
+  @Get('groups')
+  groups(@CurrentContext() ctx: AuthContext, @Query('refresh') refresh?: string) {
+    return this.media.listAvatarGroups(ctx.tenant.tenantId, refresh === 'true');
+  }
+
+  /**
+   * Avvia (o rinnova) la raccolta del consenso di un digital twin. Ritorna il link, valido 24 ore,
+   * da far aprire alla persona ritratta. Lo stato si legge poi da `groups`.
+   */
+  @Post(':groupId/consent')
+  @Roles('ADMIN')
+  requestConsent(@CurrentContext() ctx: AuthContext, @Param('groupId') groupId: string) {
+    return this.media.requestAvatarConsent(ctx.tenant.tenantId, groupId);
+  }
+
   /** Stato di un look avatar in creazione (polling dopo la creazione). */
   @Get('looks/:lookId')
   getLook(@Param('lookId') lookId: string) {
@@ -64,6 +83,7 @@ export class AvatarsController {
   createPhoto(
     @CurrentContext() ctx: AuthContext,
     @Body('name') name: string | undefined,
+    @Body('consentConfirmed') consent: string | undefined,
     @UploadedFile() file: { mimetype: string; buffer: Buffer } | undefined,
   ) {
     if (!file) throw new BadRequestException('Nessuna immagine ricevuta (campo "file")');
@@ -72,6 +92,34 @@ export class AvatarsController {
       type: 'photo',
       name: name.trim(),
       image: { bytes: file.buffer, contentType: file.mimetype },
+      consentConfirmed: consent === 'true',
+      userId: ctx.userId,
+    });
+  }
+
+  /**
+   * Crea un DIGITAL TWIN da un video (multipart: "file" + "name" + "consentConfirmed"). Il video di
+   * addestramento (circa 2 minuti, una persona che parla in primo piano) è caricato su HeyGen e
+   * l'addestramento richiede qualche minuto. Prima di usarlo la persona deve dare il consenso
+   * (vedi `:groupId/consent`). A pagamento una tantum.
+   */
+  @Post('twin')
+  @Roles('ADMIN')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 150 * 1024 * 1024 } }))
+  createTwin(
+    @CurrentContext() ctx: AuthContext,
+    @Body('name') name: string | undefined,
+    @Body('consentConfirmed') consent: string | undefined,
+    @UploadedFile() file: { mimetype: string; buffer: Buffer } | undefined,
+  ) {
+    if (!file) throw new BadRequestException('Nessun video ricevuto (campo "file")');
+    if (!name?.trim()) throw new BadRequestException('Nome avatar mancante (campo "name")');
+    return this.media.createAvatar(ctx.tenant.tenantId, {
+      type: 'digital_twin',
+      name: name.trim(),
+      video: { bytes: file.buffer, contentType: file.mimetype },
+      consentConfirmed: consent === 'true',
+      userId: ctx.userId,
     });
   }
 

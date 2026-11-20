@@ -1,4 +1,4 @@
-import type { AutopilotView, Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteView, FeedCategory, WalletTransactionsView, WalletView } from '@scorm/contracts';
+import type { DashboardSummary, AutopilotView, Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteView, FeedCategory, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import { confirmOverBudget, notifyInsufficientCredits, parseOverBudget } from '../billing-events';
 import { getSession, handleSessionExpired } from '../auth';
 import type {
@@ -41,6 +41,8 @@ import type {
   AttachStockCoverInput,
   SsoRedeemResult,
   AvatarOption,
+  AvatarGroupView,
+  AvatarConsentRequest,
   VoiceOption,
   GenerateVideoRef,
   CreateAvatarResult,
@@ -370,6 +372,9 @@ export class HttpApiClient implements ApiClient {
   estimateExistingCourse(courseId: string) {
     return this.request<CourseEstimateView>(`/billing/estimate/courses/${encodeURIComponent(courseId)}`);
   }
+  getDashboardSummary() {
+    return this.request<DashboardSummary>('/dashboard/summary');
+  }
   getAutopilot(courseId: string) {
     return this.request<AutopilotView | null>(`/courses/${encodeURIComponent(courseId)}/autopilot`);
   }
@@ -568,14 +573,27 @@ export class HttpApiClient implements ApiClient {
     const suffix = params.toString() ? `?${params.toString()}` : '';
     return this.request<Page<AvatarOption>>(`/tenant/avatars${suffix}`);
   }
-  async createPhotoAvatar(name: string, file: File) {
+  listAvatarGroups(refresh?: boolean) {
+    return this.request<AvatarGroupView[]>(`/tenant/avatars/groups${refresh ? '?refresh=true' : ''}`);
+  }
+  requestAvatarConsent(groupId: string) {
+    return this.request<AvatarConsentRequest>(`/tenant/avatars/${encodeURIComponent(groupId)}/consent`, { method: 'POST' });
+  }
+  createPhotoAvatar(name: string, file: File, consentConfirmed: boolean) {
+    return this.uploadAvatar('photo', name, file, consentConfirmed);
+  }
+  createDigitalTwin(name: string, file: File, consentConfirmed: boolean) {
+    return this.uploadAvatar('twin', name, file, consentConfirmed);
+  }
+  private async uploadAvatar(kind: 'photo' | 'twin', name: string, file: File, consentConfirmed: boolean) {
     const session = getSession();
     const form = new FormData();
     form.append('file', file);
     form.append('name', name);
+    form.append('consentConfirmed', String(consentConfirmed));
     const headers = new Headers();
     if (session) headers.set('Authorization', `Bearer ${session.token}`);
-    const res = await fetch(`${this.baseUrl}/tenant/avatars/photo`, { method: 'POST', headers, body: form });
+    const res = await fetch(`${this.baseUrl}/tenant/avatars/${kind}`, { method: 'POST', headers, body: form });
     if (res.status === 401) void handleSessionExpired();
     if (!res.ok) {
       const body = await res.text();

@@ -1,4 +1,4 @@
-import type { AutopilotView, Assessment, Block, Brief, BriefDraft, CourseCreditsView, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
+import type { DashboardSummary, AutopilotView, Assessment, Block, Brief, BriefDraft, CourseCreditsView, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import { computeQuote } from '@scorm/contracts';
 import type {
   AdminUserView,
@@ -41,6 +41,8 @@ import type {
   AttachStockCoverInput,
   SsoRedeemResult,
   AvatarOption,
+  AvatarGroupView,
+  AvatarConsentRequest,
   VoiceOption,
   GenerateVideoRef,
   CreateAvatarResult,
@@ -701,6 +703,14 @@ export class MockApiClient implements ApiClient {
   async estimateExistingCourse(): Promise<CourseEstimateView> {
     return this.estimateCourse();
   }
+  async getDashboardSummary(): Promise<DashboardSummary> {
+    return {
+      totals: { courses: this.courses.length, byStatus: { draft: this.courses.length, inReview: 0, approved: 0 }, lessons: 0, lessonsReady: 0, brands: this.brands.length, knowledgeDocs: 0 },
+      media: { lessonVideos: 0, library: { total: 0, uploaded: 0, fromSlides: 0, external: 0 }, images: 0, narrations: 0 },
+      credits: { spentThisMonth: 0, spentTotal: 0 },
+      recentCourses: [],
+    };
+  }
   async getAutopilot(): Promise<AutopilotView | null> {
     return null;
   }
@@ -1107,7 +1117,26 @@ export class MockApiClient implements ApiClient {
     const items = query ? this.myAvatars.filter((a) => a.name.toLowerCase().includes(query)) : [...this.myAvatars];
     return { items };
   }
-  async createPhotoAvatar(name: string, _file: File): Promise<CreateAvatarResult> {
+  async listAvatarGroups(): Promise<AvatarGroupView[]> {
+    await delay(200);
+    return this.myAvatars.map((a) => ({
+      groupId: a.id,
+      name: a.name,
+      previewUrl: a.previewUrl,
+      kind: 'photo' as const,
+      status: 'completed' as const,
+      consentStatus: null,
+      looks: 1,
+      attested: true,
+    }));
+  }
+  async requestAvatarConsent(): Promise<AvatarConsentRequest> {
+    throw new Error('Consenso non disponibile in modalità demo');
+  }
+  async createDigitalTwin(_name: string, _file: File, _consent: boolean): Promise<CreateAvatarResult> {
+    throw new Error('Digital twin non disponibile in modalità demo');
+  }
+  async createPhotoAvatar(name: string, _file: File, _consent: boolean): Promise<CreateAvatarResult> {
     await delay(500);
     const groupId = `mock-group-${Date.now()}`;
     const avatarId = `mock-look-${Date.now()}`;

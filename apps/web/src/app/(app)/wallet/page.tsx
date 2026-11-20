@@ -5,11 +5,16 @@ import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
 import { useSetWalletPayer, useStartWalletTopup, useWallet, useWalletTransactions } from '@/lib/api/hooks';
 
-const AMOUNTS_EUR = [5, 10, 20, 50];
+const AMOUNTS_EUR = [50, 100, 500];
+/** Importo libero: da 600 a 5.000 euro a passi di 100 (stessi limiti dell'API). */
+const MANUAL_MIN_EUR = 600;
+const MANUAL_MAX_EUR = 5000;
+const MANUAL_STEP_EUR = 100;
 /** Cambio di Manager: 1 EUR = 100 crediti. */
 const CREDITS_PER_EUR = 100;
 const BEFORE_KEY = 'wallet:personal-before';
@@ -67,6 +72,10 @@ export default function WalletPage() {
       toast.show('Non sono riuscito a cambiare il wallet: riprova', 'error');
     }
   }
+
+  const [manual, setManual] = React.useState('');
+  const manualEur = /^\d+$/.test(manual) ? Number(manual) : NaN;
+  const manualValid = manualEur >= MANUAL_MIN_EUR && manualEur <= MANUAL_MAX_EUR && manualEur % MANUAL_STEP_EUR === 0;
 
   async function startTopup(amountEur: number) {
     try {
@@ -194,6 +203,31 @@ export default function WalletPage() {
                 </Button>
               ))}
             </div>
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (manualValid) void startTopup(manualEur);
+              }}
+            >
+              <Input
+                type="text"
+                inputMode="numeric"
+                aria-label="Importo libero in euro"
+                placeholder="Altro importo (da 600 €)"
+                className="h-9 w-52"
+                value={manual}
+                onChange={(e) => setManual(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              />
+              <Button type="submit" size="sm" variant="outline" disabled={topup.isPending || !manualValid}>
+                {manualValid ? `Ricarica ${manualEur} € · ${fmt(manualEur * CREDITS_PER_EUR)} crediti` : 'Ricarica'}
+              </Button>
+            </form>
+            {manual !== '' && !manualValid && (
+              <p className="text-xs text-destructive">
+                Importo da {MANUAL_MIN_EUR} a {fmt(MANUAL_MAX_EUR)} euro, a passi di {MANUAL_STEP_EUR}.
+              </p>
+            )}
             {topup.isPending && (
               <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="size-3.5 animate-spin" /> Apro la pagina di pagamento…

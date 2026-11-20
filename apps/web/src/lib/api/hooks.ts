@@ -508,16 +508,50 @@ export function useMyAvatars(q?: string, enabled = true) {
 export function useRefreshMyAvatars() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (q?: string) => api.listMyAvatars(q, true),
+    mutationFn: async (q?: string) => {
+      const [mine] = await Promise.all([api.listMyAvatars(q, true), api.listAvatarGroups(true)]);
+      return mine;
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tenant', 'avatars'] }),
   });
 }
 
 /** Crea un avatar da FOTO (upload immagine). Invalida la lista al termine. */
+/**
+ * Avatar dell'account come personaggi, con stato e consenso. Mentre qualcuno è in addestramento o in
+ * attesa del consenso si rilegge da solo, così la pagina segue l'avanzamento senza ricaricarla.
+ */
+export function useAvatarGroups() {
+  return useQuery({
+    queryKey: [...qk.avatars('groups')],
+    queryFn: () => api.listAvatarGroups(),
+    staleTime: 15_000,
+    refetchInterval: (q) => (q.state.data?.some((g) => g.status === 'processing' || g.status === 'pending_consent') ? 8_000 : false),
+    retry: false,
+  });
+}
+/** Crea un digital twin da un video. */
+export function useCreateDigitalTwin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { name: string; file: File; consentConfirmed: boolean }) =>
+      api.createDigitalTwin(vars.name, vars.file, vars.consentConfirmed),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tenant', 'avatars'] }),
+  });
+}
+/** Avvia o rinnova la raccolta del consenso di un digital twin: ritorna il link per la persona. */
+export function useRequestAvatarConsent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (groupId: string) => api.requestAvatarConsent(groupId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tenant', 'avatars'] }),
+  });
+}
 export function useCreatePhotoAvatar() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { name: string; file: File }) => api.createPhotoAvatar(vars.name, vars.file),
+    mutationFn: (vars: { name: string; file: File; consentConfirmed: boolean }) =>
+      api.createPhotoAvatar(vars.name, vars.file, vars.consentConfirmed),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tenant', 'avatars'] }),
   });
 }
@@ -762,6 +796,16 @@ export function useExistingCourseEstimate(courseId: string) {
     staleTime: 10_000,
     // Cambia man mano che si generano struttura, lezioni e test.
     refetchInterval: 15_000,
+    retry: false,
+  });
+}
+/** Riepilogo della dashboard; si rilegge ogni minuto e quando una generazione è in corso. */
+export function useDashboardSummary() {
+  return useQuery({
+    queryKey: ['dashboard', 'summary'],
+    queryFn: () => api.getDashboardSummary(),
+    staleTime: 20_000,
+    refetchInterval: (q) => (q.state.data?.recentCourses.some((c) => c.generating) ? 5_000 : 60_000),
     retry: false,
   });
 }
