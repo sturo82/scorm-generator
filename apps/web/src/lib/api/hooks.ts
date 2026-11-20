@@ -1,4 +1,5 @@
 'use client';
+import * as React from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Block, Brief, CourseEstimateInput, CourseEstimateOptions, CreditQuoteItem, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
 import { getApiClient } from './client';
@@ -782,17 +783,48 @@ export function useExportCourse(courseId: string) {
   });
 }
 
-/** Stato del wallet a crediti: saldo, ricarica e se l'azienda paga a crediti. Si aggiorna da solo. */
+/** Dopo questi errori di fila senza mai una risposta si smette di insistere (circa 2 minuti). */
+const WALLET_MAX_ERRORS = 40;
+
+/**
+ * Stato del wallet a crediti: saldo, ricarica e se l'azienda paga a crediti. Si aggiorna da solo.
+ * Al primo accesso di un nuovo utente il wallet personale lo crea Manager e può servire qualche
+ * secondo: finché non arriva una risposta si riprova ogni 3 secondi, senza bisogno di ricaricare.
+ */
 export const useWallet = () =>
   useQuery({
     queryKey: ['billing', 'wallet'],
     queryFn: () => api.getWallet(),
     staleTime: 15_000,
-    refetchInterval: (q) => (q.state.data?.enabled ? 20_000 : false),
+    refetchInterval: (q) => {
+      if (q.state.data?.enabled) return 20_000;
+      // Nessuna risposta ancora (wallet in creazione): ritenta spesso, ma non all'infinito.
+      if (!q.state.data) return q.state.errorUpdateCount < WALLET_MAX_ERRORS ? 3_000 : false;
+      // Wallet non abilitato: ricontrolla di tanto in tanto, se Manager lo attiva.
+      return 60_000;
+    },
     refetchOnWindowFocus: true,
     // Un errore momentaneo non deve nascondere il wallet fino al ricaricamento della pagina.
     retry: 2,
+    retryDelay: (n) => Math.min(1_000 * 2 ** n, 4_000),
   });
+
+/**
+ * True mentre il wallet non è ancora pronto: è in creazione (errori o attesa oltre un istante),
+ * non quando semplicemente si sta caricando la pagina. Serve a mostrare "wallet in preparazione".
+ */
+export function useWalletPreparing(): boolean {
+  const q = useWallet();
+  const [slow, setSlow] = React.useState(false);
+  React.useEffect(() => {
+    if (q.data) return;
+    const t = window.setTimeout(() => setSlow(true), 900);
+    return () => window.clearTimeout(t);
+  }, [q.data]);
+  if (q.data) return false;
+  if (q.errorUpdateCount >= WALLET_MAX_ERRORS) return false;
+  return slow || q.failureCount > 0 || q.errorUpdateCount > 0;
+}
 
 /** Preventivo (tetto garantito) di un corso da creare; solo con i crediti attivi. */
 export function useCourseEstimate(input: Partial<CourseEstimateInput> | null) {

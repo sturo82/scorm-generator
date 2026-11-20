@@ -156,7 +156,7 @@ describe('GenerationService (async)', () => {
     expect(count).toBe(2);
     const where = jobUpdateMany.mock.calls[0]?.[0]?.where;
     expect(where?.status).toEqual({ in: ['QUEUED', 'RUNNING'] });
-    expect(where?.createdAt?.lt).toBeInstanceOf(Date);
+    expect(where?.updatedAt?.lt).toBeInstanceOf(Date);
     const data = jobUpdateMany.mock.calls[0]?.[0]?.data;
     expect(data?.status).toBe('FAILED');
   });

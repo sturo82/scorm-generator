@@ -250,17 +250,20 @@ export class GenerationService {
    * Recupero all'avvio: un restart lascia job QUEUED/RUNNING "orfani" (con la
    * coda in-memory i messaggi non sopravvivono al riavvio; con SQS il worker
    * potrebbe non essere ripartito). Li marca FAILED così l'UI smette di fare
-   * polling su job che non progrediranno più. Soglia: job più vecchi di
-   * `staleAfterMs` (default 2 min: oltre la durata tipica di una generazione).
+   * polling su job che non progrediranno più. Soglia: job FERMI da più di `staleAfterMs`
+   * (ultimo aggiornamento, non data di creazione). Con un deploy a rotazione la nuova istanza parte
+   * mentre la vecchia sta ancora eseguendo job lunghi (una generazione di tutto il corso dura
+   * minuti, e aggiorna il job a ogni lezione): non vanno dati per interrotti, né se ne deve
+   * liberare la riserva di crediti.
    */
-  async recoverStaleJobs(staleAfterMs = 2 * 60_000): Promise<number> {
+  async recoverStaleJobs(staleAfterMs = 10 * 60_000): Promise<number> {
     const threshold = new Date(Date.now() - staleAfterMs);
     // I job interrotti non completeranno: si libera la riserva di crediti che avevano prenotato.
     await this.releaseStaleReservations(threshold);
     const res = await this.prisma.generationJob.updateMany({
       where: {
         status: { in: ['QUEUED', 'RUNNING'] },
-        createdAt: { lt: threshold },
+        updatedAt: { lt: threshold },
       },
       data: {
         status: 'FAILED',
@@ -405,7 +408,7 @@ export class GenerationService {
   private async releaseStaleReservations(threshold: Date): Promise<void> {
     try {
       const stale = await this.prisma.generationJob.findMany({
-        where: { status: { in: ['QUEUED', 'RUNNING'] }, createdAt: { lt: threshold } },
+        where: { status: { in: ['QUEUED', 'RUNNING'] }, updatedAt: { lt: threshold } },
         select: { tenantId: true, params: true },
       });
       for (const j of stale) {

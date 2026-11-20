@@ -3,7 +3,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Coins } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { useWallet } from '@/lib/api/hooks';
+import { useWallet, useWalletPreparing } from '@/lib/api/hooks';
 
 const fmt = (n: number) => n.toLocaleString('it-IT');
 
@@ -67,6 +67,24 @@ export function WalletBadge() {
   const reduced = useReducedMotion();
   const amount = data?.enabled ? (data.available ?? data.balance) : undefined;
   const { shown, delta } = useAnimatedAmount(amount, reduced);
+  const preparing = useWalletPreparing();
+  // Nuovo utente: Manager sta creando il wallet. Lo si mostra subito, senza ricaricare la pagina.
+  if (preparing) {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        className="relative flex items-center gap-2 overflow-hidden rounded-full border border-white/15 bg-white/10 px-3 py-1 text-sm text-white"
+      >
+        <span aria-hidden className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent motion-safe:animate-shimmer" />
+        <Coins className="size-4 text-amber-300 motion-safe:animate-pulse" aria-hidden />
+        <span className="text-xs">
+          <span className="hidden sm:inline">Stiamo preparando il tuo wallet premium…</span>
+          <span className="sm:hidden">Wallet in preparazione…</span>
+        </span>
+      </div>
+    );
+  }
   if (!data?.enabled) return null;
   const down = (delta?.value ?? 0) < 0;
   return (

@@ -6,7 +6,7 @@ import { cn } from '@/lib/cn';
 import { NAV_ITEMS, ROLE_RANK } from './nav-items';
 import { AppBrand } from './app-brand';
 import { getSession } from '@/lib/auth';
-import { useWallet } from '@/lib/api/hooks';
+import { useWallet, useWalletPreparing } from '@/lib/api/hooks';
 import type { AppUserRole } from '@/lib/api/types';
 
 /** Contenuto della navigazione, condiviso tra sidebar desktop e drawer mobile. */
@@ -17,8 +17,10 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const roleStr = getSession()?.user.role;
   const myRank = ROLE_RANK[(roleStr as AppUserRole) ?? 'VIEWER'] ?? 0;
   const walletOn = useWallet().data?.personalAvailable === true;
+  // Wallet in creazione (nuovo utente): la voce c'è già, con l'indicazione che si sta preparando.
+  const walletPreparing = useWalletPreparing();
   const items = NAV_ITEMS.filter(
-    (it) => (!it.requiresRole || myRank >= ROLE_RANK[it.requiresRole]) && (!it.requiresWallet || walletOn),
+    (it) => (!it.requiresRole || myRank >= ROLE_RANK[it.requiresRole]) && (!it.requiresWallet || walletOn || walletPreparing),
   );
   return (
     <nav className="flex flex-col gap-0.5 px-3 py-4" aria-label="Navigazione principale">
@@ -63,6 +65,11 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                 <item.icon className="size-4" />
               </span>
               {item.label}
+              {item.requiresWallet && walletPreparing && !walletOn && (
+                <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary motion-safe:animate-pulse">
+                  in preparazione
+                </span>
+              )}
             </Link>
           </div>
         );
