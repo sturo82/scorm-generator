@@ -371,7 +371,13 @@ export class AutopilotService implements OnModuleInit {
     const [mods, assessments, course, remaining] = await Promise.all([
       this.prisma.module.findMany({
         where: { courseId },
-        select: { lessons: { select: { blocks: true, format: true, videoFirst: true, pillola: true, narrationKey: true } } },
+        orderBy: { position: 'asc' },
+        select: {
+          lessons: {
+            orderBy: { position: 'asc' },
+            select: { title: true, blocks: true, format: true, videoFirst: true, pillola: true, narrationKey: true },
+          },
+        },
       }),
       this.prisma.assessment.count({ where: { courseId } }),
       this.prisma.course.findUnique({ where: { id: courseId }, select: { coverImageKey: true } }),
@@ -403,6 +409,11 @@ export class AutopilotService implements OnModuleInit {
       ...(doc.errorCode ? { errorCode: doc.errorCode } : {}),
       progress: {
         lessons: { done: withContent.length, total: lessons.length },
+        lessonItems: lessons.map((l) => ({
+          title: l.title,
+          format: resolveLessonLayout({ format: l.format, videoFirst: l.videoFirst, pillola: l.pillola }),
+          done: Array.isArray(l.blocks) && (l.blocks as unknown[]).length > 0,
+        })),
         tests: { done: assessments, total: assessments + remaining.plannedTests },
         cover: Boolean(course?.coverImageKey),
         videos,

@@ -131,6 +131,33 @@ const config: Config = {
           '0%': { transform: 'rotateY(0deg)' },
           '100%': { transform: 'rotateY(720deg)' },
         },
+        // Schermata di generazione del corso.
+        aurora: {
+          '0%, 100%': { backgroundPosition: '0% 50%' },
+          '50%': { backgroundPosition: '100% 50%' },
+        },
+        shimmer: {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(100%)' },
+        },
+        'pop-in': {
+          '0%': { opacity: '0', transform: 'scale(0.6)' },
+          '60%': { opacity: '1', transform: 'scale(1.08)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
+        'ring-pulse': {
+          '0%': { boxShadow: '0 0 0 0 hsl(var(--primary) / 0.45)' },
+          '100%': { boxShadow: '0 0 0 10px hsl(var(--primary) / 0)' },
+        },
+        'orb-float': {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-4px)' },
+        },
+        'spin-slow': { to: { transform: 'rotate(360deg)' } },
+        confetti: {
+          '0%': { opacity: '1', transform: 'translate(0, 0) rotate(0deg)' },
+          '100%': { opacity: '0', transform: 'translate(var(--dx), 140px) rotate(var(--rot))' },
+        },
         'wallet-glow': {
           '0%': { boxShadow: '0 0 0 0 hsl(var(--wallet-glow) / 0.55)' },
           '100%': { boxShadow: '0 0 0 10px hsl(var(--wallet-glow) / 0)' },
@@ -146,6 +173,13 @@ const config: Config = {
         'credit-float': 'credit-float 1.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
         'coin-flip': 'coin-flip 0.9s cubic-bezier(0.16, 1, 0.3, 1)',
         'wallet-glow': 'wallet-glow 1.1s ease-out',
+        aurora: 'aurora 12s ease-in-out infinite',
+        shimmer: 'shimmer 1.6s ease-in-out infinite',
+        'pop-in': 'pop-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both',
+        'ring-pulse': 'ring-pulse 1.6s ease-out infinite',
+        'orb-float': 'orb-float 4s ease-in-out infinite',
+        'spin-slow': 'spin-slow 6s linear infinite',
+        confetti: 'confetti 1.4s cubic-bezier(0.2, 0.7, 0.4, 1) forwards',
       },
     },
   },

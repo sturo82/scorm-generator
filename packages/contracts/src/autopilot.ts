@@ -36,6 +36,8 @@ export interface AutopilotView {
   errorCode?: 'insufficient_credits';
   progress: {
     lessons: { done: number; total: number };
+    /** Lezioni in ordine, con lo stato: alimentano l'animazione della schermata. */
+    lessonItems: Array<{ title: string; format: string; done: boolean }>;
     tests: { done: number; total: number };
     cover: boolean;
     /** Video animati: pronti, in lavorazione e ancora da avviare. */

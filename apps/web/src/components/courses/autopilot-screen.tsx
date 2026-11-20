@@ -1,7 +1,7 @@
 'use client';
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Check, Circle, Loader2, PartyPopper, XCircle } from 'lucide-react';
+import { AlertTriangle, BookOpen, Check, Circle, ImageIcon, ListChecks, Loader2, PartyPopper, Sparkles, Video, Volume2, XCircle } from 'lucide-react';
 import type { AutopilotView } from '@scorm/contracts';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,7 +12,7 @@ import { CourseBuilder } from '@/components/courses/course-builder';
 import { cn } from '@/lib/cn';
 import { useAutopilotActions } from '@/lib/api/hooks';
 
-type StepState = 'done' | 'active' | 'todo' | 'skipped';
+type StepState = 'done' | 'active' | 'todo';
 
 /** Ordine delle fasi per sapere cosa è già fatto. */
 const ORDER = ['structure', 'review', 'content', 'tests', 'cover', 'extras', 'done'] as const;
@@ -25,37 +25,192 @@ function stepState(view: AutopilotView, phase: (typeof ORDER)[number]): StepStat
   return 'todo';
 }
 
-function StepRow({ state, title, detail }: { state: StepState; title: string; detail?: string }) {
+/** Frasi che ruotano sotto il titolo, in base alla fase: danno il senso di cosa sta succedendo. */
+const PHASE_LINES: Record<string, string[]> = {
+  structure: ['Disegno moduli e lezioni…', 'Costruisco la progressione didattica…', 'Allineo la struttura al tuo brief…'],
+  review: ['Struttura pronta per la tua revisione'],
+  content: ['Scrivo i contenuti delle lezioni…', 'Scelgo le immagini che aiutano a capire…', 'Preparo esercizi e verifiche…', 'Curo il tono di voce del brand…'],
+  tests: ['Preparo domande e feedback…', 'Calibro la difficoltà dei test…'],
+  cover: ['Disegno la copertina del corso…'],
+  extras: ['Aggiungo video, voce e copertine…', 'Rifinisco i dettagli…'],
+  done: ['Tutto pronto'],
+};
+
+/** Testo che cambia con una dissolvenza ogni pochi secondi. */
+function RotatingLine({ lines }: { lines: string[] }) {
+  const [i, setI] = React.useState(0);
+  React.useEffect(() => {
+    setI(0);
+    if (lines.length < 2) return;
+    const t = setInterval(() => setI((n) => (n + 1) % lines.length), 3500);
+    return () => clearInterval(t);
+  }, [lines]);
+  return (
+    <p key={`${lines[0]}-${i}`} className="text-sm text-muted-foreground motion-safe:animate-fade-in">
+      {lines[i % lines.length]}
+    </p>
+  );
+}
+
+/** Anello con la percentuale complessiva, con un pennello di luce che lo percorre mentre lavora. */
+function ProgressRing({ pct, active, done }: { pct: number; active: boolean; done: boolean }) {
+  const r = 34;
+  const c = 2 * Math.PI * r;
+  return (
+    <div className={cn('relative grid size-20 shrink-0 place-items-center', active && 'motion-safe:animate-orb-float')}>
+      <svg viewBox="0 0 80 80" className="size-20 -rotate-90">
+        <circle cx="40" cy="40" r={r} className="fill-none stroke-muted" strokeWidth="6" />
+        <circle
+          cx="40"
+          cy="40"
+          r={r}
+          className={cn('fill-none transition-[stroke-dashoffset] duration-700 ease-out', done ? 'stroke-emerald-500' : 'stroke-primary')}
+          strokeWidth="6"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={c * (1 - pct / 100)}
+        />
+      </svg>
+      <span className="absolute text-sm font-semibold tabular-nums">{done ? <Check className="size-6 text-emerald-600" /> : `${pct}%`}</span>
+      {active && <span aria-hidden className="absolute inset-1 rounded-full motion-safe:animate-ring-pulse" />}
+    </div>
+  );
+}
+
+/** Barra con un riflesso che scorre finché il lavoro è in corso. */
+function ShimmerBar({ pct, active }: { pct: number; active: boolean }) {
+  return (
+    <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+      <div className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out" style={{ width: `${pct}%` }} />
+      {active && <span aria-hidden className="absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-white/50 to-transparent motion-safe:animate-shimmer" />}
+    </div>
+  );
+}
+
+function StepRow({ state, icon, title, detail, pct }: { state: StepState; icon: React.ReactNode; title: string; detail?: string; pct?: number }) {
   return (
     <li className="flex items-start gap-3">
       <span
         className={cn(
-          'mt-0.5 grid size-6 shrink-0 place-items-center rounded-full',
+          'relative mt-0.5 grid size-8 shrink-0 place-items-center rounded-full transition-colors duration-500',
           state === 'done' && 'bg-emerald-100 text-emerald-700',
           state === 'active' && 'bg-primary/10 text-primary',
           state === 'todo' && 'bg-muted text-muted-foreground',
         )}
       >
-        {state === 'done' ? <Check className="size-4" /> : state === 'active' ? <Loader2 className="size-4 animate-spin" /> : <Circle className="size-3" />}
+        {state === 'done' ? (
+          <Check key="ok" className="size-4 motion-safe:animate-pop-in" />
+        ) : state === 'active' ? (
+          <>
+            <Loader2 className="size-4 animate-spin" />
+            <span aria-hidden className="absolute inset-0 rounded-full motion-safe:animate-ring-pulse" />
+          </>
+        ) : (
+          icon
+        )}
       </span>
-      <div className="min-w-0">
-        <p className={cn('text-sm font-medium', state === 'todo' && 'text-muted-foreground')}>{title}</p>
+      <div className="min-w-0 flex-1 space-y-1">
+        <p className={cn('text-sm font-medium transition-colors', state === 'todo' && 'text-muted-foreground')}>{title}</p>
         {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
+        {state === 'active' && pct !== undefined && <ShimmerBar pct={pct} active />}
       </div>
     </li>
   );
 }
 
+/** Le lezioni come tessere in fila: si accendono man mano che sono pronte. */
+function LessonTiles({ items, active }: { items: AutopilotView['progress']['lessonItems']; active: boolean }) {
+  if (items.length === 0) return null;
+  const firstPending = items.findIndex((l) => !l.done);
+  return (
+    <ul className="grid gap-2 sm:grid-cols-2" aria-label="Lezioni del corso">
+      {items.map((l, i) => {
+        const building = active && i === firstPending;
+        return (
+          <li
+            key={`${i}-${l.title}`}
+            className={cn(
+              'relative flex items-center gap-2 overflow-hidden rounded-lg border px-3 py-2 text-xs transition-all duration-500',
+              l.done ? 'border-emerald-300/60 bg-emerald-50 text-emerald-900' : building ? 'border-primary/40 bg-primary/5' : 'bg-muted/30 text-muted-foreground',
+            )}
+          >
+            {l.done ? (
+              <Check key="ok" className="size-3.5 shrink-0 motion-safe:animate-pop-in" />
+            ) : building ? (
+              <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" />
+            ) : (
+              <Circle className="size-3 shrink-0" />
+            )}
+            <span className="min-w-0 flex-1 truncate">{l.title}</span>
+            {building && <span aria-hidden className="absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-primary/10 to-transparent motion-safe:animate-shimmer" />}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** Coriandoli alla fine: pochi, brevi, nei colori del brand. */
+function Confetti() {
+  const pieces = React.useMemo(
+    () =>
+      Array.from({ length: 22 }, (_, i) => ({
+        left: 8 + ((i * 41) % 84),
+        dx: ((i * 29) % 90) - 45,
+        rot: 120 + ((i * 53) % 480),
+        delay: (i % 7) * 0.06,
+        color: ['bg-primary', 'bg-emerald-400', 'bg-amber-400', 'bg-sky-400'][i % 4],
+      })),
+    [],
+  );
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 hidden h-0 motion-safe:block">
+      {pieces.map((p, i) => (
+        <span
+          key={i}
+          className={cn('absolute top-2 block h-2 w-1.5 rounded-sm motion-safe:animate-confetti', p.color)}
+          style={{ left: `${p.left}%`, animationDelay: `${p.delay}s`, ['--dx' as string]: `${p.dx}px`, ['--rot' as string]: `${p.rot}deg` }}
+        />
+      ))}
+    </div>
+  );
+}
+
 /**
  * Schermata della generazione automatica: una sola vista con le fasi e l'avanzamento, al posto dei
- * passi guidati. In pausa per la revisione mostra la struttura; alla fine un riepilogo.
+ * passi guidati. In pausa per la revisione mostra la struttura; alla fine un riepilogo. Le
+ * animazioni sono dietro `motion-safe`: con "riduci animazioni" restano solo i cambi di stato.
  */
 export function AutopilotScreen({ courseId, view }: { courseId: string; view: AutopilotView }) {
   const toast = useToast();
+  const qc = useQueryClient();
   const actions = useAutopilotActions(courseId);
   const [confirmCancel, setConfirmCancel] = React.useState(false);
   const p = view.progress;
   const o = view.options;
+  const running = view.status === 'running';
+  const finished = view.status === 'completed' || view.status === 'failed' || view.status === 'cancelled';
+
+  // Il saldo nell'intestazione segue l'avanzamento: a ogni passo completato si rilegge il wallet.
+  const tick = `${p.lessons.done}-${p.tests.done}-${p.cover}-${p.videos.done}-${p.narration.done}-${view.status}`;
+  React.useEffect(() => {
+    void qc.invalidateQueries({ queryKey: ['billing', 'wallet'] });
+    void qc.invalidateQueries({ queryKey: ['billing', 'estimate', 'course', courseId] });
+  }, [tick, qc, courseId]);
+
+  // Percentuale complessiva: peso di struttura, lezioni, test, copertina e componenti aggiuntive.
+  const extrasTotal = (o.narration ? p.narration.total : 0) + p.videos.done + p.videos.processing + p.videos.pending;
+  const extrasDone = (o.narration ? p.narration.done : 0) + p.videos.done;
+  const parts = [
+    { w: 1, v: p.lessons.total > 0 ? 1 : view.phase === 'structure' ? 0 : 1 },
+    { w: 6, v: p.lessons.total ? p.lessons.done / p.lessons.total : 0 },
+    { w: 2, v: p.tests.total ? p.tests.done / p.tests.total : 1 },
+    { w: 1, v: p.cover ? 1 : 0 },
+    { w: extrasTotal > 0 ? 2 : 0, v: extrasTotal ? extrasDone / extrasTotal : 0 },
+  ];
+  const totalW = parts.reduce((n, x) => n + x.w, 0);
+  const pct = view.status === 'completed' ? 100 : Math.min(99, Math.round((parts.reduce((n, x) => n + x.w * x.v, 0) / totalW) * 100));
+
   const extras = [o.moduleCovers && 'copertine dei moduli', o.narration && 'voce narrante', o.lessonVideos && 'video delle pillole'].filter(Boolean);
   const videoDetail =
     p.videos.done + p.videos.processing + p.videos.pending > 0
@@ -71,26 +226,25 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
     }
   };
 
-  const finished = view.status === 'completed' || view.status === 'failed' || view.status === 'cancelled';
-
-  // Il saldo nell'intestazione segue l'avanzamento: a ogni passo completato si rilegge il wallet.
-  const qc = useQueryClient();
-  const tick = `${p.lessons.done}-${p.tests.done}-${p.cover}-${p.videos.done}-${p.narration.done}-${view.status}`;
-  React.useEffect(() => {
-    void qc.invalidateQueries({ queryKey: ['billing', 'wallet'] });
-    void qc.invalidateQueries({ queryKey: ['billing', 'estimate', 'course', courseId] });
-  }, [tick, qc, courseId]);
-
   return (
     <div className="space-y-6">
-      <Card>
-        <CardContent className="space-y-5 p-6">
-          <header className="flex flex-wrap items-start justify-between gap-3">
-            <div>
+      <Card className="relative overflow-hidden">
+        {/* Aurora: un gradiente dei colori del brand che si sposta lentamente, solo mentre lavora. */}
+        {running && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 opacity-[0.14] [background-size:300%_300%] bg-gradient-to-br from-primary via-emerald-300 to-sky-300 motion-safe:animate-aurora"
+          />
+        )}
+        {view.status === 'completed' && <Confetti />}
+        <CardContent className="relative space-y-6 p-6">
+          <header className="flex flex-wrap items-start gap-4">
+            <ProgressRing pct={pct} active={running} done={view.status === 'completed'} />
+            <div className="min-w-0 flex-1">
               <h2 className="flex items-center gap-2 text-lg font-semibold">
                 {view.status === 'completed' ? (
                   <>
-                    <PartyPopper className="size-5 text-primary" /> Il corso è pronto
+                    <PartyPopper className="size-5 text-primary motion-safe:animate-pop-in" /> Il corso è pronto
                   </>
                 ) : view.status === 'paused' ? (
                   'Struttura pronta: rivedila'
@@ -101,13 +255,16 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
                 ) : view.status === 'cancelled' ? (
                   'Generazione annullata'
                 ) : (
-                  'Sto creando il tuo corso…'
+                  <>
+                    Sto creando il tuo corso <Sparkles className="size-4 text-primary motion-safe:animate-spin-slow" />
+                  </>
                 )}
               </h2>
-              <p className="text-sm text-muted-foreground">
-                {view.status === 'running'
-                  ? 'Lavora sul server: puoi chiudere la pagina e tornare quando vuoi.'
-                  : view.status === 'paused'
+              {running ? (
+                <RotatingLine lines={PHASE_LINES[view.phase] ?? PHASE_LINES.content!} />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {view.status === 'paused'
                     ? 'Controlla moduli e lezioni qui sotto (puoi modificarli), poi continua con i contenuti.'
                     : view.status === 'completed'
                       ? 'Contenuti, test e copertina sono pronti. Ora puoi rivederlo e modificarlo.'
@@ -116,24 +273,41 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
                         : view.errorCode === 'insufficient_credits'
                           ? 'I crediti sono finiti a metà: ricarica e riprendi, si riparte da dove si era fermata (quello già fatto non si paga di nuovo).'
                           : (view.error ?? 'Si è verificato un errore.')}
-              </p>
+                </p>
+              )}
+              {running && <p className="mt-1 text-xs text-muted-foreground/80">Lavora sul server: puoi chiudere la pagina e tornare quando vuoi.</p>}
             </div>
             <CourseBudget courseId={courseId} />
           </header>
 
-          <ol className="space-y-3">
-            <StepRow state={stepState(view, 'structure')} title="Struttura del corso" detail={p.lessons.total ? `${p.lessons.total} lezioni` : undefined} />
-            {view.reviewStructure && <StepRow state={stepState(view, 'review')} title="Tua revisione della struttura" />}
+          <ol className="space-y-4">
+            <StepRow
+              state={stepState(view, 'structure')}
+              icon={<BookOpen className="size-4" />}
+              title="Struttura del corso"
+              detail={p.lessons.total ? `${p.lessons.total} lezioni` : undefined}
+            />
+            {view.reviewStructure && <StepRow state={stepState(view, 'review')} icon={<Check className="size-4" />} title="Tua revisione della struttura" />}
             <StepRow
               state={stepState(view, 'content')}
+              icon={<ImageIcon className="size-4" />}
               title="Contenuti delle lezioni e immagini"
               detail={p.lessons.total ? `${p.lessons.done} di ${p.lessons.total} lezioni pronte` : undefined}
+              pct={p.lessons.total ? Math.round((p.lessons.done / p.lessons.total) * 100) : 0}
             />
-            <StepRow state={stepState(view, 'tests')} title="Test" detail={p.tests.total ? `${p.tests.done} di ${p.tests.total}` : 'Nessun test richiesto'} />
-            <StepRow state={stepState(view, 'cover')} title="Copertina" detail={p.cover ? 'Pronta' : undefined} />
+            {stepState(view, 'content') !== 'todo' && <LessonTiles items={p.lessonItems} active={running && view.phase === 'content'} />}
+            <StepRow
+              state={stepState(view, 'tests')}
+              icon={<ListChecks className="size-4" />}
+              title="Test"
+              detail={p.tests.total ? `${p.tests.done} di ${p.tests.total}` : 'Nessun test richiesto'}
+              pct={p.tests.total ? Math.round((p.tests.done / p.tests.total) * 100) : 0}
+            />
+            <StepRow state={stepState(view, 'cover')} icon={<ImageIcon className="size-4" />} title="Copertina" detail={p.cover ? 'Pronta' : undefined} />
             {extras.length > 0 && (
               <StepRow
                 state={stepState(view, 'extras')}
+                icon={o.lessonVideos ? <Video className="size-4" /> : <Volume2 className="size-4" />}
                 title={`Da aggiungere: ${extras.join(', ')}`}
                 detail={[videoDetail, o.narration ? `Voce narrante: ${p.narration.done} di ${p.narration.total}` : undefined].filter(Boolean).join(' · ') || undefined}
               />
