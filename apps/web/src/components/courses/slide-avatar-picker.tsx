@@ -141,10 +141,31 @@ export function SlideAvatarPicker({
         )}
       </div>
 
+      <div className="rounded-lg border bg-accent/30 p-3 text-sm" aria-live="polite">
+        {selected ? (
+          <p>
+            <strong>{selected.name}</strong> · {heygenAvatarTypeLabel({ source: selected.source, groupType: selected.groupType })}
+            <span className="text-muted-foreground"> (riconosciuto dall&apos;avatar)</span>
+            {' · '}
+            {billed ? (
+              credits(engine) != null ? (
+                <strong>{credits(engine)!.toLocaleString('it-IT')} crediti al minuto</strong>
+              ) : (
+                <span className="text-muted-foreground">prezzo non ancora disponibile</span>
+              )
+            ) : (
+              <strong>${heygenCostPerMinUsd(engine, avatarType).toFixed(2)} al minuto</strong>
+            )}
+          </p>
+        ) : (
+          <p className="text-muted-foreground">Scegli un avatar: tipo e prezzo al minuto si impostano da soli.</p>
+        )}
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-sm">
           <span className="font-medium">Qualità</span>
-          <select className={SELECT} value={engine} onChange={(e) => setEngine(e.target.value as AvatarEngine)}>
+          <select className={SELECT} value={engine} disabled={!selected} onChange={(e) => setEngine(e.target.value as AvatarEngine)}>
             {engineOptions.map((e) => (
               <option key={e.id} value={e.id}>
                 {e.label} ·{' '}
@@ -156,7 +177,7 @@ export function SlideAvatarPicker({
               </option>
             ))}
           </select>
-          <span className="block text-[11px] text-muted-foreground">Di partenza la più economica.</span>
+          <span className="block text-[11px] text-muted-foreground">Solo le qualità disponibili per questo tipo di avatar; di partenza la più economica.</span>
         </label>
         <label className="space-y-1 text-sm">
           <span className="font-medium">Voce</span>

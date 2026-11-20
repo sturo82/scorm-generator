@@ -29,6 +29,8 @@ export class AutopilotController {
     // Gli avatar dell'account sono solo di chi ne ha accesso; quelli del catalogo sono di tutti.
     if (body.slides) {
       await this.avatarAccess.assertAvatarUsable({ tenantId: ctx.tenant.tenantId, userId: ctx.userId, role: ctx.role }, body.slides.avatarId);
+      // La tariffa segue l'avatar vero, non quanto dichiarato dalla richiesta.
+      body.slides.avatarType = await this.avatarAccess.billingType(body.slides.avatarId);
     }
     return this.autopilot.start(ctx, courseId, body);
   }

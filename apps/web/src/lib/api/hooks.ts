@@ -915,6 +915,8 @@ export function useSlideImportEstimate(
     enabled: enabled && wallet.data?.enabled === true && Boolean(importId),
     staleTime: 60_000,
     retry: false,
+    // Cambiando avatar o qualità il preventivo si aggiorna senza sparire.
+    placeholderData: (prev) => prev,
   });
 }
 /** Prezzi massimi delle operazioni di una lezione (immagini, voce, video animati); solo con i crediti attivi. */

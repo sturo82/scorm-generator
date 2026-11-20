@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { UserRole } from '@prisma/client';
 import type { VideoGenerationProvider } from '@scorm/domain';
+import { heygenBillingTypeFor } from '@scorm/contracts';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { VIDEO_GEN_PROVIDER } from '../providers/provider.constants.js';
 
@@ -112,6 +113,17 @@ export class AvatarAccessService {
     if (!this.visible(row ?? undefined, viewer)) {
       throw new ForbiddenException('Non hai accesso a questo avatar.');
     }
+  }
+
+  /**
+   * Tipo di avatar ai fini della tariffa, letto dall'avatar stesso (non dalla richiesta): un
+   * digital twin, una foto o un avatar del catalogo costano in modo diverso.
+   */
+  async billingType(avatarId: string): Promise<'photo' | 'studio' | 'digital_twin'> {
+    if (!this.videoGen) return 'studio';
+    const mine = await this.videoGen.listAvatarsPage({ source: 'mine' }).catch(() => null);
+    const found = mine?.items.find((a) => a.id === avatarId);
+    return found ? heygenBillingTypeFor({ source: 'mine', groupType: found.groupType }) : 'studio';
   }
 
   /** Registra un avatar appena creato: appartiene al tenant di chi lo crea, a tutti i suoi utenti. */

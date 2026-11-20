@@ -159,6 +159,7 @@ export class SlidesController {
     @Body(new ZodValidationPipe(StartSlideClipsSchema)) body: StartSlideClipsType,
   ): Promise<SlideClipsView> {
     await this.avatarAccess.assertAvatarUsable({ tenantId: ctx.tenant.tenantId, userId: ctx.userId, role: ctx.role }, body.avatarId);
+    body.avatarType = await this.avatarAccess.billingType(body.avatarId);
     return this.clips.changeAvatar(ctx.tenant.tenantId, courseId, importId, body);
   }
 
@@ -181,6 +182,7 @@ export class SlidesController {
     @Body(new ZodValidationPipe(StartSlideClipsSchema)) body: StartSlideClipsType,
   ): Promise<SlideClipsView> {
     await this.avatarAccess.assertAvatarUsable({ tenantId: ctx.tenant.tenantId, userId: ctx.userId, role: ctx.role }, body.avatarId);
+    body.avatarType = await this.avatarAccess.billingType(body.avatarId);
     return this.clips.start(ctx.tenant.tenantId, courseId, importId, body);
   }
 
