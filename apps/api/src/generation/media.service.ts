@@ -26,7 +26,7 @@ import type {
   VoiceOption,
 } from '@scorm/domain';
 import { ConfigService } from '@nestjs/config';
-import { DEFAULT_HEYGEN_ENGINE, MEDIA_CAPS, defaultEngineForAvatarType, lessonImageCap, resolveLessonLayout } from '@scorm/contracts';
+import { DEFAULT_HEYGEN_ENGINE, MEDIA_CAPS, defaultEngineForAvatarType, heygenBillingTypeFor, type HeyGenAvatarBillingType, lessonImageCap, resolveLessonLayout } from '@scorm/contracts';
 import type { AppConfig } from '../config/configuration.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { TenantPrismaService } from '../tenancy/tenant-prisma.service.js';
@@ -1060,11 +1060,14 @@ export class MediaService implements OnModuleInit {
    * nell'adapter). Se non è determinabile (nessun avatar, provider senza lista)
    * assume 'studio' per prudenza (non sottostima mai il costo).
    */
-  private async resolveAvatarBillingType(avatarId?: string): Promise<'photo' | 'studio'> {
+  private async resolveAvatarBillingType(avatarId?: string): Promise<HeyGenAvatarBillingType> {
     if (!avatarId || !this.videoGen) return 'studio';
     try {
       const mine = await this.videoGen.listAvatarsPage({ source: 'mine' });
-      return mine.items.some((a) => a.id === avatarId) ? 'photo' : 'studio';
+      const found = mine.items.find((a) => a.id === avatarId);
+      // Un avatar dell'account è 'photo' o 'digital_twin' secondo il tipo del gruppo (a parità di
+      // engine il twin costa diverso da un photo); uno stock è 'studio'.
+      return found ? heygenBillingTypeFor({ source: 'mine', groupType: found.groupType }) : 'studio';
     } catch {
       // In caso di errore nel lookup, non sottostimare: usa la tariffa più alta.
       return 'studio';
@@ -1482,14 +1485,16 @@ export class MediaService implements OnModuleInit {
     // Tipo di avatar e engine persistiti all'avvio (per la tariffa): avatarType
     // 'photo'=custom | 'studio'=stock; engine scelto dall'autore. Default
     // prudenziali (studio = tariffa più alta; engine da config/default).
-    let avatarType: 'photo' | 'studio' = 'studio';
+    let avatarType: HeyGenAvatarBillingType = 'studio';
     let engine = (this.config.get('heygen', { infer: true }).engine || DEFAULT_HEYGEN_ENGINE).toLowerCase();
     let videoBilling: { reservation: Reservation; feature: string } | undefined;
     if (vcBlock) {
       const payload = (vcBlock.payload ?? {}) as Record<string, unknown>;
       videoBilling = payload.videoGenBilling as typeof videoBilling;
       delete payload.videoGenBilling;
-      if (payload.videoGenAvatarType === 'photo') avatarType = 'photo';
+      if (payload.videoGenAvatarType === 'photo' || payload.videoGenAvatarType === 'digital_twin') {
+        avatarType = payload.videoGenAvatarType;
+      }
       if (typeof payload.videoGenEngine === 'string' && payload.videoGenEngine) {
         engine = payload.videoGenEngine.toLowerCase();
       }
