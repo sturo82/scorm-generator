@@ -120,9 +120,9 @@ export class GenerationService {
   // runLessonContent/runAssessment e aggiorna il job a COMPLETED/FAILED.
 
   /** Accoda la generazione dell'outline. Ritorna il jobId per il polling. */
-  async enqueueOutline(ctx: RequestContext, courseId: string): Promise<{ jobId: string }> {
+  async enqueueOutline(ctx: RequestContext, courseId: string, inline = false): Promise<{ jobId: string }> {
     await this.requireCourse(ctx.tenant.tenantId, courseId);
-    return this.enqueue(ctx, courseId, 'course.generate_outline', { courseId }, this.billing.structureItems());
+    return this.enqueue(ctx, courseId, 'course.generate_outline', { courseId }, this.billing.structureItems(), 0, inline);
   }
 
   /** Accoda la generazione dei contenuti di una lezione. */
@@ -169,6 +169,8 @@ export class GenerationService {
     bill: BillItem[] = [],
     /** Spesa che il lavoro farà dopo, in background (immagini con il listino per operazione): conta nel budget. */
     extraCredits = 0,
+    /** True: esegue subito in questo processo e attende la fine (generazione automatica), invece di accodare. */
+    inline = false,
   ): Promise<{ jobId: string }> {
     const jobId = randomUUID();
     const reservation: Reservation | null =
@@ -188,11 +190,13 @@ export class GenerationService {
         params: (reservation ? { ...payload, billing: { reservation } } : payload) as unknown as object,
       },
     });
-    await this.jobs.enqueue(type, { ...payload, payer: currentPayer(), jobId }, ctx);
+    if (!inline) await this.jobs.enqueue(type, { ...payload, payer: currentPayer(), jobId }, ctx);
     } catch (err) {
       await this.billing.release(ctx.tenant.tenantId, reservation);
       throw err;
     }
+    // Esecuzione immediata: la riserva è già fatta; fallimenti e addebito parziale come in un job accodato.
+    if (inline) await this.dispatchJob({ ...payload, payer: currentPayer(), jobId, type }, ctx);
     return { jobId };
   }
 
@@ -201,7 +205,7 @@ export class GenerationService {
    * UNICO job batch eseguito interamente lato server (immune a reload/chiusura
    * del browser). Il worker itera le lezioni pending generandole in sequenza.
    */
-  async enqueueAllContent(ctx: RequestContext, courseId: string): Promise<{ jobId: string }> {
+  async enqueueAllContent(ctx: RequestContext, courseId: string, inline = false): Promise<{ jobId: string }> {
     await this.requireCourse(ctx.tenant.tenantId, courseId);
     // Lezioni ancora vuote + test previsti dal brief (stima per eccesso: ciò che non si genera si libera).
     const formats = await this.pendingLessonFormats(courseId);
@@ -210,7 +214,7 @@ export class GenerationService {
       ...this.billing.testItems(await this.plannedAssessmentCount(ctx.tenant.tenantId, courseId)),
     ];
     const extra = (await this.autoImagesOn(courseId)) ? this.billing.imageExtraCredits(formats) : 0;
-    return this.enqueue(ctx, courseId, 'course.generate_all_content', { courseId }, bill, extra);
+    return this.enqueue(ctx, courseId, 'course.generate_all_content', { courseId }, bill, extra, inline);
   }
 
   /**
@@ -219,10 +223,10 @@ export class GenerationService {
    * esiste già (vedi autoGenerateAssessments): resiliente a reload/chiusura del
    * browser e ripreso dai job attivi del corso.
    */
-  async enqueueAllAssessments(ctx: RequestContext, courseId: string): Promise<{ jobId: string }> {
+  async enqueueAllAssessments(ctx: RequestContext, courseId: string, inline = false): Promise<{ jobId: string }> {
     await this.requireCourse(ctx.tenant.tenantId, courseId);
     const units = await this.plannedAssessmentCount(ctx.tenant.tenantId, courseId);
-    return this.enqueue(ctx, courseId, 'course.generate_all_assessments', { courseId }, this.billing.testItems(units));
+    return this.enqueue(ctx, courseId, 'course.generate_all_assessments', { courseId }, this.billing.testItems(units), 0, inline);
   }
 
   /** Stato di un job (per il polling del client). Isolato per tenant. */
@@ -432,6 +436,20 @@ export class GenerationService {
     const c = await this.prisma.course.findUnique({ where: { id: courseId }, select: { brief: true } });
     const b = c?.brief ? Brief.safeParse(c.brief) : null;
     return b?.success ? b.data.autoGenerateImages !== false : true;
+  }
+
+  /** Lavoro ancora da fare sul corso: lezioni senza contenuti e test previsti non ancora creati. */
+  async remainingWork(tenantId: string, courseId: string): Promise<{ pendingLessons: number; plannedTests: number }> {
+    return {
+      pendingLessons: (await this.pendingLessonFormats(courseId)).length,
+      plannedTests: await this.plannedAssessmentCount(tenantId, courseId),
+    };
+  }
+
+  /** True se l'utente ha annullato la generazione automatica del corso. */
+  private async autopilotCancelled(courseId: string): Promise<boolean> {
+    const c = await this.prisma.course.findUnique({ where: { id: courseId }, select: { autopilot: true } });
+    return (c?.autopilot as { status?: string } | null)?.status === 'cancelled';
   }
 
   /** Segnala (nei log) una chiamata che ha superato il limite di ingresso del pacchetto: la stima va rivista. */
@@ -847,6 +865,11 @@ export class GenerationService {
     // Esecuzione parallela a batch con concurrency limit.
     const concurrency = GenerationService.BATCH_CONCURRENCY;
     for (let i = 0; i < total; i += concurrency) {
+      // Generazione automatica annullata dall'utente: si fermano i lotti successivi.
+      if (await this.autopilotCancelled(courseId)) {
+        this.logger.log(`Batch contenuti corso ${courseId}: annullato dall'utente dopo ${done}/${total} lezioni`);
+        break;
+      }
       const batch = pending.slice(i, i + concurrency);
       this.logger.log(
         `Batch ${Math.floor(i / concurrency) + 1}: avvio ${batch.length} lezioni in parallelo (${batch.map((l) => l.title.slice(0, 25)).join(', ')})`,

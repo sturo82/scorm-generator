@@ -7,7 +7,8 @@ import { EditorialStatusBadge } from '@/components/status-badge';
 import { CourseWizard } from '@/components/courses/course-wizard';
 import { GeneratingBadge } from '@/components/courses/generating-badge';
 import { useDynamicRouteId } from '@/lib/use-dynamic-route-id';
-import { useCourse, useActiveJobs } from '@/lib/api/hooks';
+import { useCourse, useActiveJobs, useAutopilot } from '@/lib/api/hooks';
+import { AutopilotScreen } from '@/components/courses/autopilot-screen';
 
 /** Vista di dettaglio corso: shell client, dati risolti a runtime via API. */
 export function CourseDetailClient() {
@@ -17,11 +18,13 @@ export function CourseDetailClient() {
   const courseId = useDynamicRouteId('courses');
   const course = useCourse(courseId);
   const activeJobs = useActiveJobs(courseId);
+  // Generazione automatica: finché non è chiusa, la sua schermata sostituisce i passi guidati.
+  const autopilot = useAutopilot(courseId);
   const generating = (activeJobs.data?.length ?? 0) > 0;
 
   // Finché l'id non è risolto dall'URL (pre-idratazione) o il corso sta
   // caricando, mostriamo lo skeleton: così non lampeggia "Corso non trovato".
-  if (!courseId || course.isLoading) {
+  if (!courseId || course.isLoading || autopilot.isLoading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-9 w-1/3" />
@@ -43,7 +46,7 @@ export function CourseDetailClient() {
           </div>
         }
       />
-      <CourseWizard courseId={courseId} />
+      {autopilot.data ? <AutopilotScreen courseId={courseId} view={autopilot.data} /> : <CourseWizard courseId={courseId} />}
     </>
   );
 }

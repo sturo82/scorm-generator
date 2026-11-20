@@ -765,6 +765,46 @@ export function useExistingCourseEstimate(courseId: string) {
     retry: false,
   });
 }
+/** Stato della generazione automatica del corso; si aggiorna da solo mentre lavora. */
+export function useAutopilot(courseId: string) {
+  return useQuery({
+    queryKey: ['autopilot', courseId],
+    queryFn: () => api.getAutopilot(courseId),
+    enabled: Boolean(courseId),
+    refetchInterval: (q) => {
+      const s = q.state.data?.status;
+      if (s === 'running') return 3_000;
+      // A lavoro finito i video delle pillole possono essere ancora in rendering.
+      if (s === 'completed' && (q.state.data?.progress.videos.processing ?? 0) > 0) return 10_000;
+      return false;
+    },
+    retry: false,
+  });
+}
+/** Azioni sulla generazione automatica: avvio, ripresa dopo la revisione, annullamento, chiusura del riepilogo. */
+export function useAutopilotActions(courseId: string) {
+  const qc = useQueryClient();
+  const set = (v: unknown) => qc.setQueryData(['autopilot', courseId], v);
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: qk.modules(courseId) });
+    qc.invalidateQueries({ queryKey: qk.course(courseId) });
+  };
+  return {
+    start: useMutation({
+      mutationFn: (input: { reviewStructure: boolean; options?: Partial<CourseEstimateOptions> }) => api.startAutopilot(courseId, input),
+      onSuccess: set,
+    }),
+    resume: useMutation({ mutationFn: () => api.resumeAutopilot(courseId), onSuccess: set }),
+    cancel: useMutation({ mutationFn: () => api.cancelAutopilot(courseId), onSuccess: set }),
+    dismiss: useMutation({
+      mutationFn: () => api.dismissAutopilot(courseId),
+      onSuccess: () => {
+        set(null);
+        refresh();
+      },
+    }),
+  };
+}
 /** Preventivo massimo di un video da slide prima dei copioni; solo con i crediti attivi. */
 export function useSlideImportEstimate(courseId: string, importId: string, sections = false, enabled = true) {
   const wallet = useWallet();

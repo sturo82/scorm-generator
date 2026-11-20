@@ -1,4 +1,4 @@
-import type { CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteItem, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
+import type { AutopilotView, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteItem, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import type {
   Brief,
   BriefDraft,
@@ -577,6 +577,12 @@ export interface ApiClient {
   estimateCourse(input: Partial<CourseEstimateInput>): Promise<CourseEstimateView>;
   /** Quanto manca per completare un corso esistente. */
   estimateExistingCourse(courseId: string): Promise<CourseEstimateView>;
+  /** Generazione automatica del corso: stato (null se mai avviata), avvio, ripresa, annullamento. */
+  getAutopilot(courseId: string): Promise<AutopilotView | null>;
+  startAutopilot(courseId: string, input: { reviewStructure: boolean; options?: Partial<CourseEstimateOptions> }): Promise<AutopilotView>;
+  resumeAutopilot(courseId: string): Promise<AutopilotView>;
+  cancelAutopilot(courseId: string): Promise<AutopilotView>;
+  dismissAutopilot(courseId: string): Promise<void>;
   /** Preventivo massimo di un video da slide prima dei copioni. */
   estimateSlideImport(courseId: string, importId: string, sections: boolean): Promise<SlideImportEstimateView>;
   /** Prezzi massimi delle operazioni di una lezione. */

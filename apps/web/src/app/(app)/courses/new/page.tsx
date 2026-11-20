@@ -109,6 +109,8 @@ export default function NewCoursePage() {
   const [tests, setTests] = React.useState<Array<'intermediate' | 'final'>>(['final']);
   // Componenti aggiuntive scelte nel preventivo (si generano dopo, ma il loro massimo entra nel budget).
   const [extras, setExtras] = React.useState({ narration: false, avatarVideo: false, moduleCovers: false });
+  // Generazione automatica: di default va dritta fino al corso finito; facoltativo fermarsi dopo la struttura.
+  const [reviewStructure, setReviewStructure] = React.useState(false);
 
   const readyDocs = React.useMemo(
     () => (globalDocs.data ?? []).filter((d) => d.status === 'READY'),
@@ -251,10 +253,16 @@ export default function NewCoursePage() {
         courseId = res.courseId;
       }
       // Il preventivo mostrato diventa il budget del corso (spese oltre chiederanno conferma).
-      await getApiClient()
-        .confirmCourseBudget(courseId, { lessonVideos: true, ...extras })
-        .catch(() => undefined);
-      toast.show('Corso creato: continua con la struttura', 'success');
+      const api = getApiClient();
+      await api.confirmCourseBudget(courseId, { lessonVideos: true, ...extras }).catch(() => undefined);
+      // Poi il server genera tutto il corso da solo (struttura, contenuti, test, copertina, extra).
+      try {
+        await api.startAutopilot(courseId, { reviewStructure, options: { lessonVideos: true, ...extras } });
+        toast.show('Corso creato: lo stiamo generando', 'success');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message.replace(/^API \d+:\s*/, '') : '';
+        toast.show(`Corso creato, generazione non avviata${msg ? `: ${msg}` : ''}. Continua dal corso.`, 'info');
+      }
       router.push(`/courses/${courseId}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message.replace(/^API \d+:\s*/, '') : '';
@@ -705,13 +713,26 @@ export default function NewCoursePage() {
                   }}
                   note="Creare il corso non costa nulla: i crediti si usano quando generi struttura, lezioni, test e copertina."
                 />
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 size-4 accent-[hsl(var(--primary))]"
+                    checked={reviewStructure}
+                    onChange={(e) => setReviewStructure(e.target.checked)}
+                  />
+                  <span>
+                    Voglio rivedere la struttura prima dei contenuti
+                    <span className="block text-xs text-muted-foreground">La generazione si ferma dopo moduli e lezioni e riparte quando confermi.</span>
+                  </span>
+                </label>
                 <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
                   <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-                  Creiamo il corso e prepariamo il brief. Poi proseguirai con la generazione della struttura e dei contenuti.
+                  Creiamo il corso e lo generiamo per intero sul server: struttura, contenuti con immagini, test e copertina. Puoi
+                  chiudere la pagina; alla fine trovi il corso pronto da rivedere e modificare.
                 </div>
                 <Button type="button" size="lg" disabled={busyCreate} onClick={() => void handleCreate()}>
                   {busyCreate ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
-                  {busyCreate ? 'Creazione…' : 'Crea corso'}
+                  {busyCreate ? 'Creazione…' : 'Crea e genera il corso'}
                 </Button>
               </div>
             )}

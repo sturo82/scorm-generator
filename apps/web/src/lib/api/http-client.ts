@@ -1,4 +1,4 @@
-import type { Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteView, FeedCategory, WalletTransactionsView, WalletView } from '@scorm/contracts';
+import type { AutopilotView, Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteView, FeedCategory, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import { confirmOverBudget, notifyInsufficientCredits, parseOverBudget } from '../billing-events';
 import { getSession, handleSessionExpired } from '../auth';
 import type {
@@ -369,6 +369,21 @@ export class HttpApiClient implements ApiClient {
   }
   estimateExistingCourse(courseId: string) {
     return this.request<CourseEstimateView>(`/billing/estimate/courses/${encodeURIComponent(courseId)}`);
+  }
+  getAutopilot(courseId: string) {
+    return this.request<AutopilotView | null>(`/courses/${encodeURIComponent(courseId)}/autopilot`);
+  }
+  startAutopilot(courseId: string, input: { reviewStructure: boolean; options?: Partial<CourseEstimateOptions> }) {
+    return this.request<AutopilotView>(`/courses/${encodeURIComponent(courseId)}/autopilot`, { method: 'POST', body: JSON.stringify(input) });
+  }
+  resumeAutopilot(courseId: string) {
+    return this.request<AutopilotView>(`/courses/${encodeURIComponent(courseId)}/autopilot/resume`, { method: 'POST' });
+  }
+  cancelAutopilot(courseId: string) {
+    return this.request<AutopilotView>(`/courses/${encodeURIComponent(courseId)}/autopilot/cancel`, { method: 'POST' });
+  }
+  dismissAutopilot(courseId: string) {
+    return this.request<void>(`/courses/${encodeURIComponent(courseId)}/autopilot/dismiss`, { method: 'POST' });
   }
   estimateSlideImport(courseId: string, importId: string, sections: boolean) {
     return this.request<SlideImportEstimateView>(

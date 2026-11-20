@@ -1,4 +1,4 @@
-import type { Assessment, Block, Brief, BriefDraft, CourseCreditsView, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
+import type { AutopilotView, Assessment, Block, Brief, BriefDraft, CourseCreditsView, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import { computeQuote } from '@scorm/contracts';
 import type {
   AdminUserView,
@@ -701,6 +701,19 @@ export class MockApiClient implements ApiClient {
   async estimateExistingCourse(): Promise<CourseEstimateView> {
     return this.estimateCourse();
   }
+  async getAutopilot(): Promise<AutopilotView | null> {
+    return null;
+  }
+  async startAutopilot(): Promise<AutopilotView> {
+    throw new Error('Generazione automatica non disponibile in modalità demo');
+  }
+  async resumeAutopilot(): Promise<AutopilotView> {
+    throw new Error('Generazione automatica non disponibile in modalità demo');
+  }
+  async cancelAutopilot(): Promise<AutopilotView> {
+    throw new Error('Generazione automatica non disponibile in modalità demo');
+  }
+  async dismissAutopilot(): Promise<void> {}
   async estimateSlideImport(): Promise<SlideImportEstimateView> {
     const empty = { minutes: 0, lines: [], total: 0, priced: true };
     return { billed: false, slides: 0, slidesOnly: empty, withKnowledge: empty };

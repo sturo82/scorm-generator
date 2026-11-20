@@ -340,6 +340,8 @@ model Course {
   /// Opzioni scelte nel preventivo (video pillole, narrazione, video avatar, copertine moduli).
   estimateOptions Json?
   creditReservations CreditReservation[]
+  /// Generazione automatica del corso: stato, fase, opzioni, problemi (vedi AutopilotService).
+  autopilot Json?
 }
 
 model Module {
