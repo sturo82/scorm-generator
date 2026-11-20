@@ -25,6 +25,7 @@ import {
 } from '@scorm/contracts';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { SlideLessonService, type SectionInput, type SlideLessonView } from './slide-lesson.service.js';
+import { AvatarAccessService } from '../generation/avatar-access.service.js';
 import { SlideClipsService, type SlideClipsEstimate, type SlideClipsView } from './slide-clips.service.js';
 import { SlideScriptsService, type ScriptsGenerationState, type SlideScriptsDoc } from './slide-scripts.service.js';
 import { CurrentContext, type AuthContext } from '../auth/auth-context.js';
@@ -46,6 +47,7 @@ export class SlidesController {
     private readonly scripts: SlideScriptsService,
     private readonly clips: SlideClipsService,
     private readonly lessons: SlideLessonService,
+    private readonly avatarAccess: AvatarAccessService,
   ) {}
 
   @Post('import')
@@ -150,12 +152,13 @@ export class SlidesController {
   /** Cambia avatar: rigenera tutte le clip con il nuovo avatar (copioni, slide e regia restano). */
   @Post('imports/:importId/clips/avatar')
   @Roles('EDITOR')
-  changeAvatar(
+  async changeAvatar(
     @CurrentContext() ctx: AuthContext,
     @Param('courseId') courseId: string,
     @Param('importId') importId: string,
     @Body(new ZodValidationPipe(StartSlideClipsSchema)) body: StartSlideClipsType,
   ): Promise<SlideClipsView> {
+    await this.avatarAccess.assertAvatarUsable({ tenantId: ctx.tenant.tenantId, userId: ctx.userId, role: ctx.role }, body.avatarId);
     return this.clips.changeAvatar(ctx.tenant.tenantId, courseId, importId, body);
   }
 
@@ -171,12 +174,13 @@ export class SlidesController {
   /** Avvia o riprende la generazione delle clip avatar (a copioni approvati). */
   @Post('imports/:importId/clips')
   @Roles('EDITOR')
-  startClips(
+  async startClips(
     @CurrentContext() ctx: AuthContext,
     @Param('courseId') courseId: string,
     @Param('importId') importId: string,
     @Body(new ZodValidationPipe(StartSlideClipsSchema)) body: StartSlideClipsType,
   ): Promise<SlideClipsView> {
+    await this.avatarAccess.assertAvatarUsable({ tenantId: ctx.tenant.tenantId, userId: ctx.userId, role: ctx.role }, body.avatarId);
     return this.clips.start(ctx.tenant.tenantId, courseId, importId, body);
   }
 

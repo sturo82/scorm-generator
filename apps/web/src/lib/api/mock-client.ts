@@ -42,6 +42,8 @@ import type {
   SsoRedeemResult,
   AvatarOption,
   AvatarGroupView,
+  AvatarAccessTargets,
+  AvatarAccessView,
   AvatarConsentRequest,
   VoiceOption,
   GenerateVideoRef,
@@ -1128,7 +1130,18 @@ export class MockApiClient implements ApiClient {
       consentStatus: null,
       looks: 1,
       attested: true,
+      access: { tenantId: 'tenant-dev', tenantName: 'Acme', userIds: [], canManage: true },
     }));
+  }
+  async getAvatarAccessTargets(): Promise<AvatarAccessTargets> {
+    return {
+      tenants: [{ id: 'tenant-dev', name: 'Acme' }],
+      users: [{ id: 'u-dev', tenantId: 'tenant-dev', email: 'owner@acme.test', displayName: 'Dev Owner' }],
+      canPickTenant: true,
+    };
+  }
+  async setAvatarAccess(_groupId: string, input: { tenantId?: string; userIds: string[] }): Promise<AvatarAccessView> {
+    return { tenantId: input.tenantId ?? 'tenant-dev', tenantName: 'Acme', userIds: input.userIds, canManage: true };
   }
   async requestAvatarConsent(): Promise<AvatarConsentRequest> {
     throw new Error('Consenso non disponibile in modalità demo');

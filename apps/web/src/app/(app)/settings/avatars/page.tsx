@@ -37,6 +37,8 @@ import {
   useDeleteAvatar,
   useRefreshMyAvatars,
   useRequestAvatarConsent,
+  useAvatarAccessTargets,
+  useSetAvatarAccess,
   useWallet,
 } from '@/lib/api/hooks';
 import type { AvatarConsentRequest, AvatarGroupView } from '@/lib/api/types';
@@ -654,6 +656,8 @@ function AvatarDetail({
 
       {g.error && <p className="rounded-lg border border-red-300/60 bg-red-50 p-3 text-xs text-red-900">{g.error}</p>}
 
+      <AccessPanel g={g} />
+
       {twin && g.status === 'processing' && (
         <p className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
           L&apos;addestramento richiede di solito qualche minuto. Puoi avviare subito il consenso: lo stato si aggiorna da solo.
@@ -738,6 +742,117 @@ function ConsentLinkPanel({ link, onClose }: { link: AvatarConsentRequest; onClo
       <div className="flex justify-end">
         <Button onClick={onClose}>Chiudi</Button>
       </div>
+    </div>
+  );
+}
+
+/** A chi appartiene l'avatar e chi può usarlo; gli admin possono cambiarlo. */
+function AccessPanel({ g }: { g: AvatarGroupView }) {
+  const toast = useToast();
+  const [editing, setEditing] = React.useState(false);
+  const targets = useAvatarAccessTargets(editing);
+  const save = useSetAvatarAccess();
+  const [tenantId, setTenantId] = React.useState(g.access.tenantId);
+  const [everyone, setEveryone] = React.useState(g.access.userIds.length === 0);
+  const [picked, setPicked] = React.useState<string[]>(g.access.userIds);
+
+  // Chiave stabile: l'elenco si rilegge ogni pochi secondi e non deve chiudere l'editor.
+  const accessKey = `${g.groupId}|${g.access.tenantId}|${g.access.userIds.join(',')}`;
+  React.useEffect(() => {
+    setTenantId(g.access.tenantId);
+    setEveryone(g.access.userIds.length === 0);
+    setPicked(g.access.userIds);
+    setEditing(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessKey]);
+
+  const users = (targets.data?.users ?? []).filter((u) => u.tenantId === tenantId);
+  const summary = g.access.userIds.length === 0 ? 'tutti gli utenti' : `${g.access.userIds.length} ${g.access.userIds.length === 1 ? 'utente' : 'utenti'}`;
+
+  async function onSave() {
+    try {
+      await save.mutateAsync({ groupId: g.groupId, tenantId, userIds: everyone ? [] : picked });
+      toast.show('Accesso aggiornato', 'success');
+      setEditing(false);
+    } catch (e) {
+      toast.show(e instanceof Error ? e.message : 'Accesso non aggiornato', 'error');
+    }
+  }
+
+  return (
+    <div className="rounded-lg border p-3 text-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs text-muted-foreground">Appartiene a</div>
+          <div className="font-medium">{g.access.tenantName}</div>
+          <div className="text-xs text-muted-foreground">Lo possono usare: {summary}</div>
+        </div>
+        {g.access.canManage && !editing && (
+          <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+            Gestisci accesso
+          </Button>
+        )}
+      </div>
+      {editing && (
+        <div className="mt-3 space-y-3 border-t pt-3">
+          {targets.isLoading && <p className="text-xs text-muted-foreground">Carico aziende e utenti…</p>}
+          {targets.isError && <p className="text-xs text-red-700">Non riesco a leggere aziende e utenti.</p>}
+          {targets.data?.canPickTenant && (
+            <label className="block space-y-1">
+              <span className="text-xs text-muted-foreground">Azienda</span>
+              <select
+                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                value={tenantId}
+                onChange={(e) => {
+                  setTenantId(e.target.value);
+                  setEveryone(true);
+                  setPicked([]);
+                }}
+              >
+                {targets.data.tenants.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {targets.data && (
+            <div className="space-y-2">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={everyone} onChange={(e) => setEveryone(e.target.checked)} />
+                <span>Tutti gli utenti dell&apos;azienda</span>
+              </label>
+              {!everyone && (
+                <div className="max-h-40 space-y-1 overflow-auto rounded-md border p-2">
+                  {users.length === 0 && <p className="text-xs text-muted-foreground">Nessun utente in questa azienda.</p>}
+                  {users.map((u) => (
+                    <label key={u.id} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={picked.includes(u.id)}
+                        onChange={(e) => setPicked((p) => (e.target.checked ? [...p, u.id] : p.filter((x) => x !== u.id)))}
+                      />
+                      <span className="truncate">{u.displayName ? `${u.displayName} · ${u.email}` : u.email}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {!everyone && picked.length === 0 && (
+                <p className="text-xs text-amber-700">Scegli almeno un utente, oppure lascia l&apos;avatar a tutta l&apos;azienda.</p>
+              )}
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+              Annulla
+            </Button>
+            <Button size="sm" disabled={save.isPending || !targets.data || (!everyone && picked.length === 0)} onClick={() => void onSave()}>
+              Salva
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

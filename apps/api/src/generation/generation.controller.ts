@@ -22,6 +22,7 @@ import { Roles } from '../auth/roles.decorator.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { GenerationService } from './generation.service.js';
 import { MediaService } from './media.service.js';
+import { AvatarAccessService } from './avatar-access.service.js';
 
 class GenerateAssessmentDto {
   @IsIn(['intermediate', 'final'])
@@ -87,6 +88,7 @@ export class GenerationController {
   constructor(
     private readonly generation: GenerationService,
     private readonly media: MediaService,
+    private readonly avatarAccess: AvatarAccessService,
   ) {}
 
   // Le operazioni testuali del modello sono ASINCRONE: accodano un job e
@@ -237,13 +239,14 @@ export class GenerationController {
    */
   @Post('lessons/:lessonId/blocks/:blockId/video/heygen')
   @HttpCode(202)
-  generateConceptVideo(
+  async generateConceptVideo(
     @CurrentContext() ctx: AuthContext,
     @Param('courseId') courseId: string,
     @Param('lessonId') lessonId: string,
     @Param('blockId') blockId: string,
     @Body() dto: GenerateConceptVideoDto,
   ) {
+    await this.avatarAccess.assertAvatarUsable({ tenantId: ctx.tenant.tenantId, userId: ctx.userId, role: ctx.role }, dto.avatarId);
     return this.media.generateConceptVideo(ctx.tenant.tenantId, courseId, lessonId, blockId, {
       avatarId: dto.avatarId,
       voiceId: dto.voiceId,
@@ -289,11 +292,12 @@ export class GenerationController {
    */
   @Get('video/avatars')
   listVideoAvatars(
+    @CurrentContext() ctx: AuthContext,
     @Query('source') source?: string,
     @Query('token') token?: string,
     @Query('q') q?: string,
   ) {
-    return this.media.listVideoAvatars({
+    return this.media.listVideoAvatars({ tenantId: ctx.tenant.tenantId, userId: ctx.userId, role: ctx.role }, {
       source: source === 'mine' ? 'mine' : 'stock',
       token,
       query: q,

@@ -539,6 +539,25 @@ export function useCreateDigitalTwin() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tenant', 'avatars'] }),
   });
 }
+/** Aziende e utenti tra cui assegnare un avatar (solo quando si apre l'editor di accesso). */
+export function useAvatarAccessTargets(enabled: boolean) {
+  return useQuery({
+    queryKey: [...qk.avatars('access-targets')],
+    queryFn: () => api.getAvatarAccessTargets(),
+    enabled,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+/** Cambia a chi appartiene un avatar. */
+export function useSetAvatarAccess() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { groupId: string; tenantId?: string; userIds: string[] }) =>
+      api.setAvatarAccess(vars.groupId, { tenantId: vars.tenantId, userIds: vars.userIds }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tenant', 'avatars'] }),
+  });
+}
 /** Avvia o rinnova la raccolta del consenso di un digital twin: ritorna il link per la persona. */
 export function useRequestAvatarConsent() {
   const qc = useQueryClient();

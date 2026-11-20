@@ -29,6 +29,7 @@ import { ConfigService } from '@nestjs/config';
 import { DEFAULT_HEYGEN_ENGINE, MEDIA_CAPS, defaultEngineForAvatarType, heygenBillingTypeFor, type HeyGenAvatarBillingType, lessonImageCap, resolveLessonLayout } from '@scorm/contracts';
 import type { AppConfig } from '../config/configuration.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AvatarAccessService, type AvatarAccessView, type AvatarViewer } from './avatar-access.service.js';
 import { TenantPrismaService } from '../tenancy/tenant-prisma.service.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { avatarFeature, BillingService, type Reservation } from '../billing/billing.service.js';
@@ -189,6 +190,7 @@ export class MediaService implements OnModuleInit {
     @Inject(TRANSCRIPTION_PROVIDER) private readonly transcription: TranscriptionProvider,
     private readonly meter: UsageMeterService,
     private readonly billing: BillingService,
+    private readonly avatarAccess: AvatarAccessService,
     // Opzionale: null se PROVIDER_VIDEO non è configurato (o manca l'API key).
     // In quel caso generateConceptVideo risponde 501, come lo stock image.
     @Optional() @Inject(VIDEO_GEN_PROVIDER) private readonly videoGen: VideoGenerationProvider | null,
@@ -823,17 +825,22 @@ export class MediaService implements OnModuleInit {
    * cursore della pagina successiva; `query` cerca per nome. Ritorna gli item
    * e l'eventuale cursore per continuare.
    */
-  async listVideoAvatars(opts?: {
-    source?: 'mine' | 'stock';
-    token?: string;
-    query?: string;
-  }): Promise<Page<AvatarOption>> {
+  async listVideoAvatars(
+    viewer: AvatarViewer,
+    opts?: {
+      source?: 'mine' | 'stock';
+      token?: string;
+      query?: string;
+    },
+  ): Promise<Page<AvatarOption>> {
     if (!this.videoGen) throw this.videoNotConfigured();
-    return this.videoGen.listAvatarsPage({
+    const page = await this.videoGen.listAvatarsPage({
       source: opts?.source,
       token: opts?.token,
       query: opts?.query,
     });
+    // Gli avatar dell'account sono condivisi: ognuno vede solo i suoi.
+    return opts?.source === 'mine' ? { ...page, items: await this.avatarAccess.filterVisible(viewer, page.items) } : page;
   }
 
   /**
@@ -867,9 +874,10 @@ export class MediaService implements OnModuleInit {
    * caricati nell'account HeyGen). Non consuma quota. È la lista mostrata nella
    * sezione Impostazioni → Avatar. Delega al provider (una chiamata, caching).
    */
-  async listMyAvatars(query?: string, refresh = false): Promise<Page<AvatarOption>> {
+  async listMyAvatars(viewer: AvatarViewer, query?: string, refresh = false): Promise<Page<AvatarOption>> {
     if (!this.videoGen) throw this.videoNotConfigured();
-    return this.videoGen.listAvatarsPage({ source: 'mine', query, refresh });
+    const page = await this.videoGen.listAvatarsPage({ source: 'mine', query, refresh });
+    return { ...page, items: await this.avatarAccess.filterVisible(viewer, page.items) };
   }
 
   /**
@@ -960,6 +968,10 @@ export class MediaService implements OnModuleInit {
       region: 'global',
     });
     this.logger.log(`Avatar creato (tenant ${tenantId}): ${result.name} [${result.avatarId}] status=${result.status}`);
+    // L'avatar appartiene al tenant di chi lo crea (finché non viene assegnato diversamente).
+    await this.avatarAccess
+      .register(tenantId, result.groupId, input.userId)
+      .catch((err) => this.logger.warn(`Registrazione dell'avatar fallita (${result.groupId}): ${err instanceof Error ? err.message : String(err)}`));
     // Traccia della dichiarazione di consenso (per foto e twin): HeyGen non la conserva per le foto.
     if (input.type !== 'prompt') {
       await this.tenantPrisma
@@ -981,24 +993,31 @@ export class MediaService implements OnModuleInit {
    * Avatar dell'account come personaggi, con stato e consenso, anche quelli non ancora utilizzabili.
    * Ogni voce riporta se la dichiarazione di consenso è stata registrata alla creazione.
    */
-  async listAvatarGroups(tenantId: string, refresh = false): Promise<Array<AvatarGroupSummary & { attested: boolean }>> {
+  async listAvatarGroups(
+    viewer: AvatarViewer,
+    refresh = false,
+  ): Promise<Array<AvatarGroupSummary & { attested: boolean; access: AvatarAccessView }>> {
     if (!this.videoGen || typeof this.videoGen.listAvatarGroups !== 'function') throw this.videoNotConfigured();
-    const [groups, records] = await Promise.all([
+    const [all, records] = await Promise.all([
       this.videoGen.listAvatarGroups(refresh),
-      this.prisma.avatarConsentRecord.findMany({ where: { tenantId }, select: { groupId: true } }),
+      this.prisma.avatarConsentRecord.findMany({ where: { tenantId: viewer.tenantId }, select: { groupId: true } }),
     ]);
+    const groups = await this.avatarAccess.filterVisible(viewer, all, true);
+    const views = await this.avatarAccess.viewsFor(viewer, groups.map((g) => g.groupId));
     const attested = new Set(records.map((r) => r.groupId));
-    return groups.map((g) => ({ ...g, attested: attested.has(g.groupId) }));
+    return groups.map((g) => ({ ...g, attested: attested.has(g.groupId), access: views.get(g.groupId)! }));
   }
 
   /**
    * Avvia (o rinnova) la raccolta del consenso di un digital twin: ritorna il link, valido 24 ore,
    * da far aprire alla persona ritratta per registrare una breve dichiarazione con la webcam.
    */
-  async requestAvatarConsent(tenantId: string, groupId: string): Promise<AvatarConsentRequest> {
+  async requestAvatarConsent(viewer: AvatarViewer, groupId: string): Promise<AvatarConsentRequest> {
+    const tenantId = viewer.tenantId;
     if (!this.videoGen || typeof this.videoGen.requestAvatarConsent !== 'function' || typeof this.videoGen.getAvatarGroup !== 'function') {
       throw this.videoNotConfigured();
     }
+    await this.avatarAccess.assertGroupVisible(viewer, groupId);
     const group = await this.videoGen.getAvatarGroup(groupId).catch(() => null);
     if (!group) throw new NotFoundException('Avatar non trovato');
     if (group.kind !== 'digital_twin') {
@@ -1034,10 +1053,11 @@ export class MediaService implements OnModuleInit {
    * costo di creazione (già sostenuto). Non tocca i corsi che lo referenziano:
    * i video già generati restano, ma l'avatar non è più selezionabile.
    */
-  async deleteAvatar(_tenantId: string, groupId: string): Promise<{ deleted: true }> {
+  async deleteAvatar(viewer: AvatarViewer, groupId: string): Promise<{ deleted: true }> {
     if (!this.videoGen || typeof this.videoGen.deleteAvatar !== 'function') {
       throw this.videoNotConfigured();
     }
+    await this.avatarAccess.assertGroupVisible(viewer, groupId);
     try {
       await this.videoGen.deleteAvatar(groupId);
     } catch (err) {
@@ -1046,6 +1066,7 @@ export class MediaService implements OnModuleInit {
       throw new BadRequestException(`Eliminazione avatar non riuscita: ${detail}`);
     }
     // Invalida la cache "mine": l'avatar eliminato non deve più comparire.
+    await this.avatarAccess.remove(groupId).catch(() => undefined);
     this.videoGen.invalidateMineCache?.();
     return { deleted: true };
   }

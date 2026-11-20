@@ -30,6 +30,7 @@ import {
   type GenJobPayload,
 } from './generation.service.js';
 import { MediaService } from './media.service.js';
+import { AvatarAccessService } from './avatar-access.service.js';
 import { AutopilotService } from './autopilot.service.js';
 import { AutopilotController } from './autopilot.controller.js';
 import { GenerationController } from './generation.controller.js';
@@ -156,9 +157,9 @@ const cartoonVideoProvider = {
 @Module({
   imports: [KnowledgeModule, CoursesModule],
   controllers: [GenerationController, AvatarsController, JobsController, ActiveJobsController, AutopilotController],
-  providers: [GenerationService, MediaService, AutopilotService, videoGenProvider, cartoonVideoProvider],
+  providers: [GenerationService, MediaService, AvatarAccessService, AutopilotService, videoGenProvider, cartoonVideoProvider],
   // VIDEO_GEN_PROVIDER è esportato per la pipeline "video da slide" (SlidesModule).
-  exports: [GenerationService, MediaService, VIDEO_GEN_PROVIDER],
+  exports: [GenerationService, MediaService, AvatarAccessService, VIDEO_GEN_PROVIDER],
 })
 export class GenerationModule implements OnModuleInit {
   constructor(

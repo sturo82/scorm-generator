@@ -287,6 +287,26 @@ export interface AvatarGroupView {
   error?: string;
   /** Dichiarazione di consenso registrata alla creazione. */
   attested: boolean;
+  /** A chi appartiene l'avatar. */
+  access: AvatarAccessView;
+}
+
+/** A chi appartiene un avatar e chi lo può usare. */
+export interface AvatarAccessView {
+  tenantId: string;
+  tenantName: string;
+  /** Vuoto = tutti gli utenti dell'azienda. */
+  userIds: string[];
+  /** True se chi guarda può cambiare l'assegnazione. */
+  canManage: boolean;
+}
+
+/** Aziende e utenti tra cui scegliere per assegnare un avatar. */
+export interface AvatarAccessTargets {
+  tenants: Array<{ id: string; name: string }>;
+  users: Array<{ id: string; tenantId: string; email: string; displayName: string | null }>;
+  /** True se si può scegliere anche l'azienda (solo la piattaforma). */
+  canPickTenant: boolean;
 }
 
 /** Link per far registrare il consenso alla persona ritratta in un digital twin (valido 24 ore). */
@@ -721,6 +741,10 @@ export interface ApiClient {
   createDigitalTwin(name: string, file: File, consentConfirmed: boolean): Promise<CreateAvatarResult>;
   /** Avatar come personaggi con stato e consenso (anche quelli non ancora utilizzabili). */
   listAvatarGroups(refresh?: boolean): Promise<AvatarGroupView[]>;
+  /** Aziende e utenti a cui assegnare un avatar. */
+  getAvatarAccessTargets(): Promise<AvatarAccessTargets>;
+  /** Cambia a chi appartiene un avatar (utenti vuoti = tutta l'azienda). */
+  setAvatarAccess(groupId: string, input: { tenantId?: string; userIds: string[] }): Promise<AvatarAccessView>;
   /** Avvia o rinnova la raccolta del consenso di un digital twin. */
   requestAvatarConsent(groupId: string): Promise<AvatarConsentRequest>;
   /** Crea un avatar da PROMPT testuale. Asincrono: look in 'processing'. */

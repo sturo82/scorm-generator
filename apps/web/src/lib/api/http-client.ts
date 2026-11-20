@@ -42,6 +42,8 @@ import type {
   SsoRedeemResult,
   AvatarOption,
   AvatarGroupView,
+  AvatarAccessTargets,
+  AvatarAccessView,
   AvatarConsentRequest,
   VoiceOption,
   GenerateVideoRef,
@@ -575,6 +577,15 @@ export class HttpApiClient implements ApiClient {
   }
   listAvatarGroups(refresh?: boolean) {
     return this.request<AvatarGroupView[]>(`/tenant/avatars/groups${refresh ? '?refresh=true' : ''}`);
+  }
+  getAvatarAccessTargets() {
+    return this.request<AvatarAccessTargets>('/tenant/avatars/access/targets');
+  }
+  setAvatarAccess(groupId: string, input: { tenantId?: string; userIds: string[] }) {
+    return this.request<AvatarAccessView>(`/tenant/avatars/${encodeURIComponent(groupId)}/access`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
   }
   requestAvatarConsent(groupId: string) {
     return this.request<AvatarConsentRequest>(`/tenant/avatars/${encodeURIComponent(groupId)}/consent`, { method: 'POST' });

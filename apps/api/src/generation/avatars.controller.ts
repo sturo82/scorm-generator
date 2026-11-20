@@ -6,15 +6,17 @@ import {
   Get,
   Param,
   Post,
+  Put,
   Query,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { CurrentContext, type AuthContext } from '../auth/auth-context.js';
 import { Roles } from '../auth/roles.decorator.js';
 import { MediaService } from './media.service.js';
+import { AvatarAccessService } from './avatar-access.service.js';
 
 /** Dati per creare un avatar da PROMPT (il tipo "photo" usa il multipart). */
 class CreatePromptAvatarDto {
@@ -29,6 +31,18 @@ class CreatePromptAvatarDto {
   prompt!: string;
 }
 
+/** Nuova assegnazione di un avatar. */
+class AssignAvatarDto {
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
+
+  @IsArray()
+  @ArrayMaxSize(500)
+  @IsString({ each: true })
+  userIds!: string[];
+}
+
 /**
  * Gestione degli avatar HeyGen DEL TENANT (sezione Impostazioni → Avatar).
  * Creazione/eliminazione a pagamento (una tantum) riservate ad ADMIN/OWNER;
@@ -39,12 +53,19 @@ class CreatePromptAvatarDto {
  */
 @Controller('tenant/avatars')
 export class AvatarsController {
-  constructor(private readonly media: MediaService) {}
+  constructor(
+    private readonly media: MediaService,
+    private readonly access: AvatarAccessService,
+  ) {}
+
+  private viewer(ctx: AuthContext) {
+    return { tenantId: ctx.tenant.tenantId, userId: ctx.userId, role: ctx.role };
+  }
 
   /** Elenca gli avatar dell'account (i "miei"). `q` cerca per nome; `refresh=true` bypassa la cache. */
   @Get()
-  list(@Query('q') q?: string, @Query('refresh') refresh?: string) {
-    return this.media.listMyAvatars(q, refresh === 'true');
+  list(@CurrentContext() ctx: AuthContext, @Query('q') q?: string, @Query('refresh') refresh?: string) {
+    return this.media.listMyAvatars(this.viewer(ctx), q, refresh === 'true');
   }
 
   /**
@@ -53,7 +74,7 @@ export class AvatarsController {
    */
   @Get('groups')
   groups(@CurrentContext() ctx: AuthContext, @Query('refresh') refresh?: string) {
-    return this.media.listAvatarGroups(ctx.tenant.tenantId, refresh === 'true');
+    return this.media.listAvatarGroups(this.viewer(ctx), refresh === 'true');
   }
 
   /**
@@ -61,9 +82,23 @@ export class AvatarsController {
    * da far aprire alla persona ritratta. Lo stato si legge poi da `groups`.
    */
   @Post(':groupId/consent')
-  @Roles('ADMIN')
+  @Roles('EDITOR')
   requestConsent(@CurrentContext() ctx: AuthContext, @Param('groupId') groupId: string) {
-    return this.media.requestAvatarConsent(ctx.tenant.tenantId, groupId);
+    return this.media.requestAvatarConsent(this.viewer(ctx), groupId);
+  }
+
+  /** Aziende e utenti a cui si può assegnare un avatar (admin). */
+  @Get('access/targets')
+  @Roles('ADMIN')
+  targets(@CurrentContext() ctx: AuthContext) {
+    return this.access.targets(this.viewer(ctx));
+  }
+
+  /** Cambia a chi appartiene un avatar: azienda (solo la piattaforma) e utenti ammessi (vuoto = tutti). */
+  @Put(':groupId/access')
+  @Roles('ADMIN')
+  assign(@CurrentContext() ctx: AuthContext, @Param('groupId') groupId: string, @Body() dto: AssignAvatarDto) {
+    return this.access.assign(this.viewer(ctx), groupId, { tenantId: dto.tenantId, userIds: dto.userIds });
   }
 
   /** Stato di un look avatar in creazione (polling dopo la creazione). */
@@ -141,6 +176,6 @@ export class AvatarsController {
   @Delete(':groupId')
   @Roles('ADMIN')
   remove(@CurrentContext() ctx: AuthContext, @Param('groupId') groupId: string) {
-    return this.media.deleteAvatar(ctx.tenant.tenantId, groupId);
+    return this.media.deleteAvatar(this.viewer(ctx), groupId);
   }
 }

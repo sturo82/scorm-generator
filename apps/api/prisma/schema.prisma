@@ -117,6 +117,7 @@ model Plan {
 }
 
 model Tenant {
+  avatarAccess AvatarAccess[]
   id          String         @id @default(cuid())
   name        String
   // Branding white-label della web app (nome, colore, logo/favicon keys) come
@@ -801,6 +802,22 @@ model CreditReservation {
 }
 
 /// Dichiarazione di consenso alla creazione di un avatar da una persona reale (foto o digital twin).
+/// A chi appartiene un avatar HeyGen (l'account HeyGen è uno solo, condiviso). `userIds` vuoto = tutto
+/// il tenant; altrimenti solo gli utenti elencati (e gli admin del tenant). Gli avatar senza riga
+/// appartengono al tenant della piattaforma (AVATAR_DEFAULT_TENANT, di default "knowkube").
+/// Senza RLS: il servizio legge e filtra per tenant da solo.
+model AvatarAccess {
+  groupId   String   @id
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy String?
+  userIds   String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
 model AvatarConsentRecord {
   id         String   @id @default(cuid())
   tenantId   String
