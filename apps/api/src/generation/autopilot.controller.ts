@@ -4,11 +4,15 @@ import { CurrentContext, type AuthContext } from '../auth/auth-context.js';
 import { Roles } from '../auth/roles.decorator.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { AutopilotService } from './autopilot.service.js';
+import { AvatarAccessService } from './avatar-access.service.js';
 
 /** Generazione automatica del corso: avvio, stato, ripresa dopo la revisione, annullamento. */
 @Controller('courses/:courseId/autopilot')
 export class AutopilotController {
-  constructor(private readonly autopilot: AutopilotService) {}
+  constructor(
+    private readonly autopilot: AutopilotService,
+    private readonly avatarAccess: AvatarAccessService,
+  ) {}
 
   @Get()
   status(@CurrentContext() ctx: AuthContext, @Param('courseId') courseId: string) {
@@ -17,11 +21,15 @@ export class AutopilotController {
 
   @Post()
   @Roles('EDITOR')
-  start(
+  async start(
     @CurrentContext() ctx: AuthContext,
     @Param('courseId') courseId: string,
     @Body(new ZodValidationPipe(StartAutopilot)) body: StartAutopilotType,
   ) {
+    // Gli avatar dell'account sono solo di chi ne ha accesso; quelli del catalogo sono di tutti.
+    if (body.slides) {
+      await this.avatarAccess.assertAvatarUsable({ tenantId: ctx.tenant.tenantId, userId: ctx.userId, role: ctx.role }, body.slides.avatarId);
+    }
     return this.autopilot.start(ctx, courseId, body);
   }
 

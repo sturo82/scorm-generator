@@ -1,7 +1,7 @@
 'use client';
 import * as React from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Block, Brief, CourseEstimateInput, CourseEstimateOptions, CreditQuoteItem, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
+import type { StartSlidesAutopilot, Block, Brief, CourseEstimateInput, CourseEstimateOptions, CreditQuoteItem, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
 import { getApiClient } from './client';
 import type { PronunciationEntry, SlideAvatarType, StartSlideClipsInput, BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole, AttachStockImageInput, AttachStockCoverInput } from './types';
 
@@ -886,7 +886,7 @@ export function useAutopilotActions(courseId: string) {
   };
   return {
     start: useMutation({
-      mutationFn: (input: { reviewStructure: boolean; options?: Partial<CourseEstimateOptions> }) => api.startAutopilot(courseId, input),
+      mutationFn: (input: { reviewStructure: boolean; options?: Partial<CourseEstimateOptions>; slides?: StartSlidesAutopilot }) => api.startAutopilot(courseId, input),
       onSuccess: set,
     }),
     resume: useMutation({ mutationFn: () => api.resumeAutopilot(courseId), onSuccess: set }),
@@ -901,11 +901,17 @@ export function useAutopilotActions(courseId: string) {
   };
 }
 /** Preventivo massimo di un video da slide prima dei copioni; solo con i crediti attivi. */
-export function useSlideImportEstimate(courseId: string, importId: string, sections = false, enabled = true) {
+export function useSlideImportEstimate(
+  courseId: string,
+  importId: string,
+  sections = false,
+  enabled = true,
+  opts?: { engine?: string; avatarType?: string },
+) {
   const wallet = useWallet();
   return useQuery({
-    queryKey: ['billing', 'estimate', 'slides', courseId, importId, sections],
-    queryFn: () => api.estimateSlideImport(courseId, importId, sections),
+    queryKey: ['billing', 'estimate', 'slides', courseId, importId, sections, opts?.engine ?? '', opts?.avatarType ?? ''],
+    queryFn: () => api.estimateSlideImport(courseId, importId, sections, opts),
     enabled: enabled && wallet.data?.enabled === true && Boolean(importId),
     staleTime: 60_000,
     retry: false,

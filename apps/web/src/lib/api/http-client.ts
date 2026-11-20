@@ -1,4 +1,4 @@
-import type { DashboardSummary, AutopilotView, Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteView, FeedCategory, WalletTransactionsView, WalletView } from '@scorm/contracts';
+import type { StartSlidesAutopilot, DashboardSummary, AutopilotView, Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteView, FeedCategory, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import { confirmOverBudget, notifyInsufficientCredits, parseOverBudget } from '../billing-events';
 import { getSession, handleSessionExpired } from '../auth';
 import type {
@@ -380,7 +380,7 @@ export class HttpApiClient implements ApiClient {
   getAutopilot(courseId: string) {
     return this.request<AutopilotView | null>(`/courses/${encodeURIComponent(courseId)}/autopilot`);
   }
-  startAutopilot(courseId: string, input: { reviewStructure: boolean; options?: Partial<CourseEstimateOptions> }) {
+  startAutopilot(courseId: string, input: { reviewStructure: boolean; options?: Partial<CourseEstimateOptions>; slides?: StartSlidesAutopilot }) {
     return this.request<AutopilotView>(`/courses/${encodeURIComponent(courseId)}/autopilot`, { method: 'POST', body: JSON.stringify(input) });
   }
   resumeAutopilot(courseId: string) {
@@ -392,9 +392,12 @@ export class HttpApiClient implements ApiClient {
   dismissAutopilot(courseId: string) {
     return this.request<void>(`/courses/${encodeURIComponent(courseId)}/autopilot/dismiss`, { method: 'POST' });
   }
-  estimateSlideImport(courseId: string, importId: string, sections: boolean) {
+  estimateSlideImport(courseId: string, importId: string, sections: boolean, opts?: { engine?: string; avatarType?: string }) {
+    const q = new URLSearchParams({ sections: String(sections) });
+    if (opts?.engine) q.set('engine', opts.engine);
+    if (opts?.avatarType) q.set('avatarType', opts.avatarType);
     return this.request<SlideImportEstimateView>(
-      `/courses/${encodeURIComponent(courseId)}/slides/imports/${encodeURIComponent(importId)}/estimate?sections=${sections}`,
+      `/courses/${encodeURIComponent(courseId)}/slides/imports/${encodeURIComponent(importId)}/estimate?${q.toString()}`,
     );
   }
   estimateLesson(courseId: string, lessonId: string) {

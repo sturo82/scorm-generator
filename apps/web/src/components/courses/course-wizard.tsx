@@ -33,6 +33,7 @@ import { StockPhotoPicker } from '@/components/courses/stock-photo-picker';
 import { CoverFramer, COVER_ASPECT } from '@/components/courses/cover-framer';
 import { usePendingAssessments } from '@/lib/use-pending-assessments';
 import { cn } from '@/lib/cn';
+import { wizardLandingKey } from '@/lib/wizard-landing';
 import { slidesAutoOpenKey } from '@/lib/slides-autoopen';
 import { ClipboardCheck } from 'lucide-react';
 
@@ -83,6 +84,12 @@ export function CourseWizard({ courseId }: { courseId: string }) {
         window.localStorage.removeItem(key);
         setActive('structure');
         setAutoOpenSlides(true);
+      }
+      // Dopo una generazione automatica si apre l'anteprima.
+      const landing = wizardLandingKey(courseId);
+      if (window.localStorage.getItem(landing) === 'review') {
+        window.localStorage.removeItem(landing);
+        setActive('review');
       }
     } catch {
       /* storage non disponibile */

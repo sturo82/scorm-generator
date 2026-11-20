@@ -361,6 +361,18 @@ export class BillingService {
     return { ...est, budget: { credits, committed: est.budget?.committed ?? 0 } };
   }
 
+  /**
+   * Budget di un corso con un totale già calcolato altrove (es. il massimo di un video da slide):
+   * la spesa oltre questo importo chiederà conferma. Non fa nulla se l'azienda non è addebitata.
+   */
+  async setCourseBudget(tenantId: string, courseId: string, credits: number): Promise<void> {
+    if (!(await this.isBilled(tenantId))) return;
+    const committed = await this.committedCredits(tenantId, courseId);
+    await this.tenantPrisma.runInTenant(tenantId, (tx) =>
+      tx.course.updateMany({ where: { id: courseId, tenantId }, data: { creditBudget: committed + Math.ceil(credits) } }),
+    );
+  }
+
   /** Feature dei video animati, o null se il generatore non è configurato. */
   private cartoonFeature(): string | null {
     const provider = this.config.get('cartoonVideo', { infer: true }).provider;
@@ -779,6 +791,14 @@ export class BillingService {
     if (!res) return;
     await Promise.all(res.holds.map((h) => this.wallet.release(res.companyId, h.holdId)));
     await this.closeReservation(tenantId, res.ref);
+  }
+
+  /** Controlla che il saldo copra un totale già calcolato (402 se non basta), senza riservare. */
+  async assertTotalAvailable(tenantId: string, total: number): Promise<void> {
+    if (!(await this.isBilled(tenantId))) return;
+    await this.assertPayerWallet(tenantId);
+    const bal = await this.wallet.getBalance(this.payerFor(tenantId).companyId);
+    if (bal && bal.available < total) throw new InsufficientCreditsException('course', total, bal.available);
   }
 
   /**

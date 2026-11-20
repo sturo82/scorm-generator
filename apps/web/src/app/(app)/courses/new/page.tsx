@@ -25,7 +25,7 @@ import { CourseEstimate } from '@/components/app/course-estimate';
 import { CreditCost } from '@/components/ui/credit-cost';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
-import { slidesAutoOpenKey } from '@/lib/slides-autoopen';
+import { NewFromSlides } from '@/components/courses/new-from-slides';
 import { getApiClient } from '@/lib/api/client';
 import type { LessonFormatValue, RssPreviewResult } from '@/lib/api/types';
 import {
@@ -62,8 +62,8 @@ const FORMAT_OPTIONS: Array<{ value: LessonFormatValue; label: string; hint: str
 ];
 
 const STEPS = ['Sorgente', 'Dettagli', 'Formato', 'Crea'];
-/** Percorso "da slide": scelta della sorgente e titolo; il resto si fa nel dialog del corso. */
-const STEPS_SLIDES = ['Sorgente', 'Dettagli'];
+/** Percorso "da slide": sorgente, titolo e lingua, poi slide e avatar; il resto lo fa la generazione automatica. */
+const STEPS_SLIDES = ['Sorgente', 'Dettagli', 'Slide e avatar'];
 
 
 export default function NewCoursePage() {
@@ -78,6 +78,8 @@ export default function NewCoursePage() {
   const globalDocs = useKnowledge('GLOBAL');
   const uploadKnowledge = useUploadKnowledge();
   const createBlank = useCreateCourse();
+  // Percorso da slide: il corso vuoto si crea una volta sola, anche se si torna indietro.
+  const [slidesCourseId, setSlidesCourseId] = React.useState<string | null>(null);
 
   // Stato wizard.
   const [step, setStep] = React.useState(0);
@@ -297,16 +299,14 @@ export default function NewCoursePage() {
         ? title.trim().length >= 2
         : selectedDocs.length > 0;
 
-  /** Crea un corso vuoto e apre il flusso "Video da slide" (PDF, copioni, avatar, montaggio). */
+  /** Crea il corso vuoto (una volta) e passa al caricamento delle slide e alla scelta dell'avatar. */
   async function handleCreateFromSlides() {
     try {
-      const course = await createBlank.mutateAsync({ title: title.trim(), language });
-      try {
-        window.localStorage.setItem(slidesAutoOpenKey(course.id), '1');
-      } catch {
-        /* storage non disponibile: l'utente userà il pulsante "Crea da slide" */
+      if (!slidesCourseId) {
+        const course = await createBlank.mutateAsync({ title: title.trim(), language });
+        setSlidesCourseId(course.id);
       }
-      router.push(`/courses/${course.id}`);
+      setStep(2);
     } catch (err) {
       const msg = err instanceof Error ? err.message.replace(/^API \d+:\s*/, '') : '';
       toast.show(msg || 'Creazione non riuscita', 'error');
@@ -398,12 +398,12 @@ export default function NewCoursePage() {
                 </div>
                 <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
                   <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-                  Creo il corso vuoto e apro subito il caricamento delle slide. Se hai documenti o trascrizioni da usare
-                  come knowledge, caricali prima dalla pagina Knowledge: potrai sceglierli al passo dei copioni.
+                  Al passo dopo carichi le slide e scegli l&apos;avatar. Se hai documenti o trascrizioni da usare come
+                  knowledge, caricali prima dalla pagina Knowledge: potrai sceglierli lì.
                 </div>
                 <Button type="button" size="lg" disabled={!canLeaveDetails || createBlank.isPending} onClick={() => void handleCreateFromSlides()}>
                   {createBlank.isPending ? <Loader2 className="size-4 animate-spin" /> : <Clapperboard className="size-4" />}
-                  {createBlank.isPending ? 'Creazione…' : 'Crea il corso e carica le slide'}
+                  {createBlank.isPending ? 'Creazione…' : 'Continua'}
                 </Button>
               </div>
             )}
@@ -577,7 +577,10 @@ export default function NewCoursePage() {
             )}
 
             {/* STEP 3 — Formato per lezione */}
-            {step === 2 && (
+            {step === 2 && origin === 'slides' && slidesCourseId && (
+              <NewFromSlides courseId={slidesCourseId} title={title} language={language} />
+            )}
+            {step === 2 && origin !== 'slides' && (
               <div className="flex flex-col gap-5">
                 <div className="space-y-2">
                   <Label className="text-base">Formato di default</Label>
@@ -763,7 +766,9 @@ export default function NewCoursePage() {
               <Button type="button" variant="ghost" disabled={step === 0} onClick={() => setStep((s) => Math.max(0, s - 1))}>
                 Indietro
               </Button>
-              {step < steps.length - 1 ? (
+              {step < steps.length - 1 && origin === 'slides' && step === 1 ? (
+                <span />
+              ) : step < steps.length - 1 ? (
                 <Button
                   type="button"
                   disabled={(step === 0 && !canLeaveSource) || (step === 1 && !canLeaveDetails)}

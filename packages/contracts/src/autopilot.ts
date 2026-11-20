@@ -6,22 +6,60 @@ import { CourseEstimateOptions } from './course-plan.js';
  * contenuti (con immagini), test, copertina e le componenti scelte nel preventivo. L'utente vede
  * una sola schermata di avanzamento; alla fine il corso è pronto da rivedere.
  */
-export const AutopilotPhase = z.enum(['structure', 'review', 'content', 'tests', 'cover', 'extras', 'done']);
+export const AutopilotPhase = z.enum([
+  'structure',
+  'review',
+  'content',
+  'tests',
+  'cover',
+  'extras',
+  // Percorso "da slide": copioni, revisione, clip con l'avatar, montaggio della lezione.
+  'scripts',
+  'scripts_review',
+  'clips',
+  'lesson',
+  'done',
+]);
 export type AutopilotPhase = z.infer<typeof AutopilotPhase>;
 
 export const AutopilotStatus = z.enum(['running', 'paused', 'completed', 'failed', 'cancelled']);
 export type AutopilotStatus = z.infer<typeof AutopilotStatus>;
+
+/** Scelte del percorso "da slide": le slide sono già state caricate (`importId`). */
+export const StartSlidesAutopilot = z.object({
+  importId: z.string().min(1),
+  /** Id del LOOK HeyGen (non del gruppo). */
+  avatarId: z.string().min(1),
+  avatarType: z.enum(['photo', 'studio', 'digital_twin']).default('digital_twin'),
+  engine: z.enum(['avatar_iii', 'avatar_iv', 'avatar_v']).optional(),
+  voiceId: z.string().min(1).optional(),
+  /** Documenti della knowledge con cui arricchire i copioni. */
+  knowledgeDocIds: z.array(z.string()).max(20).default([]),
+  /** Si ferma dopo i copioni per la revisione (di default sì: le clip con l'avatar si pagano). */
+  reviewScripts: z.boolean().default(true),
+  /** Titolo del modulo e della lezione creati. */
+  moduleTitle: z.string().trim().min(1).max(200).optional(),
+  /** Suddivide il video in sezioni, ciascuna con il suo quiz. */
+  sections: z.boolean().default(false),
+});
+export type StartSlidesAutopilot = z.infer<typeof StartSlidesAutopilot>;
 
 export const StartAutopilot = z.object({
   /** Si ferma dopo la struttura: l'utente la rivede e poi fa ripartire la generazione. */
   reviewStructure: z.boolean().default(false),
   /** Componenti aggiuntive (default: quelle scelte nel preventivo del corso). */
   options: CourseEstimateOptions.partial().optional(),
+  /** Percorso "da slide": se presente, al posto di struttura e contenuti si generano copioni, clip e lezione. */
+  slides: StartSlidesAutopilot.optional(),
 });
 export type StartAutopilot = z.infer<typeof StartAutopilot>;
 
+
+
 /** Stato della generazione automatica con l'avanzamento calcolato sul corso. */
 export interface AutopilotView {
+  /** `slides` = percorso da slide (copioni, clip avatar, montaggio). */
+  kind: 'course' | 'slides';
   status: AutopilotStatus;
   phase: AutopilotPhase;
   reviewStructure: boolean;
@@ -34,6 +72,16 @@ export interface AutopilotView {
   error?: string;
   /** `insufficient_credits`: il saldo non basta, si risolve ricaricando e riprendendo. */
   errorCode?: 'insufficient_credits';
+  /** Solo per il percorso da slide. */
+  slides?: {
+    reviewScripts: boolean;
+    slides: number;
+    scripts: 'none' | 'running' | 'draft' | 'approved' | 'failed';
+    clips: { done: number; total: number; failed: number; minutes?: number };
+    lesson: 'none' | 'running' | 'completed' | 'failed';
+    /** Perché la generazione si è fermata per la revisione (scelta o problemi trovati). */
+    reviewReason?: string;
+  };
   progress: {
     lessons: { done: number; total: number };
     /** Lezioni in ordine, con lo stato: alimentano l'animazione della schermata. */

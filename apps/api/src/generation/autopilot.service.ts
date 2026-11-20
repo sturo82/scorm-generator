@@ -8,6 +8,7 @@ import {
   type AutopilotStatus,
   type AutopilotView,
   type StartAutopilot,
+  type StartSlidesAutopilot,
 } from '@scorm/contracts';
 import type { RequestContext } from '@scorm/domain';
 import { Prisma } from '@prisma/client';
@@ -19,6 +20,9 @@ import { BillingService } from '../billing/billing.service.js';
 import { InsufficientCreditsException } from '../ecosystem/wallet.service.js';
 import { MediaService } from './media.service.js';
 import { collectCartoonScenes, isPlaceholderVideo } from './cartoon-scenes.js';
+import { SlideScriptsService, type SlideScriptsDoc } from '../slides/slide-scripts.service.js';
+import { SlideClipsService } from '../slides/slide-clips.service.js';
+import { SlideLessonService } from '../slides/slide-lesson.service.js';
 
 /** Stato persistito sul corso (`Course.autopilot`): sopravvive ai riavvii. */
 interface AutopilotDoc {
@@ -28,6 +32,14 @@ interface AutopilotDoc {
   /** True quando l'utente ha approvato la struttura (riparte dopo la revisione). */
   structureApproved?: boolean;
   options: CourseEstimateOptions;
+  /** `slides` = percorso da slide: copioni, clip con l'avatar e montaggio al posto di struttura e contenuti. */
+  kind?: 'course' | 'slides';
+  slides?: StartSlidesAutopilot & {
+    /** True quando l'utente ha dato il via libera ai copioni (riparte dopo la revisione). */
+    scriptsApproved?: boolean;
+    /** Perché si è fermata per la revisione, quando non l'ha chiesta l'utente. */
+    reviewReason?: string;
+  };
   /** Contesto di chi ha avviato la generazione: il lavoro in background non ha una richiesta. */
   ctx: { tenantId: string; userId?: string };
   payer?: Payer;
@@ -63,6 +75,9 @@ export class AutopilotService implements OnModuleInit {
     private readonly generation: GenerationService,
     private readonly media: MediaService,
     private readonly billing: BillingService,
+    private readonly scriptsSvc: SlideScriptsService,
+    private readonly clipsSvc: SlideClipsService,
+    private readonly lessonSvc: SlideLessonService,
   ) {}
 
   /**
@@ -96,15 +111,18 @@ export class AutopilotService implements OnModuleInit {
     const tenantId = ctx.tenant.tenantId;
     const course = await this.prisma.course.findFirst({
       where: { id: courseId, tenantId },
-      select: { brief: true, autopilot: true, estimateOptions: true },
+      select: { brief: true, autopilot: true, estimateOptions: true, title: true },
     });
     if (!course) throw new NotFoundException('Corso non trovato');
-    if (!course.brief || !Brief.safeParse(course.brief).success) {
-      throw new BadRequestException('Il brief del corso non è completo: completalo prima di generare.');
-    }
     const existing = course.autopilot as AutopilotDoc | null;
     if (existing && (existing.status === 'running' || existing.status === 'paused')) {
       throw new ConflictException('La generazione del corso è già in corso.');
+    }
+    // Percorso da slide: con le scelte nuove, oppure ripetendo quelle di un tentativo precedente.
+    const slides = input.slides ?? (existing?.kind === 'slides' ? existing.slides : undefined);
+    if (slides) return this.startSlides(ctx, courseId, slides, course.title);
+    if (!course.brief || !Brief.safeParse(course.brief).success) {
+      throw new BadRequestException('Il brief del corso non è completo: completalo prima di generare.');
     }
     const stored = CourseEstimateOptions.safeParse(course.estimateOptions ?? {});
     await this.assertCredits(tenantId, courseId, { ...(stored.success ? stored.data : {}), ...(input.options ?? {}) });
@@ -125,10 +143,56 @@ export class AutopilotService implements OnModuleInit {
     return this.view(tenantId, courseId, doc);
   }
 
+  /**
+   * Avvio del percorso da slide: le slide sono già caricate. Prima di partire il saldo deve coprire
+   * il massimo del video (copioni, clip con l'avatar, montaggio, riepilogo e quiz); lo stesso
+   * importo diventa il budget del corso.
+   */
+  private async startSlides(ctx: RequestContext, courseId: string, slides: StartSlidesAutopilot, courseTitle: string): Promise<AutopilotView> {
+    const tenantId = ctx.tenant.tenantId;
+    // Verifica che l'import esista per questo corso (404 altrimenti).
+    await this.scriptsSvc.get(tenantId, courseId, slides.importId);
+    const est = await this.lessonSvc.estimateImport(tenantId, courseId, slides.importId, {
+      engine: slides.engine,
+      avatarType: slides.avatarType,
+      sections: slides.sections,
+    });
+    const quote = slides.knowledgeDocIds.length > 0 ? est.withKnowledge : est.slidesOnly;
+    if (est.billed && quote.priced) {
+      await this.billing.assertTotalAvailable(tenantId, quote.total);
+      await this.billing.setCourseBudget(tenantId, courseId, quote.total);
+    }
+    const now = new Date().toISOString();
+    const doc: AutopilotDoc = {
+      kind: 'slides',
+      status: 'running',
+      phase: 'scripts',
+      reviewStructure: false,
+      options: CourseEstimateOptions.parse({}),
+      slides: { ...slides, moduleTitle: slides.moduleTitle ?? courseTitle },
+      ctx: { tenantId, userId: ctx.userId },
+      payer: currentPayer(),
+      issues: [],
+      startedAt: now,
+      updatedAt: now,
+    };
+    await this.save(tenantId, courseId, doc);
+    this.launch(tenantId, courseId);
+    return this.view(tenantId, courseId, doc);
+  }
+
   /** Dopo la revisione della struttura: riparte con i contenuti. */
   async resume(tenantId: string, courseId: string): Promise<AutopilotView> {
     const doc = await this.load(tenantId, courseId);
     if (!doc || doc.status !== 'paused') throw new ConflictException('Nessuna generazione in attesa di conferma.');
+    if (doc.kind === 'slides' && doc.slides) {
+      // Il via libera ai copioni: riparte con le clip dell'avatar (i copioni modificati restano come salvati).
+      doc.status = 'running';
+      doc.slides.scriptsApproved = true;
+      await this.save(tenantId, courseId, doc);
+      this.launch(tenantId, courseId);
+      return this.view(tenantId, courseId, doc);
+    }
     // La struttura può essere stata modificata (lezioni aggiunte): si ricontrolla il saldo.
     await this.assertCredits(tenantId, courseId, doc.options);
     doc.status = 'running';
@@ -197,6 +261,10 @@ export class AutopilotService implements OnModuleInit {
       ...(doc.ctx.userId ? { userId: doc.ctx.userId } : {}),
     };
     try {
+      if (doc.kind === 'slides') {
+        await this.runSlidePhases(tenantId, courseId);
+        return;
+      }
       // 1. Struttura.
       if (!(await this.stopped(tenantId, courseId))) {
         await this.setPhase(tenantId, courseId, 'structure');
@@ -271,6 +339,163 @@ export class AutopilotService implements OnModuleInit {
       throw err;
     } finally {
       clearInterval(heartbeat);
+    }
+  }
+
+  /**
+   * Percorso da slide: copioni → (revisione) → clip con l'avatar → montaggio della lezione. Ogni
+   * servizio lavora già in background con il suo lease e riprende da solo: qui si avvia ciò che
+   * manca e si attende, quindi dopo un riavvio si riparte dal passo in cui ci si era fermati.
+   */
+  private async runSlidePhases(tenantId: string, courseId: string): Promise<void> {
+    try {
+      const first = (await this.load(tenantId, courseId))!;
+      const sl = first.slides!;
+      const importId = sl.importId;
+
+      // 1. Copioni.
+      await this.setPhase(tenantId, courseId, 'scripts');
+      let scripts = await this.scriptsSvc.get(tenantId, courseId, importId);
+      let gen = await this.scriptsSvc.generationState(tenantId, courseId, importId);
+      if (!scripts || gen?.status === 'running') {
+        if (gen?.status !== 'running') {
+          await this.scriptsSvc.startGenerate(tenantId, courseId, importId, { knowledgeDocIds: sl.knowledgeDocIds }).catch((err) => {
+            if (!(err instanceof ConflictException)) throw err;
+          });
+        }
+        gen = await this.waitFor(tenantId, courseId, 20 * 60_000, async () => {
+          const st = await this.scriptsSvc.generationState(tenantId, courseId, importId);
+          return st && st.status !== 'running' ? st : null;
+        });
+        if (gen.status === 'failed') throw new Error(gen.error ?? 'Generazione dei copioni non riuscita');
+        scripts = await this.scriptsSvc.get(tenantId, courseId, importId);
+        if (!scripts) throw new Error('Copioni non generati');
+      }
+
+      // 2. Revisione: la chiede l'utente oppure scatta da sola se i copioni hanno problemi.
+      if (scripts.status !== 'approved') {
+        const now = (await this.load(tenantId, courseId))!;
+        const problem = await this.scriptsProblem(tenantId, courseId, scripts, now.slides!);
+        if (now.status === 'running' && !now.slides!.scriptsApproved && (now.slides!.reviewScripts || problem)) {
+          now.status = 'paused';
+          now.phase = 'scripts_review';
+          now.slides!.reviewReason = now.slides!.reviewScripts ? undefined : (problem ?? undefined);
+          now.owner = undefined;
+          now.leaseUntil = undefined;
+          await this.save(tenantId, courseId, now);
+          return;
+        }
+        // Via libera (dell'utente o automatico): i copioni passano così come sono.
+        await this.scriptsSvc.update(tenantId, courseId, importId, {
+          slides: scripts.slides.map((e) => ({ index: e.index, script: e.script, skip: e.skip })),
+          approved: true,
+        });
+      }
+
+      // 3. Clip con l'avatar.
+      if (await this.stopped(tenantId, courseId)) return;
+      await this.setPhase(tenantId, courseId, 'clips');
+      for (let round = 0; round < 2; round++) {
+        let view = await this.clipsSvc.status(tenantId, courseId, importId);
+        const todo = view?.status === 'completed' ? (await this.clipsSvc.estimate(tenantId, courseId, importId)).slides : 0;
+        if (!view || view.status === 'failed' || todo > 0) {
+          view = await this.clipsSvc
+            .start(tenantId, courseId, importId, {
+              avatarId: sl.avatarId,
+              avatarType: sl.avatarType,
+              ...(sl.engine ? { engine: sl.engine } : {}),
+              ...(sl.voiceId ? { voiceId: sl.voiceId } : {}),
+            })
+            .catch((err) => {
+              // Già in corso (ripresa o avvio dal pannello delle slide): si attende e basta.
+              if (err instanceof ConflictException) return null;
+              throw err;
+            });
+        }
+        const done = await this.waitFor(tenantId, courseId, 90 * 60_000, async () => {
+          const v = await this.clipsSvc.status(tenantId, courseId, importId);
+          return v && v.status !== 'running' ? v : null;
+        });
+        if (done.status === 'completed') break;
+        if (round === 1) {
+          throw new Error(`${done.progress.failed} clip non generate: riprendi la generazione per riprovare solo quelle.`);
+        }
+      }
+
+      // 4. Montaggio della lezione (riepilogo e quiz compresi).
+      if (await this.stopped(tenantId, courseId)) return;
+      await this.setPhase(tenantId, courseId, 'lesson');
+      const lesson = await this.lessonSvc.status(tenantId, courseId, importId);
+      if (lesson?.status !== 'completed') {
+        if (!lesson || lesson.status === 'failed') {
+          const sections = sl.sections ? await this.lessonSvc.proposeSections(tenantId, courseId, importId).catch(() => undefined) : undefined;
+          await this.lessonSvc
+            .start(tenantId, courseId, importId, {
+              layout: 'dynamic',
+              moduleTitle: sl.moduleTitle,
+              ...(sections && sections.length > 1 ? { sections } : {}),
+            })
+            .catch((err) => {
+              if (!(err instanceof ConflictException)) throw err;
+            });
+        }
+        const built = await this.waitFor(tenantId, courseId, 60 * 60_000, async () => {
+          const v = await this.lessonSvc.status(tenantId, courseId, importId);
+          return v && v.status !== 'running' ? v : null;
+        });
+        if (built.status === 'failed') throw new Error(built.error ?? 'Montaggio della lezione non riuscito');
+      }
+
+      const end = await this.load(tenantId, courseId);
+      if (end && end.status === 'running') {
+        end.status = 'completed';
+        end.phase = 'done';
+        end.finishedAt = new Date().toISOString();
+        end.owner = undefined;
+        end.leaseUntil = undefined;
+        await this.save(tenantId, courseId, end);
+        this.logger.log(`Generazione da slide completata (corso ${courseId})`);
+      }
+    } catch (err) {
+      // Annullata dall'utente mentre si attendeva: lo stato è già quello giusto.
+      if (err instanceof StoppedError) return;
+      throw err;
+    }
+  }
+
+  /**
+   * Problemi dei copioni che richiedono lo sguardo dell'utente prima di spendere in clip: copioni
+   * vuoti, contraddizioni con la knowledge, video oltre il tetto di durata. Null se è tutto a posto.
+   */
+  private async scriptsProblem(
+    tenantId: string,
+    courseId: string,
+    scripts: SlideScriptsDoc,
+    sl: NonNullable<AutopilotDoc['slides']>,
+  ): Promise<string | null> {
+    const included = scripts.slides.filter((e) => !e.skip);
+    const empty = included.filter((e) => e.script.trim().length === 0).map((e) => e.index);
+    if (empty.length > 0) return `Alcuni copioni sono vuoti (slide ${empty.slice(0, 8).join(', ')}): compilali o escludi le slide.`;
+    const conflicts = included.filter((e) => (e.conflicts?.length ?? 0) > 0).map((e) => e.index);
+    if (conflicts.length > 0) {
+      return `Le slide ${conflicts.slice(0, 8).join(', ')} contraddicono la knowledge: controlla i copioni prima di generare i video.`;
+    }
+    const est = await this.clipsSvc.estimate(tenantId, courseId, sl.importId, sl.engine, sl.avatarType).catch(() => null);
+    if (est && est.minutes > est.maxMinutes) {
+      return `Il video dura circa ${est.minutes} minuti, oltre il tetto di ${est.maxMinutes}: accorcia i copioni o escludi alcune slide.`;
+    }
+    return null;
+  }
+
+  /** Attende che `probe` dia un risultato, controllando ogni 5 secondi che la generazione non sia stata fermata. */
+  private async waitFor<T>(tenantId: string, courseId: string, timeoutMs: number, probe: () => Promise<T | null>): Promise<T> {
+    const end = Date.now() + timeoutMs;
+    for (;;) {
+      if (await this.stopped(tenantId, courseId)) throw new StoppedError();
+      const v = await probe();
+      if (v !== null) return v;
+      if (Date.now() > end) throw new Error('Tempo massimo superato: riprendi la generazione.');
+      await new Promise<void>((r) => setTimeout(r, 5000));
     }
   }
 
@@ -366,6 +591,31 @@ export class AutopilotService implements OnModuleInit {
     );
   }
 
+  /** Avanzamento del percorso da slide, letto dallo stato reale dei tre lavori. */
+  private async slidesView(tenantId: string, courseId: string, sl: NonNullable<AutopilotDoc['slides']>): Promise<NonNullable<AutopilotView['slides']>> {
+    const [scripts, gen, clips, lesson] = await Promise.all([
+      this.scriptsSvc.get(tenantId, courseId, sl.importId).catch(() => null),
+      this.scriptsSvc.generationState(tenantId, courseId, sl.importId).catch(() => null),
+      this.clipsSvc.status(tenantId, courseId, sl.importId).catch(() => null),
+      this.lessonSvc.status(tenantId, courseId, sl.importId).catch(() => null),
+    ]);
+    const scriptsState: NonNullable<AutopilotView['slides']>['scripts'] =
+      gen?.status === 'running' ? 'running' : scripts ? scripts.status : gen?.status === 'failed' ? 'failed' : 'none';
+    return {
+      reviewScripts: sl.reviewScripts,
+      slides: scripts ? scripts.slides.filter((e) => !e.skip).length : 0,
+      scripts: scriptsState,
+      clips: {
+        done: clips?.progress.completed ?? 0,
+        total: clips?.progress.total ?? 0,
+        failed: clips?.progress.failed ?? 0,
+        ...(clips ? { minutes: Math.round((clips.totalDurationSec / 60) * 10) / 10 } : {}),
+      },
+      lesson: lesson ? (lesson.status === 'completed' ? 'completed' : lesson.status === 'failed' ? 'failed' : 'running') : 'none',
+      ...(sl.reviewReason ? { reviewReason: sl.reviewReason } : {}),
+    };
+  }
+
   /** Vista con l'avanzamento calcolato sullo stato reale del corso. */
   private async view(tenantId: string, courseId: string, doc: AutopilotDoc): Promise<AutopilotView> {
     const [mods, assessments, course, remaining] = await Promise.all([
@@ -396,10 +646,13 @@ export class AutopilotService implements OnModuleInit {
         else videos.pending++;
       }
     }
+    const slidesView = doc.kind === 'slides' && doc.slides ? await this.slidesView(tenantId, courseId, doc.slides) : undefined;
     return {
+      kind: doc.kind ?? 'course',
       status: doc.status,
       phase: doc.phase,
       reviewStructure: doc.reviewStructure,
+      ...(slidesView ? { slides: slidesView } : {}),
       options: doc.options,
       startedAt: doc.startedAt,
       updatedAt: doc.updatedAt,
@@ -422,6 +675,9 @@ export class AutopilotService implements OnModuleInit {
     };
   }
 }
+
+/** La generazione è stata annullata o messa in pausa mentre si attendeva un lavoro. */
+class StoppedError extends Error {}
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);

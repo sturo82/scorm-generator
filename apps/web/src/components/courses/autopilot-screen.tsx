@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
+import { SlideVideoDialog } from '@/components/courses/slide-video-dialog';
+import { wizardLandingKey } from '@/lib/wizard-landing';
 import { CourseBudget } from '@/components/app/course-budget';
 import { CourseBuilder } from '@/components/courses/course-builder';
 import { cn } from '@/lib/cn';
@@ -15,7 +17,7 @@ import { useAutopilotActions } from '@/lib/api/hooks';
 type StepState = 'done' | 'active' | 'todo';
 
 /** Ordine delle fasi per sapere cosa è già fatto. */
-const ORDER = ['structure', 'review', 'content', 'tests', 'cover', 'extras', 'done'] as const;
+const ORDER = ['structure', 'review', 'content', 'tests', 'cover', 'extras', 'scripts', 'scripts_review', 'clips', 'lesson', 'done'] as const;
 
 function stepState(view: AutopilotView, phase: (typeof ORDER)[number]): StepState {
   const cur = ORDER.indexOf(view.phase);
@@ -33,6 +35,10 @@ const PHASE_LINES: Record<string, string[]> = {
   tests: ['Preparo domande e feedback…', 'Calibro la difficoltà dei test…'],
   cover: ['Disegno la copertina del corso…'],
   extras: ['Aggiungo video, voce e copertine…', 'Rifinisco i dettagli…'],
+  scripts: ['Leggo le slide una per una…', 'Scrivo il copione che l\u2019avatar pronuncerà…', 'Controllo tono e pronuncia…'],
+  scripts_review: ['Copioni pronti per la tua revisione'],
+  clips: ['L\u2019avatar sta registrando le clip…', 'Sincronizzo voce e labiale…', 'Scarico e controllo ogni clip…'],
+  lesson: ['Monto slide e avatar in un unico video…', 'Preparo riepilogo e quiz…', 'Creo la lezione nel corso…'],
   done: ['Tutto pronto'],
 };
 
@@ -190,9 +196,12 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
   const o = view.options;
   const running = view.status === 'running';
   const finished = view.status === 'completed' || view.status === 'failed' || view.status === 'cancelled';
+  const slidesMode = view.kind === 'slides' && Boolean(view.slides);
+  const sv = view.slides;
+  const [reviewOpen, setReviewOpen] = React.useState(false);
 
   // Il saldo nell'intestazione segue l'avanzamento: a ogni passo completato si rilegge il wallet.
-  const tick = `${p.lessons.done}-${p.tests.done}-${p.cover}-${p.videos.done}-${p.narration.done}-${view.status}`;
+  const tick = `${p.lessons.done}-${p.tests.done}-${p.cover}-${p.videos.done}-${p.narration.done}-${view.status}-${sv?.clips.done ?? 0}-${sv?.lesson ?? ''}-${sv?.scripts ?? ''}`;
   React.useEffect(() => {
     void qc.invalidateQueries({ queryKey: ['billing', 'wallet'] });
     void qc.invalidateQueries({ queryKey: ['billing', 'estimate', 'course', courseId] });
@@ -208,8 +217,16 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
     { w: 1, v: p.cover ? 1 : 0 },
     { w: extrasTotal > 0 ? 2 : 0, v: extrasTotal ? extrasDone / extrasTotal : 0 },
   ];
-  const totalW = parts.reduce((n, x) => n + x.w, 0);
-  const pct = view.status === 'completed' ? 100 : Math.min(99, Math.round((parts.reduce((n, x) => n + x.w * x.v, 0) / totalW) * 100));
+  const slideParts = sv
+    ? [
+        { w: 2, v: sv.scripts === 'approved' || sv.scripts === 'draft' ? 1 : 0 },
+        { w: 6, v: sv.clips.total ? sv.clips.done / sv.clips.total : 0 },
+        { w: 3, v: sv.lesson === 'completed' ? 1 : sv.lesson === 'running' ? 0.4 : 0 },
+      ]
+    : [];
+  const allParts = slidesMode ? slideParts : parts;
+  const totalW = allParts.reduce((n, x) => n + x.w, 0);
+  const pct = view.status === 'completed' ? 100 : Math.min(99, Math.round((allParts.reduce((n, x) => n + x.w * x.v, 0) / totalW) * 100));
 
   const extras = [o.moduleCovers && 'copertine dei moduli', o.narration && 'voce narrante', o.lessonVideos && 'video delle pillole'].filter(Boolean);
   const videoDetail =
@@ -247,7 +264,7 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
                     <PartyPopper className="size-5 text-primary motion-safe:animate-pop-in" /> Il corso è pronto
                   </>
                 ) : view.status === 'paused' ? (
-                  'Struttura pronta: rivedila'
+                  slidesMode ? 'Copioni pronti: rivedili' : 'Struttura pronta: rivedila'
                 ) : view.status === 'failed' ? (
                   <>
                     <XCircle className="size-5 text-destructive" /> Generazione interrotta
@@ -256,7 +273,7 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
                   'Generazione annullata'
                 ) : (
                   <>
-                    Sto creando il tuo corso <Sparkles className="size-4 text-primary motion-safe:animate-spin-slow" />
+                    {slidesMode ? 'Sto creando la tua video-lezione' : 'Sto creando il tuo corso'} <Sparkles className="size-4 text-primary motion-safe:animate-spin-slow" />
                   </>
                 )}
               </h2>
@@ -265,9 +282,13 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
               ) : (
                 <p className="text-sm text-muted-foreground">
                   {view.status === 'paused'
-                    ? 'Controlla moduli e lezioni qui sotto (puoi modificarli), poi continua con i contenuti.'
+                    ? slidesMode
+                      ? (sv?.reviewReason ?? 'Leggi e correggi i copioni: da qui partono le clip con l\u2019avatar, la parte che costa di più.')
+                      : 'Controlla moduli e lezioni qui sotto (puoi modificarli), poi continua con i contenuti.'
                     : view.status === 'completed'
-                      ? 'Contenuti, test e copertina sono pronti. Ora puoi rivederlo e modificarlo.'
+                      ? slidesMode
+                        ? 'La video-lezione è pronta, con riepilogo e quiz. Ora puoi rivederla nell\u2019anteprima e modificarla.'
+                        : 'Contenuti, test e copertina sono pronti. Ora puoi rivederlo e modificarlo.'
                       : view.status === 'cancelled'
                         ? 'Hai fermato la generazione: paghi solo quello che è stato già generato.'
                         : view.errorCode === 'insufficient_credits'
@@ -280,7 +301,39 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
             <CourseBudget courseId={courseId} />
           </header>
 
-          <ol className="space-y-4">
+          {slidesMode && sv ? (
+            <ol className="space-y-4">
+              <StepRow
+                state={stepState(view, 'scripts')}
+                icon={<BookOpen className="size-4" />}
+                title="Copioni delle slide"
+                detail={sv.slides ? `${sv.slides} slide` : undefined}
+              />
+              {sv.reviewScripts || sv.reviewReason ? (
+                <StepRow state={stepState(view, 'scripts_review')} icon={<Check className="size-4" />} title="Tua revisione dei copioni" />
+              ) : null}
+              <StepRow
+                state={stepState(view, 'clips')}
+                icon={<Video className="size-4" />}
+                title="Clip con l’avatar"
+                detail={sv.clips.total ? `${sv.clips.done} di ${sv.clips.total} clip pronte${sv.clips.failed ? `, ${sv.clips.failed} da rifare` : ''}` : undefined}
+                pct={sv.clips.total ? Math.round((sv.clips.done / sv.clips.total) * 100) : 0}
+              />
+              {stepState(view, 'clips') !== 'todo' && sv.clips.total > 0 && (
+                <LessonTiles
+                  items={Array.from({ length: sv.clips.total }, (_, i) => ({ title: `Slide ${i + 1}`, format: 'standard', done: i < sv.clips.done }))}
+                  active={running && view.phase === 'clips'}
+                />
+              )}
+              <StepRow
+                state={stepState(view, 'lesson')}
+                icon={<ListChecks className="size-4" />}
+                title="Montaggio, riepilogo e quiz"
+                detail={sv.lesson === 'completed' ? 'Lezione creata' : undefined}
+              />
+            </ol>
+          ) : (
+            <ol className="space-y-4">
             <StepRow
               state={stepState(view, 'structure')}
               icon={<BookOpen className="size-4" />}
@@ -312,7 +365,8 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
                 detail={[videoDetail, o.narration ? `Voce narrante: ${p.narration.done} di ${p.narration.total}` : undefined].filter(Boolean).join(' · ') || undefined}
               />
             )}
-          </ol>
+            </ol>
+          )}
 
           {view.status === 'completed' && p.videos.processing > 0 && (
             <p className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
@@ -340,9 +394,14 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
                 Annulla generazione
               </Button>
             )}
+            {view.status === 'paused' && slidesMode && (
+              <Button variant="outline" onClick={() => setReviewOpen(true)}>
+                Rivedi i copioni
+              </Button>
+            )}
             {view.status === 'paused' && (
               <Button onClick={() => void run(() => actions.resume.mutateAsync(), 'Generazione ripresa')} disabled={actions.resume.isPending}>
-                Continua con i contenuti
+                {slidesMode ? 'Continua con i video' : 'Continua con i contenuti'}
               </Button>
             )}
             {view.errorCode === 'insufficient_credits' && (
@@ -363,15 +422,29 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
               </Button>
             )}
             {finished && (
-              <Button onClick={() => void run(() => actions.dismiss.mutateAsync())} disabled={actions.dismiss.isPending}>
-                {view.status === 'completed' ? 'Rivedi il corso' : 'Continua a mano'}
+              <Button
+                onClick={() => {
+                  // Generazione finita: si atterra sull'anteprima del corso, da dove decidi se modificarlo.
+                  if (view.status === 'completed') {
+                    try {
+                      window.localStorage.setItem(wizardLandingKey(courseId), 'review');
+                    } catch {
+                      /* storage non disponibile: si parte dal primo passo */
+                    }
+                  }
+                  void run(() => actions.dismiss.mutateAsync());
+                }}
+                disabled={actions.dismiss.isPending}
+              >
+                {view.status === 'completed' ? 'Vai all\u2019anteprima' : 'Continua a mano'}
               </Button>
             )}
           </div>
         </CardContent>
       </Card>
 
-      {view.status === 'paused' && <CourseBuilder courseId={courseId} mode="structure" />}
+      {view.status === 'paused' && !slidesMode && <CourseBuilder courseId={courseId} mode="structure" />}
+      {slidesMode && <SlideVideoDialog courseId={courseId} open={reviewOpen} onClose={() => setReviewOpen(false)} />}
 
       <ConfirmDialog
         open={confirmCancel}
