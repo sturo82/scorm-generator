@@ -9,7 +9,8 @@ import {
   avatarOverlayRadius,
   avatarRingColor,
   avatarWarmthOverlay,
-  resolveAvatarLook,
+  slideAvatarFrame,
+  slideAvatarLook,
   computeSlideTimeline,
   globalCues,
   slideVideoSegments,
@@ -147,7 +148,7 @@ const StaticSlideVideo: React.FC<{ spec: SlideVideoSpec }> = ({ spec }) => {
         const e = timeline.entries[i]!;
         return (
           <Sequence key={slide.id} from={e.startFrame} durationInFrames={e.durationFrames}>
-            <SlideScene spec={spec} slideIndex={i} g={geometry(spec, slide.pipPosition)} />
+            <SlideScene spec={spec} slideIndex={i} g={geometry(spec, slide.pipPosition, slide.avatarLook)} />
           </Sequence>
         );
       })}
@@ -179,12 +180,12 @@ interface Geometry {
  * `pos` sceglie l'angolo del cerchio avatar (default quello del video); il box dei
  * sottotitoli si sposta di conseguenza per non sovrapporsi all'avatar.
  */
-function geometry(spec: SlideVideoSpec, pos?: PipPosition): Geometry {
+function geometry(spec: SlideVideoSpec, pos?: PipPosition, slideLook?: SlideVideoSpec['slides'][number]['avatarLook']): Geometry {
   const { width, height } = spec.canvas;
   const s = width / 1920;
   const M = 48 * s;
   if (spec.layout === 'pip') {
-    const look = resolveAvatarLook(spec.avatarLook);
+    const look = slideAvatarLook(spec.avatarLook, slideLook);
     const d = 320 * s * look.size;
     const p = pos ?? spec.pipPosition ?? 'bottom-right';
     const right = p.endsWith('right');
@@ -281,6 +282,7 @@ const SlideScene: React.FC<{ spec: SlideVideoSpec; slideIndex: number; g: Geomet
   const slide = spec.slides[slideIndex]!;
   const frame = useCurrentFrame();
   const pip = spec.layout === 'pip';
+  const look = slideAvatarLook(spec.avatarLook, slide.avatarLook);
   // Ingresso morbido della slide (dissolvenza) a ogni cambio.
   const fadeIn = interpolate(frame, [0, 8], [0, 1], { extrapolateRight: 'clamp' });
 
@@ -310,12 +312,12 @@ const SlideScene: React.FC<{ spec: SlideVideoSpec; slideIndex: number; g: Geomet
           overflow: 'hidden',
           background: '#111827',
           border:
-            pip && resolveAvatarLook(spec.avatarLook).ring !== 'none'
-              ? `${5 * g.s}px solid ${avatarRingColor(spec.avatarLook, spec.theme.accent)}`
+            pip && look.ring !== 'none'
+              ? `${5 * g.s}px solid ${avatarRingColor(look, spec.theme.accent)}`
               : pip
                 ? 'none'
                 : `${2 * g.s}px solid rgba(255,255,255,0.12)`,
-          boxShadow: resolveAvatarLook(spec.avatarLook).shadow ? '0 10px 30px rgba(0,0,0,0.5)' : 'none',
+          boxShadow: look.shadow ? '0 10px 30px rgba(0,0,0,0.5)' : 'none',
         }}
       >
         {/* La clip porta anche l'audio della narrazione. Ritaglio centrato sul
@@ -325,11 +327,11 @@ const SlideScene: React.FC<{ spec: SlideVideoSpec; slideIndex: number; g: Geomet
           style={{
             position: 'absolute',
             maxWidth: 'none',
-            ...avatarCrop(g.avatar.width, g.avatar.height, spec.avatarFrame, pip ? 1.25 : 1),
-            filter: avatarLookFilter(spec.avatarLook),
+            ...avatarCrop(g.avatar.width, g.avatar.height, slideAvatarFrame(spec.avatarFrame, slide.avatarFrame), pip ? 1.25 : 1),
+            filter: avatarLookFilter(look),
           }}
         />
-        {avatarWarmthOverlay(spec.avatarLook) && <div style={{ position: 'absolute', inset: 0, ...avatarWarmthOverlay(spec.avatarLook)! }} />}
+        {avatarWarmthOverlay(look) && <div style={{ position: 'absolute', inset: 0, ...avatarWarmthOverlay(look)! }} />}
       </div>
     </AbsoluteFill>
   );
@@ -350,7 +352,7 @@ const Captions: React.FC<{ cues: GlobalCue[]; spec: SlideVideoSpec; timeline: Sl
     0,
     timeline.entries.findIndex((e) => frame >= e.startFrame && frame < e.startFrame + e.durationFrames),
   );
-  const g = geometry(spec, spec.slides[idx]?.pipPosition);
+  const g = geometry(spec, spec.slides[idx]?.pipPosition, spec.slides[idx]?.avatarLook);
   const cue = activeCueAt(cues, t);
   if (!cue) return null;
   const sinceStart = (t - cue.start) * fps;

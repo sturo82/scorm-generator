@@ -24,6 +24,8 @@ import {
   avatarWarmthOverlay,
   dynamicShotGeometry,
   resolveAvatarLook,
+  slideAvatarFrame,
+  slideAvatarLook,
   type AvatarLook,
 } from '@scorm/contracts';
 import { Button } from '@/components/ui/button';
@@ -55,6 +57,14 @@ interface Draft {
   slideShots: Record<string, SlideShot>;
   avatarFrame: Frame;
   avatarLook: AvatarLook;
+  /** Modifiche solo per alcune slide (chiave = numero della slide): si sommano a quelle generali. */
+  slideLooks: Record<string, Partial<AvatarLook>>;
+  slideFrames: Record<string, Partial<Frame>>;
+}
+
+/** Toglie le modifiche per slide rimaste vuote. */
+function compact<T extends object>(m: Record<string, T>): Record<string, T> {
+  return Object.fromEntries(Object.entries(m).filter(([, v]) => Object.keys(v).length > 0));
 }
 
 type Rect = { x: number; y: number; w: number; h: number; r: number };
@@ -96,8 +106,7 @@ const sameLook = (a: AvatarLook, b: Pick<AvatarLook, 'brightness' | 'contrast' |
   a.brightness === b.brightness && a.contrast === b.contrast && a.saturation === b.saturation && a.warmth === b.warmth;
 
 /** Geometria dell'avatar e della slide sul canvas 1920x1080, identica a quella del montaggio. */
-function stageGeometry(d: Draft, shot: SlideShot, corner: PipPosition): { slide: Rect; avatar: AvatarRect; backdrop: number } {
-  const look = d.avatarLook;
+function stageGeometry(d: Draft, look: AvatarLook, shot: SlideShot, corner: PipPosition): { slide: Rect; avatar: AvatarRect; backdrop: number } {
   if (d.layout === 'dynamic') {
     const g = dynamicShotGeometry(shot, corner, look);
     return { slide: g.slide, avatar: g.avatar, backdrop: g.backdrop };
@@ -169,6 +178,8 @@ export function VideoDirector({ courseId, importId, library = false }: { courseI
             slideShots: view.slideShots ?? {},
             avatarFrame: { x: view.avatarFrame?.x ?? 50, y: view.avatarFrame?.y ?? 22, zoom: view.avatarFrame?.zoom ?? 1 },
             avatarLook: resolveAvatarLook(view.avatarLook),
+            slideLooks: view.slideLooks ?? {},
+            slideFrames: view.slideFrames ?? {},
           }
         : null,
     // Si riallinea quando il server conferma un nuovo montaggio.
@@ -184,6 +195,8 @@ export function VideoDirector({ courseId, importId, library = false }: { courseI
   const current = included.find((c) => c.index === sel) ?? included[0];
   const [muted, setMuted] = React.useState(true);
   const [compare, setCompare] = React.useState(false);
+  // Le modifiche di avatar e immagine valgono per tutte le slide o solo per quella selezionata.
+  const [scope, setScope] = React.useState<'all' | 'slide'>('all');
   const [stageRef, stageW] = useElementWidth<HTMLDivElement>();
   const drag = React.useRef<{ x: number; y: number; fx: number; fy: number } | null>(null);
 
@@ -199,24 +212,53 @@ export function VideoDirector({ courseId, importId, library = false }: { courseI
   const key = String(current.index);
   const shot: SlideShot = d.slideShots[key] ?? auto?.shot ?? 'focus';
   const corner: PipPosition = d.layout === 'pip' ? (d.slidePositions[key] ?? d.pipPosition) : (d.slidePositions[key] ?? auto?.corner ?? 'bottom-right');
-  const g = stageGeometry(d, shot, corner);
+  const ownLook = d.slideLooks[key];
+  const ownFrame = d.slideFrames[key];
+  const hasOwn = Boolean((ownLook && Object.keys(ownLook).length) || (ownFrame && Object.keys(ownFrame).length));
+  const effLook = slideAvatarLook(d.avatarLook, ownLook);
+  const effFrame = slideAvatarFrame(d.avatarFrame, ownFrame);
+  const customCount = new Set([...Object.keys(compact(d.slideLooks)), ...Object.keys(compact(d.slideFrames))]).size;
+  const g = stageGeometry(d, effLook, shot, corner);
   const overlay = d.layout === 'pip' || (d.layout === 'dynamic' && (shot === 'focus' || shot === 'mini'));
   const sc = stageW / STAGE_W;
   const accent = [brand.data?.colors.primary, brand.data?.colors.secondary].find((c) => c && luminance(c) > 0.18) ?? DEFAULT_ACCENT;
-  const look = compare ? resolveAvatarLook({}) : d.avatarLook;
-  const crop = avatarCrop(g.avatar.w * sc, g.avatar.h * sc, d.avatarFrame, g.avatar.zoom);
+  const look = compare ? resolveAvatarLook({}) : effLook;
+  const crop = avatarCrop(g.avatar.w * sc, g.avatar.h * sc, effFrame, g.avatar.zoom);
   const warm = avatarWarmthOverlay(look);
   const thumb = imp.data?.slides.find((s) => s.index === current.index)?.imageUrl;
   const totalMin = included.reduce((n, c) => n + (c.durationSec ?? 0), 0) / 60;
 
   const set = (patch: Partial<Draft>) => setDraft({ ...d, ...patch });
-  const setLook = (patch: Partial<AvatarLook>) => set({ avatarLook: { ...d.avatarLook, ...patch } });
-  const setFrame = (patch: Partial<Frame>) => set({ avatarFrame: { ...d.avatarFrame, ...patch } });
+  const setLook = (patch: Partial<AvatarLook>) =>
+    scope === 'slide'
+      ? set({ slideLooks: { ...d.slideLooks, [key]: { ...(d.slideLooks[key] ?? {}), ...patch } } })
+      : set({ avatarLook: { ...d.avatarLook, ...patch } });
+  const setFrame = (patch: Partial<Frame>) =>
+    scope === 'slide'
+      ? set({ slideFrames: { ...d.slideFrames, [key]: { ...(d.slideFrames[key] ?? {}), ...patch } } })
+      : set({ avatarFrame: { ...d.avatarFrame, ...patch } });
+  /** Toglie le modifiche proprie della slide: torna alle impostazioni generali. */
+  const clearOwn = () => {
+    const looks = { ...d.slideLooks };
+    const frames = { ...d.slideFrames };
+    delete looks[key];
+    delete frames[key];
+    set({ slideLooks: looks, slideFrames: frames });
+  };
+  /** Le impostazioni di questa slide diventano quelle di tutto il video. */
+  const promoteOwn = () => {
+    const looks = { ...d.slideLooks };
+    const frames = { ...d.slideFrames };
+    delete looks[key];
+    delete frames[key];
+    set({ avatarLook: effLook, avatarFrame: effFrame, slideLooks: looks, slideFrames: frames });
+    setScope('all');
+  };
 
   // Trascinando l'avatar si sposta il punto del volto al centro del riquadro.
   function onPointerDown(e: React.PointerEvent) {
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    drag.current = { x: e.clientX, y: e.clientY, fx: d.avatarFrame.x, fy: d.avatarFrame.y };
+    drag.current = { x: e.clientX, y: e.clientY, fx: effFrame.x, fy: effFrame.y };
   }
   function onPointerMove(e: React.PointerEvent) {
     const s = drag.current;
@@ -235,6 +277,8 @@ export function VideoDirector({ courseId, importId, library = false }: { courseI
         slideShots: d.layout === 'dynamic' ? d.slideShots : {},
         avatarFrame: d.avatarFrame,
         avatarLook: d.avatarLook,
+        slideLooks: compact(d.slideLooks),
+        slideFrames: compact(d.slideFrames),
       });
       toast.show('Sto rimontando il video con la nuova regia: nessuna clip viene rigenerata', 'success');
     } catch (err) {
@@ -290,7 +334,7 @@ export function VideoDirector({ courseId, importId, library = false }: { courseI
                     background: '#111',
                     boxShadow: [
                       g.avatar.shadow ? `0 ${18 * sc}px ${60 * sc}px rgba(0,0,0,${0.55 * g.avatar.shadow})` : '',
-                      g.avatar.ring ? `0 0 0 ${g.avatar.ring * sc}px ${avatarRingColor(d.avatarLook, accent)}` : '',
+                      g.avatar.ring ? `0 0 0 ${g.avatar.ring * sc}px ${avatarRingColor(effLook, accent)}` : '',
                     ]
                       .filter(Boolean)
                       .join(', ') || 'none',
@@ -343,7 +387,10 @@ export function VideoDirector({ courseId, importId, library = false }: { courseI
           <div className="flex gap-2 overflow-x-auto pb-1" role="listbox" aria-label="Slide del video">
             {included.map((c) => {
               const t = imp.data?.slides.find((s) => s.index === c.index)?.imageUrl;
-              const custom = Boolean(d.slideShots[String(c.index)] || d.slidePositions[String(c.index)]);
+              const k = String(c.index);
+              const custom = Boolean(
+                d.slideShots[k] || d.slidePositions[k] || Object.keys(d.slideLooks[k] ?? {}).length || Object.keys(d.slideFrames[k] ?? {}).length,
+              );
               return (
                 <button
                   key={c.index}
@@ -424,10 +471,43 @@ export function VideoDirector({ courseId, importId, library = false }: { courseI
             )}
           </Section>
 
-          <Section title="Avatar">
+          <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Avatar e immagine: dove applicare</p>
+            <Segmented
+              options={[
+                { id: 'all', label: 'Tutte le slide' },
+                { id: 'slide', label: `Solo slide ${current.index}` },
+              ]}
+              value={scope}
+              onChange={(v) => setScope(v as 'all' | 'slide')}
+            />
+            {scope === 'slide' ? (
+              hasOwn ? (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <span className="font-medium text-primary">La slide {current.index} ha impostazioni proprie.</span>
+                  <button type="button" className="underline" onClick={clearOwn}>
+                    Torna a quelle generali
+                  </button>
+                  <button type="button" className="underline" onClick={promoteOwn}>
+                    Usale per tutto il video
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">Le modifiche valgono solo per la slide {current.index}; le altre restano come sono.</p>
+              )
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                {customCount > 0
+                  ? `Vale per tutto il video. ${customCount === 1 ? '1 slide ha' : `${customCount} slide hanno`} impostazioni proprie, che restano.`
+                  : 'Le modifiche valgono per tutto il video.'}
+              </p>
+            )}
+          </div>
+
+          <Section title={scope === 'slide' ? `Avatar · slide ${current.index}` : 'Avatar'}>
             <Range
               label="Dimensione"
-              value={Math.round(d.avatarLook.size * 100)}
+              value={Math.round(effLook.size * 100)}
               min={60}
               max={160}
               step={5}
@@ -447,7 +527,7 @@ export function VideoDirector({ courseId, importId, library = false }: { courseI
                     onClick={() => setLook({ shape: s })}
                     className={cn(
                       'flex flex-col items-center gap-1 rounded-lg border py-2 text-xs transition disabled:opacity-40',
-                      d.avatarLook.shape === s ? 'border-primary bg-primary/5' : 'hover:bg-accent/40',
+                      effLook.shape === s ? 'border-primary bg-primary/5' : 'hover:bg-accent/40',
                     )}
                   >
                     <span className={cn('size-6 border-2 border-current', s === 'circle' ? 'rounded-full' : s === 'rounded' ? 'rounded-md' : 'rounded-[2px]')} />
@@ -463,18 +543,18 @@ export function VideoDirector({ courseId, importId, library = false }: { courseI
                   { id: 'white', label: 'Bianco' },
                   { id: 'none', label: 'Nessuno' },
                 ]}
-                value={d.avatarLook.ring}
+                value={effLook.ring}
                 onChange={(v) => setLook({ ring: v as AvatarLook['ring'] })}
               />
             </Field>
             <label className="flex items-center justify-between gap-2 text-sm">
               <span>Ombra</span>
-              <input type="checkbox" className="size-4 accent-[hsl(var(--primary))]" checked={d.avatarLook.shadow} onChange={(e) => setLook({ shadow: e.target.checked })} />
+              <input type="checkbox" className="size-4 accent-[hsl(var(--primary))]" checked={effLook.shadow} onChange={(e) => setLook({ shadow: e.target.checked })} />
             </label>
-            <Range label="Zoom sul volto" value={Math.round(d.avatarFrame.zoom * 100)} min={100} max={250} step={5} def={100} unit="%" onChange={(v) => setFrame({ zoom: v / 100 })} />
+            <Range label="Zoom sul volto" value={Math.round(effFrame.zoom * 100)} min={100} max={250} step={5} def={100} unit="%" onChange={(v) => setFrame({ zoom: v / 100 })} />
             <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <Hand className="size-3.5" /> Trascina l&apos;avatar nell&apos;anteprima per centrare il volto.
-              {(d.avatarFrame.x !== 50 || d.avatarFrame.y !== 22) && (
+              {(effFrame.x !== 50 || effFrame.y !== 22) && (
                 <button type="button" className="ml-auto underline" onClick={() => setFrame({ x: 50, y: 22 })}>
                   Centra
                 </button>
@@ -483,7 +563,7 @@ export function VideoDirector({ courseId, importId, library = false }: { courseI
           </Section>
 
           <Section
-            title="Immagine"
+            title={scope === 'slide' ? `Immagine · slide ${current.index}` : 'Immagine'}
             action={
               <button type="button" className="text-xs text-muted-foreground underline" onClick={() => setLook(PRESETS[0]!.look)}>
                 Ripristina
@@ -498,7 +578,7 @@ export function VideoDirector({ courseId, importId, library = false }: { courseI
                   onClick={() => setLook(p.look)}
                   className={cn(
                     'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition',
-                    sameLook(d.avatarLook, p.look) ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-accent/40',
+                    sameLook(effLook, p.look) ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-accent/40',
                   )}
                 >
                   {p.id === 'auto' && <Wand2 className="size-3" />}
@@ -506,12 +586,12 @@ export function VideoDirector({ courseId, importId, library = false }: { courseI
                 </button>
               ))}
             </div>
-            <Range label="Luminosità" icon={<SunMedium className="size-3.5" />} value={d.avatarLook.brightness} min={-50} max={50} step={1} def={0} signed onChange={(v) => setLook({ brightness: v })} />
-            <Range label="Contrasto" value={d.avatarLook.contrast} min={-50} max={50} step={1} def={0} signed onChange={(v) => setLook({ contrast: v })} />
-            <Range label="Saturazione" value={d.avatarLook.saturation} min={-100} max={100} step={1} def={0} signed onChange={(v) => setLook({ saturation: v })} />
+            <Range label="Luminosità" icon={<SunMedium className="size-3.5" />} value={effLook.brightness} min={-50} max={50} step={1} def={0} signed onChange={(v) => setLook({ brightness: v })} />
+            <Range label="Contrasto" value={effLook.contrast} min={-50} max={50} step={1} def={0} signed onChange={(v) => setLook({ contrast: v })} />
+            <Range label="Saturazione" value={effLook.saturation} min={-100} max={100} step={1} def={0} signed onChange={(v) => setLook({ saturation: v })} />
             <Range
               label="Temperatura"
-              value={d.avatarLook.warmth}
+              value={effLook.warmth}
               min={-50}
               max={50}
               step={1}

@@ -140,6 +140,8 @@ export interface SlideLessonView {
   slideShots?: Record<string, SlideShot>;
   avatarFrame?: { x?: number; y?: number; zoom?: number };
   avatarLook?: Partial<import('@scorm/contracts').AvatarLook>;
+  slideLooks?: Record<string, Partial<import('@scorm/contracts').AvatarLook>>;
+  slideFrames?: Record<string, { x?: number; y?: number; zoom?: number }>;
   burnCaptions?: boolean;
   cover?: SlideCardChoice;
   outro?: SlideCardChoice;

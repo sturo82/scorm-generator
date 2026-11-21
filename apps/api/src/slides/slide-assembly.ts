@@ -17,6 +17,9 @@ export interface AssemblySlide {
   pipPosition?: PipPosition;
   /** Inquadratura della slide (layout dynamic). */
   shot?: SlideShot;
+  /** Resa e inquadratura dell'avatar solo per questa slide. */
+  avatarLook?: Partial<AvatarLook>;
+  avatarFrame?: Partial<AvatarFrame>;
 }
 
 /**
@@ -98,6 +101,8 @@ export function buildSlideVideoSpec(input: BuildSpecInput): SlideVideoSpec {
       cues,
       pipPosition: s.pipPosition,
       shot: s.shot,
+      ...(s.avatarLook && Object.keys(s.avatarLook).length ? { avatarLook: s.avatarLook } : {}),
+      ...(s.avatarFrame && Object.keys(s.avatarFrame).length ? { avatarFrame: s.avatarFrame } : {}),
     };
   });
   return SlideVideoSpec.parse({

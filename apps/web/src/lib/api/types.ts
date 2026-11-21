@@ -458,6 +458,9 @@ export interface SlideLayoutChoice {
   avatarFrame?: { x?: number; y?: number; zoom?: number };
   /** Resa dell'avatar: dimensione, forma, bordo, ombra e correzione dell'immagine. */
   avatarLook?: Partial<import('@scorm/contracts').AvatarLook>;
+  /** Resa e inquadratura dell'avatar per singole slide (chiave = numero della slide). */
+  slideLooks?: Record<string, Partial<import('@scorm/contracts').AvatarLook>>;
+  slideFrames?: Record<string, { x?: number; y?: number; zoom?: number }>;
   /** Sottotitoli incisi nel video (default no: c'è la trascrizione e il CC del player). */
   burnCaptions?: boolean;
   /** Copertina e finale: `null` le toglie (solo rimontaggio). */

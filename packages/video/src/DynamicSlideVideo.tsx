@@ -16,6 +16,8 @@ import {
   avatarRingColor,
   avatarWarmthOverlay,
   dynamicShotGeometry,
+  slideAvatarFrame,
+  slideAvatarLook,
   computeSlideTimeline,
   globalCues,
   type GlobalCue,
@@ -90,9 +92,10 @@ function frameAt(spec: SlideVideoSpec, timeline: SlideTimeline, frame: number, f
   const i = slideIndexAt(timeline, frame);
   const corner = (k: number): PipPosition => spec.slides[k]?.pipPosition ?? spec.pipPosition ?? 'bottom-right';
   const shot = (k: number): SlideShot => spec.slides[k]?.shot ?? 'focus';
-  const cur = shotFrame(shot(i), corner(i), spec.avatarLook);
+  const lookOf = (k: number) => slideAvatarLook(spec.avatarLook, spec.slides[k]?.avatarLook);
+  const cur = shotFrame(shot(i), corner(i), lookOf(i));
   if (i === 0) return cur;
-  const prev = shotFrame(shot(i - 1), corner(i - 1), spec.avatarLook);
+  const prev = shotFrame(shot(i - 1), corner(i - 1), lookOf(i - 1));
   const local = frame - timeline.entries[i]!.startFrame;
   const t = spring({ frame: local, fps, config: { damping: 200, mass: 0.9, stiffness: 120 }, durationInFrames: Math.round(fps * 0.9) });
   return mixFrame(prev, cur, t);
@@ -156,7 +159,15 @@ export const DynamicSlideVideo: React.FC<{ spec: SlideVideoSpec }> = ({ spec }) 
         const e = timeline.entries[i]!;
         return (
           <Sequence key={`av-${slide.id}`} from={e.startFrame} durationInFrames={e.durationFrames} layout="none">
-            <AvatarLayer src={slide.clipUrl} rect={g.avatar} s={s} accent={avatarRingColor(spec.avatarLook, spec.theme.accent)} fade={fadeIn} frame={spec.avatarFrame} look={spec.avatarLook} />
+            <AvatarLayer
+              src={slide.clipUrl}
+              rect={g.avatar}
+              s={s}
+              accent={avatarRingColor(slideAvatarLook(spec.avatarLook, slide.avatarLook), spec.theme.accent)}
+              fade={fadeIn}
+              frame={slideAvatarFrame(spec.avatarFrame, slide.avatarFrame)}
+              look={slideAvatarLook(spec.avatarLook, slide.avatarLook)}
+            />
           </Sequence>
         );
       })}

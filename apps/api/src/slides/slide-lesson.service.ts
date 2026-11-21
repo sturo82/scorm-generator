@@ -96,6 +96,9 @@ export interface SlideLessonDoc {
   slidePositions?: Record<string, PipPosition>;
   /** Inquadrature scelte dall'utente per slide (layout dynamic); le altre seguono la regia automatica. */
   slideShots?: Record<string, SlideShot>;
+  /** Resa e inquadratura dell'avatar modificate per singole slide. */
+  slideLooks?: Record<string, Partial<AvatarLook>>;
+  slideFrames?: Record<string, Partial<AvatarFrame>>;
   /** Inquadratura della persona nella clip avatar (punto al centro e zoom). */
   avatarFrame?: Partial<AvatarFrame>;
   /** Resa dell'avatar (dimensione, forma, bordo, ombra, correzione dell'immagine). */
@@ -157,6 +160,8 @@ export interface SlideLessonView {
   pipPosition: PipPosition;
   slidePositions: Record<string, PipPosition>;
   slideShots: Record<string, SlideShot>;
+  slideLooks: Record<string, Partial<AvatarLook>>;
+  slideFrames: Record<string, Partial<AvatarFrame>>;
   avatarFrame: Partial<AvatarFrame>;
   avatarLook: Partial<AvatarLook>;
   burnCaptions: boolean;
@@ -447,6 +452,8 @@ export class SlideLessonService {
       pipPosition?: PipPosition;
       slidePositions?: Record<string, PipPosition>;
       slideShots?: Record<string, SlideShot>;
+      slideLooks?: Record<string, Partial<AvatarLook>>;
+      slideFrames?: Record<string, Partial<AvatarFrame>>;
       burnCaptions?: boolean;
       avatarFrame?: Partial<AvatarFrame>;
       avatarLook?: Partial<AvatarLook>;
@@ -488,6 +495,8 @@ export class SlideLessonService {
         pipPosition: input.pipPosition ?? 'bottom-right',
         slidePositions: input.slidePositions ?? {},
         slideShots: input.slideShots ?? {},
+        slideLooks: input.slideLooks ?? {},
+        slideFrames: input.slideFrames ?? {},
         avatarFrame: input.avatarFrame ?? {},
         avatarLook: input.avatarLook ?? {},
         burnCaptions: input.burnCaptions ?? false,
@@ -538,6 +547,8 @@ export class SlideLessonService {
       pipPosition?: PipPosition;
       slidePositions?: Record<string, PipPosition>;
       slideShots?: Record<string, SlideShot>;
+      slideLooks?: Record<string, Partial<AvatarLook>>;
+      slideFrames?: Record<string, Partial<AvatarFrame>>;
       burnCaptions?: boolean;
       avatarFrame?: Partial<AvatarFrame>;
       avatarLook?: Partial<AvatarLook>;
@@ -566,6 +577,8 @@ export class SlideLessonService {
       pipPosition: input.pipPosition ?? existing.pipPosition ?? 'bottom-right',
       slidePositions: input.slidePositions ?? existing.slidePositions ?? {},
       slideShots: input.slideShots ?? existing.slideShots ?? {},
+      slideLooks: input.slideLooks ?? existing.slideLooks ?? {},
+      slideFrames: input.slideFrames ?? existing.slideFrames ?? {},
       avatarFrame: input.avatarFrame ?? existing.avatarFrame ?? {},
       avatarLook: input.avatarLook ?? existing.avatarLook ?? {},
       burnCaptions: input.burnCaptions ?? existing.burnCaptions ?? true,
@@ -716,6 +729,8 @@ export class SlideLessonService {
         narration: scriptByIndex.get(c.index),
         srt,
         pipPosition: doc.slidePositions?.[String(c.index)],
+        avatarLook: doc.slideLooks?.[String(c.index)],
+        avatarFrame: doc.slideFrames?.[String(c.index)],
       });
     }
     // Layout dinamico: regia automatica (inquadratura + angolo libero) con le scelte dell'utente.
@@ -1367,6 +1382,8 @@ if (!input) return undefined;
       pipPosition: doc.pipPosition ?? 'bottom-right',
       slidePositions: doc.slidePositions ?? {},
       slideShots: doc.slideShots ?? {},
+      slideLooks: doc.slideLooks ?? {},
+      slideFrames: doc.slideFrames ?? {},
       avatarFrame: doc.avatarFrame ?? {},
       avatarLook: doc.avatarLook ?? {},
       burnCaptions: doc.burnCaptions ?? true,

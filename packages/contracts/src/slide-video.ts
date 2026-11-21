@@ -165,6 +165,30 @@ export function dynamicShotGeometry(shot: SlideShot, corner: PipPosition, look?:
   }
 }
 
+/** Modifiche di resa per singola slide (chiave = indice della slide nell'import). */
+export const SlideAvatarLooks = z.record(z.string().regex(/^\d+$/), AvatarLook.partial());
+export type SlideAvatarLooks = z.infer<typeof SlideAvatarLooks>;
+/** Inquadratura del volto per singola slide (chiave = indice della slide nell'import). */
+export const SlideAvatarFrames = z.record(z.string().regex(/^\d+$/), AvatarFrame.partial());
+export type SlideAvatarFrames = z.infer<typeof SlideAvatarFrames>;
+
+/** Resa effettiva dell'avatar in una slide: quella del video con le modifiche della slide. */
+export function slideAvatarLook(
+  general: Partial<AvatarLook> | null | undefined,
+  override: Partial<AvatarLook> | null | undefined,
+): AvatarLook {
+  return resolveAvatarLook({ ...(general ?? {}), ...(override ?? {}) });
+}
+
+/** Inquadratura effettiva del volto in una slide. */
+export function slideAvatarFrame(
+  general: Partial<AvatarFrame> | null | undefined,
+  override: Partial<AvatarFrame> | null | undefined,
+): { x: number; y: number; zoom: number } {
+  const f = { ...(general ?? {}), ...(override ?? {}) };
+  return { x: f.x ?? 50, y: f.y ?? 22, zoom: f.zoom ?? 1 };
+}
+
 /** Colore del bordo dell'avatar secondo la resa (accento del brand, bianco o nessuno). */
 export function avatarRingColor(look: Partial<AvatarLook> | null | undefined, accent: string): string {
   const r = resolveAvatarLook(look).ring;
@@ -206,6 +230,9 @@ export const SlideVideoSlide = z.object({
   pipPosition: PipPosition.optional(),
   /** Inquadratura della slide nel layout dynamic (default: focus). */
   shot: SlideShot.optional(),
+  /** Resa e inquadratura dell'avatar solo per questa slide: si sommano a quelle del video. */
+  avatarLook: AvatarLook.partial().optional(),
+  avatarFrame: AvatarFrame.partial().optional(),
 });
 export type SlideVideoSlide = z.infer<typeof SlideVideoSlide>;
 
@@ -473,6 +500,8 @@ export const BuildSlideLesson = z.object({
   burnCaptions: z.boolean().default(false),
   avatarFrame: AvatarFrame.optional(),
   avatarLook: AvatarLook.optional(),
+  slideLooks: SlideAvatarLooks.optional(),
+  slideFrames: SlideAvatarFrames.optional(),
   cover: SlideCardInput.optional(),
   outro: SlideCardInput.optional(),
   /** Brand per colori e logo (solo libreria: nei corsi vale il brand principale del corso). */
@@ -488,6 +517,8 @@ export const RemasterSlideLesson = z.object({
   burnCaptions: z.boolean().optional(),
   avatarFrame: AvatarFrame.optional(),
   avatarLook: AvatarLook.optional(),
+  slideLooks: SlideAvatarLooks.optional(),
+  slideFrames: SlideAvatarFrames.optional(),
   /** `null` toglie la scheda; assente lascia quella attuale. */
   cover: SlideCardInput.nullable().optional(),
   outro: SlideCardInput.nullable().optional(),
