@@ -12,6 +12,7 @@ import { CoursePreview } from '@/components/courses/course-preview';
 import { CoursePricingPanel } from '@/components/courses/course-pricing-panel';
 import { ExportDialog } from '@/components/courses/export-dialog';
 import { SlidePipeline } from '@/components/courses/slide-video-dialog';
+import { VideoDirector } from '@/components/courses/video-director';
 import {
   useApplySlideChanges,
   useSaveSlideScripts,
@@ -30,7 +31,7 @@ type Tab = 'preview' | 'scripts' | 'look' | 'publish';
 const TABS: Array<{ id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: 'preview', label: 'Anteprima', icon: Eye },
   { id: 'scripts', label: 'Copioni e clip', icon: FileText },
-  { id: 'look', label: 'Aspetto', icon: Palette },
+  { id: 'look', label: 'Regia', icon: Palette },
   { id: 'publish', label: 'Pubblica', icon: Rocket },
 ];
 
@@ -100,7 +101,19 @@ export function SlideStudio({ courseId, importId, onOpenClassic }: { courseId: s
             <SlidePipeline courseId={courseId} importId={importId} show={['header', 'clips']} />
           </div>
         )}
-        {tab === 'look' && <SlidePipeline courseId={courseId} importId={importId} show={['lesson']} />}
+        {tab === 'look' && (
+          <div className="space-y-4">
+            <VideoDirector courseId={courseId} importId={importId} />
+            <details className="group rounded-lg border bg-muted/20">
+              <summary className="cursor-pointer list-none px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground">
+                Copertina, schermata finale, sottotitoli e brand
+              </summary>
+              <div className="border-t p-4">
+                <SlidePipeline courseId={courseId} importId={importId} show={['lesson']} />
+              </div>
+            </details>
+          </div>
+        )}
         {tab === 'publish' && (
           <div className="space-y-6">
             <Card>

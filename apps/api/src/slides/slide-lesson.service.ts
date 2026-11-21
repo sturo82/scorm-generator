@@ -19,6 +19,7 @@ import {
   type SlideVideoCard,
   type PipPosition,
   type AvatarFrame,
+  type AvatarLook,
   type SlideShot,
   type SlideVideoLayout,
   type SlideVideoTheme,
@@ -97,6 +98,8 @@ export interface SlideLessonDoc {
   slideShots?: Record<string, SlideShot>;
   /** Inquadratura della persona nella clip avatar (punto al centro e zoom). */
   avatarFrame?: Partial<AvatarFrame>;
+  /** Resa dell'avatar (dimensione, forma, bordo, ombra, correzione dell'immagine). */
+  avatarLook?: Partial<AvatarLook>;
   /** Sottotitoli incisi nel video. Assente nei documenti precedenti, che li avevano: vale true. */
   burnCaptions?: boolean;
   /** Copertina e schermata finale (assenti = nessuna). */
@@ -155,6 +158,7 @@ export interface SlideLessonView {
   slidePositions: Record<string, PipPosition>;
   slideShots: Record<string, SlideShot>;
   avatarFrame: Partial<AvatarFrame>;
+  avatarLook: Partial<AvatarLook>;
   burnCaptions: boolean;
   cover?: SlideCardInput;
   outro?: SlideCardInput;
@@ -445,6 +449,7 @@ export class SlideLessonService {
       slideShots?: Record<string, SlideShot>;
       burnCaptions?: boolean;
       avatarFrame?: Partial<AvatarFrame>;
+      avatarLook?: Partial<AvatarLook>;
       cover?: SlideCardInput;
       outro?: SlideCardInput;
       brandId?: string;
@@ -484,6 +489,7 @@ export class SlideLessonService {
         slidePositions: input.slidePositions ?? {},
         slideShots: input.slideShots ?? {},
         avatarFrame: input.avatarFrame ?? {},
+        avatarLook: input.avatarLook ?? {},
         burnCaptions: input.burnCaptions ?? false,
         cover: input.cover,
         outro: input.outro,
@@ -534,6 +540,7 @@ export class SlideLessonService {
       slideShots?: Record<string, SlideShot>;
       burnCaptions?: boolean;
       avatarFrame?: Partial<AvatarFrame>;
+      avatarLook?: Partial<AvatarLook>;
       /** `null` toglie la scheda; `undefined` lascia quella attuale. */
       cover?: SlideCardInput | null;
       outro?: SlideCardInput | null;
@@ -560,6 +567,7 @@ export class SlideLessonService {
       slidePositions: input.slidePositions ?? existing.slidePositions ?? {},
       slideShots: input.slideShots ?? existing.slideShots ?? {},
       avatarFrame: input.avatarFrame ?? existing.avatarFrame ?? {},
+      avatarLook: input.avatarLook ?? existing.avatarLook ?? {},
       burnCaptions: input.burnCaptions ?? existing.burnCaptions ?? true,
       cover: input.cover === undefined ? existing.cover : (input.cover ?? undefined),
       outro: input.outro === undefined ? existing.outro : (input.outro ?? undefined),
@@ -728,6 +736,7 @@ export class SlideLessonService {
       pipPosition: doc.pipPosition,
       burnCaptions: doc.burnCaptions ?? true,
       avatarFrame: doc.avatarFrame,
+      avatarLook: doc.avatarLook ?? {},
       sectionTitle: part.title,
       theme: style.theme,
       cover: await this.resolveCard(tenantId, doc, doc.cover, 'cover', part.title, style.logoUrl, manifest.slides, clipsView.clips),
@@ -1359,6 +1368,7 @@ if (!input) return undefined;
       slidePositions: doc.slidePositions ?? {},
       slideShots: doc.slideShots ?? {},
       avatarFrame: doc.avatarFrame ?? {},
+      avatarLook: doc.avatarLook ?? {},
       burnCaptions: doc.burnCaptions ?? true,
       cover: doc.cover,
       outro: doc.outro,

@@ -45,6 +45,132 @@ export const AvatarFrame = z.object({
   zoom: z.number().min(1).max(2.5).default(1),
 });
 export type AvatarFrame = z.infer<typeof AvatarFrame>;
+/**
+ * Resa dell'avatar nel montaggio: dimensione e forma del riquadro in sovrimpressione, bordo,
+ * ombra e correzione dell'immagine. Si applica solo al montaggio (nessuna clip da rigenerare).
+ * Le correzioni sono scostamenti dal video originale: 0 = invariato.
+ */
+export const AvatarLook = z.object({
+  /** Dimensione del riquadro in sovrimpressione (1 = standard). */
+  size: z.number().min(0.6).max(1.6).default(1),
+  shape: z.enum(['circle', 'rounded', 'square']).default('circle'),
+  ring: z.enum(['brand', 'white', 'none']).default('brand'),
+  shadow: z.boolean().default(true),
+  /** Da -50 a +50: scostamento percentuale. */
+  brightness: z.number().min(-50).max(50).default(0),
+  contrast: z.number().min(-50).max(50).default(0),
+  /** Da -100 (bianco e nero) a +100. */
+  saturation: z.number().min(-100).max(100).default(0),
+  /** Da -50 (più freddo) a +50 (più caldo). */
+  warmth: z.number().min(-50).max(50).default(0),
+});
+export type AvatarLook = z.infer<typeof AvatarLook>;
+
+/** Resa dell'avatar completa (valori di default per i campi mancanti). */
+export function resolveAvatarLook(look?: Partial<AvatarLook> | null): AvatarLook {
+  return AvatarLook.parse(look ?? {});
+}
+
+/** Filtro CSS della correzione dell'immagine: identico nel montaggio e nell'anteprima. */
+export function avatarLookFilter(look?: Partial<AvatarLook> | null): string | undefined {
+  const l = resolveAvatarLook(look);
+  const parts: string[] = [];
+  if (l.brightness) parts.push(`brightness(${(1 + l.brightness / 100).toFixed(3)})`);
+  if (l.contrast) parts.push(`contrast(${(1 + l.contrast / 100).toFixed(3)})`);
+  if (l.saturation) parts.push(`saturate(${(1 + l.saturation / 100).toFixed(3)})`);
+  return parts.length ? parts.join(' ') : undefined;
+}
+
+/** Velo di colore per il calore (fusione "soft-light" sopra il video), o null se neutro. */
+export function avatarWarmthOverlay(look?: Partial<AvatarLook> | null): { background: string; mixBlendMode: 'soft-light' } | null {
+  const w = resolveAvatarLook(look).warmth;
+  if (!w) return null;
+  const a = Math.min(0.6, Math.abs(w) / 100 + 0.05);
+  return { background: w > 0 ? `rgba(255,140,40,${a.toFixed(3)})` : `rgba(40,130,255,${a.toFixed(3)})`, mixBlendMode: 'soft-light' };
+}
+
+/** Raggio degli angoli del riquadro in sovrimpressione, secondo la forma scelta. */
+export function avatarOverlayRadius(shape: AvatarLook['shape'], side: number): number {
+  return shape === 'circle' ? side / 2 : shape === 'rounded' ? side * 0.16 : side * 0.03;
+}
+
+/** Riquadro in coordinate del canvas 1920x1080. */
+export interface StageRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  r: number;
+}
+
+/** Geometria di un'inquadratura del layout "dynamic" sul canvas 1920x1080 (condivisa con l'anteprima). */
+export interface DynamicShotGeometry {
+  slide: StageRect;
+  avatar: StageRect & { zoom: number; ring: number; shadow: number };
+  backdrop: number;
+  full: number;
+}
+
+const STAGE_W = 1920;
+const STAGE_H = 1080;
+
+function overlayAt(corner: PipPosition, d: number, m: number, shape: AvatarLook['shape']): StageRect {
+  return {
+    x: corner.endsWith('right') ? STAGE_W - m - d : m,
+    y: corner.startsWith('bottom') ? STAGE_H - m - d : m,
+    w: d,
+    h: d,
+    r: avatarOverlayRadius(shape, d),
+  };
+}
+
+/**
+ * Geometria di riferimento di ogni inquadratura del layout dinamico. La dimensione e la forma
+ * della resa valgono per l'avatar in sovrimpressione (inquadrature "focus" e "mini").
+ */
+export function dynamicShotGeometry(shot: SlideShot, corner: PipPosition, look?: Partial<AvatarLook> | null): DynamicShotGeometry {
+  const l = resolveAvatarLook(look);
+  const ring = l.ring === 'none' ? 0 : 1;
+  const shadow = l.shadow ? 1 : 0;
+  switch (shot) {
+    case 'presenter':
+      return {
+        slide: { x: 96, y: 238, w: 1040, h: 585, r: 22 },
+        avatar: { x: 1196, y: 110, w: 628, h: 860, r: 32, zoom: 1, ring: 0, shadow },
+        backdrop: 1,
+        full: 0,
+      };
+    case 'side':
+      return {
+        slide: { x: 64, y: 180, w: 1280, h: 720, r: 20 },
+        avatar: { x: 1376, y: 180, w: 480, h: 720, r: 26, zoom: 1.04, ring: 0, shadow },
+        backdrop: 0.6,
+        full: 0,
+      };
+    case 'mini':
+      return {
+        slide: { x: 0, y: 0, w: STAGE_W, h: STAGE_H, r: 0 },
+        avatar: { ...overlayAt(corner, Math.round(200 * l.size), 34, l.shape), zoom: 1.42, ring: 5 * ring, shadow: 0.8 * shadow },
+        backdrop: 0,
+        full: 1,
+      };
+    case 'focus':
+    default:
+      return {
+        slide: { x: 0, y: 0, w: STAGE_W, h: STAGE_H, r: 0 },
+        avatar: { ...overlayAt(corner, Math.round(300 * l.size), 44, l.shape), zoom: 1.32, ring: 6 * ring, shadow: 0.9 * shadow },
+        backdrop: 0,
+        full: 1,
+      };
+  }
+}
+
+/** Colore del bordo dell'avatar secondo la resa (accento del brand, bianco o nessuno). */
+export function avatarRingColor(look: Partial<AvatarLook> | null | undefined, accent: string): string {
+  const r = resolveAvatarLook(look).ring;
+  return r === 'white' ? '#ffffff' : r === 'none' ? 'transparent' : accent;
+}
+
 
 /** Posizioni per slide (chiave = indice della slide nell'import, 1-based) che sostituiscono il default. */
 export const SlidePipPositions = z.record(z.string().regex(/^\d+$/), PipPosition);
@@ -130,6 +256,8 @@ export const SlideVideoSpec = z.object({
   burnCaptions: z.boolean().default(false),
   /** Inquadratura della persona nella clip (vale per tutte le slide). */
   avatarFrame: AvatarFrame.default({}),
+  /** Resa dell'avatar: dimensione, forma, bordo, ombra e correzione dell'immagine. */
+  avatarLook: AvatarLook.default({}),
   theme: SlideVideoTheme.default({}),
   /** Titolo del modulo/sezione, mostrato nel pannello laterale. */
   sectionTitle: z.string().optional(),
@@ -344,6 +472,7 @@ export const BuildSlideLesson = z.object({
   slideShots: SlideShots.default({}),
   burnCaptions: z.boolean().default(false),
   avatarFrame: AvatarFrame.optional(),
+  avatarLook: AvatarLook.optional(),
   cover: SlideCardInput.optional(),
   outro: SlideCardInput.optional(),
   /** Brand per colori e logo (solo libreria: nei corsi vale il brand principale del corso). */
@@ -358,6 +487,7 @@ export const RemasterSlideLesson = z.object({
   slideShots: SlideShots.optional(),
   burnCaptions: z.boolean().optional(),
   avatarFrame: AvatarFrame.optional(),
+  avatarLook: AvatarLook.optional(),
   /** `null` toglie la scheda; assente lascia quella attuale. */
   cover: SlideCardInput.nullable().optional(),
   outro: SlideCardInput.nullable().optional(),

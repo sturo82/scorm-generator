@@ -5,6 +5,11 @@ import {
   SlideVideoSpec,
   activeCueAt,
   avatarCrop,
+  avatarLookFilter,
+  avatarOverlayRadius,
+  avatarRingColor,
+  avatarWarmthOverlay,
+  resolveAvatarLook,
   computeSlideTimeline,
   globalCues,
   slideVideoSegments,
@@ -179,7 +184,8 @@ function geometry(spec: SlideVideoSpec, pos?: PipPosition): Geometry {
   const s = width / 1920;
   const M = 48 * s;
   if (spec.layout === 'pip') {
-    const d = 320 * s;
+    const look = resolveAvatarLook(spec.avatarLook);
+    const d = 320 * s * look.size;
     const p = pos ?? spec.pipPosition ?? 'bottom-right';
     const right = p.endsWith('right');
     const bottom = p.startsWith('bottom');
@@ -204,7 +210,7 @@ function geometry(spec: SlideVideoSpec, pos?: PipPosition): Geometry {
       },
       caption,
       panel: { left: 0, top: 0, width: 0, height: 0 },
-      radius: d / 2,
+      radius: avatarOverlayRadius(look.shape, d),
     };
   }
   const slideW = 1280 * s;
@@ -303,8 +309,13 @@ const SlideScene: React.FC<{ spec: SlideVideoSpec; slideIndex: number; g: Geomet
           borderRadius: g.radius,
           overflow: 'hidden',
           background: '#111827',
-          border: pip ? `${5 * g.s}px solid ${spec.theme.accent}` : `${2 * g.s}px solid rgba(255,255,255,0.12)`,
-          boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+          border:
+            pip && resolveAvatarLook(spec.avatarLook).ring !== 'none'
+              ? `${5 * g.s}px solid ${avatarRingColor(spec.avatarLook, spec.theme.accent)}`
+              : pip
+                ? 'none'
+                : `${2 * g.s}px solid rgba(255,255,255,0.12)`,
+          boxShadow: resolveAvatarLook(spec.avatarLook).shadow ? '0 10px 30px rgba(0,0,0,0.5)' : 'none',
         }}
       >
         {/* La clip porta anche l'audio della narrazione. Ritaglio centrato sul
@@ -315,8 +326,10 @@ const SlideScene: React.FC<{ spec: SlideVideoSpec; slideIndex: number; g: Geomet
             position: 'absolute',
             maxWidth: 'none',
             ...avatarCrop(g.avatar.width, g.avatar.height, spec.avatarFrame, pip ? 1.25 : 1),
+            filter: avatarLookFilter(spec.avatarLook),
           }}
         />
+        {avatarWarmthOverlay(spec.avatarLook) && <div style={{ position: 'absolute', inset: 0, ...avatarWarmthOverlay(spec.avatarLook)! }} />}
       </div>
     </AbsoluteFill>
   );

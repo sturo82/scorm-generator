@@ -20,6 +20,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { AiWorking, AiWorkingInline } from '@/components/courses/ai-working';
+import { VideoDirector } from '@/components/courses/video-director';
 import type {
   PipPosition,
   PronunciationEntry,
@@ -258,6 +259,7 @@ export function SlidePipeline({ courseId, importId, show }: { courseId: string; 
       courseId={courseId}
       importId={importId}
       show={show}
+      director={false}
       onReplace={() => undefined}
       onLessonDone={() => {
         qc.invalidateQueries({ queryKey: qk.modules(courseId) });
@@ -276,6 +278,7 @@ function Pipeline({
   onLessonDone,
   onClose,
   show = ['header', 'scripts', 'clips', 'lesson'],
+  director = true,
 }: {
   courseId: string;
   importId: string;
@@ -283,6 +286,8 @@ function Pipeline({
   onLessonDone: () => void;
   onClose: () => void;
   show?: PipelinePart[];
+  /** Mostra la regia dell'avatar nel passo del montaggio (lo Studio la ha in una sua scheda). */
+  director?: boolean;
 }) {
   const imp = useSlideImport(courseId, importId);
   const replace = useReplaceSlides(courseId, importId);
@@ -400,6 +405,7 @@ function Pipeline({
           extraTitles={Object.fromEntries((scriptsDoc?.slides ?? []).filter((x) => x.extra).map((x) => [x.index, x.extra!.title]))}
           defaultTitle={imp.data?.filename.replace(/\.pdf$/i, '') ?? 'Video-lezione'}
           onClose={onClose}
+          director={director}
         />
       )}
     </div>
@@ -1318,9 +1324,11 @@ function StepLesson({
   extraTitles,
   defaultTitle,
   onClose,
+  director = true,
 }: {
   courseId: string;
   importId: string;
+  director?: boolean;
   view: import('@/lib/api/types').SlideLessonView | null;
   /** Clip più recenti dell'ultimo montaggio. */
   videoOutdated: boolean;
@@ -1346,6 +1354,7 @@ function StepLesson({
     zoom: view?.avatarFrame?.zoom ?? 1,
   });
   const [editLayout, setEditLayout] = React.useState(false);
+  const [directorOpen, setDirectorOpen] = React.useState(false);
   const [cover, setCover] = React.useState<SlideCardChoice | null>(view?.cover ?? null);
   const [outro, setOutro] = React.useState<SlideCardChoice | null>(view?.outro ?? null);
   const [brandId, setBrandId] = React.useState<string>(view?.brandId ?? '');
@@ -1756,7 +1765,17 @@ function StepLesson({
               {cardsBlock}
             </div>
           )}
+          {director && directorOpen && (
+            <div className="rounded-md border bg-background p-3">
+              <VideoDirector courseId={courseId} importId={importId} library={library} />
+            </div>
+          )}
           <div className="flex flex-wrap justify-end gap-2">
+            {director && (
+              <Button variant={directorOpen ? 'secondary' : 'outline'} onClick={() => setDirectorOpen((v) => !v)}>
+                <Wand2 className="size-4" /> {directorOpen ? 'Chiudi la regia' : 'Regia: avatar e immagine'}
+              </Button>
+            )}
             <Button variant="ghost" onClick={() => setEditLayout((v) => !v)}>
               {editLayout ? 'Annulla modifiche alla disposizione' : 'Cambia disposizione, copertina o finale'}
             </Button>

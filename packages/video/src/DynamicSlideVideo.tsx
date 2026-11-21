@@ -12,6 +12,10 @@ import {
 import {
   activeCueAt,
   avatarCrop,
+  avatarLookFilter,
+  avatarRingColor,
+  avatarWarmthOverlay,
+  dynamicShotGeometry,
   computeSlideTimeline,
   globalCues,
   type GlobalCue,
@@ -52,49 +56,9 @@ interface ShotFrame {
 const W = 1920;
 const H = 1080;
 
-function circleAt(corner: PipPosition, d: number, m: number): Rect {
-  return {
-    x: corner.endsWith('right') ? W - m - d : m,
-    y: corner.startsWith('bottom') ? H - m - d : m,
-    w: d,
-    h: d,
-    r: d / 2,
-  };
-}
-
-/** Geometria di riferimento di ogni inquadratura. */
-function shotFrame(shot: SlideShot, corner: PipPosition): ShotFrame {
-  switch (shot) {
-    case 'presenter':
-      return {
-        slide: { x: 96, y: 238, w: 1040, h: 585, r: 22 },
-        avatar: { x: 1196, y: 110, w: 628, h: 860, r: 32, zoom: 1, ring: 0, shadow: 1 },
-        backdrop: 1,
-        full: 0,
-      };
-    case 'side':
-      return {
-        slide: { x: 64, y: 180, w: 1280, h: 720, r: 20 },
-        avatar: { x: 1376, y: 180, w: 480, h: 720, r: 26, zoom: 1.04, ring: 0, shadow: 1 },
-        backdrop: 0.6,
-        full: 0,
-      };
-    case 'mini':
-      return {
-        slide: { x: 0, y: 0, w: W, h: H, r: 0 },
-        avatar: { ...circleAt(corner, 200, 34), zoom: 1.42, ring: 5, shadow: 0.8 },
-        backdrop: 0,
-        full: 1,
-      };
-    case 'focus':
-    default:
-      return {
-        slide: { x: 0, y: 0, w: W, h: H, r: 0 },
-        avatar: { ...circleAt(corner, 300, 44), zoom: 1.32, ring: 6, shadow: 0.9 },
-        backdrop: 0,
-        full: 1,
-      };
-  }
+/** Geometria di riferimento di ogni inquadratura: condivisa con l'anteprima della regia. */
+function shotFrame(shot: SlideShot, corner: PipPosition, look: SlideVideoSpec['avatarLook']): ShotFrame {
+  return dynamicShotGeometry(shot, corner, look);
 }
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
@@ -126,9 +90,9 @@ function frameAt(spec: SlideVideoSpec, timeline: SlideTimeline, frame: number, f
   const i = slideIndexAt(timeline, frame);
   const corner = (k: number): PipPosition => spec.slides[k]?.pipPosition ?? spec.pipPosition ?? 'bottom-right';
   const shot = (k: number): SlideShot => spec.slides[k]?.shot ?? 'focus';
-  const cur = shotFrame(shot(i), corner(i));
+  const cur = shotFrame(shot(i), corner(i), spec.avatarLook);
   if (i === 0) return cur;
-  const prev = shotFrame(shot(i - 1), corner(i - 1));
+  const prev = shotFrame(shot(i - 1), corner(i - 1), spec.avatarLook);
   const local = frame - timeline.entries[i]!.startFrame;
   const t = spring({ frame: local, fps, config: { damping: 200, mass: 0.9, stiffness: 120 }, durationInFrames: Math.round(fps * 0.9) });
   return mixFrame(prev, cur, t);
@@ -192,7 +156,7 @@ export const DynamicSlideVideo: React.FC<{ spec: SlideVideoSpec }> = ({ spec }) 
         const e = timeline.entries[i]!;
         return (
           <Sequence key={`av-${slide.id}`} from={e.startFrame} durationInFrames={e.durationFrames} layout="none">
-            <AvatarLayer src={slide.clipUrl} rect={g.avatar} s={s} accent={spec.theme.accent} fade={fadeIn} frame={spec.avatarFrame} />
+            <AvatarLayer src={slide.clipUrl} rect={g.avatar} s={s} accent={avatarRingColor(spec.avatarLook, spec.theme.accent)} fade={fadeIn} frame={spec.avatarFrame} look={spec.avatarLook} />
           </Sequence>
         );
       })}
@@ -293,7 +257,8 @@ const AvatarLayer: React.FC<{
   accent: string;
   fade: number;
   frame: SlideVideoSpec['avatarFrame'];
-}> = ({ src, rect, s, accent, fade, frame }) => (
+  look: SlideVideoSpec['avatarLook'];
+}> = ({ src, rect, s, accent, fade, frame, look }) => (
   <div
     style={{
       position: 'absolute',
@@ -311,8 +276,9 @@ const AvatarLayer: React.FC<{
     {/* Ritaglio sulla persona: il punto scelto (avatarFrame) al centro, più stretto nei cerchi. */}
     <OffthreadVideo
       src={src}
-      style={{ position: 'absolute', ...cropStyle(S(rect.w, s), S(rect.h, s), frame, rect.zoom) }}
+      style={{ position: 'absolute', ...cropStyle(S(rect.w, s), S(rect.h, s), frame, rect.zoom), filter: avatarLookFilter(look) }}
     />
+    {avatarWarmthOverlay(look) && <div style={{ position: 'absolute', inset: 0, ...avatarWarmthOverlay(look)! }} />}
   </div>
 );
 

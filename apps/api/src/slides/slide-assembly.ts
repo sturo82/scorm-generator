@@ -1,4 +1,4 @@
-import { SlideVideoSpec, type SlideVideoCard, type AvatarFrame, type SlideShot, type PipPosition, type SlideCue, type SlideVideoLayout, type SlideVideoTheme } from '@scorm/contracts';
+import { SlideVideoSpec, type SlideVideoCard, type AvatarFrame, type AvatarLook, type SlideShot, type PipPosition, type SlideCue, type SlideVideoLayout, type SlideVideoTheme } from '@scorm/contracts';
 
 /** Una slide pronta per il montaggio: asset già risolti in URL e sottotitoli SRT grezzi. */
 export interface AssemblySlide {
@@ -70,6 +70,7 @@ export interface BuildSpecInput {
   pipPosition?: PipPosition;
   burnCaptions?: boolean;
   avatarFrame?: Partial<AvatarFrame>;
+  avatarLook?: Partial<AvatarLook>;
   sectionTitle?: string;
   theme?: Partial<SlideVideoTheme>;
   cover?: SlideVideoCard;
@@ -105,6 +106,7 @@ export function buildSlideVideoSpec(input: BuildSpecInput): SlideVideoSpec {
     pipPosition: input.pipPosition ?? 'bottom-right',
     burnCaptions: input.burnCaptions ?? false,
     avatarFrame: input.avatarFrame ?? {},
+    avatarLook: input.avatarLook ?? {},
     theme: input.theme ?? {},
     sectionTitle: input.sectionTitle,
     cover: input.cover,
