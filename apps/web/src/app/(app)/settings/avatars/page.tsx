@@ -17,12 +17,14 @@ import {
   Trash2,
   Upload,
   UserRound,
+  Video,
   X,
 } from 'lucide-react';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog } from '@/components/ui/dialog';
+import { VideoRecorder } from '@/components/avatars/video-recorder';
 import { Input, Label, Textarea } from '@/components/ui/input';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
@@ -101,6 +103,7 @@ export default function AvatarsSettingsPage() {
   const [query, setQuery] = React.useState('');
   const [filter, setFilter] = React.useState<Filter>('all');
   const [openId, setOpenId] = React.useState<string | null>(null);
+  const [recording, setRecording] = React.useState(false);
   const [toDelete, setToDelete] = React.useState<AvatarGroupView | null>(null);
   const [consentLink, setConsentLink] = React.useState<(AvatarConsentRequest & { groupId: string }) | null>(null);
 
@@ -471,6 +474,11 @@ export default function AvatarsSettingsPage() {
                       <Button type="button" variant="outline" size="sm" onClick={() => fileInput.current?.click()}>
                         <Upload className="size-4" /> {mode === 'digital_twin' ? 'Scegli video' : 'Scegli foto'}
                       </Button>
+                      {mode === 'digital_twin' && (
+                        <Button type="button" variant="outline" size="sm" className="ml-2" onClick={() => setRecording(true)}>
+                          <Video className="size-4" /> Registra ora
+                        </Button>
+                      )}
                       {file && (
                         <p className="mt-1 truncate text-xs text-muted-foreground" title={file.name}>
                           {file.name} · {(file.size / (1024 * 1024)).toFixed(1)} MB
@@ -577,6 +585,18 @@ export default function AvatarsSettingsPage() {
         )}
       </Dialog>
 
+      {/* Registrazione del video di addestramento dal browser */}
+      <Dialog open={recording} onClose={() => setRecording(false)} title="Registra il video del digital twin" size="xl">
+        {recording && (
+          <VideoRecorder
+            onCancel={() => setRecording(false)}
+            onDone={(f) => {
+              onPickFile(f);
+              setRecording(false);
+            }}
+          />
+        )}
+      </Dialog>
       {/* Link per il consenso */}
       <Dialog open={!!consentLink} onClose={() => setConsentLink(null)} title="Consenso del digital twin">
         {consentLink && <ConsentLinkPanel link={consentLink} onClose={() => setConsentLink(null)} />}
