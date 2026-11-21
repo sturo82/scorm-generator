@@ -165,7 +165,7 @@ export class VideosService {
     if (groups.length === 0) return null;
     const label = (source: string): string =>
       source === 'slide_clip'
-        ? 'Avatar (HeyGen)'
+        ? 'Avatar'
         : source === 'slide_video'
           ? 'Montaggio video'
           : source === 'slide_script'

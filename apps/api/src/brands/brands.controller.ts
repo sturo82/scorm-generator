@@ -38,6 +38,14 @@ export class BrandsController {
     return this.brands.create(ctx.tenant.tenantId, def);
   }
 
+  /** Imposta il brand predefinito del tenant (`brandId: null` lo toglie). */
+  @Put('default')
+  @Roles('ADMIN')
+  setDefault(@CurrentContext() ctx: AuthContext, @Body() body: { brandId?: string | null }) {
+    const id = typeof body?.brandId === 'string' && body.brandId ? body.brandId : null;
+    return this.brands.setDefault(ctx.tenant.tenantId, id);
+  }
+
   @Get()
   list(@CurrentContext() ctx: AuthContext) {
     return this.brands.list(ctx.tenant.tenantId);

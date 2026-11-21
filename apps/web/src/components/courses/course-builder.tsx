@@ -1627,9 +1627,9 @@ function LessonCard({
           } catch (err) {
             toast.show(
               err instanceof Error && /501|non configurat/i.test(err.message)
-                ? 'Generazione video non configurata sul server (HeyGen)'
+                ? 'Generazione video non attiva: contatta l\u2019assistenza Coach'
                 : err instanceof Error && /quota|esaurit|3 video/i.test(err.message)
-                  ? 'Quota mensile HeyGen esaurita (3 video/mese)'
+                  ? 'Hai raggiunto il limite mensile di video con avatar'
                   : 'Avvio generazione video non riuscito',
               'error',
             );
@@ -2010,23 +2010,21 @@ function GenerateAvatarVideoDialog({
     <Dialog open={open} onClose={onClose} title="Genera video con avatar AI" size="lg">
       {notConfigured ? (
         <p className="text-sm text-muted-foreground">
-          La generazione video non è configurata sul server. Imposta
-          <code className="mx-1 rounded bg-muted px-1 py-0.5 text-xs">PROVIDER_VIDEO=heygen</code>
-          e la <code className="mx-1 rounded bg-muted px-1 py-0.5 text-xs">HEYGEN_API_KEY</code>.
+          La generazione video con avatar non è ancora attiva per la tua azienda: contatta l&apos;assistenza Coach.
         </p>
       ) : (
         <div className="space-y-4">
           <div className="rounded-md border border-amber-300/60 bg-amber-50 p-2.5 text-xs text-amber-900">
-            Il piano HeyGen consuma crediti a consumo (per minuto di video) e il video sostituisce
-            il concetto testuale, incluso nel pacchetto SCORM.
+            Il video si paga per minuto generato e sostituisce il concetto testuale, incluso nel
+            pacchetto SCORM.
             <span className="mt-1 block text-amber-800">
               {avatarSource === 'mine'
-                ? 'I tuoi avatar (photo) costano meno: Avatar III ≈ $0,99/min, Avatar IV ≈ $2,31/min.'
-                : 'Gli avatar HeyGen (stock) costano di più: Avatar III ≈ $0,99/min, Avatar IV ≈ $4,83/min. Usa un tuo avatar per risparmiare.'}
+                ? 'I tuoi avatar costano meno al minuto di quelli del catalogo.'
+                : 'Gli avatar del catalogo costano di più al minuto: usa un tuo avatar per risparmiare.'}
             </span>
           </div>
 
-          {/* --- Avatar: sorgente (miei/HeyGen) + ricerca + griglia paginata --- */}
+          {/* --- Avatar: sorgente (miei/catalogo) + ricerca + griglia paginata --- */}
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm font-medium">Avatar</span>
@@ -2044,7 +2042,7 @@ function GenerateAvatarVideoDialog({
                       )}
                       disabled={saving}
                     >
-                      {s === 'mine' ? 'I miei' : 'HeyGen'}
+                      {s === 'mine' ? 'I miei' : 'Catalogo'}
                     </button>
                   ))}
                 </div>
@@ -2065,7 +2063,7 @@ function GenerateAvatarVideoDialog({
               ) : avatarItems.length === 0 ? (
                 <p className="p-2 text-xs text-muted-foreground">
                   {avatarSource === 'mine'
-                    ? 'Nessun avatar personale. Creane uno su HeyGen o usa quelli HeyGen.'
+                    ? 'Nessun avatar personale. Creane uno in Impostazioni → Avatar o usa quelli del catalogo.'
                     : 'Nessun avatar trovato.'}
                 </p>
               ) : (

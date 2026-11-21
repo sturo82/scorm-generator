@@ -333,7 +333,7 @@ export default function AvatarsSettingsPage() {
                 ))}
               </div>
             ) : groups.isError ? (
-              <p className="text-sm text-destructive">Impossibile caricare gli avatar. Verifica che la generazione video sia configurata (HeyGen).</p>
+              <p className="text-sm text-destructive">Impossibile caricare gli avatar in questo momento. Riprova tra poco; se continua, contatta l&apos;assistenza Coach.</p>
             ) : all.length === 0 ? (
               <div className="rounded-xl border border-dashed p-10 text-center">
                 <div className="mx-auto mb-3 grid size-12 place-items-center rounded-full bg-primary/10 text-primary">

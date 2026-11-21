@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ensureDefaultBrandId } from '../brands/default-brand.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OBJECT_STORAGE } from '../providers/provider.constants.js';
 import type { ObjectStorage } from '@scorm/domain';
@@ -110,7 +111,7 @@ export class CatalogService {
     });
 
     const profile: PrismaScormProfile = opts.profile ?? 'SCORM_2004_4TH';
-    const brandId = opts.brandId ?? course.primaryBrandId ?? undefined;
+    const brandId = opts.brandId ?? course.primaryBrandId ?? (await ensureDefaultBrandId(this.prisma, tenantId).catch(() => undefined));
 
     // Cerca un pacchetto READY già costruito per (brand?, profilo).
     const existing = this.findReadyPackage(course, profile, brandId);

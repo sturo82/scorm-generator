@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { UserRole } from '@prisma/client';
@@ -28,6 +29,7 @@ const ROLE_RANK: Record<UserRole, number> = {
  */
 @Injectable()
 export class RolesGuard implements CanActivate {
+  private readonly logger = new Logger(RolesGuard.name);
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
@@ -55,6 +57,9 @@ export class RolesGuard implements CanActivate {
     const userRank = ROLE_RANK[auth.role];
     const minRequired = Math.min(...required.map((r) => ROLE_RANK[r]));
     if (userRank < minRequired) {
+      // Le guardie girano prima del log HTTP: senza questa riga i rifiuti per ruolo non si vedono nei log.
+      const req = context.switchToHttp().getRequest<{ method?: string; url?: string }>();
+      this.logger.warn(`Ruolo insufficiente: ${auth.role} < ${required.join('|')} (${req.method} ${req.url}, tenant ${auth.tenant.tenantId})`);
       throw new ForbiddenException('Ruolo non autorizzato per questa operazione');
     }
     return true;

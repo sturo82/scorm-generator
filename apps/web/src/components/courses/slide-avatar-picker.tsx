@@ -96,7 +96,7 @@ export function SlideAvatarPicker({
                 }}
                 className={cn('rounded-md border px-2 py-1', source === s ? 'border-primary bg-accent/50' : 'hover:bg-accent/30')}
               >
-                {s === 'mine' ? 'I miei' : 'Catalogo HeyGen'}
+                {s === 'mine' ? 'I miei' : 'Catalogo Coach'}
               </button>
             ))}
           </div>

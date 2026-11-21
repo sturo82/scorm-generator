@@ -20,12 +20,12 @@ const SOURCE_LABEL: Record<string, string> = {
   video_transcript: 'Trascrizione video',
   video_script: 'Copione video',
   slide_script: 'Copioni video da slide',
-  slide_clip: 'Clip avatar da slide (HeyGen)',
+  slide_clip: 'Clip avatar da slide',
   slide_video: 'Montaggio video da slide',
   slide_summary: 'Riepilogo video da slide',
   knowledge_structure: 'Knowledge strutturata',
   slide_quiz: 'Quiz video da slide',
-  concept_video: 'Video avatar (HeyGen)',
+  concept_video: 'Video avatar',
 };
 
 const UNIT_LABEL: Record<MeterUnit, string> = {

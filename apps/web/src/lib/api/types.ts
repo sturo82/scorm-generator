@@ -163,6 +163,8 @@ export interface BrandView {
    * qui un URL firmato temporaneo. Null se non c'è logo o non risolvibile.
    */
   logoDisplayUrl?: string | null;
+  /** Brand predefinito del tenant: applicato ai corsi senza un brand scelto e ai corsi nuovi. */
+  isDefault?: boolean;
 }
 
 export interface QuotaStatus {
@@ -608,6 +610,8 @@ export interface ApiClient {
 
   // Brand
   listBrands(): Promise<BrandView[]>;
+  /** Imposta (o toglie, con null) il brand predefinito del tenant. */
+  setDefaultBrand(brandId: string | null): Promise<{ defaultBrandId: string | null }>;
   getBrand(id: string): Promise<BrandView>;
   createBrand(def: Omit<BrandView, 'id' | 'tenantId'>): Promise<BrandView>;
   updateBrand(id: string, def: Omit<BrandView, 'id' | 'tenantId'>): Promise<BrandView>;

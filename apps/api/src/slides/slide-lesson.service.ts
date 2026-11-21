@@ -30,6 +30,7 @@ import type { AppConfig } from '../config/configuration.js';
 import { ModulesService } from '../courses/modules.service.js';
 import { assessmentPrompt, systemPrompt } from '../generation/prompts.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
+import { ensureDefaultBrandId } from '../brands/default-brand.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LLM_PROVIDER, OBJECT_STORAGE } from '../providers/provider.constants.js';
 import { buildSlideVideoSpec, type AssemblySlide } from './slide-assembly.js';
@@ -877,7 +878,7 @@ export class SlideLessonService {
     let brandId = doc.brandId;
     if (!brandId && !isLibrary(doc.courseId)) {
       const course = await this.prisma.course.findFirst({ where: { id: doc.courseId, tenantId }, select: { primaryBrandId: true } });
-      brandId = course?.primaryBrandId ?? undefined;
+      brandId = course?.primaryBrandId ?? (await ensureDefaultBrandId(this.prisma, tenantId).catch(() => undefined));
     }
     if (!brandId) return { theme: {} };
     const brand = await this.prisma.brand.findFirst({ where: { id: brandId, tenantId }, select: { definition: true } });

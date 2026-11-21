@@ -117,6 +117,9 @@ model Plan {
 }
 
 model Tenant {
+  /// Brand applicato ai corsi senza un brand scelto (e ai corsi nuovi).
+  defaultBrandId String?
+  defaultBrand   Brand? @relation("TenantDefaultBrand", fields: [defaultBrandId], references: [id], onDelete: SetNull)
   avatarAccess AvatarAccess[]
   id          String         @id @default(cuid())
   name        String
@@ -240,6 +243,7 @@ model Brand {
   builds     CourseBrandBuild[]
   // Corsi che usano questo brand come primario (relazione inversa).
   primaryForCourses Course[]     @relation("CoursePrimaryBrand")
+  defaultForTenants Tenant[]     @relation("TenantDefaultBrand")
   createdAt  DateTime            @default(now())
   updatedAt  DateTime            @updatedAt
 

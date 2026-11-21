@@ -38,6 +38,12 @@ function makeService(opts?: {
         opts?.existing === undefined ? { id: 'brand_1', definition: validDef } : opts.existing,
       findMany: async () => [{ id: 'brand_1', definition: validDef }],
     },
+    // Brand predefinito del tenant: nessuno impostato.
+    tenant: {
+      findUnique: async () => ({ defaultBrandId: null }),
+      updateMany: async () => ({ count: 1 }),
+      update: async () => ({}),
+    },
   } as unknown as PrismaService;
   const quota = {
     assertWithinLimit: opts?.assertWithinLimit ?? (async () => undefined),

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/app/page-header';
 import { BrandEditor, type BrandDraft } from '@/components/brands/brand-editor';
 import { useToast } from '@/components/ui/toast';
+import { apiErrorText } from '@/lib/api/error-message';
 import { useSaveBrand } from '@/lib/api/hooks';
 
 export default function NewBrandPage() {
@@ -16,8 +17,8 @@ export default function NewBrandPage() {
       await save.mutateAsync({ def: draft });
       toast.show('Brand creato', 'success');
       router.push('/brands');
-    } catch {
-      toast.show('Creazione non riuscita', 'error');
+    } catch (err) {
+      toast.show(apiErrorText(err, 'Creazione non riuscita'), 'error');
     }
   }
 

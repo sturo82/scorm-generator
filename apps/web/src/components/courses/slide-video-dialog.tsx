@@ -350,7 +350,7 @@ function Pipeline({
             variant="outline"
             disabled={replace.isPending || lessonView?.status === 'running'}
             onClick={() => replaceRef.current?.click()}
-            title="Sostituisce solo le immagini delle slide con un PDF aggiornato (stesse pagine). Copioni e clip avatar restano invariati: nessun costo HeyGen."
+            title="Sostituisce solo le immagini delle slide con un PDF aggiornato (stesse pagine). Copioni e clip avatar restano invariati: nessun costo aggiuntivo per i video."
           >
             {replace.isPending ? <AiWorkingInline label="Aggiorno le slide…" /> : 'Sostituisci con PDF aggiornato'}
           </Button>
@@ -1067,7 +1067,7 @@ const avatars = useVideoAvatars(courseId, !started, { source });
       const msg = err instanceof Error ? err.message : '';
       toast.show(
         /501|non configurat/i.test(msg)
-          ? 'Generazione video non configurata sul server (HeyGen)'
+          ? 'Generazione video non attiva: contatta l\u2019assistenza Coach'
           : /oltre il tetto/i.test(msg)
             ? msg.replace(/^API \d+: /, '').replace(/[{}"]|message:|error:.*$/g, '').slice(0, 160)
             : 'Avvio della generazione non riuscito',
@@ -1099,7 +1099,7 @@ const avatars = useVideoAvatars(courseId, !started, { source });
                     }}
                     className={cn('rounded-md border px-2 py-1', source === s ? 'border-primary bg-accent/50' : 'hover:bg-accent/30')}
                   >
-                    {s === 'mine' ? 'I miei' : 'Catalogo HeyGen'}
+                    {s === 'mine' ? 'I miei' : 'Catalogo Coach'}
                   </button>
                 ))}
               </div>
@@ -1144,7 +1144,7 @@ const avatars = useVideoAvatars(courseId, !started, { source });
               <p className="flex h-9 items-center rounded-md border bg-muted/40 px-2">
                 {selected ? heygenAvatarTypeLabel({ source: selected.source, groupType: selected.groupType }) : 'Scegli un avatar'}
               </p>
-              <span className="block text-[11px] text-muted-foreground">Riconosciuto dall&apos;avatar scelto: determina la tariffa HeyGen.</span>
+              <span className="block text-[11px] text-muted-foreground">Riconosciuto dall&apos;avatar scelto: determina la tariffa al minuto.</span>
             </div>
             <label className="space-y-1 text-sm">
               <span className="font-medium">Qualità (engine)</span>
@@ -1190,7 +1190,7 @@ const avatars = useVideoAvatars(courseId, !started, { source });
                     />
                   ) : (
                     <>
-                      {' · '}costo HeyGen stimato <strong>${estimate.data.costUsd.toFixed(2)}</strong>
+                      {' · '}costo stimato <strong>${estimate.data.costUsd.toFixed(2)}</strong>
                     </>
                   )}
                 </p>
@@ -1250,7 +1250,7 @@ const avatars = useVideoAvatars(courseId, !started, { source });
               />
             ) : (
               <>
-                , costo HeyGen stimato <strong>${regen.data.costUsd.toFixed(2)}</strong>
+                , costo stimato <strong>${regen.data.costUsd.toFixed(2)}</strong>
               </>
             )}
             . Le altre clip restano quelle già generate.
@@ -1293,7 +1293,7 @@ function ClipsProgress({
         {view.status === 'completed' && `Tutte le ${total} clip sono pronte (${fmtMin(view.totalDurationSec)} di video).`}
         {view.status === 'failed' && `${failed} clip non riuscite su ${total}.`}
       </p>
-      {view.status === 'running' && <AiWorking label="HeyGen sta generando le clip…" hint="Ogni clip richiede alcuni minuti: le slide vengono elaborate in parallelo." />}
+      {view.status === 'running' && <AiWorking label="Coach sta generando le clip…" hint="Ogni clip richiede alcuni minuti: le slide vengono elaborate in parallelo." />}
       {view.status === 'failed' && (
         <div className="space-y-2">
           {firstError && <p className="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">{firstError}</p>}
@@ -1724,7 +1724,7 @@ function StepLesson({
             <div className="rounded-md border border-amber-300/60 bg-amber-50 p-2.5 text-sm text-amber-900">
               <strong>Il video non è aggiornato.</strong> Dopo l&apos;ultimo montaggio hai cambiato avatar, voce o
               pronuncia: le clip nuove ci sono, ma il video salvato{library ? ' in libreria' : ' nella lezione'} è ancora
-              quello precedente. Premi <strong>«Rimonta con le clip aggiornate»</strong> (senza costi HeyGen).
+              quello precedente. Premi <strong>«Rimonta con le clip aggiornate»</strong> (senza costi per nuove clip).
             </div>
           )}
           <div className="rounded-md border bg-background p-2 text-xs text-muted-foreground">

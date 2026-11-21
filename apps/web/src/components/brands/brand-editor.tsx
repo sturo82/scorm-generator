@@ -308,6 +308,6 @@ export function BrandEditor({ initial, onSubmit, saving, onUploadLogo, uploading
 function stripIdentity(b: BrandView): BrandDraft {
   // logoDisplayUrl è view-only (URL firmato risolto dal server): non fa parte
   // del draft modificabile né del payload di salvataggio.
-  const { id: _id, tenantId: _t, logoDisplayUrl: _l, ...rest } = b;
+  const { id: _id, tenantId: _t, logoDisplayUrl: _l, isDefault: _d, ...rest } = b;
   return structuredClone(rest);
 }

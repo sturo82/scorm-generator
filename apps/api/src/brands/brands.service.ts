@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import {
   Brand,
   BRAND_STORAGE_PREFIX,
@@ -37,6 +38,14 @@ function extForLogoMime(mime: string): string | null {
   }
 }
 
+/** Nome già usato da un altro brand del tenant: 409 con un messaggio chiaro invece di un errore interno. */
+function duplicateName(err: unknown): never {
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+    throw new ConflictException('Esiste già un brand con questo nome: scegline un altro.');
+  }
+  throw err;
+}
+
 /**
  * Gestione dei brand del tenant (Requisito 7). La definizione (asset, colori,
  * tipografia, voice, legal) è validata con lo schema Brand dei contratti e
@@ -60,26 +69,30 @@ export class BrandsService {
     await this.quota.assertWithinLimit(tenantId, 'brands');
     // Valida la definizione completa componendo id/tenantId provvisori.
     const validated = this.validate(tenantId, 'pending', definition);
-    const row = await this.prisma.brand.create({
-      data: {
-        tenantId,
-        name: validated.name,
-        definition: this.stripIdentity(validated) as object,
-      },
-    });
+    const row = await this.prisma.brand
+      .create({
+        data: {
+          tenantId,
+          name: validated.name,
+          definition: this.stripIdentity(validated) as object,
+        },
+      })
+      .catch(duplicateName);
     return this.toView(row.id, tenantId, row.definition);
   }
 
   async update(tenantId: string, brandId: string, definition: BrandDefinition): Promise<BrandView> {
     await this.requireBrand(tenantId, brandId);
     const validated = this.validate(tenantId, brandId, definition);
-    const row = await this.prisma.brand.update({
-      where: { id: brandId },
-      data: {
-        name: validated.name,
-        definition: this.stripIdentity(validated) as object,
-      },
-    });
+    const row = await this.prisma.brand
+      .update({
+        where: { id: brandId },
+        data: {
+          name: validated.name,
+          definition: this.stripIdentity(validated) as object,
+        },
+      })
+      .catch(duplicateName);
     return this.toView(row.id, tenantId, row.definition);
   }
 
@@ -88,12 +101,26 @@ export class BrandsService {
       where: { tenantId },
       orderBy: { createdAt: 'desc' },
     });
-    return Promise.all(rows.map((r) => this.toView(r.id, tenantId, r.definition)));
+    const def = await this.defaultBrandId(tenantId);
+    return Promise.all(rows.map((r) => this.toView(r.id, tenantId, r.definition, def)));
+  }
+
+  /** Brand predefinito del tenant (null se non impostato). */
+  async defaultBrandId(tenantId: string): Promise<string | null> {
+    const t = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { defaultBrandId: true } });
+    return t?.defaultBrandId ?? null;
+  }
+
+  /** Imposta (o toglie, con null) il brand predefinito del tenant. */
+  async setDefault(tenantId: string, brandId: string | null): Promise<{ defaultBrandId: string | null }> {
+    if (brandId) await this.requireBrand(tenantId, brandId);
+    await this.prisma.tenant.update({ where: { id: tenantId }, data: { defaultBrandId: brandId } });
+    return { defaultBrandId: brandId };
   }
 
   async get(tenantId: string, brandId: string): Promise<BrandView> {
     const row = await this.requireBrand(tenantId, brandId);
-    return this.toView(row.id, tenantId, row.definition);
+    return this.toView(row.id, tenantId, row.definition, await this.defaultBrandId(tenantId));
   }
 
   async delete(tenantId: string, brandId: string): Promise<void> {
@@ -184,10 +211,11 @@ export class BrandsService {
     return logo;
   }
 
-  private async toView(id: string, tenantId: string, definition: unknown): Promise<BrandView> {
+  private async toView(id: string, tenantId: string, definition: unknown, defaultId?: string | null): Promise<BrandView> {
     // Ricompone il Brand completo validando la definizione salvata.
     const brand = Brand.parse({ ...(definition as object), id, tenantId });
     const logoDisplayUrl = await this.resolveLogoDisplayUrl(brand.assets.logoPrimaryUrl);
-    return { ...brand, logoDisplayUrl };
+    const isDefault = (defaultId === undefined ? await this.defaultBrandId(tenantId) : defaultId) === id;
+    return { ...brand, logoDisplayUrl, isDefault };
   }
 }

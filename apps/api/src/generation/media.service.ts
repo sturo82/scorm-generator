@@ -1133,7 +1133,7 @@ export class MediaService implements OnModuleInit {
     const used = await this.countVideosThisMonth(tenantId);
     if (used >= cfg.monthlyQuota) {
       throw new BadRequestException(
-        `Hai esaurito i ${cfg.monthlyQuota} video/mese del piano HeyGen. ` +
+        `Hai esaurito i ${cfg.monthlyQuota} video con avatar disponibili questo mese. ` +
           'Attendi il mese prossimo oppure passa a un piano a pagamento.',
       );
     }
@@ -2375,10 +2375,10 @@ function isTransientCartoonError(err: unknown): boolean {
 function describeVideoGenError(raw: string): string {
   const r = raw.toLowerCase();
   if (r.includes('quota') || r.includes('limit') || r.includes('credit') || r.includes('insufficient')) {
-    return 'Quota HeyGen esaurita. Hai raggiunto il limite di video del tuo piano. Riprova il mese prossimo o passa a un piano a pagamento.';
+    return 'Hai raggiunto il limite di video con avatar del tuo piano. Riprova il mese prossimo o contatta l\u2019assistenza Coach.';
   }
   if (r.includes('unauthorized') || r.includes('api key') || r.includes('401') || r.includes('403')) {
-    return 'Credenziali HeyGen non valide. Verifica HEYGEN_API_KEY.';
+    return 'Servizio video momentaneamente non disponibile: riprova tra poco o contatta l\u2019assistenza Coach.';
   }
   if (r.includes('avatar')) {
     return 'Avatar non valido o non disponibile. Scegli un altro avatar.';

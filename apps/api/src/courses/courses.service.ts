@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Brief, BriefDraft, type Brief as BriefType, type BriefDraft as BriefDraftType } from '@scorm/contracts';
 import type { ObjectStorage } from '@scorm/domain';
+import { ensureDefaultBrandId } from '../brands/default-brand.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { QuotaService } from '../plans/quota.service.js';
 import { OBJECT_STORAGE } from '../providers/provider.constants.js';
@@ -71,10 +72,12 @@ export class CoursesService {
   async create(input: CreateCourseInput): Promise<CourseView> {
     // Quota sul numero di corsi del tenant (Requisito 1.5).
     await this.quota.assertWithinLimit(input.tenantId, 'courses');
-
+    // I corsi nuovi partono con il brand predefinito del tenant (creato se non ce n'è nessuno).
+    const brandId = await ensureDefaultBrandId(this.prisma, input.tenantId).catch(() => null);
     const course = await this.prisma.course.create({
       data: {
         tenantId: input.tenantId,
+        ...(brandId ? { primaryBrandId: brandId } : {}),
         title: input.title,
         description: input.description ?? '',
         language: input.language,
@@ -110,6 +113,11 @@ export class CoursesService {
 
   async get(tenantId: string, courseId: string): Promise<CourseView> {
     const course = await this.requireCourse(tenantId, courseId);
+    // Senza un brand scelto il corso usa il predefinito del tenant (anteprima ed export coincidono).
+    if (!course.primaryBrandId) {
+      const t = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { defaultBrandId: true } });
+      if (t?.defaultBrandId) return this.toView({ ...course, primaryBrandId: t.defaultBrandId });
+    }
     return this.toView(course);
   }
 

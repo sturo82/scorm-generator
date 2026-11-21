@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/app/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BrandEditor, type BrandDraft } from '@/components/brands/brand-editor';
 import { useToast } from '@/components/ui/toast';
+import { apiErrorText } from '@/lib/api/error-message';
 import { useDynamicRouteId } from '@/lib/use-dynamic-route-id';
 import { useBrand, useSaveBrand, useUploadBrandLogo } from '@/lib/api/hooks';
 
@@ -23,8 +24,8 @@ export function BrandDetailClient() {
       await save.mutateAsync({ id: brandId, def: draft });
       toast.show('Brand aggiornato', 'success');
       router.push('/brands');
-    } catch {
-      toast.show('Aggiornamento non riuscito', 'error');
+    } catch (err) {
+      toast.show(apiErrorText(err, 'Aggiornamento non riuscito'), 'error');
     }
   }
 

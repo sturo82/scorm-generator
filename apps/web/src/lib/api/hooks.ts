@@ -755,6 +755,17 @@ export function useSaveBrand() {
   });
 }
 
+/** Imposta il brand predefinito del tenant (si applica ai corsi senza un brand scelto). */
+export function useSetDefaultBrand() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (brandId: string | null) => api.setDefaultBrand(brandId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.brands });
+      void qc.invalidateQueries({ queryKey: qk.courses });
+    },
+  });
+}
 export function useDeleteBrand() {
   const qc = useQueryClient();
   return useMutation({

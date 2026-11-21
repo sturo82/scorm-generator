@@ -194,7 +194,7 @@ interface AvatarLookResponse {
 function unsupportedEngineMessage(supported?: string[]): string {
   const only6 = (supported ?? []).length > 0 && (supported ?? []).every((e) => e.startsWith('heygen-avatar-6'));
   return only6
-    ? 'Questo avatar non è disponibile con le qualità offerte (richiede Avatar 6): scegline un altro.'
+    ? 'Questo avatar non è disponibile con le qualità offerte: scegline un altro.'
     : 'Questo avatar non è disponibile con la qualità scelta: scegli un altro avatar o un\u2019altra qualità.';
 }
 
@@ -245,7 +245,8 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     const b = body as { error?: { message?: string } | string | null; message?: string } | null;
     const fromError =
       typeof b?.error === 'string' ? b.error : b?.error?.message ?? undefined;
-    return fromError || b?.message || `HeyGen HTTP ${status}`;
+    // Il nome del fornitore non arriva mai all'utente: i messaggi parlano del servizio video.
+    return (fromError || b?.message || `Servizio video: errore ${status}`).replace(/hey\s*gen/gi, 'servizio video');
   }
 
   /** Look già risolti per id e engine (un avatar può essere un personaggio con molti look). */
@@ -272,7 +273,7 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
       if (res.ok) {
         const look = ((await res.json().catch(() => null)) as { data?: V3LookItem } | null)?.data;
         if (look && !supports(look)) {
-          throw new ProviderUnavailableError('heygen', new Error(unsupportedEngineMessage(look.supported_api_engines)));
+          throw new ProviderUnavailableError('servizio video', new Error(unsupportedEngineMessage(look.supported_api_engines)));
         }
         return avatarId;
       }
@@ -281,7 +282,7 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
       const ready = looks.filter((l) => (l.status ?? '').toLowerCase() === 'completed' && l.id);
       const fit = ready.find(supports);
       if (fit?.id) return fit.id;
-      if (ready.length > 0) throw new ProviderUnavailableError('heygen', new Error(unsupportedEngineMessage(ready[0]!.supported_api_engines)));
+      if (ready.length > 0) throw new ProviderUnavailableError('servizio video', new Error(unsupportedEngineMessage(ready[0]!.supported_api_engines)));
       return avatarId;
     })();
     this.lookIds.set(key, p);
@@ -301,7 +302,7 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     }
     const script = input.script.trim();
     if (!script) {
-      throw new ProviderUnavailableError('heygen', new Error('Script vuoto'));
+      throw new ProviderUnavailableError('servizio video', new Error('Script vuoto'));
     }
     const voiceId = input.voiceId ?? this.defaultVoiceId;
     const body: Record<string, unknown> = {
@@ -332,7 +333,7 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
         body: JSON.stringify(body),
       });
     } catch (err) {
-      throw new ProviderUnavailableError('heygen', err);
+      throw new ProviderUnavailableError('servizio video', err);
     }
     const json = (await res.json().catch(() => null)) as CreateVideoResponse | null;
     if (!res.ok) {
@@ -345,7 +346,7 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     if (!videoId) {
       throw new ProviderUnavailableError(
         'heygen',
-        new Error('Risposta HeyGen senza video_id'),
+        new Error('Risposta del servizio video senza id del video'),
       );
     }
     return { jobRef: videoId };
@@ -398,11 +399,11 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     try {
       res = await this.fetchImpl(url.toString(), { headers: this.headers() });
     } catch (err) {
-      throw new ProviderUnavailableError('heygen', err);
+      throw new ProviderUnavailableError('servizio video', err);
     }
     if (!res.ok) {
       const json = (await res.json().catch(() => null)) as unknown;
-      throw new ProviderUnavailableError('heygen', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
+      throw new ProviderUnavailableError('servizio video', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
     }
     return (await res.json()) as T;
   }
@@ -641,15 +642,15 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
         body: form,
       });
     } catch (err) {
-      throw new ProviderUnavailableError('heygen', err);
+      throw new ProviderUnavailableError('servizio video', err);
     }
     const json = (await res.json().catch(() => null)) as UploadAssetResponse | null;
     if (!res.ok) {
-      throw new ProviderUnavailableError('heygen', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
+      throw new ProviderUnavailableError('servizio video', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
     }
     const assetId = json?.data?.asset_id ?? json?.data?.id;
     if (!assetId) {
-      throw new ProviderUnavailableError('heygen', new Error('Upload asset senza asset_id'));
+      throw new ProviderUnavailableError('servizio video', new Error('Upload asset senza asset_id'));
     }
     return assetId;
   }
@@ -669,21 +670,21 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
         body: JSON.stringify({ filename: `${name}.${ext}`, content_type: file.contentType, size_bytes: bytes.byteLength }),
       });
     } catch (err) {
-      throw new ProviderUnavailableError('heygen', err);
+      throw new ProviderUnavailableError('servizio video', err);
     }
     const json = (await res.json().catch(() => null)) as DirectUploadResponse | null;
-    if (!res.ok) throw new ProviderUnavailableError('heygen', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
+    if (!res.ok) throw new ProviderUnavailableError('servizio video', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
     const assetId = json?.data?.asset_id;
     const url = json?.data?.upload_url;
-    if (!assetId || !url) throw new ProviderUnavailableError('heygen', new Error('Caricamento diretto senza asset_id o indirizzo'));
+    if (!assetId || !url) throw new ProviderUnavailableError('servizio video', new Error('Caricamento diretto senza asset_id o indirizzo'));
     let put: Response;
     try {
       // Esattamente le intestazioni firmate, nessuna in più (niente chiave API).
       put = await this.fetchImpl(url, { method: 'PUT', headers: json?.data?.upload_headers ?? {}, body: bytes });
     } catch (err) {
-      throw new ProviderUnavailableError('heygen', err);
+      throw new ProviderUnavailableError('servizio video', err);
     }
-    if (!put.ok) throw new ProviderUnavailableError('heygen', new Error(`Caricamento del video non riuscito (HTTP ${put.status})`));
+    if (!put.ok) throw new ProviderUnavailableError('servizio video', new Error(`Caricamento del video non riuscito (HTTP ${put.status})`));
     let done: Response;
     try {
       done = await this.fetchImpl(`${this.baseUrl}/v3/assets/${encodeURIComponent(assetId)}/complete`, {
@@ -692,11 +693,11 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
         body: '{}',
       });
     } catch (err) {
-      throw new ProviderUnavailableError('heygen', err);
+      throw new ProviderUnavailableError('servizio video', err);
     }
     if (!done.ok) {
       const body = (await done.json().catch(() => null)) as unknown;
-      throw new ProviderUnavailableError('heygen', new Error(HeyGenVideoProvider.errMessage(done.status, body)));
+      throw new ProviderUnavailableError('servizio video', new Error(HeyGenVideoProvider.errMessage(done.status, body)));
     }
     return assetId;
   }
@@ -704,18 +705,18 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
   async createAvatar(input: CreateAvatarInput): Promise<CreateAvatarResult> {
     const name = input.name.trim();
     if (!name) {
-      throw new ProviderUnavailableError('heygen', new Error('Nome avatar mancante'));
+      throw new ProviderUnavailableError('servizio video', new Error('Nome avatar mancante'));
     }
     const body: Record<string, unknown> = { type: input.type, name };
     if (input.type === 'digital_twin') {
       if (!input.video) {
-        throw new ProviderUnavailableError('heygen', new Error('Video mancante per il digital twin'));
+        throw new ProviderUnavailableError('servizio video', new Error('Video mancante per il digital twin'));
       }
       // Il video di addestramento è grande: si carica direttamente su S3 (non passa da HeyGen).
       body.file = { type: 'asset_id', asset_id: await this.uploadLargeAsset(input.video, 'training-footage') };
     } else if (input.type === 'photo') {
       if (!input.image) {
-        throw new ProviderUnavailableError('heygen', new Error('Immagine mancante per avatar photo'));
+        throw new ProviderUnavailableError('servizio video', new Error('Immagine mancante per avatar photo'));
       }
       const assetId = await this.uploadAsset(input.image);
       // `file` è discriminato per `type`: con 'asset_id' si passa l'asset caricato.
@@ -723,7 +724,7 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
     } else {
       const prompt = (input.prompt ?? '').trim();
       if (!prompt) {
-        throw new ProviderUnavailableError('heygen', new Error('Prompt mancante per avatar prompt'));
+        throw new ProviderUnavailableError('servizio video', new Error('Prompt mancante per avatar prompt'));
       }
       body.prompt = prompt;
     }
@@ -736,18 +737,18 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
         body: JSON.stringify(body),
       });
     } catch (err) {
-      throw new ProviderUnavailableError('heygen', err);
+      throw new ProviderUnavailableError('servizio video', err);
     }
     const json = (await res.json().catch(() => null)) as CreateAvatarApiResponse | null;
     if (!res.ok) {
-      throw new ProviderUnavailableError('heygen', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
+      throw new ProviderUnavailableError('servizio video', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
     }
     const group = json?.data?.avatar_group;
     const look = json?.data?.avatar_item;
     const avatarId = look?.id;
     const groupId = group?.id;
     if (!avatarId || !groupId) {
-      throw new ProviderUnavailableError('heygen', new Error('Risposta HeyGen senza avatar_item/avatar_group id'));
+      throw new ProviderUnavailableError('servizio video', new Error('Risposta del servizio video senza id dell\u2019avatar'));
     }
     // Un nuovo avatar invalida la cache "mine" così la lista si aggiorna.
     this.mineCache = undefined;
@@ -769,11 +770,11 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
         headers: this.headers(),
       });
     } catch (err) {
-      throw new ProviderUnavailableError('heygen', err);
+      throw new ProviderUnavailableError('servizio video', err);
     }
     const json = (await res.json().catch(() => null)) as AvatarLookResponse | null;
     if (!res.ok) {
-      throw new ProviderUnavailableError('heygen', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
+      throw new ProviderUnavailableError('servizio video', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
     }
     const data = json?.data;
     const raw = (data?.status ?? '').toLowerCase();
@@ -879,10 +880,10 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
         body: JSON.stringify(rerouteUrl ? { reroute_url: rerouteUrl } : {}),
       });
     } catch (err) {
-      throw new ProviderUnavailableError('heygen', err);
+      throw new ProviderUnavailableError('servizio video', err);
     }
     const json = (await res.json().catch(() => null)) as AvatarConsentResponse | null;
-    if (!res.ok) throw new ProviderUnavailableError('heygen', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
+    if (!res.ok) throw new ProviderUnavailableError('servizio video', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
     this.groupsCache = undefined;
     const c = json?.data?.avatar_group?.consent_status ?? null;
     return {
@@ -899,11 +900,11 @@ export class HeyGenVideoProvider implements VideoGenerationProvider {
         headers: this.headers(),
       });
     } catch (err) {
-      throw new ProviderUnavailableError('heygen', err);
+      throw new ProviderUnavailableError('servizio video', err);
     }
     if (!res.ok) {
       const json = (await res.json().catch(() => null)) as unknown;
-      throw new ProviderUnavailableError('heygen', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
+      throw new ProviderUnavailableError('servizio video', new Error(HeyGenVideoProvider.errMessage(res.status, json)));
     }
     // Elimina dalla cache "mine" così sparisce subito dalla lista.
     this.mineCache = undefined;

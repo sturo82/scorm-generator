@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Brand, Brief, Course, type Course as CourseType, type Brand as BrandType } from '@scorm/contracts';
 import {
   buildScormPackage,
@@ -11,6 +11,7 @@ import {
 } from '@scorm/scorm';
 import type { ScormProfile as PrismaScormProfile } from '@prisma/client';
 import type { ObjectStorage } from '@scorm/domain';
+import { ensureDefaultBrandId } from '../brands/default-brand.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { QuotaService } from '../plans/quota.service.js';
 import { AuditService } from '../observability/audit.service.js';
@@ -62,12 +63,8 @@ export class ExportService {
     const course = await this.loadCourse(input.tenantId, input.courseId);
     // Brand: quello richiesto esplicitamente, altrimenti il brand primario del
     // corso. Senza né l'uno né l'altro, errore chiaro.
-    const brandId = input.brandId ?? course.primaryBrandId;
-    if (!brandId) {
-      throw new BadRequestException(
-        'Nessun brand specificato e il corso non ha un brand primario: scegline uno.',
-      );
-    }
+    // Senza un brand scelto si usa il predefinito del tenant (creato se non ce n'è nessuno).
+    const brandId = input.brandId ?? course.primaryBrandId ?? (await ensureDefaultBrandId(this.prisma, input.tenantId));
     const brand = await this.loadBrand(input.tenantId, brandId);
 
     // Build o riuso del CourseBrandBuild (corso+brand+profilo).

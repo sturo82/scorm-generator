@@ -56,7 +56,7 @@ export interface HeyGenEngineInfo {
 export const HEYGEN_ENGINES: readonly HeyGenEngineInfo[] = [
   {
     id: 'avatar_iii',
-    label: 'Avatar III',
+    label: 'Standard',
     description:
       'Lip-sync veloce, preciso e consistente. Pipeline dedicata foto→video. ' +
       'La scelta più economica, ideale per i tuoi avatar da foto.',
@@ -65,7 +65,7 @@ export const HEYGEN_ENGINES: readonly HeyGenEngineInfo[] = [
   },
   {
     id: 'avatar_iv',
-    label: 'Avatar IV',
+    label: 'Espressiva',
     description:
       'Espressioni facciali e movimenti generati, più espressivo e naturale. ' +
       'Adatto a photo avatar e personaggi. Costo intermedio.',
@@ -74,7 +74,7 @@ export const HEYGEN_ENGINES: readonly HeyGenEngineInfo[] = [
   },
   {
     id: 'avatar_v',
-    label: 'Avatar V',
+    label: 'Massima fedeltà',
     description:
       'Massima fedeltà e realismo full-body. Disponibile SOLO per i digital ' +
       'twin (training da video reale), non per i photo avatar. È il più costoso.',
@@ -160,7 +160,7 @@ export const HEYGEN_CREATABLE_AVATAR_TYPES: readonly HeyGenCreatableAvatarInfo[]
     description:
       'Parti da un video di circa 2 minuti di una persona reale che parla in camera. ' +
       "L'avatar replica volto, voce e gesti di quella persona. Richiede il consenso della persona " +
-      'ritratta, verificato da HeyGen prima di poter generare video. Addestramento: qualche minuto.',
+      'ritratta, verificato prima di poter generare video. Addestramento: qualche minuto.',
   },
   {
     type: 'prompt',
@@ -216,7 +216,7 @@ export function heygenAvatarTypeLabel(opts: {
   source?: 'mine' | 'stock';
   groupType?: string;
 }): string {
-  if (opts.source === 'stock') return 'Stock HeyGen';
+  if (opts.source === 'stock') return 'Catalogo Coach';
   const g = (opts.groupType ?? '').toUpperCase();
   if (g.includes('PHOTO')) return 'Da foto';
   if (g.includes('TALKING_PHOTO')) return 'Da foto';

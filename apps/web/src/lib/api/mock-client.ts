@@ -642,6 +642,9 @@ export class MockApiClient implements ApiClient {
     if (!b) throw new Error('Brand non trovato');
     return b;
   }
+  async setDefaultBrand(brandId: string | null) {
+    return { defaultBrandId: brandId };
+  }
   async createBrand(def: Omit<BrandView, 'id' | 'tenantId'>) {
     await delay();
     const b: BrandView = { ...def, id: id('brand'), tenantId: 'tenant-dev' };

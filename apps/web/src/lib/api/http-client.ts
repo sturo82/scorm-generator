@@ -342,6 +342,9 @@ export class HttpApiClient implements ApiClient {
     return url;
   }
   listBrands() { return this.request<BrandView[]>('/brands'); }
+  setDefaultBrand(brandId: string | null) {
+    return this.request<{ defaultBrandId: string | null }>('/brands/default', { method: 'PUT', body: JSON.stringify({ brandId }) });
+  }
   getBrand(id: string) { return this.request<BrandView>(`/brands/${id}`); }
   createBrand(def: Omit<BrandView, 'id' | 'tenantId'>) {
     return this.request<BrandView>('/brands', { method: 'POST', body: JSON.stringify(def) });

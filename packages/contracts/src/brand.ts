@@ -71,6 +71,8 @@ export type Brand = z.infer<typeof Brand>;
  */
 export const BrandView = Brand.extend({
   logoDisplayUrl: z.string().nullable().default(null),
+  /** Brand predefinito del tenant (applicato ai corsi senza un brand scelto). */
+  isDefault: z.boolean().default(false),
 });
 export type BrandView = z.infer<typeof BrandView>;
 
