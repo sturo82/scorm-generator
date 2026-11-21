@@ -50,6 +50,8 @@ export interface CourseView {
   coverAttribution?: { provider: string; authorName: string; authorUrl?: string; sourceUrl?: string };
   /** Punto focale verticale della copertina (0-100, centro=50). */
   coverPosition?: number;
+  /** Id dell'import delle slide se il corso nasce dal percorso "da slide": apre lo Studio video. */
+  slidesImportId?: string;
   /** Stile delle micro-interazioni del corso: 'sober' (default) | 'lively'. */
   interactionStyle?: 'sober' | 'lively';
   /** Posizione del menu di navigazione: 'side' (default) | 'top'. */
@@ -408,6 +410,7 @@ import type {
   SlideImportView,
   SlideScriptsDoc,
   SlideClipsEstimate,
+  SlideChangesView,
   SlideClipsView,
   StartSlideClipsInput,
   SlideLessonView,
@@ -436,6 +439,7 @@ export type {
   SlideImportView,
   SlideScriptsDoc,
   SlideClipsEstimate,
+  SlideChangesView,
   SlideClipsView,
   StartSlideClipsInput,
   SlideLessonView,
@@ -800,6 +804,8 @@ export interface ApiClient {
   getSlideClips(courseId: string, importId: string): Promise<SlideClipsView | { status: 'none' }>;
   startSlideClips(courseId: string, importId: string, input: StartSlideClipsInput): Promise<SlideClipsView>;
   getSlideLesson(courseId: string, importId: string): Promise<SlideLessonView | { status: 'none' }>;
+  getSlideChanges(courseId: string, importId: string): Promise<SlideChangesView>;
+  applySlideChanges(courseId: string, importId: string): Promise<SlideChangesView>;
   replaceSlides(courseId: string, importId: string, file: File): Promise<SlideImportView & { warnings: string[] }>;
   remasterSlideLesson(courseId: string, importId: string, input?: SlideLayoutChoice): Promise<SlideLessonView>;
   proposeSlideSections(courseId: string, importId: string): Promise<{ sections: SlideSection[] }>;

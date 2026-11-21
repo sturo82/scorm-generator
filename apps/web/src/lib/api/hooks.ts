@@ -1304,6 +1304,28 @@ export const useSlideLesson = (courseId: string, importId: string | null) =>
     refetchInterval: (query) => (query.state.data?.status === 'running' ? 5000 : false),
   });
 
+/** Clip da rifare e rimontaggio in attesa sul video da slide, con il costo complessivo. */
+export const useSlideChanges = (courseId: string, importId: string | null) =>
+  useQuery({
+    queryKey: ['courses', courseId, 'slides', importId, 'changes'],
+    queryFn: () => api.getSlideChanges(courseId, importId as string),
+    enabled: !!courseId && !!importId,
+    staleTime: 5_000,
+    refetchInterval: (q) => (q.state.data?.running ? 4000 : 15_000),
+  });
+
+/** Applica in blocco le modifiche: rigenera le clip cambiate e rimonta il video. */
+export function useApplySlideChanges(courseId: string, importId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.applySlideChanges(courseId, importId as string),
+    onSuccess: () => {
+      for (const k of ['changes', 'clips', 'lesson']) void qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, k] });
+      void qc.invalidateQueries({ queryKey: ['billing', 'wallet'] });
+    },
+  });
+}
+
 export const useProposeSlideSections = (courseId: string, importId: string | null) =>
   useMutation({ mutationFn: () => api.proposeSlideSections(courseId, importId as string) });
 

@@ -282,6 +282,7 @@ export class CoursesService {
     instructorAvatarKey?: string | null;
     folderId?: string | null;
     shareable?: boolean | null;
+    slidesImportId?: string | null;
   }): Promise<CourseView> {
     const briefResult = course.brief ? BriefDraft.safeParse(course.brief) : null;
     let coverImageUrl: string | undefined;
@@ -332,6 +333,7 @@ export class CoursesService {
       instructor,
       folderId: course.folderId ?? null,
       shareable: course.shareable === true,
+      ...(course.slidesImportId ? { slidesImportId: course.slidesImportId } : {}),
     };
   }
 

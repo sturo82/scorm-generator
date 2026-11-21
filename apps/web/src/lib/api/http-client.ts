@@ -53,6 +53,7 @@ import type {
   SlideImportView,
   SlideScriptsDoc,
   SlideClipsEstimate,
+  SlideChangesView,
   SlideClipsView,
   StartSlideClipsInput,
   SlideLessonView,
@@ -751,6 +752,12 @@ export class HttpApiClient implements ApiClient {
       method: 'POST',
       body: JSON.stringify(input),
     });
+  }
+  getSlideChanges(courseId: string, importId: string) {
+    return this.request<SlideChangesView>(`/courses/${courseId}/slides/imports/${importId}/changes`);
+  }
+  applySlideChanges(courseId: string, importId: string) {
+    return this.request<SlideChangesView>(`/courses/${courseId}/slides/imports/${importId}/changes/apply`, { method: 'POST' });
   }
   getSlideLesson(courseId: string, importId: string) {
     return this.request<SlideLessonView | { status: 'none' }>(`/courses/${courseId}/slides/imports/${importId}/lesson`);

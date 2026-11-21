@@ -245,18 +245,44 @@ export function SlideVideoDialog({
   );
 }
 
+type PipelinePart = 'header' | 'scripts' | 'clips' | 'lesson';
+
+/**
+ * Le sezioni del flusso "Video da slide" fuori dalla finestra: lo Studio video le mostra in schede
+ * (copioni e clip, aspetto e montaggio) sullo stesso import.
+ */
+export function SlidePipeline({ courseId, importId, show }: { courseId: string; importId: string; show: PipelinePart[] }) {
+  const qc = useQueryClient();
+  return (
+    <Pipeline
+      courseId={courseId}
+      importId={importId}
+      show={show}
+      onReplace={() => undefined}
+      onLessonDone={() => {
+        qc.invalidateQueries({ queryKey: qk.modules(courseId) });
+        qc.invalidateQueries({ queryKey: ['courses', courseId, 'assessments'] });
+        qc.invalidateQueries({ queryKey: qk.cost(courseId) });
+      }}
+      onClose={() => undefined}
+    />
+  );
+}
+
 function Pipeline({
   courseId,
   importId,
   onReplace,
   onLessonDone,
   onClose,
+  show = ['header', 'scripts', 'clips', 'lesson'],
 }: {
   courseId: string;
   importId: string;
   onReplace: () => void;
   onLessonDone: () => void;
   onClose: () => void;
+  show?: PipelinePart[];
 }) {
   const imp = useSlideImport(courseId, importId);
   const replace = useReplaceSlides(courseId, importId);
@@ -312,6 +338,7 @@ function Pipeline({
   return (
     <div className="space-y-8">
       <input ref={replaceRef} type="file" accept="application/pdf" className="hidden" onChange={handleReplace} />
+      {show.includes('header') && (
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
         <span className="min-w-0 truncate">
           <strong>{imp.data?.filename ?? 'Slide importate'}</strong>
@@ -334,6 +361,7 @@ function Pipeline({
           )}
         </div>
       </div>
+      )}
       {replaceError && (
         <div className="flex items-start justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
           <p>
@@ -345,6 +373,7 @@ function Pipeline({
         </div>
       )}
 
+      {show.includes('scripts') && (
       <StepScripts
         courseId={courseId}
         importId={importId}
@@ -354,12 +383,13 @@ function Pipeline({
         thumbs={imp.data?.slides ?? []}
         locked={Boolean(clipsView) && clipsView?.status !== 'failed'}
       />
+      )}
 
-      {approved && (
+      {show.includes('clips') && approved && (
         <StepClips courseId={courseId} importId={importId} view={clipsView} language={imp.data?.language} scripts={scriptsDoc} videoOutdated={videoOutdated} />
       )}
 
-      {clipsDone && (
+      {show.includes('lesson') && clipsDone && (
         <StepLesson
           courseId={courseId}
           importId={importId}

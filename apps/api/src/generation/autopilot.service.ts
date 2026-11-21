@@ -176,6 +176,9 @@ export class AutopilotService implements OnModuleInit {
       startedAt: now,
       updatedAt: now,
     };
+    await this.tenantPrisma.runInTenant(tenantId, (tx) =>
+      tx.course.updateMany({ where: { id: courseId, tenantId }, data: { slidesImportId: slides.importId } }),
+    );
     await this.save(tenantId, courseId, doc);
     this.launch(tenantId, courseId);
     return this.view(tenantId, courseId, doc);

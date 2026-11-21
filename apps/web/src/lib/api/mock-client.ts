@@ -1278,6 +1278,8 @@ export class MockApiClient implements ApiClient {
   async getSlideClips(): Promise<never> { return this.slidesUnavailable(); }
   async startSlideClips(): Promise<never> { return this.slidesUnavailable(); }
   async getSlideLesson(): Promise<never> { return this.slidesUnavailable(); }
+  async getSlideChanges(): Promise<never> { return this.slidesUnavailable(); }
+  async applySlideChanges(): Promise<never> { return this.slidesUnavailable(); }
   async replaceSlides(): Promise<never> { return this.slidesUnavailable(); }
   async remasterSlideLesson(): Promise<never> { return this.slidesUnavailable(); }
   async proposeSlideSections(): Promise<never> { return this.slidesUnavailable(); }

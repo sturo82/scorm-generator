@@ -81,6 +81,8 @@ export interface SlideClipsView extends Omit<SlideClipsDoc, 'owner' | 'leaseUnti
 
 export interface SlideClipsEstimate {
   slides: number;
+  /** Numeri delle slide (1-based) le cui clip sono da generare o rigenerare. */
+  indexes: number[];
   minutes: number;
   costUsd: number;
   engine: string;
@@ -156,6 +158,7 @@ export class SlideClipsService {
       }, 0) / 60;
     return {
       slides: todo.length,
+      indexes: todo.map((s) => s.index),
       minutes: Math.round(minutes * 10) / 10,
       costUsd: Math.round(minutes * heygenCostPerMinUsd(engine, avatarTypeInput) * 100) / 100,
       engine,

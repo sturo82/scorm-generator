@@ -40,6 +40,7 @@ import { SlideScriptsService } from './slide-scripts.service.js';
 import { isLibrary, meterCourseId } from './slide-owner.js';
 import { BillingService, ESTIMATE_MARGIN, avatarFeature, type Reservation } from '../billing/billing.service.js';
 import { SlidesService } from './slides.service.js';
+import { currentPayer, runWithPayer } from '../billing/payer-context.js';
 
 const MEDIA_URL_TTL_SEC = 3 * 3600;
 const LEASE_MS = 90_000;
@@ -121,6 +122,25 @@ export interface SlideLessonDoc {
   updatedAt: string;
   owner?: string;
   leaseUntil?: number;
+}
+
+/** Modifiche in attesa sul video da slide: clip da rifare e rimontaggio, con il costo complessivo. */
+export interface SlideChangesView {
+  billed: boolean;
+  /** Clip da rigenerare perché copioni o pronuncia sono cambiati dopo la generazione. */
+  clips: { slides: number; minutes: number; credits: number | null; indexes: number[] };
+  /** Montaggio del video (necessario dopo nuove clip). */
+  render: { minutes: number; credits: number | null };
+  /** Slide escluse dopo la generazione: le loro clip vanno tolte dal video. */
+  removed: number;
+  /** Le clip sono più recenti dell'ultimo montaggio. */
+  outdated: boolean;
+  /** C'è qualcosa da applicare. */
+  pending: boolean;
+  /** Cosa sta girando adesso, se qualcosa. */
+  running: 'clips' | 'lesson' | null;
+  /** Totale massimo in crediti (null se manca un prezzo). */
+  total: number | null;
 }
 
 export interface SlideLessonView {
@@ -323,6 +343,90 @@ export class SlideLessonService {
       };
     };
     return { billed: await this.billing.isBilled(tenantId), slides: n, slidesOnly: build(false), withKnowledge: build(true) };
+  }
+
+  /**
+   * Modifiche da applicare al video già creato: clip da rigenerare (copioni o pronuncia cambiati) e
+   * rimontaggio. Un solo preventivo per tutto, così le correzioni si fanno in blocco.
+   */
+  async changes(tenantId: string, courseId: string, importId: string): Promise<SlideChangesView> {
+    const [clipsView, doc, billed] = await Promise.all([
+      this.clips.status(tenantId, courseId, importId),
+      this.load(tenantId, courseId, importId),
+      this.billing.isBilled(tenantId),
+    ]);
+    const empty: SlideChangesView = {
+      billed,
+      clips: { slides: 0, minutes: 0, credits: 0, indexes: [] },
+      render: { minutes: 0, credits: 0 },
+      removed: 0,
+      outdated: false,
+      pending: false,
+      running: null,
+      total: 0,
+    };
+    if (!clipsView || !doc || doc.status === 'failed') return empty;
+    const running = clipsView.status === 'running' ? 'clips' : doc.status === 'running' ? 'lesson' : null;
+    if (running || doc.status !== 'completed' || clipsView.status !== 'completed') return { ...empty, running };
+    const est = await this.clips.estimate(tenantId, courseId, importId, clipsView.engine, clipsView.avatarType as never);
+    const outdated = Boolean(clipsView.updatedAt && doc.updatedAt && clipsView.updatedAt > doc.updatedAt);
+    const scriptsDoc = await this.scripts.get(tenantId, courseId, importId);
+    const skipped = new Set((scriptsDoc?.slides ?? []).filter((x) => x.skip).map((x) => x.index));
+    const removed = clipsView.clips.filter((c) => skipped.has(c.index)).length;
+    const pending = est.slides > 0 || outdated || removed > 0;
+    if (!pending) return empty;
+    const feature = avatarFeature(clipsView.engine, clipsView.avatarType);
+    const clipUnits = Math.ceil(est.minutes * ESTIMATE_MARGIN * 10) / 10;
+    const clipQuote = est.slides > 0 ? this.billing.quote([{ feature, units: clipUnits }]) : null;
+    const cards = (doc.cover ? CARD_COVER_SEC : 0) + (doc.outro ? CARD_OUTRO_SEC : 0);
+    const renderMin = Math.round(((clipsView.totalDurationSec + cards * doc.parts.length) / 60) * 10) / 10;
+    const renderQuote = this.billing.quote([{ feature: 'video_render', units: renderMin }]);
+    const clipsCredits = clipQuote ? (clipQuote.priced ? clipQuote.total : null) : 0;
+    const renderCredits = renderQuote.priced ? renderQuote.total : null;
+    return {
+      billed,
+      clips: { slides: est.slides, minutes: est.minutes, credits: clipsCredits, indexes: est.indexes },
+      render: { minutes: renderMin, credits: renderCredits },
+      removed,
+      outdated,
+      pending: true,
+      running: null,
+      total: clipsCredits === null || renderCredits === null ? null : clipsCredits + renderCredits,
+    };
+  }
+
+  /**
+   * Applica in blocco le modifiche: rigenera solo le clip cambiate e poi rimonta il video. Le clip
+   * partono subito (errori di crediti o budget tornano all'utente); il rimontaggio segue sul server
+   * appena le clip sono pronte, anche se l'utente lascia la pagina.
+   */
+  async applyChanges(tenantId: string, courseId: string, importId: string): Promise<SlideChangesView> {
+    const ch = await this.changes(tenantId, courseId, importId);
+    if (ch.running) throw new ConflictException('Un\u2019operazione è già in corso su questo video.');
+    if (!ch.pending) throw new ConflictException('Non ci sono modifiche da applicare.');
+    if (ch.clips.slides > 0 || ch.removed > 0) {
+      const v = (await this.clips.status(tenantId, courseId, importId))!;
+      await this.clips.start(tenantId, courseId, importId, {
+        avatarId: v.avatarId,
+        avatarType: v.avatarType as 'photo' | 'studio' | 'digital_twin',
+        engine: v.engine as 'avatar_iii' | 'avatar_iv' | 'avatar_v',
+        ...(v.voiceId ? { voiceId: v.voiceId } : {}),
+      });
+      // Il rimontaggio parte quando le nuove clip sono pronte (lavoro in background, con lo stesso pagatore).
+      void runWithPayer(currentPayer(), async () => {
+        const end = Date.now() + 60 * 60_000;
+        while (Date.now() < end) {
+          await new Promise<void>((r) => setTimeout(r, 5000));
+          const c = await this.clips.status(tenantId, courseId, importId);
+          if (!c || c.status === 'running') continue;
+          if (c.status === 'completed') await this.remaster(tenantId, courseId, importId, {});
+          return;
+        }
+      }).catch((err) => this.logger.warn(`Rimontaggio dopo le nuove clip non riuscito (import ${importId}): ${errMsg(err)}`));
+    } else {
+      await this.remaster(tenantId, courseId, importId, {});
+    }
+    return this.changes(tenantId, courseId, importId);
   }
 
   // --- Avvio e stato -----------------------------------------------------------

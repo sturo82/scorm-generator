@@ -243,6 +243,27 @@ export class SlidesController {
     return { items: await this.lessons.direction(ctx.tenant.tenantId, courseId, importId) };
   }
 
+  /** Clip da rifare e rimontaggio in attesa, con il costo complessivo. */
+  @Get('imports/:importId/changes')
+  changes(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+  ) {
+    return this.lessons.changes(ctx.tenant.tenantId, courseId, importId);
+  }
+
+  /** Applica in blocco le modifiche: rigenera le clip cambiate e rimonta il video. */
+  @Post('imports/:importId/changes/apply')
+  @Roles('EDITOR')
+  applyChanges(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+  ) {
+    return this.lessons.applyChanges(ctx.tenant.tenantId, courseId, importId);
+  }
+
   @Get('imports/:importId/lesson')
   async getLesson(
     @CurrentContext() ctx: AuthContext,

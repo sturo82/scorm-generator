@@ -65,6 +65,17 @@ export interface SlideCardChoice {
 export type SlideAvatarType = 'photo' | 'studio' | 'digital_twin';
 export type SlideEngine = 'avatar_iii' | 'avatar_iv' | 'avatar_v';
 
+/** Modifiche in attesa sul video da slide: clip da rifare e rimontaggio, con il costo complessivo. */
+export interface SlideChangesView {
+  billed: boolean;
+  clips: { slides: number; minutes: number; credits: number | null; indexes: number[] };
+  render: { minutes: number; credits: number | null };
+  removed: number;
+  outdated: boolean;
+  pending: boolean;
+  running: 'clips' | 'lesson' | null;
+  total: number | null;
+}
 export interface SlideClipsEstimate {
   slides: number;
   minutes: number;

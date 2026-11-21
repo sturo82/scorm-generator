@@ -297,6 +297,8 @@ model Course {
   // Applicata come object-position: 50% <N>% in anteprima e player SCORM, così
   // l'autore può evitare che la copertina venga tagliata male in alto/in basso.
   coverPosition Int    @default(50)
+  /// Corso nato dal percorso "da slide": id dell'import PDF. Attiva lo Studio video al posto del wizard a passi.
+  slidesImportId String?
   // Stile delle micro-interazioni del corso: "sober" (default) | "lively".
   // Propagato ad anteprima web e player SCORM (data-motion). Validato a livello
   // applicativo dall'enum interactionStyle del contratto Course.
