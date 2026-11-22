@@ -2,7 +2,10 @@
 
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Check, CheckCircle2, Clapperboard, Eye, FileText, Loader2, Palette, Play, Rocket, Sparkles } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, Clapperboard, Eye, FileText, Loader2, Palette, Play, Rocket, Sparkles, Wand2 } from 'lucide-react';
+import { videoWordBudget } from '@scorm/contracts';
+import { WordMeter } from '@/components/courses/word-meter';
+import { apiErrorText } from '@/lib/api/error-message';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,6 +18,8 @@ import { SlidePipeline } from '@/components/courses/slide-video-dialog';
 import { VideoDirector } from '@/components/courses/video-director';
 import {
   useApplySlideChanges,
+  useFitSlideScript,
+  useVideoTiming,
   useSaveSlideScripts,
   useSlideChanges,
   useSlideClips,
@@ -23,7 +28,7 @@ import {
   useSlideScripts,
   useWallet,
 } from '@/lib/api/hooks';
-import type { SlideChangesView, SlideScriptEntry } from '@/lib/api/types';
+import type { SlideChangesView, SlideScriptEntry, VideoTiming } from '@/lib/api/types';
 
 const fmt = (n: number) => n.toLocaleString('it-IT');
 
@@ -57,9 +62,9 @@ export function SlideStudio({ courseId, importId, onOpenClassic }: { courseId: s
               <Clapperboard className="size-5" />
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">{imp.data?.filename ?? 'Video-lezione da slide'}</p>
+              <p className="truncate text-sm font-semibold">{imp.data?.filename ?? 'Video-lezione'}</p>
               <p className="text-xs text-muted-foreground">
-                {imp.data ? `${imp.data.slides.length} slide` : ''}
+                {imp.data ? `${imp.data.slides.length} ${imp.data.kind === 'videos' ? 'video' : 'slide'}` : ''}
                 {lessonView?.status === 'completed' ? ' · video pronto' : lessonView?.status === 'running' ? ' · montaggio in corso' : ''}
               </p>
             </div>
@@ -208,13 +213,29 @@ function ChangesBar({ courseId, importId, view, loading }: { courseId: string; i
  * parlato, lo stato della sua clip e un'anteprima della clip. Salvando, le clip da rifare si
  * sommano nella barra delle modifiche.
  */
-function StudioScripts({ courseId, importId, changes }: { courseId: string; importId: string; changes?: SlideChangesView }) {
+export function StudioScripts({
+  courseId,
+  importId,
+  changes,
+  review = false,
+}: {
+  courseId: string;
+  importId: string;
+  changes?: SlideChangesView;
+  /** Revisione prima delle clip (generazione automatica in pausa): niente clip né tempi reali. */
+  review?: boolean;
+}) {
   const toast = useToast();
   const qc = useQueryClient();
   const imp = useSlideImport(courseId, importId);
   const scripts = useSlideScripts(courseId, importId);
   const clips = useSlideClips(courseId, importId);
   const save = useSaveSlideScripts(courseId, importId);
+  const fit = useFitSlideScript(courseId, importId);
+  const isVideo = Boolean(imp.data?.kind === 'videos');
+  const timing = useVideoTiming(courseId, importId, isVideo && !review);
+  const timingOf = (i: number) => timing.data?.find((t) => t.index === i);
+  const videoOf = (i: number) => imp.data?.slides.find((x) => x.index === i)?.video;
   const doc = scripts.data && 'slides' in scripts.data ? scripts.data : null;
   const clipsView = clips.data && 'clips' in clips.data ? clips.data : null;
   const [draft, setDraft] = React.useState<SlideScriptEntry[]>([]);
@@ -237,6 +258,19 @@ function StudioScripts({ courseId, importId, changes }: { courseId: string; impo
     setDraft((cur) => cur.map((x) => (x.index === index ? { ...x, ...change } : x)));
   }
 
+  async function onFit(index: number) {
+    if (dirty) {
+      toast.show('Salva prima le modifiche ai copioni', 'info');
+      return;
+    }
+    try {
+      await fit.mutateAsync(index);
+      toast.show(review ? 'Copione adattato alla durata del video' : 'Copione adattato: la clip è tra le modifiche da applicare', 'success');
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message.replace(/^API \d+:\s*/, '').slice(0, 160) : 'Adattamento non riuscito', 'error');
+    }
+  }
+
   async function onSave() {
     try {
       await save.mutateAsync({ slides: draft.map((d) => ({ index: d.index, script: d.script, skip: d.skip })), approved: true });
@@ -244,10 +278,7 @@ function StudioScripts({ courseId, importId, changes }: { courseId: string; impo
       await qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, 'changes'] });
       toast.show('Copioni salvati: le clip da rifare sono nella barra in alto', 'success');
     } catch (err) {
-      toast.show(
-        err instanceof Error && /Copione vuoto/i.test(err.message) ? 'Ci sono slide senza copione: compilale o escludile' : 'Salvataggio non riuscito',
-        'error',
-      );
+      toast.show(apiErrorText(err, 'Salvataggio non riuscito'), 'error');
     }
   }
 
@@ -257,7 +288,12 @@ function StudioScripts({ courseId, importId, changes }: { courseId: string; impo
         <div>
           <h3 className="text-base font-semibold">Copioni</h3>
           <p className="text-xs text-muted-foreground">
-            Modifica il testo che l&apos;avatar pronuncia. Salvando, solo le clip cambiate vengono rigenerate quando premi «Applica modifiche».
+            {isVideo
+              ? 'Ogni copione è tarato sulla durata del suo video: la barra diventa verde quando voce e video finiscono insieme.'
+              : null}{' '}
+            {review
+              ? 'Correggi i testi, salva e poi continua con le clip.'
+              : 'Modifica il testo che l\u2019avatar pronuncia. Salvando, solo le clip cambiate vengono rigenerate quando premi «Applica modifiche».'}
           </p>
         </div>
         <Button onClick={() => void onSave()} disabled={!dirty || save.isPending}>
@@ -303,7 +339,7 @@ function StudioScripts({ courseId, importId, changes }: { courseId: string; impo
                   )}
                 </div>
                 <div className="flex items-center justify-between gap-2 text-[11px]">
-                  <span className="font-medium">Slide {d.index}</span>
+                  <span className="font-medium">{isVideo ? 'Video' : 'Slide'} {d.index}</span>
                   <span className={cn('rounded-full px-2 py-0.5 font-medium', status.tone)}>{status.label}</span>
                 </div>
               </div>
@@ -316,6 +352,23 @@ function StudioScripts({ courseId, importId, changes }: { courseId: string; impo
                   className="w-full resize-y rounded-md border bg-background p-2 text-sm leading-relaxed disabled:bg-muted/40"
                   aria-label={`Copione della slide ${d.index}`}
                 />
+                {d.targetSec ? (
+                  <div className="space-y-1.5">
+                    <WordMeter text={d.script} durationSec={d.targetSec} wordsPerSec={doc.wordsPerSec} />
+                    <TimingNote
+                      t={timingOf(d.index)}
+                      needs={needs}
+                      onFit={() => void onFit(d.index)}
+                      fitting={fit.isPending && fit.variables === d.index}
+                      outOfRange={!d.skip && (() => {
+                        const w = d.script.trim() ? d.script.trim().split(/\s+/).length : 0;
+                        const b = videoWordBudget(d.targetSec!, doc.wordsPerSec);
+                        return w > b.max || w < b.min;
+                      })()}
+                      hint={videoOf(d.index)?.hint}
+                    />
+                  </div>
+                ) : null}
                 {(d.conflicts?.length ?? 0) > 0 && (
                   <p className="rounded-md border border-amber-300/60 bg-amber-50 p-2 text-xs text-amber-900">
                     <strong>Contraddizione con la knowledge:</strong> {d.conflicts!.join(' · ')}
@@ -336,5 +389,54 @@ function StudioScripts({ courseId, importId, changes }: { courseId: string; impo
         })}
       </ul>
     </section>
+  );
+}
+
+/**
+ * Stato della taratura di un video: suggerisce «Adatta alla durata» se il copione non ci sta e,
+ * a clip generate, dice come il montaggio fa combaciare voce e video.
+ */
+function TimingNote({
+  t,
+  needs,
+  onFit,
+  fitting,
+  outOfRange,
+  hint,
+}: {
+  t?: VideoTiming;
+  needs: boolean;
+  onFit: () => void;
+  fitting: boolean;
+  outOfRange: boolean;
+  hint?: string;
+}) {
+  const bad = !needs && t && (t.mode === 'freeze' || t.mode === 'cut');
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+      {t && !needs && (
+        <span
+          className={cn(
+            'rounded-full px-2 py-0.5 font-medium',
+            bad ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900',
+          )}
+          title={`Voce ${t.voiceSec} s · video ${Math.round(t.videoSec * 10) / 10} s`}
+        >
+          {t.mode === 'match'
+            ? 'Voce e video coincidono'
+            : t.mode === 'speed'
+              ? `Video adattato alla voce (${t.rate < 1 ? 'più lento' : 'più veloce'} del ${Math.round(Math.abs(1 - t.rate) * 100)}%)`
+              : t.mode === 'freeze'
+                ? `La voce dura ${Math.round(t.voiceSec - t.videoSec)} s più del video: resta fermo sull'ultimo fotogramma`
+                : `Il video dura ${Math.round(t.videoSec - t.voiceSec)} s più della voce: viene tagliato`}
+        </span>
+      )}
+      {(outOfRange || bad) && (
+        <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={onFit} disabled={fitting}>
+          {fitting ? <Loader2 className="size-3 animate-spin" /> : <Wand2 className="size-3" />} {bad ? 'Ritara sulla durata' : 'Adatta alla durata'}
+        </Button>
+      )}
+      {hint && <span className="text-muted-foreground">Indicazione: {hint}</span>}
+    </div>
   );
 }

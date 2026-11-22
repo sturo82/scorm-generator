@@ -1,5 +1,6 @@
 import React from 'react';
 import { DynamicSlideVideo } from './DynamicSlideVideo.js';
+import { SlideMedia } from './components/SlideMedia.js';
 import { AbsoluteFill, Freeze, Img, OffthreadVideo, Sequence, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 import {
   SlideVideoSpec,
@@ -298,8 +299,8 @@ const SlideScene: React.FC<{ spec: SlideVideoSpec; slideIndex: number; g: Geomet
           boxShadow: pip ? 'none' : '0 12px 40px rgba(0,0,0,0.45)',
         }}
       >
-        {slide.imageUrl ? (
-          <Img src={slide.imageUrl} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        {slide.video || slide.imageUrl ? (
+          <SlideMedia slide={slide} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         ) : (
           <TextSlide title={slide.textSlide?.title ?? slide.title ?? ''} bullets={slide.textSlide?.bullets ?? []} spec={spec} g={g} />
         )}

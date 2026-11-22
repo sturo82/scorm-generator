@@ -5,6 +5,21 @@ export interface SlideImportSlide {
   imageKey: string;
   imageUrl: string;
   text: string;
+  /** Solo negli import da video: il video al posto della slide (imageUrl è il fotogramma di copertina). */
+  video?: SlideImportVideo;
+}
+export interface SlideImportVideo {
+  filename: string;
+  contentType: string;
+  fileDurationSec: number;
+  trim?: { start: number; end: number };
+  mode: 'manual' | 'hint' | 'frames';
+  hint?: string;
+  script?: string;
+  url: string;
+  /** Durata effettiva (tratto scelto o video intero). */
+  durationSec: number;
+  frames: number;
 }
 export interface SlideImportView {
   importId: string;
@@ -13,7 +28,16 @@ export interface SlideImportView {
   createdAt: string;
   /** Lingua dei copioni (solo import di libreria). */
   language?: string;
+  kind?: 'slides' | 'videos';
   slides: SlideImportSlide[];
+}
+/** Come combaciano video e voce di un elemento, a clip generate. */
+export interface VideoTiming {
+  index: number;
+  videoSec: number;
+  voiceSec: number;
+  mode: 'match' | 'speed' | 'freeze' | 'cut';
+  rate: number;
 }
 
 export interface SlideExtraTopic {
@@ -27,6 +51,9 @@ export interface SlideScriptEntry {
   skip: boolean;
   words: number;
   estSec: number;
+  /** Import da video: durata del video da coprire (s) e fonte del copione. */
+  targetSec?: number;
+  source?: 'manual' | 'hint' | 'frames';
   /** Il copione integra contenuti della knowledge assenti dalla slide. */
   usedKnowledge?: boolean;
   /** Contraddizioni slide/knowledge (nel copione prevale la slide). */
@@ -48,6 +75,8 @@ export interface SlideScriptsDoc {
   estTotalSec: number;
   /** Pronuncia di nomi e sigle (solo audio). */
   glossary?: PronunciationEntry[];
+  /** Import da video: ritmo di parlato per la taratura (parole/s), misurato sulle clip se ci sono. */
+  wordsPerSec?: number;
 }
 
 export interface PronunciationEntry {

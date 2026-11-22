@@ -14,6 +14,7 @@ import {
   FolderOpen,
   Wand2,
   Clapperboard,
+  Film,
 } from 'lucide-react';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,7 @@ import { CreditCost } from '@/components/ui/credit-cost';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
 import { NewFromSlides } from '@/components/courses/new-from-slides';
+import { NewFromVideos } from '@/components/courses/new-from-videos';
 import { getApiClient } from '@/lib/api/client';
 import type { LessonFormatValue, RssPreviewResult } from '@/lib/api/types';
 import {
@@ -51,7 +53,9 @@ const LANGUAGES = [
 const KNOWLEDGE_ACCEPT =
   '.pdf,.docx,.pptx,.xlsx,.txt,.md,.html,.csv,.srt,.vtt,.rtf,.json,application/pdf,text/plain,text/markdown,text/html,text/csv';
 
-type Origin = 'topic' | 'material' | 'slides';
+type Origin = 'topic' | 'material' | 'slides' | 'video';
+/** Percorsi che creano il corso vuoto e poi caricano i materiali (slide o video) con l'avatar. */
+const isMedia = (o: Origin | null): o is 'slides' | 'video' => o === 'slides' || o === 'video';
 type Source = 'everywhere' | 'mine';
 
 const FORMAT_OPTIONS: Array<{ value: LessonFormatValue; label: string; hint: string }> = [
@@ -64,6 +68,7 @@ const FORMAT_OPTIONS: Array<{ value: LessonFormatValue; label: string; hint: str
 const STEPS = ['Sorgente', 'Dettagli', 'Formato', 'Crea'];
 /** Percorso "da slide": sorgente, titolo e lingua, poi slide e avatar; il resto lo fa la generazione automatica. */
 const STEPS_SLIDES = ['Sorgente', 'Dettagli', 'Slide e avatar'];
+const STEPS_VIDEO = ['Sorgente', 'Dettagli', 'Video e avatar'];
 
 
 export default function NewCoursePage() {
@@ -290,12 +295,12 @@ export default function NewCoursePage() {
   }
 
   // Avanzamento consentito per step.
-  const steps = origin === 'slides' ? STEPS_SLIDES : STEPS;
+  const steps = origin === 'slides' ? STEPS_SLIDES : origin === 'video' ? STEPS_VIDEO : STEPS;
   const canLeaveSource = origin !== null;
   const canLeaveDetails =
     origin === 'topic'
       ? topic.trim().length >= 2
-      : origin === 'slides'
+      : isMedia(origin)
         ? title.trim().length >= 2
         : selectedDocs.length > 0;
 
@@ -354,6 +359,13 @@ export default function NewCoursePage() {
                   onClick={() => setOrigin('slides')}
                 />
                 <OriginCard
+                  active={origin === 'video'}
+                  icon={<Film className="size-5" />}
+                  title="Da video"
+                  desc="Carica una serie di video: ognuno diventa un capitolo e un avatar lo racconta, con un copione tarato sulla durata."
+                  onClick={() => setOrigin('video')}
+                />
+                <OriginCard
                   active={origin === 'topic'}
                   icon={<Globe className="size-5" />}
                   title="Da un argomento"
@@ -371,7 +383,7 @@ export default function NewCoursePage() {
             )}
 
             {/* STEP 2 — Dettagli + anteprima */}
-            {step === 1 && origin === 'slides' && (
+            {step === 1 && isMedia(origin) && (
               <div className="flex flex-col gap-5">
                 <div className="space-y-2">
                   <Label htmlFor="slides-title" className="text-base">Titolo del corso</Label>
@@ -393,13 +405,14 @@ export default function NewCoursePage() {
                     ))}
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    I copioni dell&apos;avatar sono scritti in questa lingua, anche se le slide sono in un&apos;altra.
+                    I copioni dell&apos;avatar sono scritti in questa lingua{origin === 'slides' ? ', anche se le slide sono in un\u2019altra' : ''}.
                   </p>
                 </div>
                 <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
                   <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-                  Al passo dopo carichi le slide e scegli l&apos;avatar. Se hai documenti o trascrizioni da usare come
-                  knowledge, caricali prima dalla pagina Knowledge: potrai sceglierli lì.
+                  {origin === 'video'
+                    ? 'Al passo dopo carichi i video, scegli per ognuno come nasce il copione e l\u2019avatar che li racconta.'
+                    : 'Al passo dopo carichi le slide e scegli l\u2019avatar. Se hai documenti o trascrizioni da usare come knowledge, caricali prima dalla pagina Knowledge: potrai sceglierli lì.'}
                 </div>
                 <Button type="button" size="lg" disabled={!canLeaveDetails || createBlank.isPending} onClick={() => void handleCreateFromSlides()}>
                   {createBlank.isPending ? <Loader2 className="size-4 animate-spin" /> : <Clapperboard className="size-4" />}
@@ -407,7 +420,7 @@ export default function NewCoursePage() {
                 </Button>
               </div>
             )}
-            {step === 1 && origin !== 'slides' && (
+            {step === 1 && !isMedia(origin) && (
               <div className="flex flex-col gap-5">
                 {origin === 'topic' ? (
                   <div className="space-y-2">
@@ -580,7 +593,10 @@ export default function NewCoursePage() {
             {step === 2 && origin === 'slides' && slidesCourseId && (
               <NewFromSlides courseId={slidesCourseId} title={title} language={language} />
             )}
-            {step === 2 && origin !== 'slides' && (
+            {step === 2 && origin === 'video' && slidesCourseId && (
+              <NewFromVideos courseId={slidesCourseId} title={title} language={language} />
+            )}
+            {step === 2 && !isMedia(origin) && (
               <div className="flex flex-col gap-5">
                 <div className="space-y-2">
                   <Label className="text-base">Formato di default</Label>
@@ -766,7 +782,7 @@ export default function NewCoursePage() {
               <Button type="button" variant="ghost" disabled={step === 0} onClick={() => setStep((s) => Math.max(0, s - 1))}>
                 Indietro
               </Button>
-              {step < steps.length - 1 && origin === 'slides' && step === 1 ? (
+              {step < steps.length - 1 && isMedia(origin) && step === 1 ? (
                 <span />
               ) : step < steps.length - 1 ? (
                 <Button

@@ -8,9 +8,10 @@ import {
   Query,
   Put,
   UploadedFile,
+  UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import {
   BuildSlideLesson as BuildSlideLessonSchema,
   GenerateSlideScripts as GenerateSlideScriptsSchema,
@@ -18,6 +19,9 @@ import {
   StartSlideClips as StartSlideClipsSchema,
   UpdateSlideGlossary,
   UpdateSlideScripts as UpdateSlideScriptsSchema,
+  UpdateVideoImport as UpdateVideoImportSchema,
+  VIDEO_SCRIPT,
+  type UpdateVideoImport as UpdateVideoImportType,
   type BuildSlideLesson as BuildSlideLessonType,
   type StartSlideClips as StartSlideClipsType,
   type UpdateSlideGlossary as UpdateSlideGlossaryType,
@@ -70,6 +74,69 @@ export class SlidesController {
     });
   }
 
+  /** Crea un import "da video" vuoto; i video si aggiungono uno alla volta. */
+  @Post('video-imports')
+  @Roles('EDITOR')
+  createVideoImport(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Body() body: { title?: string; language?: string },
+  ): Promise<SlideImportView> {
+    return this.slides.createVideoImport({
+      tenantId: ctx.tenant.tenantId,
+      courseId,
+      title: typeof body?.title === 'string' ? body.title : undefined,
+      language: typeof body?.language === 'string' ? body.language : undefined,
+    });
+  }
+
+  /** Aggiunge un video (multipart: "file", "poster", "frames" e il campo "durationSec"). */
+  @Post('imports/:importId/videos')
+  @Roles('EDITOR')
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'file', maxCount: 1 },
+        { name: 'poster', maxCount: 1 },
+        { name: 'frames', maxCount: 6 },
+      ],
+      { limits: { fileSize: VIDEO_SCRIPT.maxVideoBytes } },
+    ),
+  )
+  addVideo(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+    @UploadedFiles() files: { file?: UploadedMulterFile[]; poster?: UploadedMulterFile[]; frames?: UploadedMulterFile[] } | undefined,
+    @Body('durationSec') durationSec: string | undefined,
+  ): Promise<SlideImportView> {
+    const video = files?.file?.[0];
+    const poster = files?.poster?.[0];
+    if (!video) throw new BadRequestException('Nessun video ricevuto (campo "file")');
+    if (!poster) throw new BadRequestException('Manca la copertina del video (campo "poster")');
+    return this.slides.addVideo({
+      tenantId: ctx.tenant.tenantId,
+      courseId,
+      importId,
+      video: { filename: video.originalname, contentType: video.mimetype, content: video.buffer },
+      poster: { contentType: poster.mimetype, content: poster.buffer },
+      frames: (files?.frames ?? []).map((f) => ({ contentType: f.mimetype, content: f.buffer })),
+      durationSec: Number(durationSec),
+    });
+  }
+
+  /** Ordine, tratto e fonte del copione dei video (prima di generare i copioni). */
+  @Put('imports/:importId/videos')
+  @Roles('EDITOR')
+  updateVideos(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+    @Body(new ZodValidationPipe(UpdateVideoImportSchema)) body: UpdateVideoImportType,
+  ): Promise<SlideImportView> {
+    return this.slides.updateVideos(ctx.tenant.tenantId, courseId, importId, body);
+  }
+
   /** Copioni correnti (o `status: 'none'`) con lo stato dell'eventuale generazione in background. */
   @Get('imports/:importId/scripts')
   async getScripts(
@@ -81,8 +148,33 @@ export class SlidesController {
       this.scripts.get(ctx.tenant.tenantId, courseId, importId),
       this.scripts.generationState(ctx.tenant.tenantId, courseId, importId),
     ]);
-    const base = doc ?? { status: 'none' as const };
+    // Import da video: ritmo di parlato aggiornato (misurato sulle clip) per la taratura in pagina.
+    const base = doc
+      ? doc.slides.some((x) => x.targetSec)
+        ? { ...doc, wordsPerSec: await this.scripts.wordsPerSec(ctx.tenant.tenantId, courseId, importId, doc) }
+        : doc
+      : { status: 'none' as const };
     return generation ? { ...base, generation } : base;
+  }
+
+  /** Da video: come combaciano video e voce per ogni elemento (dopo le clip). */
+  @Get('imports/:importId/timing')
+  timing(@CurrentContext() ctx: AuthContext, @Param('courseId') courseId: string, @Param('importId') importId: string) {
+    return this.lessons.videoTimings(ctx.tenant.tenantId, courseId, importId);
+  }
+
+  /** Adatta alla durata del video il copione di un elemento (l'AI lo accorcia o lo allunga). */
+  @Post('imports/:importId/scripts/:index/fit')
+  @Roles('EDITOR')
+  fitScript(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+    @Param('index') index: string,
+  ): Promise<SlideScriptsDoc> {
+    const n = Number(index);
+    if (!Number.isInteger(n) || n < 1) throw new BadRequestException('Video non valido');
+    return this.scripts.fitToDuration(ctx.tenant.tenantId, courseId, importId, n);
   }
 
   @Post('imports/:importId/scripts/generate')

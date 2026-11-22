@@ -1337,6 +1337,28 @@ export function useApplySlideChanges(courseId: string, importId: string | null) 
   });
 }
 
+/** Adatta alla durata del video il copione di un elemento (l'AI lo accorcia o lo allunga). */
+export function useFitSlideScript(courseId: string, importId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (index: number) => api.fitSlideScript(courseId, importId as string, index),
+    onSuccess: (doc) => {
+      qc.setQueryData(['courses', courseId, 'slides', importId, 'scripts'], doc);
+      void qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, 'changes'] });
+      void qc.invalidateQueries({ queryKey: ['billing', 'wallet'] });
+    },
+  });
+}
+
+/** Da video: come combaciano video e voce di ogni elemento (a clip generate). */
+export const useVideoTiming = (courseId: string, importId: string | null, enabled = true) =>
+  useQuery({
+    queryKey: ['courses', courseId, 'slides', importId, 'timing'],
+    queryFn: () => api.getVideoTiming(courseId, importId as string),
+    enabled: !!courseId && !!importId && enabled,
+    staleTime: 15_000,
+  });
+
 export const useProposeSlideSections = (courseId: string, importId: string | null) =>
   useMutation({ mutationFn: () => api.proposeSlideSections(courseId, importId as string) });
 

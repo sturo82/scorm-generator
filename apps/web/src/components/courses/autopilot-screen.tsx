@@ -8,6 +8,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
 import { SlideVideoDialog } from '@/components/courses/slide-video-dialog';
+import { StudioScripts } from '@/components/courses/slide-studio';
+import { useCourse } from '@/lib/api/hooks';
 import { wizardLandingKey } from '@/lib/wizard-landing';
 import { CourseBudget } from '@/components/app/course-budget';
 import { CourseBuilder } from '@/components/courses/course-builder';
@@ -198,7 +200,11 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
   const finished = view.status === 'completed' || view.status === 'failed' || view.status === 'cancelled';
   const slidesMode = view.kind === 'slides' && Boolean(view.slides);
   const sv = view.slides;
+  const fromVideo = sv?.source === 'videos';
+  const unit = fromVideo ? 'video' : 'slide';
   const [reviewOpen, setReviewOpen] = React.useState(false);
+  const course = useCourse(courseId);
+  const importId = course.data?.slidesImportId;
 
   // Il saldo nell'intestazione segue l'avanzamento: a ogni passo completato si rilegge il wallet.
   const tick = `${p.lessons.done}-${p.tests.done}-${p.cover}-${p.videos.done}-${p.narration.done}-${view.status}-${sv?.clips.done ?? 0}-${sv?.lesson ?? ''}-${sv?.scripts ?? ''}`;
@@ -306,8 +312,8 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
               <StepRow
                 state={stepState(view, 'scripts')}
                 icon={<BookOpen className="size-4" />}
-                title="Copioni delle slide"
-                detail={sv.slides ? `${sv.slides} slide` : undefined}
+                title={fromVideo ? 'Copioni tarati sui video' : 'Copioni delle slide'}
+                detail={sv.slides ? `${sv.slides} ${unit}` : undefined}
               />
               {sv.reviewScripts || sv.reviewReason ? (
                 <StepRow state={stepState(view, 'scripts_review')} icon={<Check className="size-4" />} title="Tua revisione dei copioni" />
@@ -321,14 +327,14 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
               />
               {stepState(view, 'clips') !== 'todo' && sv.clips.total > 0 && (
                 <LessonTiles
-                  items={Array.from({ length: sv.clips.total }, (_, i) => ({ title: `Slide ${i + 1}`, format: 'standard', done: i < sv.clips.done }))}
+                  items={Array.from({ length: sv.clips.total }, (_, i) => ({ title: `${fromVideo ? 'Video' : 'Slide'} ${i + 1}`, format: 'standard', done: i < sv.clips.done }))}
                   active={running && view.phase === 'clips'}
                 />
               )}
               <StepRow
                 state={stepState(view, 'lesson')}
                 icon={<ListChecks className="size-4" />}
-                title="Montaggio, riepilogo e quiz"
+                title={fromVideo ? 'Montaggio con i tuoi video, riepilogo e quiz' : 'Montaggio, riepilogo e quiz'}
                 detail={sv.lesson === 'completed' ? 'Lezione creata' : undefined}
               />
             </ol>
@@ -394,7 +400,7 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
                 Annulla generazione
               </Button>
             )}
-            {view.status === 'paused' && slidesMode && (
+            {view.status === 'paused' && slidesMode && !fromVideo && (
               <Button variant="outline" onClick={() => setReviewOpen(true)}>
                 Rivedi i copioni
               </Button>
@@ -449,6 +455,13 @@ export function AutopilotScreen({ courseId, view }: { courseId: string; view: Au
       </Card>
 
       {view.status === 'paused' && !slidesMode && <CourseBuilder courseId={courseId} mode="structure" />}
+      {view.status === 'paused' && fromVideo && importId && (
+        <Card>
+          <CardContent className="p-4">
+            <StudioScripts courseId={courseId} importId={importId} review />
+          </CardContent>
+        </Card>
+      )}
       {slidesMode && <SlideVideoDialog courseId={courseId} open={reviewOpen} onClose={() => setReviewOpen(false)} />}
 
       <ConfirmDialog

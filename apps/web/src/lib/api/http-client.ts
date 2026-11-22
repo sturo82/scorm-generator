@@ -54,6 +54,7 @@ import type {
   SlideScriptsDoc,
   SlideClipsEstimate,
   SlideChangesView,
+  VideoTiming,
   SlideClipsView,
   StartSlideClipsInput,
   SlideLessonView,
@@ -706,6 +707,47 @@ export class HttpApiClient implements ApiClient {
     if (res.status === 401) void handleSessionExpired();
     if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 300)}`);
     return (await res.json()) as SlideImportView;
+  }
+  createVideoImport(courseId: string, input: { title?: string; language?: string }) {
+    return this.request<SlideImportView>(`/courses/${courseId}/slides/video-imports`, { method: 'POST', body: JSON.stringify(input) });
+  }
+  /** Caricamento di un video con avanzamento (XHR: fetch non espone il progresso dell'invio). */
+  addImportVideo(
+    courseId: string,
+    importId: string,
+    input: { file: File; poster: Blob; frames: Blob[]; durationSec: number },
+    onProgress?: (fraction: number) => void,
+  ): Promise<SlideImportView> {
+    const session = getSession();
+    const form = new FormData();
+    form.append('file', input.file, input.file.name);
+    form.append('poster', input.poster, 'poster.png');
+    input.frames.forEach((f, i) => form.append('frames', f, `frame-${i + 1}.jpg`));
+    form.append('durationSec', String(input.durationSec));
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${this.baseUrl}/courses/${courseId}/slides/imports/${importId}/videos`);
+      if (session) xhr.setRequestHeader('Authorization', `Bearer ${session.token}`);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress?.(e.loaded / e.total);
+      };
+      xhr.onload = () => {
+        if (xhr.status === 401) void handleSessionExpired();
+        if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText) as SlideImportView);
+        else reject(new Error(`API ${xhr.status}: ${xhr.responseText.slice(0, 300)}`));
+      };
+      xhr.onerror = () => reject(new Error('Caricamento interrotto: controlla la connessione e riprova'));
+      xhr.send(form);
+    });
+  }
+  updateImportVideos(courseId: string, importId: string, input: import('@scorm/contracts').UpdateVideoImport) {
+    return this.request<SlideImportView>(`/courses/${courseId}/slides/imports/${importId}/videos`, { method: 'PUT', body: JSON.stringify(input) });
+  }
+  fitSlideScript(courseId: string, importId: string, index: number) {
+    return this.request<SlideScriptsDoc>(`/courses/${courseId}/slides/imports/${importId}/scripts/${index}/fit`, { method: 'POST' });
+  }
+  getVideoTiming(courseId: string, importId: string) {
+    return this.request<VideoTiming[]>(`/courses/${courseId}/slides/imports/${importId}/timing`);
   }
   getSlideImport(courseId: string, importId: string) {
     return this.request<SlideImportView>(`/courses/${courseId}/slides/imports/${importId}`);

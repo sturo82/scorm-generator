@@ -74,6 +74,8 @@ export interface AutopilotView {
   errorCode?: 'insufficient_credits';
   /** Solo per il percorso da slide. */
   slides?: {
+    /** 'videos' = percorso da video (ogni elemento è un video). */
+    source?: 'slides' | 'videos';
     reviewScripts: boolean;
     slides: number;
     scripts: 'none' | 'running' | 'draft' | 'approved' | 'failed';

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import type { DocumentExtractor, LLMProvider, ObjectStorage } from '@scorm/domain';
-import type { GenerateSlideScripts, PronunciationEntry, UpdateSlideScripts } from '@scorm/contracts';
+import { VIDEO_SCRIPT, videoScriptFit, videoWordBudget, type GenerateSlideScripts, type PronunciationEntry, type UpdateSlideScripts, type VideoScriptSource } from '@scorm/contracts';
 import { DocumentExtractorRegistry } from '@scorm/adapters/extractors';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
@@ -9,7 +9,7 @@ import {
   LLM_PROVIDER,
   OBJECT_STORAGE,
 } from '../providers/provider.constants.js';
-import { SlidesService, type SlideImportManifest } from './slides.service.js';
+import { SlidesService, videoDurationSec, type SlideImportManifest } from './slides.service.js';
 import { meterCourseId } from './slide-owner.js';
 import { BillingService } from '../billing/billing.service.js';
 import { randomUUID } from 'node:crypto';
@@ -55,6 +55,9 @@ export interface SlideScriptEntry {
    * diventano una slide narrata aggiuntiva.
    */
   extra?: ExtraTopic;
+  /** Import da video: durata del video da coprire (s) e da dove nasce il copione. */
+  targetSec?: number;
+  source?: VideoScriptSource;
 }
 
 export interface SlideScriptsDoc {
@@ -73,7 +76,30 @@ export interface SlideScriptsDoc {
   estTotalSec: number;
   /** Pronuncia di nomi e sigle: vale solo per l'audio delle clip. */
   glossary?: PronunciationEntry[];
+  /** Import da video: ritmo di parlato usato per la taratura (parole/s), misurato sulle clip se ci sono. */
+  wordsPerSec?: number;
 }
+
+const VIDEO_RULES = (language: string, knowledge: boolean): string[] => [
+  'Sei l\u2019autore della voce di un docente-avatar che accompagna un VIDEO in una lezione aziendale.',
+  'Ricevi i fotogrammi del video in ordine e/o un\u2019indicazione dell\u2019autore: scrivi il copione PARLATO che l\u2019avatar pronuncerà mentre il video scorre.',
+  '',
+  'Regole:',
+  '- Rispetta il numero di parole richiesto: il video ha una durata fissa e voce e video devono finire insieme. È la regola più importante.',
+  '- Racconta e spiega ciò che il video mostra, nell\u2019ordine in cui accade. Non descrivere ogni dettaglio: dai il senso, il perché, cosa osservare.',
+  '- Non inventare fatti, numeri, nomi o norme che non si vedono nei fotogrammi o non sono nell\u2019indicazione.',
+  knowledge ? '- Puoi usare la KNOWLEDGE fornita solo per ciò che è pertinente a questo video.' : '- Non usare conoscenze esterne specifiche (nomi, dati): resta su quanto si vede e su quanto indicato.',
+  '- Se c\u2019è l\u2019indicazione dell\u2019autore, seguila: ha la precedenza sui fotogrammi.',
+  `- Lingua: ${language}. Tono professionale ma caldo; dai del "voi" o usa forme impersonali.`,
+  '- Parlato fluido: niente markdown, elenchi, simboli, numeri di video, né "in questo video vediamo".',
+  '- Dai continuità con i copioni dei video precedenti, senza ripeterli e senza salutare di nuovo (saluta solo nel primo video, chiudi solo nell\u2019ultimo).',
+];
+
+const SCHEMA_ONE = {
+  type: 'object',
+  properties: { script: { type: 'string' } },
+  required: ['script'],
+} as const;
 
 const BASE_RULES = (language: string): string[] => [
   'Sei un autore di video-lezioni aziendali. Ricevi il testo estratto da una presentazione (slide numerate) e scrivi,',
@@ -267,6 +293,7 @@ export class SlideScriptsService {
       select: { language: true },
     });
     const language = languageName(course?.language ?? manifest.language ?? 'it');
+    if (manifest.kind === 'videos') return this.startGenerateVideos(tenantId, courseId, importId, manifest, language, knowledge);
 
     // Crediti: una generazione di copioni è un'operazione `text_standard`; si prenota prima di partire
     // (402 immediato se il saldo non basta) e si addebita solo se la generazione riesce.
@@ -354,7 +381,9 @@ export class SlideScriptsService {
     }
     const entries = existing.slides.map((e) => {
       const u = byIndex.get(e.index);
-      return u ? buildEntry(e.index, u.script.trim(), u.skip, e) : e;
+      if (!u) return e;
+      const next = buildEntry(e.index, u.script.trim(), u.skip, e);
+      return e.targetSec ? { ...next, targetSec: e.targetSec, source: e.source } : next;
     });
     if (input.approved) {
       const empty = entries.filter((e) => !e.skip && e.script.trim().length === 0).map((e) => e.index);
@@ -362,6 +391,14 @@ export class SlideScriptsService {
         throw new BadRequestException(`Copione vuoto per le slide: ${empty.join(', ')}. Compilale o escludile.`);
       }
       if (entries.every((e) => e.skip)) throw new BadRequestException('Tutte le slide sono escluse');
+      // Video: un copione più lungo del video non si approva (la voce finirebbe dopo il video).
+      const wps = existing.wordsPerSec ?? VIDEO_SCRIPT.wordsPerSec;
+      const long = entries.filter((e) => !e.skip && e.targetSec && videoScriptFit(e.words, e.targetSec, wps).status === 'long');
+      if (long.length > 0) {
+        throw new BadRequestException(
+          `Copione troppo lungo per la durata del video: ${long.map((e) => `video ${e.index} (${e.words} parole, max ${videoWordBudget(e.targetSec!, wps).max})`).join(', ')}. Accorcialo o usa «Adatta alla durata».`,
+        );
+      }
     }
     const doc = this.toDoc(
       importId,
@@ -373,6 +410,7 @@ export class SlideScriptsService {
       { ids: existing.knowledgeDocIds, names: existing.knowledgeNames },
       existing.glossary,
     );
+    if (existing.wordsPerSec) doc.wordsPerSec = existing.wordsPerSec;
     await this.save(tenantId, doc);
     return doc;
   }
@@ -400,6 +438,258 @@ export class SlideScriptsService {
     if (clean.length === 0) delete doc.glossary;
     await this.save(tenantId, doc);
     return doc;
+  }
+
+  // --- Copioni per i video ----------------------------------------------------
+
+  /** Ritmo di parlato (parole/s): misurato sulle clip già generate, altrimenti quello di partenza. */
+  async wordsPerSec(tenantId: string, courseId: string, importId: string, scripts?: SlideScriptsDoc | null): Promise<number> {
+    const doc = scripts === undefined ? await this.get(tenantId, courseId, importId) : scripts;
+    const key = `media/${tenantId}/${courseId}/slides/${importId}/clips.json`;
+    if (!doc || !(await this.storage.exists(key))) return VIDEO_SCRIPT.wordsPerSec;
+    const clips = JSON.parse((await this.storage.getObject(key)).toString('utf8')) as {
+      clips?: Array<{ index: number; state: string; durationSec?: number }>;
+    };
+    let words = 0;
+    let sec = 0;
+    for (const c of clips.clips ?? []) {
+      const e = doc.slides.find((x) => x.index === c.index);
+      if (c.state !== 'completed' || !c.durationSec || !e) continue;
+      words += e.words;
+      sec += c.durationSec;
+    }
+    // Servono almeno 20 secondi di parlato per una misura affidabile; si resta in un intervallo plausibile.
+    if (sec < 20 || words < 30) return VIDEO_SCRIPT.wordsPerSec;
+    return Math.min(3.4, Math.max(1.6, Math.round((words / sec) * 100) / 100));
+  }
+
+  /**
+   * Generazione dei copioni di un import da video: i copioni scritti dall'utente restano come
+   * sono; gli altri li scrive l'AI uno per video (dall'indicazione o guardando i fotogrammi),
+   * con il numero di parole tarato sulla durata. Un'operazione "leggera" per ogni video scritto
+   * dall'AI; nessun costo se sono tutti scritti dall'utente.
+   */
+  private async startGenerateVideos(
+    tenantId: string,
+    courseId: string,
+    importId: string,
+    manifest: SlideImportManifest,
+    language: string,
+    knowledge: { text: string; ids: string[]; names: string[] } | null,
+  ): Promise<ScriptsGenerationState> {
+    if (manifest.slides.length === 0) throw new BadRequestException('Aggiungi almeno un video');
+    const ai = manifest.slides.filter((x) => x.video && x.video.mode !== 'manual').length;
+    const reservation =
+      ai > 0
+        ? await this.billing.reserve(tenantId, `kscorm:slide-scripts:${importId}:${randomUUID()}`, [{ feature: 'text_light', units: ai }], {
+            courseId: meterCourseId(courseId) ?? undefined,
+          })
+        : null;
+    const now = new Date().toISOString();
+    const state: ScriptsGenerationState = { status: 'running', startedAt: now, updatedAt: now, leaseUntil: Date.now() + JOB_LEASE_MS };
+    await this.saveGenerationState(tenantId, courseId, importId, state);
+    const runKey = `${tenantId}:${importId}`;
+    this.active.add(runKey);
+    void (async () => {
+      const heartbeat = setInterval(() => {
+        state.leaseUntil = Date.now() + JOB_LEASE_MS;
+        state.updatedAt = new Date().toISOString();
+        void this.saveGenerationState(tenantId, courseId, importId, state).catch(() => undefined);
+      }, 60_000);
+      let written = 0;
+      try {
+        written = await this.runGenerateVideos(tenantId, courseId, importId, manifest, language, knowledge);
+        state.status = 'completed';
+        await this.billing.settle(tenantId, reservation, { text_light: written });
+      } catch (err) {
+        await this.billing.release(tenantId, reservation);
+        state.status = 'failed';
+        state.error = err instanceof Error ? err.message.slice(0, 300) : 'errore sconosciuto';
+        this.logger.error(`Generazione copioni dei video fallita (import ${importId}): ${state.error}`);
+      } finally {
+        clearInterval(heartbeat);
+        this.active.delete(runKey);
+        state.updatedAt = new Date().toISOString();
+        state.leaseUntil = undefined;
+        await this.saveGenerationState(tenantId, courseId, importId, state).catch(() => undefined);
+      }
+    })();
+    return state;
+  }
+
+  /** Scrive i copioni dei video in ordine (per la continuità); ritorna quanti ne ha scritti l'AI. */
+  private async runGenerateVideos(
+    tenantId: string,
+    courseId: string,
+    importId: string,
+    manifest: SlideImportManifest,
+    language: string,
+    knowledge: { text: string; ids: string[]; names: string[] } | null,
+  ): Promise<number> {
+    const wps = VIDEO_SCRIPT.wordsPerSec;
+    const entries: SlideScriptEntry[] = [];
+    let model = 'manuale';
+    let written = 0;
+    const total = manifest.slides.length;
+    for (const [i, item] of manifest.slides.entries()) {
+      const v = item.video!;
+      const targetSec = videoDurationSec(v);
+      let script = v.mode === 'manual' ? (v.script ?? '').trim() : '';
+      if (v.mode !== 'manual') {
+        const res = await this.writeVideoScript(tenantId, courseId, importId, {
+          index: item.index,
+          position: i + 1,
+          total,
+          targetSec,
+          wps,
+          mode: v.mode,
+          hint: v.hint,
+          previous: entries.slice(-2).map((e) => e.script),
+          language,
+          knowledge: knowledge?.text ?? null,
+        });
+        script = res.script;
+        model = res.model;
+        written += 1;
+      }
+      entries.push({ ...buildEntry(item.index, script, false), targetSec, source: v.mode });
+    }
+    const previous = await this.get(tenantId, courseId, importId);
+    const doc = this.toDoc(importId, courseId, language, 'draft', model, entries, knowledge, previous?.glossary);
+    doc.wordsPerSec = wps;
+    await this.save(tenantId, doc);
+    return written;
+  }
+
+  /**
+   * Una chiamata per video: copione dall'indicazione e/o dai fotogrammi, con un budget di parole.
+   * Se esce dal budget si chiede una seconda volta di rispettarlo (la taratura conta più dello stile).
+   */
+  private async writeVideoScript(
+    tenantId: string,
+    courseId: string,
+    importId: string,
+    o: {
+      index: number;
+      position: number;
+      total: number;
+      targetSec: number;
+      wps: number;
+      mode: VideoScriptSource;
+      hint?: string;
+      previous: string[];
+      language: string;
+      knowledge: string | null;
+      current?: string;
+    },
+  ): Promise<{ script: string; model: string }> {
+    const b = videoWordBudget(o.targetSec, o.wps);
+    const frames = o.mode === 'frames' || o.current ? await this.slides.videoFrames(tenantId, courseId, importId, o.index) : [];
+    const lines = [
+      `Video ${o.position} di ${o.total}, durata ${Math.round(o.targetSec * 10) / 10} secondi.`,
+      `LUNGHEZZA OBBLIGATORIA: tra ${b.min} e ${b.max} parole, idealmente ${b.target}.`,
+      o.hint ? `Indicazione dell'autore: ${o.hint}` : '',
+      frames.length ? `Ti mostro ${frames.length} fotogrammi del video, in ordine dall'inizio alla fine.` : '',
+      o.previous.length ? `Copioni dei video precedenti (per continuità, non ripeterli):\n${o.previous.join('\n---\n')}` : '',
+      o.current ? `Copione attuale da adattare alla durata, mantenendo senso e informazioni:\n${o.current}` : '',
+      o.knowledge ? `=== KNOWLEDGE ===\n${o.knowledge.slice(0, 60_000)}` : '',
+    ].filter(Boolean);
+    const system = [...VIDEO_RULES(o.language, Boolean(o.knowledge)), '', 'Rispondi SOLO con JSON conforme allo schema.'].join('\n');
+    let user = lines.join('\n\n');
+    let best = '';
+    let model = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await this.llm.generate({
+        system,
+        messages: [{ role: 'user', content: user, images: frames.map((f) => ({ format: f.format, data: f.data })) }],
+        schema: SCHEMA_ONE as unknown as Record<string, unknown>,
+        temperature: 0.4,
+        maxTokens: 1500,
+      });
+      model = result.model;
+      await this.recordUsage(tenantId, courseId, importId, result);
+      const script = (() => {
+        try {
+          return String((JSON.parse(result.text) as { script?: unknown }).script ?? '').trim();
+        } catch {
+          return '';
+        }
+      })();
+      if (script) best = script;
+      const words = script.split(/\s+/).filter(Boolean).length;
+      if (script && words >= b.min && words <= b.max) return { script, model };
+      user = `${lines.join('\n\n')}\n\nLa versione precedente aveva ${words} parole: riscrivila in ${b.target} parole (tra ${b.min} e ${b.max}).\n${script}`;
+    }
+    if (!best) throw new Error(`Copione del video ${o.position} non generato`);
+    return { script: best, model };
+  }
+
+  private async recordUsage(tenantId: string, courseId: string, importId: string, result: { model: string; usage: { inputTokens: number; outputTokens: number } }) {
+    for (const unit of ['INPUT_TOKENS', 'OUTPUT_TOKENS'] as const) {
+      await this.meter.record({
+        tenantId,
+        courseId: meterCourseId(courseId),
+        slideImportId: importId,
+        provider: 'BEDROCK_LLM',
+        model: result.model,
+        unit,
+        quantity: unit === 'INPUT_TOKENS' ? result.usage.inputTokens : result.usage.outputTokens,
+        source: 'slide_script',
+      });
+    }
+  }
+
+  /**
+   * Adatta il copione di un video alla sua durata (l'AI lo accorcia o lo allunga mantenendone il
+   * senso), con il ritmo misurato sulle clip se disponibile. Operazione leggera, addebitata.
+   */
+  async fitToDuration(tenantId: string, courseId: string, importId: string, index: number): Promise<SlideScriptsDoc> {
+    const manifest = await this.slides.loadManifest(tenantId, courseId, importId);
+    const doc = await this.get(tenantId, courseId, importId);
+    if (!doc) throw new BadRequestException('Genera prima i copioni');
+    const pos = manifest.slides.findIndex((x) => x.index === index);
+    const item = manifest.slides[pos];
+    const entry = doc.slides.find((x) => x.index === index);
+    if (!item?.video || !entry) throw new BadRequestException('Video non trovato');
+    const wps = await this.wordsPerSec(tenantId, courseId, importId, doc);
+    const targetSec = videoDurationSec(item.video);
+    const { script } = await this.billing.run(
+      tenantId,
+      `kscorm:slide-fit:${importId}:${randomUUID()}`,
+      [{ feature: 'text_light', units: 1 }],
+      async () => ({
+        result: await this.writeVideoScript(tenantId, courseId, importId, {
+          index,
+          position: pos + 1,
+          total: manifest.slides.length,
+          targetSec,
+          wps,
+          mode: item.video!.mode === 'manual' ? 'hint' : item.video!.mode,
+          hint: item.video!.hint,
+          previous: doc.slides.filter((x) => x.index < index && !x.skip).slice(-2).map((x) => x.script),
+          language: doc.language,
+          knowledge: null,
+          current: entry.script,
+        }),
+      }),
+      { courseId: meterCourseId(courseId) ?? undefined },
+    );
+    const entries = doc.slides.map((e) => (e.index === index ? { ...buildEntry(index, script, e.skip, e), targetSec, source: e.source } : e));
+    const next = this.toDoc(importId, courseId, doc.language, doc.status, doc.model, entries, { ids: doc.knowledgeDocIds, names: doc.knowledgeNames }, doc.glossary);
+    next.wordsPerSec = wps;
+    await this.save(tenantId, next);
+    return next;
+  }
+
+  /** Copioni dei video fuori misura rispetto alla durata (per bloccare l'approvazione e fermare l'autopilot). */
+  async videoFitProblems(doc: SlideScriptsDoc, wps: number): Promise<Array<{ index: number; words: number; max: number; min: number; status: 'long' | 'short' | 'empty' }>> {
+    const out: Array<{ index: number; words: number; max: number; min: number; status: 'long' | 'short' | 'empty' }> = [];
+    for (const e of doc.slides) {
+      if (e.skip || !e.targetSec) continue;
+      const f = videoScriptFit(e.words, e.targetSec, wps);
+      if (f.status !== 'ok') out.push({ index: e.index, words: e.words, max: f.budget.max, min: f.budget.min, status: f.status });
+    }
+    return out;
   }
 
   private toDoc(
@@ -544,7 +834,7 @@ function buildEntry(
   extras: Partial<Pick<SlideScriptEntry, 'usedKnowledge' | 'conflicts' | 'extra'>> = {},
 ): SlideScriptEntry {
   const words = script.split(/\s+/).filter(Boolean).length;
-  const entry: SlideScriptEntry = { index, script, skip, words, estSec: Math.round(words / WORDS_PER_SEC) };
+  const entry: SlideScriptEntry = { index, script, skip, words, estSec: Math.round((words / WORDS_PER_SEC) * 10) / 10 };
   if (extras.usedKnowledge !== undefined) entry.usedKnowledge = extras.usedKnowledge;
   if (extras.conflicts !== undefined) entry.conflicts = extras.conflicts;
   if (extras.extra !== undefined) entry.extra = extras.extra;

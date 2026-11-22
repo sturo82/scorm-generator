@@ -105,7 +105,11 @@ export class BedrockLLMProvider implements LLMProvider {
       .filter((m) => m.role !== 'system')
       .map((m) => ({
         role: m.role === 'assistant' ? 'assistant' : 'user',
-        content: [{ text: m.content }],
+        // Le immagini (se presenti) precedono il testo, come consiglia la documentazione del modello.
+        content: [
+          ...(m.images ?? []).map((img) => ({ image: { format: img.format, source: { bytes: img.data } } }) as ContentBlock),
+          { text: m.content },
+        ],
       }));
   }
 

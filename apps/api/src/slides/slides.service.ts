@@ -1,10 +1,11 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { ObjectStorage } from '@scorm/domain';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OBJECT_STORAGE } from '../providers/provider.constants.js';
 import { pdfToSlides, PdfSlidesInputError } from './pdf-slides.js';
 import { isLibrary } from './slide-owner.js';
+import { VIDEO_SCRIPT, type UpdateVideoImport, type VideoScriptSource } from '@scorm/contracts';
 
 /** Dimensione massima del PDF caricato. */
 export const SLIDES_MAX_PDF_BYTES = 50 * 1024 * 1024;
@@ -13,8 +14,33 @@ const PREVIEW_URL_TTL_SEC = 6 * 3600;
 /** Slide importata, come salvata nel manifest. */
 export interface ImportedSlide {
   index: number;
+  /** Immagine della slide; per un video è il fotogramma di copertina (miniatura e sfondo sfocato). */
   imageKey: string;
   text: string;
+  /** Solo negli import da video. */
+  video?: ImportedVideo;
+}
+
+/** Un video caricato in un import "da video": il capitolo che l'avatar racconta. */
+export interface ImportedVideo {
+  key: string;
+  filename: string;
+  contentType: string;
+  /** Durata del file intero (s). */
+  fileDurationSec: number;
+  /** Tratto usato (s); assente = video intero. */
+  trim?: { start: number; end: number };
+  /** Fotogrammi del tratto usato, per far scrivere il copione guardando il video. */
+  frameKeys: string[];
+  /** Fonte del copione. */
+  mode: VideoScriptSource;
+  hint?: string;
+  script?: string;
+}
+
+/** Durata effettiva di un video dell'import (il tratto scelto, o il file intero). */
+export function videoDurationSec(v: ImportedVideo): number {
+  return v.trim ? Math.max(0.5, v.trim.end - v.trim.start) : v.fileDurationSec;
 }
 
 export interface SlideImportManifest {
@@ -24,12 +50,22 @@ export interface SlideImportManifest {
   createdAt: string;
   /** Lingua dei copioni per gli import in libreria (nei corsi vale la lingua del corso). */
   language?: string;
+  /** 'videos' = import da video: ogni elemento è un video al posto della slide. */
+  kind?: 'slides' | 'videos';
   slides: ImportedSlide[];
 }
 
 export interface SlideImportView extends Omit<SlideImportManifest, 'slides'> {
-  slides: Array<ImportedSlide & { imageUrl: string }>;
+  slides: Array<
+    Omit<ImportedSlide, 'video'> & {
+      imageUrl: string;
+      video?: Omit<ImportedVideo, 'key' | 'frameKeys'> & { url: string; durationSec: number; frames: number };
+    }
+  >;
 }
+
+const IMAGE_TYPES: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+const VIDEO_TYPES: Record<string, string> = { 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov' };
 
 /**
  * Importazione di slide da PDF. Per ogni import salva su storage i PNG delle
@@ -115,6 +151,7 @@ export class SlidesService {
       throw new BadRequestException(`PDF troppo grande (max ${SLIDES_MAX_PDF_BYTES / 1024 / 1024} MB)`);
     }
     const manifest = await this.loadManifest(input.tenantId, input.courseId, input.importId);
+    if (manifest.kind === 'videos') throw new BadRequestException('Questo import è fatto di video, non di slide');
     let pages;
     try {
       pages = await pdfToSlides(input.content);
@@ -186,6 +223,159 @@ export class SlidesService {
     };
   }
 
+  // --- Import da video --------------------------------------------------------
+
+  /** Crea un import "da video" vuoto: i video si aggiungono uno alla volta. */
+  async createVideoImport(input: { tenantId: string; courseId: string; title?: string; language?: string }): Promise<SlideImportView> {
+    await this.requireOwner(input.tenantId, input.courseId);
+    const manifest: SlideImportManifest = {
+      importId: randomUUID(),
+      courseId: input.courseId,
+      filename: (input.title?.trim() || 'Video').slice(0, 200),
+      createdAt: new Date().toISOString(),
+      language: isLibrary(input.courseId) ? (input.language || 'it').slice(0, 8) : undefined,
+      kind: 'videos',
+      slides: [],
+    };
+    await this.saveManifest(input.tenantId, manifest);
+    return this.toView(manifest);
+  }
+
+  /**
+   * Aggiunge un video all'import, con il fotogramma di copertina e qualche fotogramma del tratto
+   * (estratti dal browser: il server non decodifica video). La durata arriva dal browser e si
+   * controlla che sia plausibile.
+   */
+  async addVideo(input: {
+    tenantId: string;
+    courseId: string;
+    importId: string;
+    video: { filename: string; contentType: string; content: Buffer };
+    poster: { contentType: string; content: Buffer };
+    frames: Array<{ contentType: string; content: Buffer }>;
+    durationSec: number;
+  }): Promise<SlideImportView> {
+    const manifest = await this.loadManifest(input.tenantId, input.courseId, input.importId);
+    if (manifest.kind !== 'videos') throw new BadRequestException('Questo import non è da video');
+    if (await this.hasScripts(input.tenantId, input.courseId, input.importId)) {
+      throw new ConflictException('I copioni sono già stati generati: per aggiungere video crea un nuovo import.');
+    }
+    if (manifest.slides.length >= VIDEO_SCRIPT.maxVideos) throw new BadRequestException(`Al massimo ${VIDEO_SCRIPT.maxVideos} video`);
+    const vExt = VIDEO_TYPES[input.video.contentType];
+    if (!vExt) throw new BadRequestException('Formato video non supportato (usa MP4, WebM o MOV)');
+    if (input.video.content.byteLength === 0) throw new BadRequestException('Video vuoto');
+    if (input.video.content.byteLength > VIDEO_SCRIPT.maxVideoBytes) {
+      throw new BadRequestException(`Video troppo grande (max ${VIDEO_SCRIPT.maxVideoBytes / 1024 / 1024} MB)`);
+    }
+    if (!Number.isFinite(input.durationSec) || input.durationSec < 1 || input.durationSec > 3600) {
+      throw new BadRequestException('Durata del video non valida');
+    }
+    const pExt = IMAGE_TYPES[input.poster.contentType];
+    if (!pExt) throw new BadRequestException('Copertina del video non valida');
+    const index = Math.max(0, ...manifest.slides.map((x) => x.index)) + 1;
+    const prefix = this.prefix(input.tenantId, input.courseId, input.importId);
+    const n = String(index).padStart(3, '0');
+    const custom = { tenantId: input.tenantId, importId: input.importId };
+    const key = `${prefix}/video-${n}.${vExt}`;
+    await this.storage.putObject(key, input.video.content, { contentType: input.video.contentType, custom });
+    const imageKey = `${prefix}/${n}.${pExt}`;
+    await this.storage.putObject(imageKey, input.poster.content, { contentType: input.poster.contentType, custom });
+    const frameKeys: string[] = [];
+    for (const [i, f] of input.frames.slice(0, 6).entries()) {
+      const ext = IMAGE_TYPES[f.contentType];
+      if (!ext || f.content.byteLength > 4 * 1024 * 1024) continue;
+      const fk = `${prefix}/frames-${n}-${i + 1}.${ext}`;
+      await this.storage.putObject(fk, f.content, { contentType: f.contentType, custom });
+      frameKeys.push(fk);
+    }
+    manifest.slides.push({
+      index,
+      imageKey,
+      text: '',
+      video: {
+        key,
+        filename: input.video.filename.slice(0, 200),
+        contentType: input.video.contentType,
+        fileDurationSec: Math.round(input.durationSec * 100) / 100,
+        frameKeys,
+        mode: 'frames',
+      },
+    });
+    await this.saveManifest(input.tenantId, manifest);
+    return this.toView(manifest);
+  }
+
+  /**
+   * Ordine, tratto e fonte del copione dei video. I video non elencati si tolgono dall'import.
+   * Consentito solo prima della generazione dei copioni (i copioni sono legati alla posizione).
+   */
+  async updateVideos(tenantId: string, courseId: string, importId: string, input: UpdateVideoImport): Promise<SlideImportView> {
+    const manifest = await this.loadManifest(tenantId, courseId, importId);
+    if (manifest.kind !== 'videos') throw new BadRequestException('Questo import non è da video');
+    if (await this.hasScripts(tenantId, courseId, importId)) {
+      throw new ConflictException('I copioni sono già stati generati: modifica i copioni invece dei video.');
+    }
+    const byIndex = new Map(manifest.slides.map((x) => [x.index, x]));
+    const seen = new Set<number>();
+    const next: ImportedSlide[] = [];
+    for (const [pos, v] of input.videos.entries()) {
+      const cur = byIndex.get(v.index);
+      if (!cur?.video) throw new BadRequestException(`Video ${v.index} inesistente`);
+      if (seen.has(v.index)) throw new BadRequestException(`Video ${v.index} ripetuto`);
+      seen.add(v.index);
+      const full = cur.video.fileDurationSec;
+      let trim = v.trim;
+      if (trim) {
+        const start = Math.min(Math.max(0, trim.start), full);
+        const end = Math.min(Math.max(start + 1, trim.end), full);
+        trim = end - start >= full - 0.05 ? undefined : { start: Math.round(start * 100) / 100, end: Math.round(end * 100) / 100 };
+      }
+      if (v.mode === 'manual' && !v.script?.trim()) throw new BadRequestException(`Scrivi il copione del video ${pos + 1}, oppure lascialo scrivere all'AI`);
+      if (v.mode === 'hint' && !v.hint?.trim()) throw new BadRequestException(`Scrivi l'indicazione per il video ${pos + 1}`);
+      next.push({
+        ...cur,
+        index: pos + 1,
+        video: {
+          ...cur.video,
+          trim,
+          mode: v.mode,
+          hint: v.mode === 'hint' ? v.hint?.trim() : undefined,
+          script: v.mode === 'manual' ? v.script?.trim() : undefined,
+        },
+      });
+    }
+    manifest.slides = next;
+    await this.saveManifest(tenantId, manifest);
+    return this.toView(manifest);
+  }
+
+  private async hasScripts(tenantId: string, courseId: string, importId: string): Promise<boolean> {
+    return this.storage.exists(`${this.prefix(tenantId, courseId, importId)}/scripts.json`);
+  }
+
+  private async saveManifest(tenantId: string, manifest: SlideImportManifest): Promise<void> {
+    await this.storage.putObject(
+      `${this.prefix(tenantId, manifest.courseId, manifest.importId)}/manifest.json`,
+      Buffer.from(JSON.stringify(manifest)),
+      { contentType: 'application/json' },
+    );
+  }
+
+  /** Fotogrammi di un video dell'import (per l'AI che scrive il copione guardando il video). */
+  async videoFrames(tenantId: string, courseId: string, importId: string, index: number): Promise<Array<{ format: 'jpeg' | 'png' | 'webp'; data: Buffer }>> {
+    const manifest = await this.loadManifest(tenantId, courseId, importId);
+    const v = manifest.slides.find((x) => x.index === index)?.video;
+    if (!v) return [];
+    const keys = v.frameKeys.length > 0 ? v.frameKeys : [manifest.slides.find((x) => x.index === index)!.imageKey];
+    const out: Array<{ format: 'jpeg' | 'png' | 'webp'; data: Buffer }> = [];
+    for (const k of keys) {
+      const ext = k.split('.').pop() ?? '';
+      const format = ext === 'png' ? 'png' : ext === 'webp' ? 'webp' : 'jpeg';
+      out.push({ format, data: await this.storage.getObject(k) });
+    }
+    return out;
+  }
+
   async get(tenantId: string, courseId: string, importId: string): Promise<SlideImportView> {
     return this.toView(await this.loadManifest(tenantId, courseId, importId));
   }
@@ -208,9 +398,25 @@ export class SlidesService {
 
   private async toView(m: SlideImportManifest): Promise<SlideImportView> {
     const slides = await Promise.all(
-      m.slides.map(async (s) => ({
+      m.slides.map(async ({ video, ...s }) => ({
         ...s,
         imageUrl: await this.storage.getSignedUrl(s.imageKey, { expiresInSec: PREVIEW_URL_TTL_SEC }),
+        ...(video
+          ? {
+              video: {
+                filename: video.filename,
+                contentType: video.contentType,
+                fileDurationSec: video.fileDurationSec,
+                ...(video.trim ? { trim: video.trim } : {}),
+                mode: video.mode,
+                ...(video.hint ? { hint: video.hint } : {}),
+                ...(video.script ? { script: video.script } : {}),
+                url: await this.storage.getSignedUrl(video.key, { expiresInSec: PREVIEW_URL_TTL_SEC }),
+                durationSec: videoDurationSec(video),
+                frames: video.frameKeys.length,
+              },
+            }
+          : {}),
       })),
     );
     return { ...m, slides };

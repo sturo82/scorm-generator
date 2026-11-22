@@ -20,6 +20,8 @@ export interface AssemblySlide {
   /** Resa e inquadratura dell'avatar solo per questa slide. */
   avatarLook?: Partial<AvatarLook>;
   avatarFrame?: Partial<AvatarFrame>;
+  /** Video al posto dell'immagine (crea da video). */
+  video?: { url: string; startSec: number; durationSec: number };
 }
 
 /**
@@ -101,6 +103,7 @@ export function buildSlideVideoSpec(input: BuildSpecInput): SlideVideoSpec {
       cues,
       pipPosition: s.pipPosition,
       shot: s.shot,
+      ...(s.video ? { video: s.video } : {}),
       ...(s.avatarLook && Object.keys(s.avatarLook).length ? { avatarLook: s.avatarLook } : {}),
       ...(s.avatarFrame && Object.keys(s.avatarFrame).length ? { avatarFrame: s.avatarFrame } : {}),
     };

@@ -230,6 +230,10 @@ export const SlideVideoSlide = z.object({
   pipPosition: PipPosition.optional(),
   /** Inquadratura della slide nel layout dynamic (default: focus). */
   shot: SlideShot.optional(),
+  /** Video al posto dell'immagine (crea da video): muto, dal secondo `startSec` per `durationSec`. */
+  video: z
+    .object({ url: z.string().min(1), startSec: z.number().nonnegative().default(0), durationSec: z.number().positive() })
+    .optional(),
   /** Resa e inquadratura dell'avatar solo per questa slide: si sommano a quelle del video. */
   avatarLook: AvatarLook.partial().optional(),
   avatarFrame: AvatarFrame.partial().optional(),
@@ -422,6 +426,81 @@ export function activeCueAt(cues: GlobalCue[], tSec: number): GlobalCue | null {
   }
   return found;
 }
+
+
+/* ------------------------------ Crea da video ------------------------------ */
+
+/**
+ * Taratura dei copioni sui video: ritmo di parlato di partenza (poi si usa quello misurato sulle
+ * clip già generate), quanto può riempire il copione e la tolleranza con cui il montaggio adatta
+ * la velocità del video alla voce senza che si noti.
+ */
+export const VIDEO_SCRIPT = {
+  wordsPerSec: 2.4,
+  /** Il copione ideale occupa il 90% del video: resta un attimo di respiro alla fine. */
+  targetRatio: 0.9,
+  maxRatio: 1.0,
+  minRatio: 0.65,
+  /** Entro ±10% il video rallenta o accelera per finire con la voce; oltre si ferma o si taglia. */
+  speedTolerance: 0.1,
+  maxVideoBytes: 150 * 1024 * 1024,
+  maxVideos: 40,
+} as const;
+
+/** Da dove nasce il copione di un video: scritto dall'utente, da una sua indicazione, o guardando il video. */
+export const VideoScriptSource = z.enum(['manual', 'hint', 'frames']);
+export type VideoScriptSource = z.infer<typeof VideoScriptSource>;
+
+/** Parole consentite per un video di `durationSec` secondi al ritmo `wordsPerSec`. */
+export function videoWordBudget(durationSec: number, wordsPerSec: number = VIDEO_SCRIPT.wordsPerSec): { min: number; target: number; max: number } {
+  const w = Math.max(0, durationSec) * wordsPerSec;
+  return {
+    min: Math.max(1, Math.floor(w * VIDEO_SCRIPT.minRatio)),
+    target: Math.max(1, Math.round(w * VIDEO_SCRIPT.targetRatio)),
+    max: Math.max(1, Math.floor(w * VIDEO_SCRIPT.maxRatio)),
+  };
+}
+
+/** Esito della taratura di un copione rispetto al suo video. */
+export function videoScriptFit(
+  words: number,
+  durationSec: number,
+  wordsPerSec: number = VIDEO_SCRIPT.wordsPerSec,
+): { status: 'empty' | 'short' | 'ok' | 'long'; estSec: number; budget: ReturnType<typeof videoWordBudget> } {
+  const budget = videoWordBudget(durationSec, wordsPerSec);
+  const estSec = Math.round((words / wordsPerSec) * 10) / 10;
+  const status = words === 0 ? 'empty' : words > budget.max ? 'long' : words < budget.min ? 'short' : 'ok';
+  return { status, estSec, budget };
+}
+
+/**
+ * Come il montaggio fa combaciare video e voce: entro la tolleranza cambia leggermente la velocità
+ * del video; se il video è più corto si ferma sull'ultimo fotogramma, se è più lungo si taglia.
+ */
+export function videoTiming(videoSec: number, voiceSec: number): { rate: number; mode: 'match' | 'speed' | 'freeze' | 'cut' } {
+  if (videoSec <= 0 || voiceSec <= 0) return { rate: 1, mode: 'match' };
+  const ratio = videoSec / voiceSec;
+  if (Math.abs(ratio - 1) < 0.01) return { rate: 1, mode: 'match' };
+  if (Math.abs(ratio - 1) <= VIDEO_SCRIPT.speedTolerance) return { rate: Math.round(ratio * 1000) / 1000, mode: 'speed' };
+  return { rate: 1, mode: ratio < 1 ? 'freeze' : 'cut' };
+}
+
+/** Ordine, tratto e fonte del copione dei video di un import (prima di generare i copioni). */
+export const UpdateVideoImport = z.object({
+  videos: z
+    .array(
+      z.object({
+        index: z.number().int().positive(),
+        mode: VideoScriptSource.default('frames'),
+        hint: z.string().trim().max(1000).optional(),
+        script: z.string().max(4000).optional(),
+        trim: z.object({ start: z.number().nonnegative(), end: z.number().positive() }).optional(),
+      }),
+    )
+    .min(1)
+    .max(VIDEO_SCRIPT.maxVideos),
+});
+export type UpdateVideoImport = z.infer<typeof UpdateVideoImport>;
 
 /** Copione di una slide (testo che l'avatar pronuncerà). `skip` esclude la slide dal video. */
 export const SlideScriptItem = z.object({

@@ -7,9 +7,16 @@
 
 export type ChatRole = 'system' | 'user' | 'assistant';
 
+/** Immagine allegata a un messaggio (modelli multimodali). */
+export interface ChatImage {
+  format: 'png' | 'jpeg' | 'webp' | 'gif';
+  data: Uint8Array;
+}
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  /** Immagini da far vedere al modello insieme al testo (es. fotogrammi di un video). */
+  images?: ChatImage[];
 }
 
 /** JSON Schema (serializzabile) usato per vincolare l'output del modello. */

@@ -1,4 +1,5 @@
 import React from 'react';
+import { SlideMedia } from './components/SlideMedia.js';
 import {
   AbsoluteFill,
   Img,
@@ -225,7 +226,8 @@ const SlideLayer: React.FC<{
   // Dissolvenza in entrata (la precedente resta sotto per `xfade` frame) e "respiro" continuo.
   const a = index === 0 ? 1 : interpolate(local, [0, xfade], [0, 1], { extrapolateRight: 'clamp' });
   const enter = index === 0 ? 1 : interpolate(local, [0, xfade * 2], [1.025, 1], { extrapolateRight: 'clamp' });
-  const breathe = 1 + 0.018 * Math.min(1, local / Math.max(1, duration));
+  // Il "respiro" (lento ingrandimento) solo sulle immagini: su un video in movimento distrae.
+  const breathe = slide.video ? 1 : 1 + 0.018 * Math.min(1, local / Math.max(1, duration));
   const isCard = rect.r > 1;
   return (
     <div
@@ -244,8 +246,8 @@ const SlideLayer: React.FC<{
       }}
     >
       <div style={{ width: '100%', height: '100%', transform: `scale(${enter * breathe})`, transformOrigin: '50% 45%' }}>
-        {slide.imageUrl ? (
-          <Img src={slide.imageUrl} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        {slide.video || slide.imageUrl ? (
+          <SlideMedia slide={slide} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         ) : (
           <TextCard
             title={slide.textSlide?.title ?? slide.title ?? ''}

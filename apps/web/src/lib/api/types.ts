@@ -413,6 +413,7 @@ import type {
   SlideScriptsDoc,
   SlideClipsEstimate,
   SlideChangesView,
+  VideoTiming,
   SlideClipsView,
   StartSlideClipsInput,
   SlideLessonView,
@@ -442,6 +443,7 @@ export type {
   SlideScriptsDoc,
   SlideClipsEstimate,
   SlideChangesView,
+  VideoTiming,
   SlideClipsView,
   StartSlideClipsInput,
   SlideLessonView,
@@ -800,6 +802,17 @@ export interface ApiClient {
   // Video-lezione da slide (PDF + avatar)
   importSlides(courseId: string, file: File, language?: string): Promise<SlideImportView>;
   getSlideImport(courseId: string, importId: string): Promise<SlideImportView>;
+  /** Import "da video": crea l'import vuoto, aggiunge un video alla volta, poi ordine e copioni. */
+  createVideoImport(courseId: string, input: { title?: string; language?: string }): Promise<SlideImportView>;
+  addImportVideo(
+    courseId: string,
+    importId: string,
+    input: { file: File; poster: Blob; frames: Blob[]; durationSec: number },
+    onProgress?: (fraction: number) => void,
+  ): Promise<SlideImportView>;
+  updateImportVideos(courseId: string, importId: string, input: import('@scorm/contracts').UpdateVideoImport): Promise<SlideImportView>;
+  fitSlideScript(courseId: string, importId: string, index: number): Promise<SlideScriptsDoc>;
+  getVideoTiming(courseId: string, importId: string): Promise<VideoTiming[]>;
   getSlideScripts(courseId: string, importId: string): Promise<SlideScriptsResponse>;
   generateSlideScripts(courseId: string, importId: string, knowledgeDocIds?: string[]): Promise<SlideScriptsGeneration>;
   saveSlideScripts(

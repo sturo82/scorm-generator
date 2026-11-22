@@ -484,6 +484,16 @@ export class AutopilotService implements OnModuleInit {
     const included = scripts.slides.filter((e) => !e.skip);
     const empty = included.filter((e) => e.script.trim().length === 0).map((e) => e.index);
     if (empty.length > 0) return `Alcuni copioni sono vuoti (slide ${empty.slice(0, 8).join(', ')}): compilali o escludi le slide.`;
+    // Video: copioni fuori misura rispetto alla durata. Troppo lunghi = la voce sfora il video.
+    const fit = await this.scriptsSvc.videoFitProblems(scripts, await this.scriptsSvc.wordsPerSec(tenantId, courseId, sl.importId, scripts));
+    const long = fit.filter((f) => f.status === 'long').map((f) => f.index);
+    if (long.length > 0) {
+      return `I copioni dei video ${long.slice(0, 8).join(', ')} sono più lunghi del video: accorciali o usa «Adatta alla durata» prima di generare le clip.`;
+    }
+    const short = fit.filter((f) => f.status === 'short').map((f) => f.index);
+    if (short.length > 0) {
+      return `I copioni dei video ${short.slice(0, 8).join(', ')} sono molto più corti del video: il video si taglierebbe. Allungali o usa «Adatta alla durata».`;
+    }
     const conflicts = included.filter((e) => (e.conflicts?.length ?? 0) > 0).map((e) => e.index);
     if (conflicts.length > 0) {
       return `Le slide ${conflicts.slice(0, 8).join(', ')} contraddicono la knowledge: controlla i copioni prima di generare i video.`;
@@ -610,6 +620,7 @@ export class AutopilotService implements OnModuleInit {
     const scriptsState: NonNullable<AutopilotView['slides']>['scripts'] =
       gen?.status === 'running' ? 'running' : scripts ? scripts.status : gen?.status === 'failed' ? 'failed' : 'none';
     return {
+      source: scripts?.slides.some((e) => e.targetSec) ? 'videos' : 'slides',
       reviewScripts: sl.reviewScripts,
       slides: scripts ? scripts.slides.filter((e) => !e.skip).length : 0,
       scripts: scriptsState,

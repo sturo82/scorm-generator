@@ -24,6 +24,8 @@ import {
   type SlideVideoLayout,
   type SlideVideoTheme,
   SLIDE_SCRIPT_CAPS,
+  VIDEO_SCRIPT,
+  videoTiming,
   type SlideImportEstimateView,
 } from '@scorm/contracts';
 import type { LLMProvider, ObjectStorage } from '@scorm/domain';
@@ -41,7 +43,7 @@ import { SlideClipsService } from './slide-clips.service.js';
 import { SlideScriptsService } from './slide-scripts.service.js';
 import { isLibrary, meterCourseId } from './slide-owner.js';
 import { BillingService, ESTIMATE_MARGIN, avatarFeature, type Reservation } from '../billing/billing.service.js';
-import { SlidesService } from './slides.service.js';
+import { SlidesService, videoDurationSec } from './slides.service.js';
 import { currentPayer, runWithPayer } from '../billing/payer-context.js';
 
 const MEDIA_URL_TTL_SEC = 3 * 3600;
@@ -322,15 +324,21 @@ export class SlideLessonService {
     const type = q.avatarType ?? 'photo';
     const course = !isLibrary(courseId);
     const parts = q.sections ? Math.min(SLIDE_SCRIPT_CAPS.maxSections, Math.max(1, Math.ceil(n / 3))) : 1;
+    // Da video: la voce non supera la durata dei video; i copioni si pagano solo se li scrive l'AI.
+    const videos = manifest.kind === 'videos';
+    const videoSec = manifest.slides.reduce((t, x) => t + (x.video ? videoDurationSec(x.video) : 0), 0);
+    const aiScripts = manifest.slides.filter((x) => x.video && x.video.mode !== 'manual').length;
     const build = (knowledge: boolean) => {
       const words =
         n * (knowledge ? SLIDE_SCRIPT_CAPS.knowledgeMaxWords : SLIDE_SCRIPT_CAPS.slidesOnlyMaxWords) +
         (knowledge ? SLIDE_SCRIPT_CAPS.extraSlides * SLIDE_SCRIPT_CAPS.extraMaxWords : 0);
-      const speechMin = words / SLIDE_SCRIPT_CAPS.wordsPerSec / 60;
+      const speechMin = videos ? (videoSec * (1 + VIDEO_SCRIPT.speedTolerance)) / 60 : words / SLIDE_SCRIPT_CAPS.wordsPerSec / 60;
       const clipsMin = Math.ceil(speechMin * ESTIMATE_MARGIN * 10) / 10;
       const renderMin = speechMin + (parts * (CARD_COVER_SEC + CARD_OUTRO_SEC)) / 60;
       const lines = [
-        { kind: 'scripts' as const, quantity: 1, credits: this.billing.quote([{ feature: 'text_standard', units: 1 }]) },
+        videos
+          ? { kind: 'scripts' as const, quantity: aiScripts, credits: aiScripts > 0 ? this.billing.quote([{ feature: 'text_light', units: aiScripts }]) : { priced: true, total: 0 } }
+          : { kind: 'scripts' as const, quantity: 1, credits: this.billing.quote([{ feature: 'text_standard', units: 1 }]) },
         ...(q.sections ? [{ kind: 'sections' as const, quantity: 1, credits: this.billing.quote([{ feature: 'text_light', units: 1 }]) }] : []),
         { kind: 'clips' as const, quantity: clipsMin, credits: this.billing.quote([{ feature: avatarFeature(engine, type), units: clipsMin }]) },
         { kind: 'render' as const, quantity: renderMin, credits: this.billing.quote([{ feature: 'video_render', units: renderMin }]) },
@@ -353,6 +361,29 @@ export class SlideLessonService {
       };
     };
     return { billed: await this.billing.isBilled(tenantId), slides: n, slidesOnly: build(false), withKnowledge: build(true) };
+  }
+
+  /**
+   * Da video: come combaciano video e voce per ogni elemento, con le clip generate. Entro la
+   * tolleranza il video cambia appena velocità; oltre si ferma sull'ultimo fotogramma o si taglia.
+   */
+  async videoTimings(
+    tenantId: string,
+    courseId: string,
+    importId: string,
+  ): Promise<Array<{ index: number; videoSec: number; voiceSec: number; mode: 'match' | 'speed' | 'freeze' | 'cut'; rate: number }>> {
+    const manifest = await this.slides.loadManifest(tenantId, courseId, importId);
+    if (manifest.kind !== 'videos') return [];
+    const clips = await this.clips.status(tenantId, courseId, importId);
+    const out: Array<{ index: number; videoSec: number; voiceSec: number; mode: 'match' | 'speed' | 'freeze' | 'cut'; rate: number }> = [];
+    for (const c of clips?.clips ?? []) {
+      const v = manifest.slides.find((x) => x.index === c.index)?.video;
+      if (!v || c.state !== 'completed' || !c.durationSec) continue;
+      const videoSec = videoDurationSec(v);
+      const t = videoTiming(videoSec, c.durationSec);
+      out.push({ index: c.index, videoSec, voiceSec: Math.round(c.durationSec * 10) / 10, mode: t.mode, rate: t.rate });
+    }
+    return out;
   }
 
   /**
@@ -703,6 +734,7 @@ export class SlideLessonService {
     const clipsView = await this.clips.status(tenantId, courseId, importId);
     if (!clipsView) throw new Error('Clip non trovate');
     const imageByIndex = new Map(manifest.slides.map((s) => [s.index, s.imageKey]));
+    const videoByIndex = new Map(manifest.slides.filter((s) => s.video).map((s) => [s.index, s.video!]));
     const scripts = await this.scripts.get(tenantId, courseId, importId);
     const scriptByIndex = new Map((scripts?.slides ?? []).map((s) => [s.index, s.script]));
     const scriptEntry = new Map((scripts?.slides ?? []).map((s) => [s.index, s]));
@@ -731,6 +763,15 @@ export class SlideLessonService {
         pipPosition: doc.slidePositions?.[String(c.index)],
         avatarLook: doc.slideLooks?.[String(c.index)],
         avatarFrame: doc.slideFrames?.[String(c.index)],
+        ...(videoByIndex.get(c.index)
+          ? {
+              video: {
+                url: await this.storage.getSignedUrl(videoByIndex.get(c.index)!.key, { expiresInSec: MEDIA_URL_TTL_SEC }),
+                startSec: videoByIndex.get(c.index)!.trim?.start ?? 0,
+                durationSec: videoDurationSec(videoByIndex.get(c.index)!),
+              },
+            }
+          : {}),
       });
     }
     // Layout dinamico: regia automatica (inquadratura + angolo libero) con le scelte dell'utente.
@@ -740,7 +781,8 @@ export class SlideLessonService {
       for (const a of assembly) {
         const idx = Number(a.id.replace('slide-', ''));
         const d = auto.get(idx);
-        a.shot = doc.slideShots?.[String(idx)] ?? d?.shot ?? 'focus';
+        // Un video va a tutto schermo con l'avatar in sovrimpressione (la regia per testo non ha senso).
+        a.shot = doc.slideShots?.[String(idx)] ?? (a.video ? 'focus' : (d?.shot ?? 'focus'));
         a.pipPosition = doc.slidePositions?.[String(idx)] ?? d?.corner ?? 'bottom-right';
       }
     }
@@ -884,7 +926,7 @@ export class SlideLessonService {
         inputs.push({
           index: idx,
           text: m?.text ?? (e ? [e.title, ...e.bullets].join('\n') : ''),
-          png: m ? await this.storage.getObject(m.imageKey) : undefined,
+          png: m && m.imageKey.endsWith('.png') ? await this.storage.getObject(m.imageKey) : undefined,
           extra: !m && Boolean(e),
         });
       }
