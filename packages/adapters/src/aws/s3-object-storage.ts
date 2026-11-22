@@ -1,5 +1,9 @@
 import { Buffer } from 'node:buffer';
 import {
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
@@ -84,6 +88,37 @@ export class S3ObjectStorage implements ObjectStorage {
         Metadata: meta?.custom,
       }),
     );
+  }
+
+  async startMultipart(key: string, meta?: ObjectMetadata): Promise<{ uploadId: string }> {
+    const r = await this.client.send(
+      new CreateMultipartUploadCommand({ Bucket: this.bucket, Key: key, ContentType: meta?.contentType, Metadata: meta?.custom }),
+    );
+    if (!r.UploadId) throw new Error('Caricamento a pezzi non avviato');
+    return { uploadId: r.UploadId };
+  }
+
+  async uploadPart(key: string, uploadId: string, partNumber: number, body: Buffer): Promise<{ etag: string }> {
+    const r = await this.client.send(
+      new UploadPartCommand({ Bucket: this.bucket, Key: key, UploadId: uploadId, PartNumber: partNumber, Body: body }),
+    );
+    if (!r.ETag) throw new Error('Pezzo non salvato');
+    return { etag: r.ETag };
+  }
+
+  async completeMultipart(key: string, uploadId: string, parts: Array<{ partNumber: number; etag: string }>): Promise<void> {
+    await this.client.send(
+      new CompleteMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId,
+        MultipartUpload: { Parts: [...parts].sort((a, b) => a.partNumber - b.partNumber).map((p) => ({ PartNumber: p.partNumber, ETag: p.etag })) },
+      }),
+    );
+  }
+
+  async abortMultipart(key: string, uploadId: string): Promise<void> {
+    await this.client.send(new AbortMultipartUploadCommand({ Bucket: this.bucket, Key: key, UploadId: uploadId }));
   }
 
   async getObject(key: string): Promise<Buffer> {

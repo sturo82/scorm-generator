@@ -711,33 +711,88 @@ export class HttpApiClient implements ApiClient {
   createVideoImport(courseId: string, input: { title?: string; language?: string }) {
     return this.request<SlideImportView>(`/courses/${courseId}/slides/video-imports`, { method: 'POST', body: JSON.stringify(input) });
   }
-  /** Caricamento di un video con avanzamento (XHR: fetch non espone il progresso dell'invio). */
-  addImportVideo(
+  /**
+   * Caricamento di un video con avanzamento. I file oltre 8 MB passano a pezzi da 8 MB (una
+   * richiesta breve per pezzo, con nuovi tentativi), così nessuna richiesta rischia il limite di
+   * tempo del server; alla fine si inviano copertina, fotogrammi e l'elenco dei pezzi.
+   */
+  async addImportVideo(
     courseId: string,
     importId: string,
     input: { file: File; poster: Blob; frames: Blob[]; durationSec: number },
     onProgress?: (fraction: number) => void,
   ): Promise<SlideImportView> {
-    const session = getSession();
+    const base = `${this.baseUrl}/courses/${courseId}/slides/imports/${importId}/videos`;
     const form = new FormData();
-    form.append('file', input.file, input.file.name);
     form.append('poster', input.poster, 'poster.png');
     input.frames.forEach((f, i) => form.append('frames', f, `frame-${i + 1}.jpg`));
     form.append('durationSec', String(input.durationSec));
+    const contentType = input.file.type || (/\.mov$/i.test(input.file.name) ? 'video/quicktime' : /\.webm$/i.test(input.file.name) ? 'video/webm' : 'video/mp4');
+    const PART = 8 * 1024 * 1024;
+    if (input.file.size <= PART) {
+      form.append('file', new File([input.file], input.file.name, { type: contentType }));
+      return this.sendXhr<SlideImportView>('POST', base, form, undefined, onProgress);
+    }
+    const up = await this.request<{ key: string; uploadId: string; partBytes: number; parts: number }>(`/courses/${courseId}/slides/imports/${importId}/videos/uploads`, {
+      method: 'POST',
+      body: JSON.stringify({ contentType, sizeBytes: input.file.size }),
+    });
+    const parts: Array<{ partNumber: number; etag: string }> = [];
+    try {
+      for (let n = 1; n <= up.parts; n++) {
+        const chunk = input.file.slice((n - 1) * up.partBytes, Math.min(input.file.size, n * up.partBytes));
+        const q = new URLSearchParams({ key: up.key, uploadId: up.uploadId, partNumber: String(n) });
+        let last: unknown;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const r = await this.sendXhr<{ etag: string }>('PUT', `${base}/uploads/part?${q.toString()}`, chunk, 'application/octet-stream', (f) =>
+              onProgress?.(((n - 1 + f) * up.partBytes) / input.file.size * 0.98),
+            );
+            parts.push({ partNumber: n, etag: r.etag });
+            last = undefined;
+            break;
+          } catch (err) {
+            last = err;
+            await new Promise((res) => setTimeout(res, 1500 * (attempt + 1)));
+          }
+        }
+        if (last) throw last;
+      }
+    } catch (err) {
+      void this.request(`/courses/${courseId}/slides/imports/${importId}/videos/uploads/abort`, {
+        method: 'POST',
+        body: JSON.stringify({ key: up.key, uploadId: up.uploadId }),
+      }).catch(() => undefined);
+      throw err;
+    }
+    form.append('filename', input.file.name);
+    form.append('contentType', contentType);
+    form.append('uploadKey', up.key);
+    form.append('uploadId', up.uploadId);
+    form.append('parts', JSON.stringify(parts));
+    const view = await this.sendXhr<SlideImportView>('POST', base, form);
+    onProgress?.(1);
+    return view;
+  }
+
+  /** Richiesta con avanzamento dell'invio (fetch non lo espone). */
+  private sendXhr<T>(method: 'POST' | 'PUT', url: string, body: XMLHttpRequestBodyInit, contentType?: string, onProgress?: (f: number) => void): Promise<T> {
+    const session = getSession();
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${this.baseUrl}/courses/${courseId}/slides/imports/${importId}/videos`);
+      xhr.open(method, url);
       if (session) xhr.setRequestHeader('Authorization', `Bearer ${session.token}`);
+      if (contentType) xhr.setRequestHeader('Content-Type', contentType);
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) onProgress?.(e.loaded / e.total);
       };
       xhr.onload = () => {
         if (xhr.status === 401) void handleSessionExpired();
-        if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText) as SlideImportView);
+        if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText || 'null') as T);
         else reject(new Error(`API ${xhr.status}: ${xhr.responseText.slice(0, 300)}`));
       };
       xhr.onerror = () => reject(new Error('Caricamento interrotto: controlla la connessione e riprova'));
-      xhr.send(form);
+      xhr.send(body);
     });
   }
   updateImportVideos(courseId: string, importId: string, input: import('@scorm/contracts').UpdateVideoImport) {

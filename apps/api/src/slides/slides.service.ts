@@ -250,7 +250,8 @@ export class SlidesService {
     tenantId: string;
     courseId: string;
     importId: string;
-    video: { filename: string; contentType: string; content: Buffer };
+    /** Il video nel corpo della richiesta (file piccoli) oppure già caricato a pezzi (`upload`). */
+    video: { filename: string; contentType: string; content?: Buffer; upload?: { key: string; uploadId: string; parts: Array<{ partNumber: number; etag: string }> } };
     poster: { contentType: string; content: Buffer };
     frames: Array<{ contentType: string; content: Buffer }>;
     durationSec: number;
@@ -263,9 +264,13 @@ export class SlidesService {
     if (manifest.slides.length >= VIDEO_SCRIPT.maxVideos) throw new BadRequestException(`Al massimo ${VIDEO_SCRIPT.maxVideos} video`);
     const vExt = VIDEO_TYPES[input.video.contentType];
     if (!vExt) throw new BadRequestException('Formato video non supportato (usa MP4, WebM o MOV)');
-    if (input.video.content.byteLength === 0) throw new BadRequestException('Video vuoto');
-    if (input.video.content.byteLength > VIDEO_SCRIPT.maxVideoBytes) {
-      throw new BadRequestException(`Video troppo grande (max ${VIDEO_SCRIPT.maxVideoBytes / 1024 / 1024} MB)`);
+    if (input.video.content) {
+      if (input.video.content.byteLength === 0) throw new BadRequestException('Video vuoto');
+      if (input.video.content.byteLength > VIDEO_SCRIPT.maxVideoBytes) {
+        throw new BadRequestException(`Video troppo grande (max ${VIDEO_SCRIPT.maxVideoBytes / 1024 / 1024} MB)`);
+      }
+    } else if (!input.video.upload) {
+      throw new BadRequestException('Video mancante');
     }
     if (!Number.isFinite(input.durationSec) || input.durationSec < 1 || input.durationSec > 3600) {
       throw new BadRequestException('Durata del video non valida');
@@ -276,8 +281,19 @@ export class SlidesService {
     const prefix = this.prefix(input.tenantId, input.courseId, input.importId);
     const n = String(index).padStart(3, '0');
     const custom = { tenantId: input.tenantId, importId: input.importId };
-    const key = `${prefix}/video-${n}.${vExt}`;
-    await this.storage.putObject(key, input.video.content, { contentType: input.video.contentType, custom });
+    let key = `${prefix}/video-${n}.${vExt}`;
+    if (input.video.content) {
+      await this.storage.putObject(key, input.video.content, { contentType: input.video.contentType, custom });
+    } else {
+      // Caricato a pezzi: si chiude il caricamento sulla chiave assegnata all'inizio (solo di questo import).
+      const up = input.video.upload!;
+      if (!new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/upload-[0-9a-f-]{36}\\.(mp4|webm|mov)$`).test(up.key)) {
+        throw new BadRequestException('Caricamento non valido');
+      }
+      if (!this.storage.completeMultipart || up.parts.length === 0) throw new BadRequestException('Caricamento non completo');
+      await this.storage.completeMultipart(up.key, up.uploadId, up.parts);
+      key = up.key;
+    }
     const imageKey = `${prefix}/${n}.${pExt}`;
     await this.storage.putObject(imageKey, input.poster.content, { contentType: input.poster.contentType, custom });
     const frameKeys: string[] = [];
@@ -303,6 +319,54 @@ export class SlidesService {
     });
     await this.saveManifest(input.tenantId, manifest);
     return this.toView(manifest);
+  }
+
+  /** Dimensione dei pezzi del caricamento: sotto il limite di una richiesta, sopra il minimo di S3 (5 MB). */
+  static readonly VIDEO_PART_BYTES = 8 * 1024 * 1024;
+
+  /** Apre il caricamento a pezzi di un video: il browser invia poi i pezzi uno alla volta. */
+  async startVideoUpload(
+    tenantId: string,
+    courseId: string,
+    importId: string,
+    input: { contentType: string; sizeBytes: number },
+  ): Promise<{ key: string; uploadId: string; partBytes: number; parts: number }> {
+    const manifest = await this.loadManifest(tenantId, courseId, importId);
+    if (manifest.kind !== 'videos') throw new BadRequestException('Questo import non è da video');
+    const ext = VIDEO_TYPES[input.contentType];
+    if (!ext) throw new BadRequestException('Formato video non supportato (usa MP4, WebM o MOV)');
+    if (!Number.isFinite(input.sizeBytes) || input.sizeBytes <= 0) throw new BadRequestException('Dimensione del video non valida');
+    if (input.sizeBytes > VIDEO_SCRIPT.maxVideoBytes) {
+      throw new BadRequestException(`Video troppo grande (max ${VIDEO_SCRIPT.maxVideoBytes / 1024 / 1024} MB)`);
+    }
+    if (!this.storage.startMultipart) throw new BadRequestException('Caricamento a pezzi non disponibile');
+    const key = `${this.prefix(tenantId, courseId, importId)}/upload-${randomUUID()}.${ext}`;
+    const { uploadId } = await this.storage.startMultipart(key, { contentType: input.contentType, custom: { tenantId, importId } });
+    return { key, uploadId, partBytes: SlidesService.VIDEO_PART_BYTES, parts: Math.ceil(input.sizeBytes / SlidesService.VIDEO_PART_BYTES) };
+  }
+
+  /** Salva un pezzo del video (numerato da 1). */
+  async uploadVideoPart(
+    tenantId: string,
+    courseId: string,
+    importId: string,
+    input: { key: string; uploadId: string; partNumber: number; body: Buffer },
+  ): Promise<{ etag: string }> {
+    await this.loadManifest(tenantId, courseId, importId);
+    const prefix = this.prefix(tenantId, courseId, importId);
+    if (!input.key.startsWith(`${prefix}/upload-`)) throw new BadRequestException('Caricamento non valido');
+    const maxParts = Math.ceil(VIDEO_SCRIPT.maxVideoBytes / SlidesService.VIDEO_PART_BYTES);
+    if (!Number.isInteger(input.partNumber) || input.partNumber < 1 || input.partNumber > maxParts) throw new BadRequestException('Pezzo non valido');
+    if (input.body.byteLength === 0 || input.body.byteLength > SlidesService.VIDEO_PART_BYTES) throw new BadRequestException('Pezzo di dimensione non valida');
+    if (!this.storage.uploadPart) throw new BadRequestException('Caricamento a pezzi non disponibile');
+    return this.storage.uploadPart(input.key, input.uploadId, input.partNumber, input.body);
+  }
+
+  /** Annulla un caricamento a pezzi lasciato a metà (best-effort). */
+  async abortVideoUpload(tenantId: string, courseId: string, importId: string, input: { key: string; uploadId: string }): Promise<void> {
+    await this.loadManifest(tenantId, courseId, importId);
+    if (!input.key.startsWith(`${this.prefix(tenantId, courseId, importId)}/upload-`)) throw new BadRequestException('Caricamento non valido');
+    await this.storage.abortMultipart?.(input.key, input.uploadId).catch(() => undefined);
   }
 
   /**

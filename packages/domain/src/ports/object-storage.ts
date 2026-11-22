@@ -30,4 +30,12 @@ export interface ObjectStorage {
   getSignedUrl(key: string, opts: SignedUrlOptions): Promise<string>;
   deleteObject(key: string): Promise<void>;
   exists(key: string): Promise<boolean>;
+  /**
+   * Caricamento a pezzi per i file grandi (es. video): si apre, si inviano i pezzi (almeno 5 MB
+   * tranne l'ultimo) e si chiude con l'elenco dei pezzi. Facoltativo: assente se l'adapter non lo supporta.
+   */
+  startMultipart?(key: string, meta?: ObjectMetadata): Promise<{ uploadId: string }>;
+  uploadPart?(key: string, uploadId: string, partNumber: number, body: Buffer): Promise<{ etag: string }>;
+  completeMultipart?(key: string, uploadId: string, parts: Array<{ partNumber: number; etag: string }>): Promise<void>;
+  abortMultipart?(key: string, uploadId: string): Promise<void>;
 }

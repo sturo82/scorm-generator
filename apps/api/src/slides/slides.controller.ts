@@ -7,6 +7,7 @@ import {
   Post,
   Query,
   Put,
+  Req,
   UploadedFile,
   UploadedFiles,
   UseInterceptors,
@@ -108,21 +109,96 @@ export class SlidesController {
     @Param('courseId') courseId: string,
     @Param('importId') importId: string,
     @UploadedFiles() files: { file?: UploadedMulterFile[]; poster?: UploadedMulterFile[]; frames?: UploadedMulterFile[] } | undefined,
-    @Body('durationSec') durationSec: string | undefined,
+    @Body() body: { durationSec?: string; filename?: string; contentType?: string; uploadKey?: string; uploadId?: string; parts?: string },
   ): Promise<SlideImportView> {
     const video = files?.file?.[0];
     const poster = files?.poster?.[0];
-    if (!video) throw new BadRequestException('Nessun video ricevuto (campo "file")');
     if (!poster) throw new BadRequestException('Manca la copertina del video (campo "poster")');
+    // Video grande già caricato a pezzi: qui arrivano solo copertina, fotogrammi e l'elenco dei pezzi.
+    let upload: { key: string; uploadId: string; parts: Array<{ partNumber: number; etag: string }> } | undefined;
+    if (!video) {
+      if (!body.uploadKey || !body.uploadId || !body.parts || !body.contentType || !body.filename) {
+        throw new BadRequestException('Nessun video ricevuto (campo "file" o caricamento a pezzi)');
+      }
+      let parts: unknown;
+      try {
+        parts = JSON.parse(body.parts);
+      } catch {
+        throw new BadRequestException('Elenco dei pezzi non valido');
+      }
+      if (!Array.isArray(parts) || parts.some((p) => !Number.isInteger(p?.partNumber) || typeof p?.etag !== 'string')) {
+        throw new BadRequestException('Elenco dei pezzi non valido');
+      }
+      upload = { key: body.uploadKey, uploadId: body.uploadId, parts: parts as Array<{ partNumber: number; etag: string }> };
+    }
+    const durationSec = body.durationSec;
     return this.slides.addVideo({
       tenantId: ctx.tenant.tenantId,
       courseId,
       importId,
-      video: { filename: video.originalname, contentType: video.mimetype, content: video.buffer },
+      video: video
+        ? { filename: video.originalname, contentType: video.mimetype, content: video.buffer }
+        : { filename: body.filename!, contentType: body.contentType!, upload },
       poster: { contentType: poster.mimetype, content: poster.buffer },
       frames: (files?.frames ?? []).map((f) => ({ contentType: f.mimetype, content: f.buffer })),
       durationSec: Number(durationSec),
     });
+  }
+
+  /** Apre il caricamento a pezzi di un video grande (nessuna richiesta supera pochi secondi). */
+  @Post('imports/:importId/videos/uploads')
+  @Roles('EDITOR')
+  startVideoUpload(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+    @Body() body: { contentType?: string; sizeBytes?: number },
+  ) {
+    return this.slides.startVideoUpload(ctx.tenant.tenantId, courseId, importId, {
+      contentType: String(body?.contentType ?? ''),
+      sizeBytes: Number(body?.sizeBytes),
+    });
+  }
+
+  /** Un pezzo del video (corpo binario, application/octet-stream). */
+  @Put('imports/:importId/videos/uploads/part')
+  @Roles('EDITOR')
+  async uploadVideoPart(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+    @Query('key') key: string,
+    @Query('uploadId') uploadId: string,
+    @Query('partNumber') partNumber: string,
+    @Req() req: NodeJS.ReadableStream,
+  ) {
+    const limit = SlidesService.VIDEO_PART_BYTES;
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const c of req as AsyncIterable<Buffer>) {
+      size += c.length;
+      if (size > limit) throw new BadRequestException('Pezzo troppo grande');
+      chunks.push(c);
+    }
+    return this.slides.uploadVideoPart(ctx.tenant.tenantId, courseId, importId, {
+      key: String(key ?? ''),
+      uploadId: String(uploadId ?? ''),
+      partNumber: Number(partNumber),
+      body: Buffer.concat(chunks),
+    });
+  }
+
+  /** Annulla un caricamento a pezzi lasciato a metà. */
+  @Post('imports/:importId/videos/uploads/abort')
+  @Roles('EDITOR')
+  async abortVideoUpload(
+    @CurrentContext() ctx: AuthContext,
+    @Param('courseId') courseId: string,
+    @Param('importId') importId: string,
+    @Body() body: { key?: string; uploadId?: string },
+  ) {
+    await this.slides.abortVideoUpload(ctx.tenant.tenantId, courseId, importId, { key: String(body?.key ?? ''), uploadId: String(body?.uploadId ?? '') });
+    return { aborted: true };
   }
 
   /** Ordine, tratto e fonte del copione dei video (prima di generare i copioni). */

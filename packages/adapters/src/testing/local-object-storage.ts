@@ -19,6 +19,29 @@ interface StoredObject {
 export class LocalObjectStorage implements ObjectStorage {
   readonly id = 'local';
   private readonly objects = new Map<string, StoredObject>();
+  private readonly uploads = new Map<string, { key: string; meta?: ObjectMetadata; parts: Map<number, Buffer> }>();
+
+  async startMultipart(key: string, meta?: ObjectMetadata): Promise<{ uploadId: string }> {
+    const uploadId = `up-${this.uploads.size + 1}-${Date.now()}`;
+    this.uploads.set(uploadId, { key, meta, parts: new Map() });
+    return { uploadId };
+  }
+  async uploadPart(key: string, uploadId: string, partNumber: number, body: Buffer): Promise<{ etag: string }> {
+    const u = this.uploads.get(uploadId);
+    if (!u || u.key !== key) throw new Error('Caricamento non trovato');
+    u.parts.set(partNumber, Buffer.from(body));
+    return { etag: `"p${partNumber}-${body.byteLength}"` };
+  }
+  async completeMultipart(key: string, uploadId: string, parts: Array<{ partNumber: number; etag: string }>): Promise<void> {
+    const u = this.uploads.get(uploadId);
+    if (!u || u.key !== key) throw new Error('Caricamento non trovato');
+    const body = Buffer.concat([...parts].sort((a, b) => a.partNumber - b.partNumber).map((p) => u.parts.get(p.partNumber)!));
+    this.uploads.delete(uploadId);
+    await this.putObject(key, body, u.meta);
+  }
+  async abortMultipart(_key: string, uploadId: string): Promise<void> {
+    this.uploads.delete(uploadId);
+  }
 
   async putObject(key: string, body: ObjectBody, meta?: ObjectMetadata): Promise<void> {
     this.objects.set(key, { body: await toBuffer(body), meta });
