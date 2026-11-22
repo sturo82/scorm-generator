@@ -331,7 +331,8 @@ export class AutopilotService implements OnModuleInit {
       const d = await this.load(tenantId, courseId);
       if (d) {
         d.status = 'failed';
-        d.error = errMsg(err);
+        // Il messaggio va all'utente: niente indirizzi firmati o dettagli tecnici (restano nei log).
+        d.error = shortErr(err);
         const code = (err as { getStatus?: () => number }).getStatus?.() ?? (err as { status?: number }).status;
         if (code === 402) d.errorCode = 'insufficient_credits';
         d.finishedAt = new Date().toISOString();
@@ -704,6 +705,10 @@ function errMsg(err: unknown): string {
 
 /** Messaggio breve per il riepilogo (senza dettagli tecnici lunghi). */
 function shortErr(err: unknown): string {
-  const m = errMsg(err).replace(/^API \d+:\s*/, '');
-  return m.length > 140 ? `${m.slice(0, 139)}…` : m;
+  const m = errMsg(err)
+    .replace(/^API \d+:\s*/, '')
+    .replace(/https?:\/\/\S+/g, '[file]')
+    .split(/\n/)[0]!
+    .trim();
+  return m.length > 240 ? `${m.slice(0, 239)}…` : m;
 }

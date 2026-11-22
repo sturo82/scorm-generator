@@ -8,6 +8,9 @@ import { videoTiming, type SlideVideoSlide } from '@scorm/contracts';
  * leggermente velocità per finire insieme; se è più corto si ferma sull'ultimo fotogramma, se è
  * più lungo si taglia con la fine della slide. `useCurrentFrame` è locale alla Sequence della slide.
  */
+/** Secondi lasciati prima della fine del video (vedi sotto). */
+const END_MARGIN_SEC = 0.3;
+
 export const SlideMedia: React.FC<{ slide: SlideVideoSlide; style: React.CSSProperties }> = ({ slide, style }) => {
   const local = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -15,7 +18,9 @@ export const SlideMedia: React.FC<{ slide: SlideVideoSlide; style: React.CSSProp
   if (!v) return slide.imageUrl ? <Img src={slide.imageUrl} style={style} /> : null;
   const timing = videoTiming(v.durationSec, slide.durationSec);
   const trimBefore = Math.round(v.startSec * fps);
-  const sourceFrames = Math.max(1, Math.round(v.durationSec * fps));
+  // Margine dalla fine: la durata letta dal browser è quella del file, e la traccia video può
+  // finire qualche centesimo prima dell'audio. Chiedere l'ultimissimo fotogramma farebbe fallire il render.
+  const sourceFrames = Math.max(1, Math.floor(Math.max(0.5, v.durationSec - END_MARGIN_SEC) * fps));
   // Frame di uscita che coprono il tratto del video alla velocità scelta.
   const playFrames = Math.max(1, Math.floor(sourceFrames / timing.rate));
   const media = (

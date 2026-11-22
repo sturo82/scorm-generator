@@ -713,7 +713,8 @@ export class SlideLessonService {
       this.logger.log(`Video-lezione da slide creata (import ${importId}, ${doc.parts.length} parti)`);
     } catch (err) {
       doc.status = 'failed';
-      doc.error = errMsg(err);
+      doc.error = friendlyRenderError(errMsg(err));
+      this.logger.error(`Montaggio fallito (import ${importId}): ${errMsg(err).slice(0, 2000)}`);
       doc.owner = undefined;
       doc.leaseUntil = undefined;
       await this.save(tenantId, doc, false).catch(() => undefined);
@@ -1466,4 +1467,18 @@ function luminance(hex: string): number {
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : 'errore sconosciuto';
+}
+
+/**
+ * Messaggio per l'utente da un errore del montaggio: i dettagli tecnici (indirizzi firmati, stack)
+ * restano nei log; qui una frase breve e, per i casi noti, cosa fare.
+ */
+export function friendlyRenderError(raw: string): string {
+  if (/No frame found at position/i.test(raw)) {
+    return 'Un video non si legge fino alla fine: riprova il montaggio. Se si ripete, ricarica quel video in MP4 (H.264).';
+  }
+  if (/timed? ?out|Timeout/i.test(raw)) return 'Il montaggio ha impiegato troppo tempo: riprova tra poco.';
+  if (/Render Lambda non configurato/i.test(raw)) return 'Il montaggio dei video non è attivo: contatta l\u2019assistenza Coach.';
+  const first = raw.split(/\n|\s+0:\s/)[0]!.replace(/https?:\/\/\S+/g, '[file]').replace(/\/tmp\/\S+/g, '[file]').trim();
+  return first.length > 220 ? `${first.slice(0, 219)}…` : first || 'Montaggio non riuscito: riprova.';
 }
