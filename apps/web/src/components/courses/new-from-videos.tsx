@@ -63,7 +63,21 @@ const len = (it: Item) => (it.trim ? Math.max(0.5, it.trim.end - it.trim.start) 
  * ognuno come nasce il copione — tarato sulla sua durata — e l'avatar che li racconta. Il resto
  * lo fa la generazione automatica: copioni, revisione, clip con l'avatar e montaggio.
  */
-export function NewFromVideos({ courseId, title, language }: { courseId: string; title: string; language: string }) {
+export function NewFromVideos({
+  courseId,
+  title,
+  language,
+  initialFiles,
+  onSwitch,
+}: {
+  courseId: string;
+  title: string;
+  language: string;
+  /** Video già scelti nel passo precedente: si leggono subito. */
+  initialFiles?: File[];
+  /** Torna alla scelta del materiale (per caricare un PDF invece dei video). */
+  onSwitch?: () => void;
+}) {
   const router = useRouter();
   const toast = useToast();
   const wallet = useWallet();
@@ -128,6 +142,15 @@ export function NewFromVideos({ courseId, title, language }: { courseId: string;
       }
     }
   }
+
+  const started = React.useRef(false);
+  React.useEffect(() => {
+    if (initialFiles?.length && !started.current) {
+      started.current = true;
+      void onFiles(initialFiles);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFiles]);
 
   const problems = items
     .map((it, i) => {
@@ -326,15 +349,25 @@ export function NewFromVideos({ courseId, title, language }: { courseId: string;
     <div className="flex flex-col gap-4">
       <div className="space-y-2">
         <p className="text-sm font-medium">1. I tuoi video, nell&apos;ordine in cui vanno raccontati</p>
-        <Dropzone onFiles={(f) => void onFiles(f)} accept={ACCEPT} disabled={uploading} />
+        <Dropzone
+          onFiles={(f) => void onFiles(f)}
+          accept={ACCEPT}
+          disabled={uploading}
+          title={items.length ? 'Aggiungi altri video' : 'Trascina qui i tuoi video'}
+          hint={`MP4, WebM o MOV · fino a ${VIDEO_SCRIPT.maxVideoBytes / 1024 / 1024} MB ciascuno`}
+        />
         <p className="text-xs text-muted-foreground">
-          MP4, WebM o MOV fino a {VIDEO_SCRIPT.maxVideoBytes / 1024 / 1024} MB ciascuno, al massimo {VIDEO_SCRIPT.maxVideos}. Ogni video diventa un
-          capitolo con l&apos;avatar che lo racconta.
+          Al massimo {VIDEO_SCRIPT.maxVideos} video. Ogni video diventa un capitolo con l&apos;avatar che lo racconta.
         </p>
         {reading > 0 && (
           <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="size-3.5 animate-spin" /> Leggo i video…
           </p>
+        )}
+        {onSwitch && items.length === 0 && reading === 0 && (
+          <button type="button" className="text-xs text-muted-foreground underline" onClick={onSwitch}>
+            Hai un PDF di slide invece dei video?
+          </button>
         )}
       </div>
 

@@ -14,7 +14,6 @@ import {
   FolderOpen,
   Wand2,
   Clapperboard,
-  Film,
 } from 'lucide-react';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
@@ -26,8 +25,7 @@ import { CourseEstimate } from '@/components/app/course-estimate';
 import { CreditCost } from '@/components/ui/credit-cost';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
-import { NewFromSlides } from '@/components/courses/new-from-slides';
-import { NewFromVideos } from '@/components/courses/new-from-videos';
+import { NewAvatarLesson } from '@/components/courses/new-avatar-lesson';
 import { getApiClient } from '@/lib/api/client';
 import type { LessonFormatValue, RssPreviewResult } from '@/lib/api/types';
 import {
@@ -53,9 +51,9 @@ const LANGUAGES = [
 const KNOWLEDGE_ACCEPT =
   '.pdf,.docx,.pptx,.xlsx,.txt,.md,.html,.csv,.srt,.vtt,.rtf,.json,application/pdf,text/plain,text/markdown,text/html,text/csv';
 
-type Origin = 'topic' | 'material' | 'slides' | 'video';
+type Origin = 'topic' | 'material' | 'avatar';
 /** Percorsi che creano il corso vuoto e poi caricano i materiali (slide o video) con l'avatar. */
-const isMedia = (o: Origin | null): o is 'slides' | 'video' => o === 'slides' || o === 'video';
+const isMedia = (o: Origin | null): o is 'avatar' => o === 'avatar';
 type Source = 'everywhere' | 'mine';
 
 const FORMAT_OPTIONS: Array<{ value: LessonFormatValue; label: string; hint: string }> = [
@@ -67,8 +65,7 @@ const FORMAT_OPTIONS: Array<{ value: LessonFormatValue; label: string; hint: str
 
 const STEPS = ['Sorgente', 'Dettagli', 'Formato', 'Crea'];
 /** Percorso "da slide": sorgente, titolo e lingua, poi slide e avatar; il resto lo fa la generazione automatica. */
-const STEPS_SLIDES = ['Sorgente', 'Dettagli', 'Slide e avatar'];
-const STEPS_VIDEO = ['Sorgente', 'Dettagli', 'Video e avatar'];
+const STEPS_AVATAR = ['Sorgente', 'Dettagli', 'Materiale e avatar'];
 
 
 export default function NewCoursePage() {
@@ -295,7 +292,7 @@ export default function NewCoursePage() {
   }
 
   // Avanzamento consentito per step.
-  const steps = origin === 'slides' ? STEPS_SLIDES : origin === 'video' ? STEPS_VIDEO : STEPS;
+  const steps = isMedia(origin) ? STEPS_AVATAR : STEPS;
   const canLeaveSource = origin !== null;
   const canLeaveDetails =
     origin === 'topic'
@@ -350,20 +347,13 @@ export default function NewCoursePage() {
           <CardContent className="flex flex-col gap-6 pt-6">
             {/* STEP 1 — Sorgente */}
             {step === 0 && (
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <OriginCard
-                  active={origin === 'slides'}
+                  active={origin === 'avatar'}
                   icon={<Clapperboard className="size-5" />}
-                  title="Da slide (PDF)"
-                  desc="Carica le slide: un avatar le racconta in video. Puoi arricchirle con la tua knowledge. Nessun modulo di prova da cancellare."
-                  onClick={() => setOrigin('slides')}
-                />
-                <OriginCard
-                  active={origin === 'video'}
-                  icon={<Film className="size-5" />}
-                  title="Da video"
-                  desc="Carica una serie di video: ognuno diventa un capitolo e un avatar lo racconta, con un copione tarato sulla durata."
-                  onClick={() => setOrigin('video')}
+                  title="Video-lezione con avatar"
+                  desc="Carica un PDF di slide o i tuoi video: un avatar li racconta, con copioni pronti da rivedere."
+                  onClick={() => setOrigin('avatar')}
                 />
                 <OriginCard
                   active={origin === 'topic'}
@@ -405,14 +395,12 @@ export default function NewCoursePage() {
                     ))}
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    I copioni dell&apos;avatar sono scritti in questa lingua{origin === 'slides' ? ', anche se le slide sono in un\u2019altra' : ''}.
+                    I copioni dell&apos;avatar sono scritti in questa lingua, anche se slide o video sono in un&apos;altra.
                   </p>
                 </div>
                 <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
                   <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-                  {origin === 'video'
-                    ? 'Al passo dopo carichi i video, scegli per ognuno come nasce il copione e l\u2019avatar che li racconta.'
-                    : 'Al passo dopo carichi le slide e scegli l\u2019avatar. Se hai documenti o trascrizioni da usare come knowledge, caricali prima dalla pagina Knowledge: potrai sceglierli lì.'}
+                  Al passo dopo carichi il PDF delle slide oppure i tuoi video e scegli l&apos;avatar che li racconta.
                 </div>
                 <Button type="button" size="lg" disabled={!canLeaveDetails || createBlank.isPending} onClick={() => void handleCreateFromSlides()}>
                   {createBlank.isPending ? <Loader2 className="size-4 animate-spin" /> : <Clapperboard className="size-4" />}
@@ -590,11 +578,8 @@ export default function NewCoursePage() {
             )}
 
             {/* STEP 3 — Formato per lezione */}
-            {step === 2 && origin === 'slides' && slidesCourseId && (
-              <NewFromSlides courseId={slidesCourseId} title={title} language={language} />
-            )}
-            {step === 2 && origin === 'video' && slidesCourseId && (
-              <NewFromVideos courseId={slidesCourseId} title={title} language={language} />
+            {step === 2 && isMedia(origin) && slidesCourseId && (
+              <NewAvatarLesson courseId={slidesCourseId} title={title} language={language} />
             )}
             {step === 2 && !isMedia(origin) && (
               <div className="flex flex-col gap-5">

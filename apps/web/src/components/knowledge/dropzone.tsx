@@ -8,13 +8,17 @@ interface DropzoneProps {
   onFiles: (files: File[]) => void;
   disabled?: boolean;
   accept?: string;
+  /** Testi del riquadro (default: quelli dei documenti di knowledge). */
+  title?: string;
+  hint?: string;
+  icon?: React.ReactNode;
 }
 
 /**
  * Zona di upload drag&drop accessibile, senza dipendenze esterne. Supporta
  * trascinamento, click e selezione da tastiera (il label avvolge un input file).
  */
-export function Dropzone({ onFiles, disabled, accept }: DropzoneProps) {
+export function Dropzone({ onFiles, disabled, accept, title, hint, icon }: DropzoneProps) {
   const [dragging, setDragging] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
@@ -51,11 +55,11 @@ export function Dropzone({ onFiles, disabled, accept }: DropzoneProps) {
       )}
     >
       <div className="grid size-12 place-items-center rounded-full bg-accent text-accent-foreground">
-        <UploadCloud className="size-6" />
+        {icon ?? <UploadCloud className="size-6" />}
       </div>
       <div>
-        <p className="font-medium">Trascina i file qui o clicca per selezionarli</p>
-        <p className="text-sm text-muted-foreground">PDF, DOCX, PPTX, XLSX, TXT, MD, HTML, CSV</p>
+        <p className="font-medium">{title ?? 'Trascina i file qui o clicca per selezionarli'}</p>
+        <p className="text-sm text-muted-foreground">{hint ?? 'PDF, DOCX, PPTX, XLSX, TXT, MD, HTML, CSV'}</p>
       </div>
       <input
         ref={inputRef}

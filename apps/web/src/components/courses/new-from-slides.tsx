@@ -19,7 +19,21 @@ const fmt = (n: number) => n.toLocaleString('it-IT');
  * può costare e avvia. La generazione continua sul server (copioni, revisione se la vuoi, clip con
  * l'avatar, montaggio) e finisce sull'anteprima del corso.
  */
-export function NewFromSlides({ courseId, title, language }: { courseId: string; title: string; language: string }) {
+export function NewFromSlides({
+  courseId,
+  title,
+  language,
+  initialFile,
+  onSwitch,
+}: {
+  courseId: string;
+  title: string;
+  language: string;
+  /** PDF già scelto nel passo precedente: si carica subito. */
+  initialFile?: File;
+  /** Torna alla scelta del materiale (per caricare dei video invece del PDF). */
+  onSwitch?: () => void;
+}) {
   const router = useRouter();
   const toast = useToast();
   const wallet = useWallet();
@@ -55,6 +69,15 @@ export function NewFromSlides({ courseId, title, language }: { courseId: string;
       toast.show(msg || 'Caricamento delle slide non riuscito', 'error');
     }
   }
+
+  const started = React.useRef(false);
+  React.useEffect(() => {
+    if (initialFile && !started.current) {
+      started.current = true;
+      void onFiles([initialFile]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFile]);
 
   async function start() {
     if (!imported || !choice) return;
@@ -100,13 +123,19 @@ export function NewFromSlides({ courseId, title, language }: { courseId: string;
               <p className="truncate font-medium">{imported.filename}</p>
               <p className="text-xs">{imported.slides.length} slide pronte</p>
             </div>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setImported(null)} disabled={starting}>
+            <Button type="button" size="sm" variant="ghost" onClick={() => (onSwitch ? onSwitch() : setImported(null))} disabled={starting}>
               Cambia
             </Button>
           </div>
         ) : (
           <>
-            <Dropzone onFiles={(f) => void onFiles(f)} accept="application/pdf,.pdf" disabled={importSlides.isPending} />
+            <Dropzone
+              onFiles={(f) => void onFiles(f)}
+              accept="application/pdf,.pdf"
+              disabled={importSlides.isPending}
+              title="Trascina qui il PDF delle slide"
+              hint="Un solo PDF, una pagina per slide"
+            />
             {importSlides.isPending && (
               <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="size-3.5 animate-spin" /> Converto le slide in immagini…
@@ -115,6 +144,11 @@ export function NewFromSlides({ courseId, title, language }: { courseId: string;
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <FileUp className="size-3.5" aria-hidden /> PDF fino a 50 MB, una pagina per slide.
             </p>
+            {onSwitch && !importSlides.isPending && (
+              <button type="button" className="text-xs text-muted-foreground underline" onClick={onSwitch}>
+                Hai dei video invece del PDF?
+              </button>
+            )}
           </>
         )}
       </section>
