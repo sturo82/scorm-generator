@@ -139,7 +139,7 @@ export class AvatarsController {
    * (vedi `:groupId/consent`). A pagamento una tantum.
    */
   @Post('twin')
-  @Roles('ADMIN')
+  @Roles('EDITOR')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 150 * 1024 * 1024 } }))
   createTwin(
     @CurrentContext() ctx: AuthContext,
