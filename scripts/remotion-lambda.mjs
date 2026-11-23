@@ -18,9 +18,9 @@
  *
  * Variabili d'ambiente:
  *   CARTOON_LAMBDA_REGION   region AWS (default: eu-west-1)
- *   REMOTION_MEMORY_MB      memoria Lambda (default: 2048)
- *   REMOTION_DISK_MB        disco Lambda (default: 2048)
- *   REMOTION_TIMEOUT_SEC    timeout Lambda in secondi (default: 240)
+ *   REMOTION_MEMORY_MB      memoria Lambda (default: 4096)
+ *   REMOTION_DISK_MB        disco Lambda (default: 4096)
+ *   REMOTION_TIMEOUT_SEC    timeout Lambda in secondi (default: 300)
  *   REMOTION_SITE_NAME      nome logico del site (default: scorm-pillole)
  *
  * Uso:
@@ -35,9 +35,11 @@ import {
 } from '@remotion/lambda';
 
 const region = process.env.CARTOON_LAMBDA_REGION || 'eu-west-1';
-const memorySizeInMb = Number(process.env.REMOTION_MEMORY_MB || '2048');
-const diskSizeInMb = Number(process.env.REMOTION_DISK_MB || '2048');
-const timeoutInSeconds = Number(process.env.REMOTION_TIMEOUT_SEC || '240');
+// 4096 MB: i montaggi con un video sorgente 1080p + clip avatar arrivano a ~2,9 GB (con 2048 MB la cache
+// dei fotogrammi si esaurisce: "No frame found at position").
+const memorySizeInMb = Number(process.env.REMOTION_MEMORY_MB || '4096');
+const diskSizeInMb = Number(process.env.REMOTION_DISK_MB || '4096');
+const timeoutInSeconds = Number(process.env.REMOTION_TIMEOUT_SEC || '300');
 const siteName = process.env.REMOTION_SITE_NAME || 'scorm-pillole';
 
 // Entry Remotion del package @scorm/video (compilato in dist).

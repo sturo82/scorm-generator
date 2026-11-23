@@ -1475,7 +1475,7 @@ function errMsg(err: unknown): string {
  */
 export function friendlyRenderError(raw: string): string {
   if (/No frame found at position/i.test(raw)) {
-    return 'Un video non si legge fino alla fine: riprova il montaggio. Se si ripete, ricarica quel video in MP4 (H.264).';
+    return 'Il montaggio si è interrotto leggendo un video: riprova. Se si ripete, contatta l\u2019assistenza Coach.';
   }
   if (/timed? ?out|Timeout/i.test(raw)) return 'Il montaggio ha impiegato troppo tempo: riprova tra poco.';
   if (/Render Lambda non configurato/i.test(raw)) return 'Il montaggio dei video non è attivo: contatta l\u2019assistenza Coach.';

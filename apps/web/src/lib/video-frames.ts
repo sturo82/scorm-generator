@@ -37,12 +37,24 @@ function grab(v: HTMLVideoElement, maxW: number, type: 'image/png' | 'image/jpeg
   return new Promise((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new Error('Fotogramma non estraibile'))), type, quality));
 }
 
-/** Durata di un file video (s), letta dai metadati. */
-export async function videoDuration(file: File): Promise<number> {
+/**
+ * Durata di un file video (s), letta dai metadati. Se si passa `maxSize`, rifiuta i video oltre quella
+ * risoluzione (lato lungo × lato corto, vale anche per i video verticali).
+ */
+export async function videoDuration(file: File, maxSize?: { longSide: number; shortSide: number }): Promise<number> {
   const url = URL.createObjectURL(file);
   try {
     const v = await loadVideo(url);
     if (!Number.isFinite(v.duration) || v.duration <= 0) throw new Error('Durata del video non leggibile');
+    if (maxSize && v.videoWidth && v.videoHeight) {
+      const long = Math.max(v.videoWidth, v.videoHeight);
+      const short = Math.min(v.videoWidth, v.videoHeight);
+      if (long > maxSize.longSide || short > maxSize.shortSide) {
+        throw new Error(
+          `risoluzione ${v.videoWidth}×${v.videoHeight} troppo alta: esportalo in 1080p (${maxSize.longSide}×${maxSize.shortSide}) e ricaricalo`,
+        );
+      }
+    }
     return Math.round(v.duration * 100) / 100;
   } finally {
     URL.revokeObjectURL(url);

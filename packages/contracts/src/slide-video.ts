@@ -444,6 +444,9 @@ export const VIDEO_SCRIPT = {
   /** Entro ±10% il video rallenta o accelera per finire con la voce; oltre si ferma o si taglia. */
   speedTolerance: 0.1,
   maxVideoBytes: 150 * 1024 * 1024,
+  /** Risoluzione massima (lato lungo × lato corto): oltre il 1080p il montaggio non riesce a leggere i fotogrammi. */
+  maxLongSidePx: 1920,
+  maxShortSidePx: 1080,
   maxVideos: 40,
 } as const;
 

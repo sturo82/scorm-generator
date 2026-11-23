@@ -516,6 +516,14 @@ Verifica che il bundle su S3 sia aggiornato:
 aws s3 ls s3://remotionlambda-euwest1-i9biysf0an/sites/scorm-pillole/bundle.js --region eu-west-1
 ```
 
+### Memoria della function
+In produzione si usa `remotion-render-4-0-536-mem4096mb-disk4096mb-300sec`
+(env App Runner `CARTOON_LAMBDA_FUNCTION_NAME`). Con 2048 MB i montaggi "da video"
+(sorgente 1080p + clip avatar) esaurivano la memoria: errore
+"No frame found at position". Picco misurato: ~2,9 GB (video 1080p + clip), ~2,7 GB
+con 4 video 1080p in fila e cache dei fotogrammi limitata a 1 GB
+(`offthreadVideoCacheSizeInBytes`). I video 4K falliscono comunque (Chrome non legge
+i fotogrammi dal proxy): il web rifiuta i video oltre il 1080p al caricamento.
 ### Checklist quando tocchi il motore video
 1. Modifica `@scorm/video` / `render-core`.
 2. Gate (build+test+lint) e deploy API come al solito.

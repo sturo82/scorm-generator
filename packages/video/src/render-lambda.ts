@@ -143,6 +143,9 @@ export async function renderPillolaOnLambda(
  * NON sono negli inputProps: lo spec contiene solo URL presigned, che devono
  * restare validi per tutta la durata del render (TTL consigliato >= 1 h).
  */
+/** Cache dei fotogrammi video per il render delle slide (vedi renderSlideVideoOnLambda). */
+export const SLIDE_VIDEO_CACHE_BYTES = 1024 * 1024 * 1024;
+
 export async function renderSlideVideoOnLambda(
   spec: SlideVideoSpec,
   opts: LambdaRenderOptions,
@@ -157,6 +160,9 @@ export async function renderSlideVideoOnLambda(
     composition: SLIDE_COMPOSITION_ID,
     inputProps: { spec },
     codec: 'h264',
+    // Tetto alla cache dei fotogrammi video: senza, cresce fino a esaurire la memoria della Lambda
+    // (errore "No frame found at position"). 1 GB basta per i video delle slide e la clip avatar.
+    offthreadVideoCacheSizeInBytes: SLIDE_VIDEO_CACHE_BYTES,
   });
 
   const pollInterval = opts.pollIntervalMs ?? 2000;

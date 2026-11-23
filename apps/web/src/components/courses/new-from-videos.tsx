@@ -130,7 +130,7 @@ export function NewFromVideos({
       }
       setReading((n) => n + 1);
       try {
-        const durationSec = await videoDuration(f);
+        const durationSec = await videoDuration(f, { longSide: VIDEO_SCRIPT.maxLongSidePx, shortSide: VIDEO_SCRIPT.maxShortSidePx });
         setItems((cur) => [
           ...cur,
           { id: crypto.randomUUID(), file: f, url: URL.createObjectURL(f), durationSec, trim: null, mode: 'frames', hint: '', script: '' },
@@ -354,7 +354,7 @@ export function NewFromVideos({
           accept={ACCEPT}
           disabled={uploading}
           title={items.length ? 'Aggiungi altri video' : 'Trascina qui i tuoi video'}
-          hint={`MP4, WebM o MOV · fino a ${VIDEO_SCRIPT.maxVideoBytes / 1024 / 1024} MB ciascuno`}
+          hint={`MP4, WebM o MOV · fino a 1080p e ${VIDEO_SCRIPT.maxVideoBytes / 1024 / 1024} MB ciascuno`}
         />
         <p className="text-xs text-muted-foreground">
           Al massimo {VIDEO_SCRIPT.maxVideos} video. Ogni video diventa un capitolo con l&apos;avatar che lo racconta.
