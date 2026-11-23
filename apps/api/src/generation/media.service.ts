@@ -2441,8 +2441,12 @@ function isTransientCartoonError(err: unknown): boolean {
 /** Traduce l'errore del provider video in un messaggio chiaro per l'autore. */
 function describeVideoGenError(raw: string): string {
   const r = raw.toLowerCase();
+  // Limite di twin "verificati" dell'account del fornitore: condiviso da tutte le aziende, non è un piano dell'utente.
+  if (r.includes('avatar group slot') || r.includes('verified avatar')) {
+    return 'Il numero massimo di digital twin della piattaforma è stato raggiunto: contatta l\u2019assistenza Coach per liberare o aumentare i posti disponibili.';
+  }
   if (r.includes('quota') || r.includes('limit') || r.includes('credit') || r.includes('insufficient')) {
-    return 'Hai raggiunto il limite di video con avatar del tuo piano. Riprova il mese prossimo o contatta l\u2019assistenza Coach.';
+    return 'Limite del servizio video raggiunto. Riprova più tardi o contatta l\u2019assistenza Coach.';
   }
   if (r.includes('unauthorized') || r.includes('api key') || r.includes('401') || r.includes('403')) {
     return 'Servizio video momentaneamente non disponibile: riprova tra poco o contatta l\u2019assistenza Coach.';
