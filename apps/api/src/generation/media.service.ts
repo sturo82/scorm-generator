@@ -890,6 +890,73 @@ export class MediaService implements OnModuleInit {
    * richiede il testo descrittivo. Ritorna avatarId (= look id da usare nella
    * generazione video) e groupId (per l'eliminazione).
    */
+  // --- Video del digital twin caricato a pezzi ---------------------------------
+
+  /** Dimensione dei pezzi: sotto il limite di una richiesta, sopra il minimo di S3 (5 MB). */
+  static readonly TWIN_PART_BYTES = 8 * 1024 * 1024;
+  private static readonly TWIN_VIDEO_TYPES: Record<string, string> = { 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov' };
+
+  private twinUploadKeyOk(tenantId: string, key: string): boolean {
+    return new RegExp(`^avatar-uploads/${tenantId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/[0-9a-f-]{36}\\.(mp4|webm|mov)$`).test(key);
+  }
+
+  /** Apre il caricamento a pezzi del video di addestramento. */
+  async startTwinUpload(tenantId: string, input: { contentType: string; sizeBytes: number }) {
+    const ext = MediaService.TWIN_VIDEO_TYPES[input.contentType];
+    if (!ext) throw new BadRequestException('Formato video non supportato (usa MP4, WebM o MOV).');
+    if (!Number.isFinite(input.sizeBytes) || input.sizeBytes <= 0) throw new BadRequestException('Dimensione del video non valida');
+    if (input.sizeBytes > AVATAR_VIDEO_MAX_BYTES) {
+      throw new BadRequestException('Video troppo grande (max 150MB): per addestrare il twin bastano circa 2 minuti.');
+    }
+    if (!this.storage.startMultipart) throw new BadRequestException('Caricamento a pezzi non disponibile');
+    const key = `avatar-uploads/${tenantId}/${randomUUID()}.${ext}`;
+    const { uploadId } = await this.storage.startMultipart(key, { contentType: input.contentType, custom: { tenantId } });
+    return { key, uploadId, partBytes: MediaService.TWIN_PART_BYTES, parts: Math.ceil(input.sizeBytes / MediaService.TWIN_PART_BYTES) };
+  }
+
+  /** Salva un pezzo del video (numerato da 1). */
+  async uploadTwinPart(tenantId: string, input: { key: string; uploadId: string; partNumber: number; body: Buffer }) {
+    if (!this.twinUploadKeyOk(tenantId, input.key)) throw new BadRequestException('Caricamento non valido');
+    const maxParts = Math.ceil(AVATAR_VIDEO_MAX_BYTES / MediaService.TWIN_PART_BYTES);
+    if (!Number.isInteger(input.partNumber) || input.partNumber < 1 || input.partNumber > maxParts) throw new BadRequestException('Pezzo non valido');
+    if (input.body.byteLength === 0 || input.body.byteLength > MediaService.TWIN_PART_BYTES) throw new BadRequestException('Pezzo di dimensione non valida');
+    if (!this.storage.uploadPart) throw new BadRequestException('Caricamento a pezzi non disponibile');
+    return this.storage.uploadPart(input.key, input.uploadId, input.partNumber, input.body);
+  }
+
+  async abortTwinUpload(tenantId: string, input: { key: string; uploadId: string }): Promise<void> {
+    if (!this.twinUploadKeyOk(tenantId, input.key)) throw new BadRequestException('Caricamento non valido');
+    await this.storage.abortMultipart?.(input.key, input.uploadId).catch(() => undefined);
+  }
+
+  /** Chiude il caricamento e crea il digital twin dal video ricevuto; il file temporaneo viene poi tolto. */
+  async createTwinFromUpload(
+    tenantId: string,
+    input: { key: string; uploadId: string; parts: Array<{ partNumber: number; etag: string }>; name: string; consentConfirmed: boolean; userId?: string },
+  ): Promise<CreateAvatarResult> {
+    if (!this.twinUploadKeyOk(tenantId, input.key)) throw new BadRequestException('Caricamento non valido');
+    if (!this.storage.completeMultipart || input.parts.length === 0) throw new BadRequestException('Caricamento non completo');
+    // I controlli sul nome e sul consenso vengono prima di toccare lo storage.
+    if (!input.name?.trim()) throw new BadRequestException('Nome avatar mancante');
+    if (input.consentConfirmed !== true) {
+      throw new BadRequestException('Conferma di avere il consenso della persona ritratta prima di creare l\'avatar.');
+    }
+    await this.storage.completeMultipart(input.key, input.uploadId, input.parts);
+    try {
+      const bytes = await this.storage.getObject(input.key);
+      const contentType = Object.entries(MediaService.TWIN_VIDEO_TYPES).find(([, e]) => input.key.endsWith(`.${e}`))?.[0] ?? 'video/mp4';
+      return await this.createAvatar(tenantId, {
+        type: 'digital_twin',
+        name: input.name,
+        video: { bytes, contentType },
+        consentConfirmed: true,
+        userId: input.userId,
+      });
+    } finally {
+      await this.storage.deleteObject(input.key).catch(() => undefined);
+    }
+  }
+
   async createAvatar(
     tenantId: string,
     input: {

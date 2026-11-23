@@ -601,8 +601,52 @@ export class HttpApiClient implements ApiClient {
   createPhotoAvatar(name: string, file: File, consentConfirmed: boolean) {
     return this.uploadAvatar('photo', name, file, consentConfirmed);
   }
-  createDigitalTwin(name: string, file: File, consentConfirmed: boolean, onProgress?: (fraction: number) => void) {
-    return this.uploadAvatar('twin', name, file, consentConfirmed, onProgress);
+  /**
+   * Digital twin da un video: il file passa a pezzi da 8 MB (una richiesta breve per pezzo, con nuovi
+   * tentativi) e solo alla fine si chiede di creare l'avatar. L'avanzamento copre l'invio (0-0,95).
+   */
+  async createDigitalTwin(
+    name: string,
+    file: File,
+    consentConfirmed: boolean,
+    onProgress?: (fraction: number) => void,
+  ): Promise<CreateAvatarResult> {
+    const contentType = file.type || (/\.mov$/i.test(file.name) ? 'video/quicktime' : /\.webm$/i.test(file.name) ? 'video/webm' : 'video/mp4');
+    const base = `${this.baseUrl}/tenant/avatars/twin/uploads`;
+    const up = await this.request<{ key: string; uploadId: string; partBytes: number; parts: number }>('/tenant/avatars/twin/uploads', {
+      method: 'POST',
+      body: JSON.stringify({ contentType, sizeBytes: file.size }),
+    });
+    const parts: Array<{ partNumber: number; etag: string }> = [];
+    try {
+      for (let n = 1; n <= up.parts; n++) {
+        const chunk = file.slice((n - 1) * up.partBytes, Math.min(file.size, n * up.partBytes));
+        const q = new URLSearchParams({ key: up.key, uploadId: up.uploadId, partNumber: String(n) });
+        let last: unknown;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const r = await this.sendXhr<{ etag: string }>('PUT', `${base}/part?${q.toString()}`, chunk, 'application/octet-stream', (f) =>
+              onProgress?.((((n - 1 + f) * up.partBytes) / file.size) * 0.95),
+            );
+            parts.push({ partNumber: n, etag: r.etag });
+            last = undefined;
+            break;
+          } catch (err) {
+            last = err;
+            await new Promise((res) => setTimeout(res, 1500 * (attempt + 1)));
+          }
+        }
+        if (last) throw last;
+      }
+    } catch (err) {
+      void this.request('/tenant/avatars/twin/uploads/abort', { method: 'POST', body: JSON.stringify({ key: up.key, uploadId: up.uploadId }) }).catch(() => undefined);
+      throw err;
+    }
+    onProgress?.(1);
+    return this.request<CreateAvatarResult>('/tenant/avatars/twin/uploads/complete', {
+      method: 'POST',
+      body: JSON.stringify({ key: up.key, uploadId: up.uploadId, parts, name, consentConfirmed }),
+    });
   }
   private async uploadAvatar(
     kind: 'photo' | 'twin',

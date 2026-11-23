@@ -8,6 +8,7 @@ import {
   Post,
   Put,
   Query,
+  Req,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -82,7 +83,6 @@ export class AvatarsController {
    * da far aprire alla persona ritratta. Lo stato si legge poi da `groups`.
    */
   @Post(':groupId/consent')
-  @Roles('EDITOR')
   requestConsent(@CurrentContext() ctx: AuthContext, @Param('groupId') groupId: string) {
     return this.media.requestAvatarConsent(this.viewer(ctx), groupId);
   }
@@ -139,7 +139,6 @@ export class AvatarsController {
    * (vedi `:groupId/consent`). A pagamento una tantum.
    */
   @Post('twin')
-  @Roles('EDITOR')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 150 * 1024 * 1024 } }))
   createTwin(
     @CurrentContext() ctx: AuthContext,
@@ -154,6 +153,63 @@ export class AvatarsController {
       name: name.trim(),
       video: { bytes: file.buffer, contentType: file.mimetype },
       consentConfirmed: consent === 'true',
+      userId: ctx.userId,
+    });
+  }
+
+  /** Apre il caricamento a pezzi del video del twin: ogni persona crea il proprio twin. */
+  @Post('twin/uploads')
+  startTwinUpload(@CurrentContext() ctx: AuthContext, @Body() body: { contentType?: string; sizeBytes?: number }) {
+    return this.media.startTwinUpload(ctx.tenant.tenantId, { contentType: String(body?.contentType ?? ''), sizeBytes: Number(body?.sizeBytes) });
+  }
+
+  /** Un pezzo del video (corpo binario, application/octet-stream). */
+  @Put('twin/uploads/part')
+  async uploadTwinPart(
+    @CurrentContext() ctx: AuthContext,
+    @Query('key') key: string,
+    @Query('uploadId') uploadId: string,
+    @Query('partNumber') partNumber: string,
+    @Req() req: NodeJS.ReadableStream,
+  ) {
+    const limit = MediaService.TWIN_PART_BYTES;
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const c of req as AsyncIterable<Buffer>) {
+      size += c.length;
+      if (size > limit) throw new BadRequestException('Pezzo troppo grande');
+      chunks.push(c);
+    }
+    return this.media.uploadTwinPart(ctx.tenant.tenantId, {
+      key: String(key ?? ''),
+      uploadId: String(uploadId ?? ''),
+      partNumber: Number(partNumber),
+      body: Buffer.concat(chunks),
+    });
+  }
+
+  /** Annulla un caricamento a pezzi lasciato a metà. */
+  @Post('twin/uploads/abort')
+  async abortTwinUpload(@CurrentContext() ctx: AuthContext, @Body() body: { key?: string; uploadId?: string }) {
+    await this.media.abortTwinUpload(ctx.tenant.tenantId, { key: String(body?.key ?? ''), uploadId: String(body?.uploadId ?? '') });
+    return { aborted: true };
+  }
+
+  /** Chiude il caricamento a pezzi e crea il digital twin. */
+  @Post('twin/uploads/complete')
+  completeTwinUpload(
+    @CurrentContext() ctx: AuthContext,
+    @Body() body: { key?: string; uploadId?: string; parts?: Array<{ partNumber: number; etag: string }>; name?: string; consentConfirmed?: boolean },
+  ) {
+    const parts = Array.isArray(body?.parts)
+      ? body.parts.map((p) => ({ partNumber: Number(p?.partNumber), etag: String(p?.etag ?? '') })).filter((p) => Number.isInteger(p.partNumber) && p.etag)
+      : [];
+    return this.media.createTwinFromUpload(ctx.tenant.tenantId, {
+      key: String(body?.key ?? ''),
+      uploadId: String(body?.uploadId ?? ''),
+      parts,
+      name: String(body?.name ?? ''),
+      consentConfirmed: body?.consentConfirmed === true,
       userId: ctx.userId,
     });
   }
