@@ -535,8 +535,8 @@ export function useAvatarGroups() {
 export function useCreateDigitalTwin() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { name: string; file: File; consentConfirmed: boolean }) =>
-      api.createDigitalTwin(vars.name, vars.file, vars.consentConfirmed),
+    mutationFn: (vars: { name: string; file: File; consentConfirmed: boolean; onProgress?: (fraction: number) => void }) =>
+      api.createDigitalTwin(vars.name, vars.file, vars.consentConfirmed, vars.onProgress),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tenant', 'avatars'] }),
   });
 }

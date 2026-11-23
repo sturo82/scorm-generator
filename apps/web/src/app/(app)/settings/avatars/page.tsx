@@ -96,6 +96,8 @@ export default function AvatarsSettingsPage() {
   const [name, setName] = React.useState('');
   const [prompt, setPrompt] = React.useState('');
   const [file, setFile] = React.useState<File | null>(null);
+  // Avanzamento dell'invio del video del twin (0-1); null = non in invio.
+  const [uploadPct, setUploadPct] = React.useState<number | null>(null);
   const [filePreview, setFilePreview] = React.useState<string | null>(null);
   const [consent, setConsent] = React.useState(false);
   const fileInput = React.useRef<HTMLInputElement>(null);
@@ -147,7 +149,11 @@ export default function AvatarsSettingsPage() {
         return;
       }
       setFile(f);
-      setFilePreview(null);
+      setUploadPct(null);
+      setFilePreview((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(f);
+      });
       return;
     }
     if (!['image/jpeg', 'image/jpg', 'image/png'].includes(f.type)) {
@@ -201,11 +207,13 @@ export default function AvatarsSettingsPage() {
         mode === 'photo'
           ? await createPhoto.mutateAsync({ name: name.trim(), file: file!, consentConfirmed: consent })
           : mode === 'digital_twin'
-            ? await createTwin.mutateAsync({ name: name.trim(), file: file!, consentConfirmed: consent })
+            ? await createTwin.mutateAsync({ name: name.trim(), file: file!, consentConfirmed: consent, onProgress: setUploadPct })
             : await createPrompt.mutateAsync({ name: name.trim(), prompt: prompt.trim() });
       toast.show(mode === 'digital_twin' ? `Digital twin "${res.name}" in addestramento` : `Avatar "${res.name}" in creazione`, 'success');
+      setUploadPct(null);
       resetForm();
     } catch (err) {
+      setUploadPct(null);
       const msg = err instanceof Error ? err.message : '';
       toast.show(msg.replace(/^API \d+:\s*/, '') || 'Creazione avatar non riuscita', 'error');
     }
@@ -459,8 +467,20 @@ export default function AvatarsSettingsPage() {
               ) : (
                 <div className="space-y-1.5">
                   <Label>{mode === 'digital_twin' ? 'Video di addestramento' : 'Foto (volto frontale)'}</Label>
+                  {mode === 'digital_twin' && file && filePreview && (
+                    <div className="overflow-hidden rounded-xl border bg-black/90">
+                      <video src={filePreview} controls playsInline preload="metadata" className="aspect-video w-full bg-black object-contain" />
+                      <div className="flex items-center justify-between gap-2 bg-card px-3 py-2 text-xs">
+                        <span className="inline-flex min-w-0 items-center gap-1.5 font-medium text-emerald-700 dark:text-emerald-400">
+                          <ShieldCheck className="size-3.5 shrink-0" aria-hidden />
+                          <span className="truncate">{createTwin.isPending ? 'Invio in corso' : 'Pronto da inviare'}: {file.name}</span>
+                        </span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">{(file.size / (1024 * 1024)).toFixed(1)} MB</span>
+                      </div>
+                    </div>
+                  )}
                   <div className="flex items-center gap-3">
-                    <div className="grid size-16 shrink-0 place-items-center overflow-hidden rounded-md border bg-muted">
+                    <div className={cn('grid size-16 shrink-0 place-items-center overflow-hidden rounded-md border bg-muted', mode === 'digital_twin' && file && filePreview && 'hidden')}>
                       {filePreview ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={filePreview} alt="" className="h-full w-full object-cover" />
@@ -532,7 +552,21 @@ export default function AvatarsSettingsPage() {
                 )}
               </Button>
               {createTwin.isPending && (
-                <p className="text-xs text-muted-foreground">Carico il video e avvio l&apos;addestramento: può richiedere un minuto, non chiudere la pagina.</p>
+                <div className="space-y-1.5" role="status" aria-live="polite">
+                  <div className="flex justify-between text-xs">
+                    <span className="font-medium">
+                      {uploadPct !== null && uploadPct < 1 ? 'Invio del video…' : 'Video ricevuto: avvio l’addestramento…'}
+                    </span>
+                    <span className="tabular-nums text-muted-foreground">{uploadPct !== null ? `${Math.round(uploadPct * 100)}%` : ''}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={cn('h-full rounded-full bg-primary transition-all', (uploadPct === null || uploadPct >= 1) && 'animate-pulse')}
+                      style={{ width: `${Math.round((uploadPct ?? 0) * 100) || 4}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Non chiudere la pagina finché non compare la conferma.</p>
+                </div>
               )}
             </form>
           </CardContent>
@@ -593,6 +627,7 @@ export default function AvatarsSettingsPage() {
             onDone={(f) => {
               onPickFile(f);
               setRecording(false);
+              toast.show('Video registrato: controlla l’anteprima, poi premi “Crea digital twin”', 'success');
             }}
           />
         )}

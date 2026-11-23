@@ -601,25 +601,49 @@ export class HttpApiClient implements ApiClient {
   createPhotoAvatar(name: string, file: File, consentConfirmed: boolean) {
     return this.uploadAvatar('photo', name, file, consentConfirmed);
   }
-  createDigitalTwin(name: string, file: File, consentConfirmed: boolean) {
-    return this.uploadAvatar('twin', name, file, consentConfirmed);
+  createDigitalTwin(name: string, file: File, consentConfirmed: boolean, onProgress?: (fraction: number) => void) {
+    return this.uploadAvatar('twin', name, file, consentConfirmed, onProgress);
   }
-  private async uploadAvatar(kind: 'photo' | 'twin', name: string, file: File, consentConfirmed: boolean) {
+  private async uploadAvatar(
+    kind: 'photo' | 'twin',
+    name: string,
+    file: File,
+    consentConfirmed: boolean,
+    onProgress?: (fraction: number) => void,
+  ) {
     const session = getSession();
     const form = new FormData();
     form.append('file', file);
     form.append('name', name);
     form.append('consentConfirmed', String(consentConfirmed));
-    const headers = new Headers();
-    if (session) headers.set('Authorization', `Bearer ${session.token}`);
-    const res = await fetch(`${this.baseUrl}/tenant/avatars/${kind}`, { method: 'POST', headers, body: form });
+    // XHR solo quando serve l'avanzamento dell'invio (fetch non lo espone).
+    const send = (): Promise<{ status: number; body: string }> =>
+      new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${this.baseUrl}/tenant/avatars/${kind}`);
+        if (session) xhr.setRequestHeader('Authorization', `Bearer ${session.token}`);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+        };
+        xhr.onload = () => resolve({ status: xhr.status, body: xhr.responseText });
+        xhr.onerror = () => reject(new Error('Connessione interrotta durante l’invio del video'));
+        xhr.ontimeout = () => reject(new Error('Invio del video troppo lento: riprova'));
+        xhr.send(form);
+      });
+    const res = onProgress
+      ? await send()
+      : await (async () => {
+          const headers = new Headers();
+          if (session) headers.set('Authorization', `Bearer ${session.token}`);
+          const r = await fetch(`${this.baseUrl}/tenant/avatars/${kind}`, { method: 'POST', headers, body: form });
+          return { status: r.status, body: await r.text() };
+        })();
     if (res.status === 401) void handleSessionExpired();
-    if (!res.ok) {
-      const body = await res.text();
-      if (res.status === 402) notifyInsufficientCredits(body);
-      throw new Error(`API ${res.status}: ${body.slice(0, 300)}`);
+    if (res.status < 200 || res.status >= 300) {
+      if (res.status === 402) notifyInsufficientCredits(res.body);
+      throw new Error(`API ${res.status}: ${res.body.slice(0, 300)}`);
     }
-    return (await res.json()) as CreateAvatarResult;
+    return JSON.parse(res.body) as CreateAvatarResult;
   }
   createPromptAvatar(name: string, prompt: string) {
     return this.request<CreateAvatarResult>('/tenant/avatars/prompt', {

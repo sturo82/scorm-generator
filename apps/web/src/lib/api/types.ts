@@ -755,7 +755,7 @@ export interface ApiClient {
   /** Crea un avatar da FOTO (upload immagine). Asincrono: look in 'processing'. */
   createPhotoAvatar(name: string, file: File, consentConfirmed: boolean): Promise<CreateAvatarResult>;
   /** Crea un digital twin da un video (a pagamento una tantum). */
-  createDigitalTwin(name: string, file: File, consentConfirmed: boolean): Promise<CreateAvatarResult>;
+  createDigitalTwin(name: string, file: File, consentConfirmed: boolean, onProgress?: (fraction: number) => void): Promise<CreateAvatarResult>;
   /** Avatar come personaggi con stato e consenso (anche quelli non ancora utilizzabili). */
   listAvatarGroups(refresh?: boolean): Promise<AvatarGroupView[]>;
   /** Aziende e utenti a cui assegnare un avatar. */
