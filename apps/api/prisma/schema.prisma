@@ -166,6 +166,7 @@ model User {
   // company_id del wallet personale assegnato da Manager ("p-…"), noto dopo la prima attivazione.
   personalWalletId String?
   ssoTickets     SsoTicket[]
+  createdCourses Course[] @relation("CourseCreator")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -303,6 +304,9 @@ model Course {
   coverPosition Int    @default(50)
   /// Corso nato dal percorso "da slide": id dell'import PDF. Attiva lo Studio video al posto del wizard a passi.
   slidesImportId String?
+  /// Utente che ha creato il corso (null per i corsi precedenti a questa colonna o se l'utente è stato rimosso).
+  createdById String?
+  createdBy   User?              @relation("CourseCreator", fields: [createdById], references: [id], onDelete: SetNull)
   // Stile delle micro-interazioni del corso: "sober" (default) | "lively".
   // Propagato ad anteprima web e player SCORM (data-motion). Validato a livello
   // applicativo dall'enum interactionStyle del contratto Course.
@@ -340,6 +344,7 @@ model Course {
 
   @@index([tenantId])
   @@index([tenantId, folderId])
+  @@index([tenantId, createdById])
   // Catalogo integrazioni: filtra rapidamente i corsi condivisibili per tenant.
   @@index([tenantId, shareable])
   creditCharges CreditCharge[]

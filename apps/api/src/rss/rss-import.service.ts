@@ -24,6 +24,8 @@ export type FeedSource = 'everywhere' | 'mine';
 /** Input per creare un corso a partire da un ARGOMENTO cercato sui feed. */
 export interface CreateCourseFromRssInput {
   tenantId: string;
+  /** Autore del corso. */
+  createdById?: string;
   /** Argomento su cui deve vertere il corso (query semantica). */
   topic: string;
   /** Titolo del corso (se vuoto, derivato dall'argomento). */
@@ -238,6 +240,7 @@ export class RssImportService {
       `Corso sull'argomento "${topic}", generato da ${chosen.length} notizie selezionate dai feed.`;
     const course = await this.courses.create({
       tenantId: input.tenantId,
+      createdById: input.createdById,
       title,
       language: input.language,
       description,

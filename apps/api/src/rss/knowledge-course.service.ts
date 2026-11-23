@@ -22,6 +22,8 @@ export interface PreviewFromKnowledgeInput {
 }
 
 export interface CreateFromKnowledgeInput extends PreviewFromKnowledgeInput {
+  /** Autore del corso. */
+  createdById?: string;
   title?: string;
   /** Anteprima CONGELATA approvata dall'autore (spina dorsale del corso). */
   preview?: FrozenPreview;
@@ -118,6 +120,7 @@ export class KnowledgeCourseService {
 
     const course = await this.courses.create({
       tenantId: input.tenantId,
+      createdById: input.createdById,
       title,
       language: input.language,
       description,

@@ -9,6 +9,6 @@ export class DashboardController {
 
   @Get('summary')
   summary(@CurrentContext() ctx: AuthContext) {
-    return this.dashboard.summary(ctx.tenant.tenantId);
+    return this.dashboard.summary(ctx.tenant.tenantId, ctx.userId);
   }
 }

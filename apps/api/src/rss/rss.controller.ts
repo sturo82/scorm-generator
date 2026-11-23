@@ -135,6 +135,7 @@ export class RssController {
   ) {
     return this.rss.createCourseFromRss({
       tenantId: ctx.tenant.tenantId,
+      createdById: ctx.userId,
       topic: dto.topic,
       title: dto.title,
       language: dto.language,
@@ -196,6 +197,7 @@ export class RssController {
   ) {
     return this.knowledgeCourse.createFromKnowledge({
       tenantId: ctx.tenant.tenantId,
+      createdById: ctx.userId,
       documentIds: dto.documentIds,
       language: dto.language,
       topic: dto.topic,

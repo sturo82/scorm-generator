@@ -21,12 +21,33 @@ export class DashboardService {
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
   ) {}
 
-  async summary(tenantId: string, recentLimit = 6): Promise<DashboardSummary> {
+  async summary(tenantId: string, userId: string, recentLimit = 6): Promise<DashboardSummary> {
     const monthStart = new Date();
     monthStart.setUTCDate(1);
     monthStart.setUTCHours(0, 0, 0, 0);
 
-    const [byStatus, brands, knowledgeDocs, libraryRows, media, month, total, recent] = await Promise.all([
+    // Con una sola persona nella company non c'è nulla da dividere: tutto è "mio".
+    const members = await this.prisma.user.count({ where: { tenantId } });
+    const shared = members > 1;
+    const mineWhere = shared ? { tenantId, createdById: userId } : { tenantId };
+    const othersWhere = { tenantId, OR: [{ createdById: null }, { createdById: { not: userId } }] };
+    const recentSelect = {
+      id: true,
+      title: true,
+      description: true,
+      language: true,
+      status: true,
+      coverImageKey: true,
+      coverPosition: true,
+      updatedAt: true,
+      createdAt: true,
+      autopilot: true,
+      createdById: true,
+      createdBy: { select: { displayName: true, email: true } },
+      modules: { select: { lessons: { select: { blocks: true } } } },
+    } as const;
+
+    const [byStatus, brands, knowledgeDocs, libraryRows, media, month, total, recentMine, recentOthers, mineCount] = await Promise.all([
       this.prisma.course.groupBy({ by: ['status'], where: { tenantId }, _count: { _all: true } }),
       this.prisma.brand.count({ where: { tenantId } }),
       this.prisma.knowledgeDoc.count({ where: { tenantId } }),
@@ -44,24 +65,11 @@ export class DashboardService {
         GROUP BY m."courseId"`,
       this.prisma.creditCharge.aggregate({ where: { tenantId, createdAt: { gte: monthStart } }, _sum: { credits: true } }),
       this.prisma.creditCharge.aggregate({ where: { tenantId }, _sum: { credits: true } }),
-      this.prisma.course.findMany({
-        where: { tenantId },
-        orderBy: { updatedAt: 'desc' },
-        take: recentLimit,
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          language: true,
-          status: true,
-          coverImageKey: true,
-          coverPosition: true,
-          updatedAt: true,
-          createdAt: true,
-          autopilot: true,
-          modules: { select: { lessons: { select: { blocks: true } } } },
-        },
-      }),
+      this.prisma.course.findMany({ where: mineWhere, orderBy: { updatedAt: 'desc' }, take: recentLimit, select: recentSelect }),
+      shared
+        ? this.prisma.course.findMany({ where: othersWhere, orderBy: { updatedAt: 'desc' }, take: recentLimit, select: recentSelect })
+        : Promise.resolve([]),
+      this.prisma.course.count({ where: mineWhere }),
     ]);
 
     const n = (v: bigint | number) => Number(v);
@@ -79,6 +87,7 @@ export class DashboardService {
       FROM "Lesson" l JOIN "Module" m ON m.id = l."moduleId" JOIN "Course" c ON c.id = m."courseId"
       WHERE c."tenantId" = ${tenantId}`;
 
+    const recent = [...recentMine, ...recentOthers];
     const recentIds = recent.map((c) => c.id);
     const spent = recentIds.length
       ? await this.prisma.creditCharge.groupBy({ by: ['courseId'], where: { tenantId, courseId: { in: recentIds } }, _sum: { credits: true } })
@@ -111,6 +120,8 @@ export class DashboardService {
           generating: ap?.status === 'running' || ap?.status === 'paused',
           needsAttention: ap?.status === 'failed' || ap?.status === 'cancelled' || (ap?.status === 'completed' && (ap.issues?.length ?? 0) > 0),
           credits: spentBy.get(c.id) ?? 0,
+          mine: !shared || c.createdById === userId,
+          ...(c.createdBy ? { createdByName: c.createdBy.displayName?.trim() || c.createdBy.email } : {}),
         };
       }),
     );
@@ -132,6 +143,11 @@ export class DashboardService {
       },
       credits: { spentThisMonth: month._sum.credits ?? 0, spentTotal: total._sum.credits ?? 0 },
       recentCourses,
+      courseOwners: {
+        mine: mineCount,
+        company: shared ? byStatus.reduce((t, r) => t + r._count._all, 0) - mineCount : 0,
+        shared,
+      },
     };
   }
 }

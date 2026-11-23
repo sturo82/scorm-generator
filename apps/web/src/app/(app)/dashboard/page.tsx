@@ -49,6 +49,13 @@ export default function DashboardPage() {
 
   const data = summary.data;
   const loading = summary.isLoading;
+  // Con più persone nella company i corsi si dividono in "i miei" e "della company".
+  const owners = data?.courseOwners;
+  const shared = owners?.shared === true;
+  const [picked, setPicked] = React.useState<'mine' | 'company' | null>(null);
+  const tab: 'mine' | 'company' = !shared ? 'mine' : (picked ?? (owners && owners.mine === 0 && owners.company > 0 ? 'company' : 'mine'));
+  const shown = (data?.recentCourses ?? []).filter((c) => (tab === 'mine' ? c.mine : !c.mine));
+  const tabTotal = tab === 'mine' ? owners?.mine ?? 0 : owners?.company ?? 0;
 
   return (
     <>
@@ -118,8 +125,15 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Ultimi corsi</h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        {shared ? (
+          <div role="tablist" aria-label="Corsi" className="inline-flex rounded-xl bg-muted p-1">
+            <CourseTab active={tab === 'mine'} onClick={() => setPicked('mine')} label="I miei corsi" count={owners?.mine ?? 0} />
+            <CourseTab active={tab === 'company'} onClick={() => setPicked('company')} label="Della mia azienda" count={owners?.company ?? 0} />
+          </div>
+        ) : (
+          <h2 className="text-lg font-semibold">Ultimi corsi</h2>
+        )}
         {data && data.recentCourses.length > 0 && (
           <Link href="/courses" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
             Tutti i corsi <ArrowRight className="size-3.5" />
@@ -155,12 +169,24 @@ export default function DashboardPage() {
 
       {data && data.recentCourses.length === 0 && <EmptyCourses />}
 
-      {data && data.recentCourses.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.recentCourses.map((c) => (
-            <CourseTile key={c.id} course={c} showCredits={wallet.data?.enabled === true} />
-          ))}
-        </div>
+      {data && data.recentCourses.length > 0 && shown.length === 0 && <EmptyTab tab={tab} />}
+
+      {data && shown.length > 0 && (
+        <>
+          <div id="dashboard-courses" role="tabpanel" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {shown.map((c) => (
+              <CourseTile key={c.id} course={c} showCredits={wallet.data?.enabled === true} showAuthor={shared && tab === 'company'} />
+            ))}
+          </div>
+          {shared && tabTotal > shown.length && (
+            <p className="mt-3 text-center text-xs text-muted-foreground">
+              Ultimi {shown.length} di {fmt(tabTotal)}.{' '}
+              <Link href="/courses" className="font-medium text-primary hover:underline">
+                Vedi tutti
+              </Link>
+            </p>
+          )}
+        </>
       )}
 
       {data && data.recentCourses.length > 0 && data.media.lessonVideos + data.media.library.total === 0 && <EmptyVideos />}
@@ -297,7 +323,7 @@ function Stat(props: {
   );
 }
 
-function CourseTile({ course: c, showCredits }: { course: DashboardCourse; showCredits: boolean }) {
+function CourseTile({ course: c, showCredits, showAuthor }: { course: DashboardCourse; showCredits: boolean; showAuthor?: boolean }) {
   const pct = c.lessons > 0 ? Math.round((c.lessonsReady / c.lessons) * 100) : 0;
   return (
     <Link href={`/courses/${c.id}`}>
@@ -337,6 +363,11 @@ function CourseTile({ course: c, showCredits }: { course: DashboardCourse; showC
           <div>
             <h3 className="line-clamp-2 font-semibold leading-snug">{c.title}</h3>
             <p className="line-clamp-1 text-xs text-muted-foreground">{c.description || 'Nessuna descrizione'}</p>
+            {showAuthor && (
+              <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                <UserSquare2 className="size-3" /> {c.createdByName ? `Di ${c.createdByName}` : 'Autore non registrato'}
+              </p>
+            )}
           </div>
           <div>
             <div className="mb-1 flex justify-between text-[11px] text-muted-foreground">
@@ -363,6 +394,47 @@ function CourseTile({ course: c, showCredits }: { course: DashboardCourse; showC
         </CardContent>
       </Card>
     </Link>
+  );
+}
+
+function CourseTab({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      aria-controls="dashboard-courses"
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {label}
+      <span className={cn('rounded-full px-1.5 text-[11px] tabular-nums', active ? 'bg-primary/10 text-primary' : 'bg-background/60')}>{count}</span>
+    </button>
+  );
+}
+
+function EmptyTab({ tab }: { tab: 'mine' | 'company' }) {
+  return (
+    <Card className="border-dashed">
+      <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+        <div className="grid size-12 place-items-center rounded-xl bg-accent text-accent-foreground">
+          <BookOpen className="size-6" />
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {tab === 'mine' ? 'Non hai ancora creato corsi: i corsi dei tuoi colleghi sono nell’altra scheda.' : 'I tuoi colleghi non hanno ancora creato corsi.'}
+        </p>
+        {tab === 'mine' && (
+          <Button asChild size="sm">
+            <Link href="/courses/new">
+              <Plus className="size-4" /> Crea un corso
+            </Link>
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

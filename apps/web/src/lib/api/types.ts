@@ -66,6 +66,8 @@ export interface CourseView {
   folderId?: string | null;
   /** Opt-in di condivisione verso il catalogo integrazioni (B2B). */
   shareable?: boolean;
+  /** Autore del corso (assente per i corsi precedenti alla tracciatura). */
+  createdBy?: { id: string; name: string };
 }
 
 export interface ModuleView {

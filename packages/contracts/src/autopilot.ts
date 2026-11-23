@@ -119,6 +119,10 @@ export interface DashboardCourse {
   needsAttention: boolean;
   /** Crediti addebitati finora a questo corso. */
   credits: number;
+  /** Il corso è stato creato dall'utente che guarda la dashboard. */
+  mine: boolean;
+  /** Chi ha creato il corso (assente per i corsi precedenti alla tracciatura dell'autore). */
+  createdByName?: string;
 }
 
 /** Riepilogo della dashboard: numeri, corsi recenti e consumo di crediti. */
@@ -140,5 +144,8 @@ export interface DashboardSummary {
     narrations: number;
   };
   credits: { spentThisMonth: number; spentTotal: number };
+  /** Ultimi corsi: i miei e quelli degli altri della company (fino a `recentLimit` per gruppo). */
   recentCourses: DashboardCourse[];
+  /** Corsi per autore. `shared` è vero se nella company c'è più di una persona (allora ha senso dividere in tab). */
+  courseOwners: { mine: number; company: number; shared: boolean };
 }

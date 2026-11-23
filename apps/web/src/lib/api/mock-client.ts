@@ -714,6 +714,7 @@ export class MockApiClient implements ApiClient {
       media: { lessonVideos: 0, library: { total: 0, uploaded: 0, fromSlides: 0, external: 0 }, images: 0, narrations: 0 },
       credits: { spentThisMonth: 0, spentTotal: 0 },
       recentCourses: [],
+      courseOwners: { mine: this.courses.length, company: 0, shared: false },
     };
   }
   async getAutopilot(): Promise<AutopilotView | null> {

@@ -63,7 +63,7 @@ export class CoursesController {
   @Post()
   @Roles('EDITOR')
   create(@CurrentContext() ctx: AuthContext, @Body() dto: CreateCourseDto) {
-    return this.courses.create({ tenantId: ctx.tenant.tenantId, ...dto });
+    return this.courses.create({ tenantId: ctx.tenant.tenantId, createdById: ctx.userId, ...dto });
   }
 
   @Get()

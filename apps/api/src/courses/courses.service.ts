@@ -15,6 +15,8 @@ export interface CreateCourseInput {
   title: string;
   description?: string;
   language: string;
+  /** Utente che crea il corso (autore). */
+  createdById?: string;
 }
 
 export type InteractionStyle = 'sober' | 'lively';
@@ -46,6 +48,8 @@ export interface CourseView {
   folderId: string | null;
   /** Opt-in di condivisione verso il catalogo integrazioni (B2B). */
   shareable: boolean;
+  /** Autore del corso (assente per i corsi precedenti o se l'utente è stato rimosso). */
+  createdBy?: { id: string; name: string };
 }
 
 /** Filtri per l'elenco corsi: cartella e ricerca testuale. */
@@ -82,7 +86,9 @@ export class CoursesService {
         description: input.description ?? '',
         language: input.language,
         status: 'DRAFT',
+        ...(input.createdById ? { createdById: input.createdById } : {}),
       },
+      include: { createdBy: { select: { id: true, displayName: true, email: true } } },
     });
     return this.toView(course);
   }
@@ -107,6 +113,7 @@ export class CoursesService {
     const courses = await this.prisma.course.findMany({
       where,
       orderBy: { createdAt: 'desc' },
+      include: { createdBy: { select: { id: true, displayName: true, email: true } } },
     });
     return Promise.all(courses.map((c) => this.toView(c)));
   }
@@ -255,6 +262,7 @@ export class CoursesService {
   private async requireCourse(tenantId: string, courseId: string) {
     const course = await this.prisma.course.findFirst({
       where: { id: courseId, tenantId },
+      include: { createdBy: { select: { id: true, displayName: true, email: true } } },
     });
     if (!course) throw new NotFoundException('Corso non trovato');
     return course;
@@ -291,6 +299,7 @@ export class CoursesService {
     folderId?: string | null;
     shareable?: boolean | null;
     slidesImportId?: string | null;
+    createdBy?: { id: string; displayName: string | null; email: string } | null;
   }): Promise<CourseView> {
     const briefResult = course.brief ? BriefDraft.safeParse(course.brief) : null;
     let coverImageUrl: string | undefined;
@@ -342,6 +351,9 @@ export class CoursesService {
       folderId: course.folderId ?? null,
       shareable: course.shareable === true,
       ...(course.slidesImportId ? { slidesImportId: course.slidesImportId } : {}),
+      ...(course.createdBy
+        ? { createdBy: { id: course.createdBy.id, name: course.createdBy.displayName?.trim() || course.createdBy.email } }
+        : {}),
     };
   }
 

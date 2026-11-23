@@ -34,6 +34,7 @@ import { CoverFramer, COVER_ASPECT } from '@/components/courses/cover-framer';
 import { usePendingAssessments } from '@/lib/use-pending-assessments';
 import { cn } from '@/lib/cn';
 import { wizardLandingKey } from '@/lib/wizard-landing';
+import { getSession } from '@/lib/auth';
 import { slidesAutoOpenKey } from '@/lib/slides-autoopen';
 import { ClipboardCheck } from 'lucide-react';
 
@@ -75,6 +76,11 @@ export function CourseWizard({ courseId }: { courseId: string }) {
   const activeJobs = useActiveJobs(courseId);
   const toast = useToast();
   const [active, setActive] = React.useState<StepId>('brief');
+  // Il passo iniziale si calcola dallo stato reale del corso (una volta sola), così chi apre un corso
+  // già avanzato, anche di un collega, non riparte dal brief. I flag locali (anteprima dopo la
+  // generazione automatica, dialog slide) hanno la precedenza.
+  const landedRef = React.useRef(false);
+  const startedRef = React.useRef(false);
   // Corso creato dal percorso "Da slide": apre il passo Struttura con il dialog già aperto.
   const [autoOpenSlides, setAutoOpenSlides] = React.useState(false);
   React.useEffect(() => {
@@ -82,6 +88,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
       const key = slidesAutoOpenKey(courseId);
       if (window.localStorage.getItem(key) === '1') {
         window.localStorage.removeItem(key);
+        landedRef.current = true;
         setActive('structure');
         setAutoOpenSlides(true);
       }
@@ -89,6 +96,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
       const landing = wizardLandingKey(courseId);
       if (window.localStorage.getItem(landing) === 'review') {
         window.localStorage.removeItem(landing);
+        landedRef.current = true;
         setActive('review');
       }
     } catch {
@@ -152,6 +160,17 @@ export function CourseWizard({ courseId }: { courseId: string }) {
     cover: hasCover,
     review: false,
   };
+  const allLessonsReady = hasStructure && mods.every((m) => m.lessons.every((l) => l.blocks.length > 0));
+  React.useEffect(() => {
+    if (startedRef.current || !course.data || !modules.data) return;
+    startedRef.current = true;
+    if (landedRef.current) return;
+    if (allLessonsReady) setActive('review');
+    else if (hasStructure) setActive('content');
+  }, [course.data, modules.data, allLessonsReady, hasStructure]);
+  const me = getSession()?.user.id;
+  const author = course.data?.createdBy;
+  const othersCourse = Boolean(author && me && author.id !== me);
   const completedCount = Object.values(done).filter(Boolean).length;
   const progressPct = Math.round((completedCount / STEPS.length) * 100);
 
@@ -327,6 +346,12 @@ export function CourseWizard({ courseId }: { courseId: string }) {
           <p className="text-sm font-medium">Avanzamento</p>
           <span className="text-xs text-muted-foreground">{progressPct}%</span>
         </div>
+        {othersCourse && author && (
+          <p className="mb-3 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+            Corso creato da <span className="font-medium text-foreground">{author.name}</span>. Riprendi da dove era
+            arrivato: le modifiche valgono per tutta l&apos;azienda.
+          </p>
+        )}
         <CourseBudget courseId={courseId} className="mb-3" />
         <div className="mb-4 h-2 w-full overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
           <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progressPct}%` }} />
