@@ -816,6 +816,8 @@
         feedbackEl.textContent =
           L.scoreLabel(Math.round(result.scaled * 100)) +
           (result.passed ? L.quizPass : L.quizFail);
+        // Esito domanda per domanda: così chi non supera il test sa dove ha sbagliato.
+        if (self.renderers.showQuestionResults) self.renderers.showQuestionResults(main, assessment, result.perQuestion);
         // Report del punteggio all'LMS.
         if (self.scorm && self.scorm.setScore) {
           self.scorm.setScore(result.scaled, result.raw, 0, result.max);
@@ -1056,10 +1058,12 @@
   /** Aggiorna lo stato del pulsante "Avanti" e la barra senza ri-renderizzare. */
   Player.prototype.updateNav = function () {
     if (!this.root) return;
+    // Si sostituisce nel genitore reale: la nav sta dentro .course-body > .course-content,
+    // non direttamente in root (replaceChild su root lancia NotFoundError e "Avanti" resta bloccato).
     var oldNav = this.root.querySelector('.course-nav');
-    if (oldNav) this.root.replaceChild(this.buildNav(), oldNav);
+    if (oldNav && oldNav.parentNode) oldNav.parentNode.replaceChild(this.buildNav(), oldNav);
     var oldProg = this.root.querySelector('.course-progress');
-    if (oldProg) this.root.replaceChild(this.buildProgress(), oldProg);
+    if (oldProg && oldProg.parentNode) oldProg.parentNode.replaceChild(this.buildProgress(), oldProg);
   };
 
   Player.prototype.go = function (index) {

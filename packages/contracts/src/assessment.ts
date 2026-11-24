@@ -69,6 +69,11 @@ export const Question = z.discriminatedUnion('type', [
     /** Testo con segnaposto {{1}}, {{2}}... per gli spazi da compilare. */
     template: z.string(),
     blanks: z.array(z.object({ index: z.number().int().positive(), accepted: z.array(z.string()) })),
+    /**
+     * Parole tra cui scegliere (facoltative): le risposte giuste più qualche distrattore. Se presenti
+     * ogni spazio diventa un menu; altrimenti la parola si scrive.
+     */
+    options: z.array(z.string()).optional(),
   }),
   z.object({
     ...questionBase,
@@ -97,3 +102,69 @@ export const Assessment = z.object({
   editorial: EditorialMeta.default({}),
 });
 export type Assessment = z.infer<typeof Assessment>;
+
+/** Segnaposto degli spazi accettati in ingresso: {{1}}, [1], [BLANK_1], ___ (questi ultimi in sequenza). */
+const BLANK_PLACEHOLDER = /\{\{\s*(\d+)\s*\}\}|\[\s*(?:blank[\s_-]*)?(\d+)\s*\]|_{3,}/gi;
+
+/**
+ * Sistema e controlla un test generato dall'AI prima di salvarlo.
+ * - Riporta i segnaposto degli spazi al formato del contratto ({{n}}).
+ * - Completa le parole tra cui scegliere con le risposte giuste e toglie i doppioni.
+ * Restituisce anche i problemi che rendono una domanda impossibile da rispondere correttamente
+ * (va rigenerata): scelta singola senza esattamente una risposta giusta, posizioni del riordino che
+ * non sono 1..n, spazi assenti dal testo o senza risposte, abbinamenti con descrizioni ripetute.
+ */
+export function tidyAssessment(input: Assessment): { assessment: Assessment; problems: string[] } {
+  const problems: string[] = [];
+  const questions = input.questions.map((q, i): Question => {
+    const n = i + 1;
+    switch (q.type) {
+      case 'single_choice': {
+        const right = q.choices.filter((c) => c.correct).length;
+        if (right !== 1) problems.push(`domanda ${n}: scelta singola con ${right} risposte giuste`);
+        return q;
+      }
+      case 'multiple_choice': {
+        if (!q.choices.some((c) => c.correct)) problems.push(`domanda ${n}: scelta multipla senza risposte giuste`);
+        return q;
+      }
+      case 'matching': {
+        const rights = q.pairs.map((p) => p.right.trim().toLowerCase());
+        if (new Set(rights).size !== rights.length) problems.push(`domanda ${n}: abbinamento con descrizioni ripetute`);
+        return q;
+      }
+      case 'ordering': {
+        const pos = q.items.map((it) => it.correctPosition).sort((a, b) => a - b);
+        if (pos.some((p, k) => p !== k + 1)) problems.push(`domanda ${n}: posizioni del riordino non valide`);
+        return q;
+      }
+      case 'fill_blank': {
+        let seq = 0;
+        const template = q.template.replace(BLANK_PLACEHOLDER, (_m, a?: string, b?: string) => {
+          seq++;
+          return `{{${a ?? b ?? seq}}}`;
+        });
+        const inText = new Set([...template.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1])));
+        if (q.blanks.length === 0) problems.push(`domanda ${n}: completamento senza spazi`);
+        for (const b of q.blanks) {
+          if (!inText.has(b.index)) problems.push(`domanda ${n}: lo spazio ${b.index} non compare nel testo`);
+          if (!b.accepted.some((a) => a.trim())) problems.push(`domanda ${n}: lo spazio ${b.index} non ha risposte`);
+        }
+        let options = q.options?.map((o) => o.trim()).filter(Boolean);
+        if (options && options.length > 0) {
+          for (const b of q.blanks) {
+            const first = b.accepted.find((a) => a.trim());
+            const has = b.accepted.some((a) => options!.some((o) => o.toLowerCase() === a.trim().toLowerCase()));
+            if (first && !has) options.push(first.trim());
+          }
+          options = options.filter((o, k) => options!.findIndex((x) => x.toLowerCase() === o.toLowerCase()) === k);
+          if (options.length < 2) options = undefined;
+        } else options = undefined;
+        return { ...q, template, ...(options ? { options } : { options: undefined }) };
+      }
+      default:
+        return q;
+    }
+  });
+  return { assessment: { ...input, questions }, problems };
+}

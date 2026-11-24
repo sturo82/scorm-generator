@@ -5,6 +5,7 @@ import {
   CourseOutline,
   Block,
   Assessment,
+  tidyAssessment,
   BrandVoice,
   outlineJsonSchema,
   blockJsonSchema,
@@ -1135,8 +1136,10 @@ export class GenerationService {
       if (result.finishReason === 'max_tokens') {
         throw new Error('Generazione test troncata (limite token)');
       }
-      const assessment = Assessment.parse(JSON.parse(result.text));
-      return { assessment, result };
+      // Segnaposto uniformi e domande rispondibili: altrimenti si rigenera.
+      const tidy = tidyAssessment(Assessment.parse(JSON.parse(result.text)));
+      if (tidy.problems.length > 0) throw new Error(`Quiz non valido: ${tidy.problems.join('; ')}`);
+      return { assessment: tidy.assessment, result };
     };
 
     // Retry automatico sugli errori recuperabili (fino a 3 tentativi), così
@@ -1262,6 +1265,8 @@ export function isRecoverableGenerationError(err: unknown): boolean {
   // Messaggi noti prodotti da attempt() per output malformato/vuoto.
   if (/non ha prodotto block validi/i.test(msg)) return true;
   if (/Expected array, received string/i.test(msg)) return true;
+  // Test con domande impossibili da rispondere (vedi tidyAssessment): un nuovo tentativo di solito le sistema.
+  if (/^Quiz non valido:/.test(msg)) return true;
   // Troncamento (max_tokens) NON è recuperabile a parità di limite: ritentare
   // darebbe lo stesso esito. Si risolve alzando maxTokens, non col retry.
   // Provider non disponibile e simili: NON ritentare qui.

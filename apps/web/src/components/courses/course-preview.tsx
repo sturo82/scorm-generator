@@ -549,7 +549,7 @@ function AssessmentPreview({
 
 /** Testo della domanda (per fill_blank usa il template leggibile). */
 function questionPrompt(q: Assessment['questions'][number]): string {
-  if (q.type === 'fill_blank') return q.prompt || q.template;
+  if (q.type === 'fill_blank') return q.prompt || 'Completa la frase';
   return q.prompt;
 }
 
@@ -609,15 +609,34 @@ function QuestionBody({ question: q }: { question: Assessment['questions'][numbe
             ))}
         </ol>
       );
-    case 'fill_blank':
+    case 'fill_blank': {
+      // La frase con gli spazi, come la vede chi fa il test, con la risposta giusta al posto di ogni spazio.
+      const answerOf = new Map(q.blanks.map((b) => [b.index, b.accepted[0] ?? '—']));
+      let seq = 0;
+      const parts = q.template.split(/(\{\{\s*\d+\s*\}\}|\[\s*(?:blank[\s_-]*)?\d+\s*\]|_{3,})/i);
       return (
-        <p className="text-sm text-muted-foreground">
-          Spazi:{' '}
-          <span className="font-medium text-foreground">
-            {q.blanks.map((b) => b.accepted[0] ?? '—').join(', ')}
-          </span>
-        </p>
+        <div className="space-y-2 text-sm">
+          <p className="leading-7">
+            {parts.map((part, i) => {
+              if (i % 2 === 0) return <React.Fragment key={i}>{part}</React.Fragment>;
+              seq++;
+              const n = Number(/(\d+)/.exec(part)?.[1] ?? seq);
+              return (
+                <span
+                  key={i}
+                  className="mx-0.5 rounded border-b-2 border-emerald-600 bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-900"
+                >
+                  {answerOf.get(n) ?? '—'}
+                </span>
+              );
+            })}
+          </p>
+          {q.options && q.options.length > 0 && (
+            <p className="text-xs text-muted-foreground">Parole tra cui scegliere: {q.options.join(' · ')}</p>
+          )}
+        </div>
       );
+    }
     case 'interactive':
       return (
         <p className="text-sm text-muted-foreground">

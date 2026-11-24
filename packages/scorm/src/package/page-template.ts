@@ -180,9 +180,82 @@ h1, h2, h3, h4 { font-family: var(--brand-font-heading, inherit); line-height: 1
 .assessment-title { font-size: 1.35rem; margin: 0 0 1rem; font-weight: 800; }
 .assessment-intro { background: color-mix(in srgb, var(--pl-primary) 8%, transparent); border-left: 4px solid var(--pl-primary); padding: 0.8rem 1.1rem; border-radius: 0 10px 10px 0; font-size: 0.92rem; }
 .question { border: 1px solid var(--pl-border); border-radius: 14px; padding: 1.25rem; margin: 1.25rem 0; background: var(--pl-surface); }
-.question legend { font-weight: 700; padding: 0 0.4rem; }
+.question legend { font-weight: 700; padding: 0 0.4rem; display: flex; align-items: flex-start; gap: 0.6rem; line-height: 1.4; }
+.question-num {
+  flex: none; display: inline-grid; place-items: center; min-width: 1.75rem; height: 1.75rem; padding: 0 0.4rem;
+  border-radius: 999px; background: var(--pl-primary); color: var(--pl-on-primary); font-size: 0.85rem; font-weight: 800;
+}
+.question-text { padding-top: 0.15rem; }
+.question-hint { margin: 0.5rem 0 0; font-size: 0.82rem; color: var(--pl-muted); }
 .question-input { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.75rem; }
-.question-input .opt { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.8rem; cursor: pointer; }
+.question-input .opt { display: flex; align-items: center; gap: 0.7rem; padding: 0.7rem 0.9rem; cursor: pointer; line-height: 1.4; }
+.question-input .opt input { flex: none; width: 1.1rem; height: 1.1rem; margin: 0; accent-color: var(--pl-primary); }
+.question-input .opt:has(input:checked) {
+  border-color: var(--pl-primary); background: color-mix(in srgb, var(--pl-primary) 10%, var(--pl-surface));
+  box-shadow: inset 0 0 0 1px var(--pl-primary);
+}
+.question-input .opt:has(input:focus-visible) { outline: 2px solid var(--pl-primary); outline-offset: 2px; }
+.question-input.is-tf { flex-direction: row; flex-wrap: wrap; }
+.question-input.is-tf .opt { flex: 1 1 10rem; justify-content: center; font-weight: 600; }
+/* Campi di testo e menu del quiz */
+.question select, .question input[type="text"] {
+  font: inherit; color: var(--pl-on-surface); background: var(--pl-surface);
+  border: 1px solid color-mix(in srgb, var(--pl-on-surface) 25%, transparent); border-radius: 10px;
+  padding: 0.55rem 0.75rem; min-height: 2.6rem; transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.question select:focus, .question input[type="text"]:focus {
+  outline: none; border-color: var(--pl-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pl-primary) 22%, transparent);
+}
+.text-answer { width: 100%; max-width: 32rem; }
+/* Abbinamento: voce a sinistra, descrizione da scegliere a destra */
+.match-row {
+  display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(0, 2fr); gap: 0.75rem; align-items: center;
+  padding: 0.7rem 0.9rem; border: 1px solid var(--pl-border); border-radius: 12px; background: var(--pl-bg);
+}
+.match-row.is-set { border-color: color-mix(in srgb, var(--pl-primary) 45%, var(--pl-border)); }
+.match-left { font-weight: 700; }
+.match-select { width: 100%; min-width: 0; text-overflow: ellipsis; }
+@media (max-width: 640px) { .match-row { grid-template-columns: 1fr; gap: 0.4rem; } }
+/* Riordino: elenco con frecce */
+.order-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; counter-reset: ord; }
+.order-item {
+  counter-increment: ord; display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.6rem 0.6rem 0.6rem 0.8rem; border: 1px solid var(--pl-border); border-radius: 12px; background: var(--pl-surface);
+  box-shadow: var(--pl-shadow-sm);
+}
+.order-item::before {
+  content: counter(ord); flex: none; display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 8px;
+  background: color-mix(in srgb, var(--pl-primary) 12%, transparent); color: var(--pl-primary); font-weight: 800; font-size: 0.85rem;
+}
+.order-label { flex: 1; line-height: 1.4; }
+.order-controls { display: flex; gap: 0.35rem; flex: none; }
+.order-btn {
+  width: 2.25rem; height: 2.25rem; border-radius: 8px; border: 1px solid var(--pl-border); background: var(--pl-bg);
+  color: var(--pl-on-surface); font-size: 1rem; font-weight: 700; cursor: pointer;
+}
+.order-btn:hover:not(:disabled) { border-color: var(--pl-primary); color: var(--pl-primary); }
+.order-btn:focus-visible { outline: 2px solid var(--pl-primary); outline-offset: 2px; }
+.order-btn:disabled { opacity: 0.35; cursor: default; }
+.order-item.is-moved { animation: order-flash 0.45s ease; }
+@keyframes order-flash { from { background: color-mix(in srgb, var(--pl-primary) 14%, var(--pl-surface)); } to { background: var(--pl-surface); } }
+@media (prefers-reduced-motion: reduce) { .order-item.is-moved { animation: none; } }
+/* Completa la frase: spazi dentro il testo */
+.blank-sentence { margin: 0; font-size: 1.02rem; line-height: 2.4; }
+.blank-sentence .blank-input { margin: 0 0.25rem; vertical-align: baseline; min-height: 2.2rem; padding: 0.3rem 0.6rem; }
+.blank-sentence input.blank-input {
+  border-width: 0 0 2px; border-radius: 6px 6px 0 0; border-color: var(--pl-primary);
+  background: color-mix(in srgb, var(--pl-primary) 6%, var(--pl-surface)); font-weight: 600; text-align: center;
+}
+.blank-row { display: flex; align-items: center; gap: 0.5rem; }
+.blank-bank { margin: 0.5rem 0 0; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; font-size: 0.85rem; }
+.blank-bank-label { color: var(--pl-muted); font-weight: 600; }
+.blank-chip { padding: 0.2rem 0.65rem; border-radius: 999px; border: 1px dashed var(--pl-border); background: var(--pl-bg); }
+/* Esito per domanda, dopo l'invio */
+.question.is-correct { border-color: #16a34a; box-shadow: inset 4px 0 0 #16a34a; }
+.question.is-wrong { border-color: #dc2626; box-shadow: inset 4px 0 0 #dc2626; }
+.question-feedback { margin: 0.85rem 0 0; padding: 0.65rem 0.9rem; border-radius: 10px; font-size: 0.88rem; line-height: 1.45; }
+.question.is-correct .question-feedback { background: color-mix(in srgb, #16a34a 12%, #ffffff); color: #14532d; }
+.question.is-wrong .question-feedback { background: color-mix(in srgb, #dc2626 10%, #ffffff); color: #7f1d1d; }
 .assessment-submit {
   margin-top: 1.25rem; background: var(--pl-primary); color: var(--pl-on-primary); border: 0;
   padding: 0.8rem 1.6rem; border-radius: 10px; cursor: pointer; font-weight: 700; box-shadow: var(--pl-shadow-sm);

@@ -540,6 +540,21 @@ export function assessmentPrompt(input: {
     'Includi domande di tipologie diverse (scelta singola/multipla, vero/falso, abbinamento, ' +
       'riordino, completamento). Imposta risposte corrette, punteggi e feedback. ' +
       'Definisci una soglia di superamento (mastery) adeguata.',
+    '',
+    'REGOLE PER TIPO (vincolanti: le domande che non le rispettano vengono scartate):',
+    '- Ogni "prompt" è una domanda o consegna completa e chiara da sola: chi risponde deve capire cosa fare ' +
+      'senza vedere il resto (niente "secondo il testo" senza dire di quale argomento si parla).',
+    '- single_choice: ESATTAMENTE una scelta con correct=true; le altre plausibili ma chiaramente sbagliate.',
+    '- multiple_choice: almeno due scelte giuste; nel prompt scrivi "Seleziona tutte le risposte corrette".',
+    '- matching: 3-5 coppie; ogni "right" diverso dagli altri e abbinabile a un solo "left".',
+    '- ordering: 3-6 elementi con correctPosition 1..n senza buchi né ripetizioni; l\'ordine deve avere una ' +
+      'logica reale (sequenza di una procedura, cronologia), non "l\'ordine in cui compaiono nel testo".',
+    '- fill_blank: "template" è la frase da completare con gli spazi scritti ESATTAMENTE come {{1}}, {{2}} ' +
+      '(niente [1], [BLANK_1] o ___); ogni spazio ha in "blanks" lo stesso index e le forme accettate ' +
+      '(singolare/plurale, maiuscole). Aggiungi sempre "options": le parole giuste più 2-3 distrattori ' +
+      'plausibili, così chi risponde sceglie da un elenco. Il "prompt" è la consegna (es. "Completa la frase ' +
+      'scegliendo la parola corretta"), la frase sta solo nel template.',
+    '- Feedback: "feedbackIncorrect" spiega l\'errore e rimanda al concetto, in testo semplice (niente markdown).',
     input.context,
   ];
   return parts.filter((p) => p !== '').join('\n');

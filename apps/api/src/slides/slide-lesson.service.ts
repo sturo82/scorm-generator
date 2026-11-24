@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import {
   Assessment,
+  tidyAssessment,
   assessmentJsonSchema,
   BRAND_STORAGE_PREFIX,
   computeSlideTimeline,
@@ -1323,7 +1324,9 @@ if (!input) return undefined;
         });
         await this.recordLlm(tenantId, doc.courseId, doc.importId, result, 'slide_quiz');
         if (result.finishReason === 'max_tokens') throw new Error('Quiz troncato');
-        return Assessment.parse(JSON.parse(result.text));
+        const tidy = tidyAssessment(Assessment.parse(JSON.parse(result.text)));
+        if (tidy.problems.length > 0) throw new Error(`Quiz non valido: ${tidy.problems.join('; ')}`);
+        return tidy.assessment;
       } catch (err) {
         lastErr = err;
         this.logger.warn(`Quiz tentativo ${i + 1}/3 fallito: ${errMsg(err)}`);

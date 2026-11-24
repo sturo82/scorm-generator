@@ -32,7 +32,8 @@
         return arraysEqualAsSets(correctIds, Array.isArray(answer) ? answer : []);
       }
       case 'true_false':
-        return Boolean(answer) === Boolean(question.answer);
+        // Senza risposta non è corretta, nemmeno quando la risposta giusta è "Falso".
+        return typeof answer === 'boolean' && answer === Boolean(question.answer);
       case 'short_text': {
         var accepted = (question.acceptedAnswers || []).map(function (a) { return normalize(a, question.caseSensitive); });
         return accepted.indexOf(normalize(answer, question.caseSensitive)) !== -1;
