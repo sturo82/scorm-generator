@@ -180,7 +180,7 @@ data "aws_iam_policy_document" "api_permissions" {
   # Polly (sintesi vocale) e Transcribe (ASR).
   statement {
     sid       = "Polly"
-    actions   = ["polly:SynthesizeSpeech"]
+    actions   = ["polly:SynthesizeSpeech", "polly:DescribeVoices"]
     resources = ["*"]
   }
   statement {

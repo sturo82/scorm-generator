@@ -28,6 +28,7 @@ import { BillingModule } from './billing/billing.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { SignupModule } from './signup/signup.module.js';
 import { SlidesModule } from './slides/slides.module.js';
+import { PodcastsModule } from './podcasts/podcasts.module.js';
 import { HealthController } from './health/health.controller.js';
 
 @Module({
@@ -63,6 +64,7 @@ import { HealthController } from './health/health.controller.js';
     BillingModule,
     SignupModule,
 SlidesModule,
+    PodcastsModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

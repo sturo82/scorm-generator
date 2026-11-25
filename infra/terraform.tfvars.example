@@ -32,3 +32,7 @@ web_image_tag = "latest"
 # (scorm/MANAGER_M2M_CLIENT_SECRET), impostato via CLI, mai nel repo.
 manager_m2m_client_id = "<client_id M2M da Manager>"
 # Opzionali (hanno default): manager_url, ecosystem_token_url, entitlement_enforce_fallback
+
+# Podcast: dominio pubblico di feed e audio (vuoto = non configurato). Non cambia con il rebrand architect -> coach.
+# podcast_domain = "podcast.knowkube.com"
+# speech_region  = "eu-central-1"

@@ -22,7 +22,7 @@ resource "aws_apprunner_service" "api" {
       image_configuration {
         port = "3000"
 
-        runtime_environment_variables = {
+        runtime_environment_variables = merge({
           NODE_ENV      = "production"
           PORT          = "3000"
           AUTH_PROVIDER = "oidc"
@@ -104,7 +104,7 @@ resource "aws_apprunner_service" "api" {
           ENTITLEMENT_ENFORCE     = var.entitlement_enforce_fallback
           WALLET_ENABLED          = "false"
           PERSONAL_SPACE_ENABLED  = "true"
-        }
+        }, local.podcast_env)
 
         runtime_environment_secrets = {
           DATABASE_URL           = aws_secretsmanager_secret.database_url.arn

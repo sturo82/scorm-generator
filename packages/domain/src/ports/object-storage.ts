@@ -6,6 +6,8 @@
 
 export interface ObjectMetadata {
   contentType?: string;
+  /** Intestazione Cache-Control da servire con l'oggetto (file pubblici dietro una CDN). */
+  cacheControl?: string;
   /** Metadati arbitrari (es. tenantId, documentId) per tracciabilità. */
   custom?: Record<string, string>;
 }

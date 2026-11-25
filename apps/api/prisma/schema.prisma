@@ -925,6 +925,9 @@ model PodcastEpisode {
   guid          String              @unique
   publishedAt   DateTime?
   publicAudioKey String?
+  // Dimensione e durata del file pubblicato (il feed le dichiara; l'audio privato può essere rigenerato dopo).
+  publicSizeBytes Int?
+  publicDurationSec Int?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 

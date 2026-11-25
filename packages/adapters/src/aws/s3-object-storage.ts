@@ -85,6 +85,7 @@ export class S3ObjectStorage implements ObjectStorage {
         // ObjectBody è un sottoinsieme compatibile a runtime.
         Body: body as PutObjectCommandInput['Body'],
         ContentType: meta?.contentType,
+        CacheControl: meta?.cacheControl,
         Metadata: meta?.custom,
       }),
     );

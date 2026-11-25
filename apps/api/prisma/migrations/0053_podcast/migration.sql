@@ -55,6 +55,8 @@ CREATE TABLE "PodcastEpisode" (
   "guid"           TEXT NOT NULL,
   "publishedAt"    TIMESTAMP(3),
   "publicAudioKey" TEXT,
+  "publicSizeBytes" INTEGER,
+  "publicDurationSec" INTEGER,
   "createdAt"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt"      TIMESTAMP(3) NOT NULL,
   CONSTRAINT "PodcastEpisode_pkey" PRIMARY KEY ("id")

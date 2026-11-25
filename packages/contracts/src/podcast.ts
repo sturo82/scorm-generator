@@ -249,6 +249,8 @@ export interface PodcastView {
   cover?: { url: string; width: number; height: number; ok: boolean };
   /** Indirizzo del feed RSS; assente se la pubblicazione non è configurata. */
   feedUrl?: string;
+  /** Cose che le piattaforme richiedono e che mancano (non bloccano il feed). */
+  feedWarnings: string[];
   /** True se il server può pubblicare (dominio e distribuzione configurati). */
   publishingEnabled: boolean;
   episodes: PodcastEpisodeView[];
