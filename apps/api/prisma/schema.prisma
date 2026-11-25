@@ -874,6 +874,8 @@ model Podcast {
   contactEmail    String?
   explicit        Boolean               @default(false)
   coverKey        String?
+  coverWidth      Int?
+  coverHeight     Int?
   // Conduttori: [{ key: 'A'|'B', name, voice: { kind, id } }].
   hosts           Json
   brief           Json

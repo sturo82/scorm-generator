@@ -1,11 +1,12 @@
 import { Buffer } from 'node:buffer';
-import { PollyClient, SynthesizeSpeechCommand, type Engine } from '@aws-sdk/client-polly';
+import { DescribeVoicesCommand, PollyClient, SynthesizeSpeechCommand, type Engine } from '@aws-sdk/client-polly';
 import {
   type SpeechProvider,
   type SpeechSynthesizeInput,
   type SpeechSynthesizeResult,
   type SpeechSynthesizeWithMarksResult,
   type SpeechWordMark,
+  type SpeechVoice,
   ProviderUnavailableError,
 } from '@scorm/domain';
 
@@ -65,6 +66,28 @@ export class PollySpeechProvider implements SpeechProvider {
             }
           : undefined,
     });
+  }
+
+  /** Voci disponibili per lingua e motore (richiede il permesso `polly:DescribeVoices`). */
+  async listVoices(input: { language?: string; engine?: 'standard' | 'neural' | 'generative' } = {}): Promise<SpeechVoice[]> {
+    try {
+      const res = await this.client.send(
+        new DescribeVoicesCommand({
+          Engine: (input.engine ?? this.engine) as Engine,
+          LanguageCode: input.language as never,
+        }),
+      );
+      return (res.Voices ?? [])
+        .filter((v) => v.Id)
+        .map((v) => ({
+          id: String(v.Id),
+          name: v.Name ?? String(v.Id),
+          gender: v.Gender === 'Female' ? 'female' : v.Gender === 'Male' ? 'male' : 'unknown',
+          language: v.LanguageCode ?? input.language ?? '',
+        }));
+    } catch (err) {
+      throw new ProviderUnavailableError('polly', err);
+    }
   }
 
   async synthesize(input: SpeechSynthesizeInput): Promise<SpeechSynthesizeResult> {

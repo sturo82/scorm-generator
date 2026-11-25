@@ -57,8 +57,24 @@ export interface SpeechSynthesizeWithMarksResult extends SpeechSynthesizeResult 
   marks: SpeechWordMark[];
 }
 
+/** Una voce del catalogo del fornitore. */
+export interface SpeechVoice {
+  /** Identificativo da passare come `voice` in `synthesize`. */
+  id: string;
+  name: string;
+  gender: 'female' | 'male' | 'unknown';
+  /** Lingua principale della voce (es. "it-IT"). */
+  language: string;
+}
+
 export interface SpeechProvider {
   readonly id: string;
+  /**
+   * Elenco delle voci disponibili per una lingua (e un motore). Opzionale: serve alle funzioni
+   * che fanno scegliere la voce all'utente (podcast). I chiamanti devono gestire l'errore
+   * (permessi mancanti) con un elenco di riserva.
+   */
+  listVoices?(input: { language?: string; engine?: 'standard' | 'neural' | 'generative' }): Promise<SpeechVoice[]>;
   synthesize(input: SpeechSynthesizeInput): Promise<SpeechSynthesizeResult>;
   /**
    * Sintesi CON speech marks a livello di parola (per il sync del code-to-video).

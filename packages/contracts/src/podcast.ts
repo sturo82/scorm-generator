@@ -68,10 +68,41 @@ export type PodcastFeedVisibility = z.infer<typeof PodcastFeedVisibility>;
 export const PodcastEpisodeState = z.enum(['DRAFT', 'WRITING', 'SCRIPT_READY', 'VOICING', 'READY', 'FAILED']);
 export type PodcastEpisodeState = z.infer<typeof PodcastEpisodeState>;
 
+/**
+ * Categorie principali di Apple Podcasts. Le maiuscole contano: nel feed una categoria scritta in
+ * modo diverso (es. "Kids & family") non viene riconosciuta.
+ */
+export const PODCAST_CATEGORIES = [
+  'Arts',
+  'Business',
+  'Comedy',
+  'Education',
+  'Fiction',
+  'Government',
+  'History',
+  'Health & Fitness',
+  'Kids & Family',
+  'Leisure',
+  'Music',
+  'News',
+  'Religion & Spirituality',
+  'Science',
+  'Society & Culture',
+  'Sports',
+  'Technology',
+  'True Crime',
+  'TV & Film',
+] as const;
+export const PodcastCategory = z.enum(PODCAST_CATEGORIES);
+export type PodcastCategory = z.infer<typeof PodcastCategory>;
+
+/** Copertina: quadrata, da 1400 a 3000 px, JPEG o PNG (requisito di Apple Podcasts). */
+export const PODCAST_COVER = { minPx: 1400, maxPx: 3000, maxBytes: 10 * 1024 * 1024 } as const;
+
 const PodcastMeta = {
   title: z.string().trim().min(1).max(140),
   description: z.string().trim().max(1000).default(''),
-  category: z.string().trim().min(1).max(60).default('Education'),
+  category: PodcastCategory.default('Education'),
   author: z.string().trim().max(100).optional(),
   contactEmail: z.string().trim().email().max(200).optional(),
   explicit: z.boolean().default(false),
@@ -93,7 +124,7 @@ export type CreatePodcast = z.infer<typeof CreatePodcast>;
 export const UpdatePodcast = z.object({
   title: PodcastMeta.title.optional(),
   description: z.string().trim().max(1000).optional(),
-  category: PodcastMeta.category.optional(),
+  category: PodcastCategory.optional(),
   author: z.string().trim().max(100).nullable().optional(),
   contactEmail: z.string().trim().email().max(200).nullable().optional(),
   explicit: z.boolean().optional(),
@@ -214,6 +245,8 @@ export interface PodcastView {
   knowledgeDocIds: string[];
   articles: PodcastArticleRef[];
   visibility: PodcastFeedVisibility;
+  /** Copertina (link a scadenza) e dimensioni; `coverOk` = rispetta i requisiti per il feed. */
+  cover?: { url: string; width: number; height: number; ok: boolean };
   /** Indirizzo del feed RSS; assente se la pubblicazione non è configurata. */
   feedUrl?: string;
   /** True se il server può pubblicare (dominio e distribuzione configurati). */

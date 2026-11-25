@@ -168,6 +168,15 @@ export interface AppConfig {
     speechEngine: 'neural' | 'standard';
     speechDefaultVoice: string;
   };
+  /** Podcast: voce (regione e motore) e indirizzo pubblico di feed e audio. */
+  podcast: {
+    speechRegion: string;
+    speechEngine: 'standard' | 'neural' | 'generative';
+    /** Indirizzo pubblico di base (es. https://podcast.knowkube.com). Vuoto = pubblicazione non configurata. */
+    publicBaseUrl: string;
+    /** Prefisso del bucket degli asset da cui la distribuzione serve i file pubblici. */
+    publicPrefix: string;
+  };
   /** Amazon Transcribe (ASR) per la trascrizione dei video caricati. */
   transcribe: {
     region: string;
@@ -391,6 +400,13 @@ export function loadConfiguration(): AppConfig {
       imageHeight: Number(env('IMAGE_HEIGHT', '768')),
       speechEngine: env('SPEECH_ENGINE', 'neural') as AppConfig['media']['speechEngine'],
       speechDefaultVoice: env('SPEECH_DEFAULT_VOICE', 'Bianca'),
+    },
+    podcast: {
+      // Le voci del podcast stanno a Francoforte (motore generativo disponibile, dati in UE).
+      speechRegion: env('SPEECH_REGION', 'eu-central-1'),
+      speechEngine: env('PODCAST_SPEECH_ENGINE', 'generative') as AppConfig['podcast']['speechEngine'],
+      publicBaseUrl: env('PODCAST_PUBLIC_BASE_URL', '').replace(/\/+$/, ''),
+      publicPrefix: env('PODCAST_PUBLIC_PREFIX', 'public-podcasts/'),
     },
     transcribe: {
       region: env('TRANSCRIBE_REGION', env('AWS_REGION', 'us-east-1')),

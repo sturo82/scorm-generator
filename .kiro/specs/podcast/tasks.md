@@ -11,7 +11,7 @@ passo a pagamento ha preventivo, riserva e addebito del solo lavoro riuscito.
   - _Requisiti: 6.10_
 - [x] 0.2 Sottodominio scelto: **`podcast.knowkube.com`** (zona `knowkube.com` già in Route53). Il certificato si crea con Terraform.
   - _Requisiti: 8.6_
-- [ ] 0.3 Leggere i requisiti correnti di **Apple Podcasts e Spotify** per il feed (campi obbligatori, copertina, durata) e aggiornare la validazione.
+- [x] 0.3 Letti (podcasters.apple.com): copertina quadrata 1400-3000 px JPEG/PNG, categorie con maiuscole esatte, RFC 2822, HEAD e byte-range, GUID fisso, nomi file ASCII, enclosure unico per puntata. Leggere i requisiti correnti di **Apple Podcasts e Spotify** per il feed (campi obbligatori, copertina, durata) e aggiornare la validazione.
   - _Requisiti: 8.1, 8.9_
 
 ## Fase A — Infrastruttura e configurazione

@@ -5,6 +5,7 @@ import type {
   SpeechSynthesizeResult,
   SpeechSynthesizeWithMarksResult,
   SpeechWordMark,
+  SpeechVoice,
 } from '@scorm/domain';
 
 /** Cadenza fittizia per parola (ms) nel mock dei word-timings. */
@@ -19,6 +20,14 @@ const MP3_SILENCE = Buffer.from('//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAA
  */
 export class MockSpeechProvider implements SpeechProvider {
   readonly id = 'mock';
+  /** Voci fittizie: due per lingua, una donna e un uomo. */
+  async listVoices(input: { language?: string } = {}): Promise<SpeechVoice[]> {
+    const language = input.language ?? 'it-IT';
+    return [
+      { id: 'MockF', name: 'Mock Donna', gender: 'female', language },
+      { id: 'MockM', name: 'Mock Uomo', gender: 'male', language },
+    ];
+  }
 
   async synthesize(input: SpeechSynthesizeInput): Promise<SpeechSynthesizeResult> {
     return {

@@ -13,6 +13,8 @@ CREATE TABLE "Podcast" (
   "contactEmail"    TEXT,
   "explicit"        BOOLEAN NOT NULL DEFAULT false,
   "coverKey"        TEXT,
+  "coverWidth"      INTEGER,
+  "coverHeight"     INTEGER,
   "hosts"           JSONB NOT NULL,
   "brief"           JSONB NOT NULL,
   "knowledgeDocIds" JSONB NOT NULL DEFAULT '[]',
