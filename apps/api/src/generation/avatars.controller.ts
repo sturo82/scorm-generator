@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   Post,
@@ -61,6 +62,19 @@ export class AvatarsController {
 
   private viewer(ctx: AuthContext) {
     return { tenantId: ctx.tenant.tenantId, userId: ctx.userId, role: ctx.role };
+  }
+
+  /** I digital twin si creano solo dagli utenti dell'azienda della piattaforma (Knowkube). */
+  private assertCanCreateTwin(ctx: AuthContext): void {
+    if (!this.access.isPlatform(this.viewer(ctx))) {
+      throw new ForbiddenException('La creazione di digital twin è riservata agli utenti Knowkube.');
+    }
+  }
+
+  /** Cosa può creare l'utente corrente (la pagina Avatar mostra solo le opzioni consentite). */
+  @Get('capabilities')
+  capabilities(@CurrentContext() ctx: AuthContext) {
+    return { canCreateTwin: this.access.isPlatform(this.viewer(ctx)) };
   }
 
   /** Elenca gli avatar dell'account (i "miei"). `q` cerca per nome; `refresh=true` bypassa la cache. */
@@ -146,6 +160,7 @@ export class AvatarsController {
     @Body('consentConfirmed') consent: string | undefined,
     @UploadedFile() file: { mimetype: string; buffer: Buffer } | undefined,
   ) {
+    this.assertCanCreateTwin(ctx);
     if (!file) throw new BadRequestException('Nessun video ricevuto (campo "file")');
     if (!name?.trim()) throw new BadRequestException('Nome avatar mancante (campo "name")');
     return this.media.createAvatar(ctx.tenant.tenantId, {
@@ -157,9 +172,10 @@ export class AvatarsController {
     });
   }
 
-  /** Apre il caricamento a pezzi del video del twin: ogni persona crea il proprio twin. */
+  /** Apre il caricamento a pezzi del video del twin (solo utenti Knowkube). */
   @Post('twin/uploads')
   startTwinUpload(@CurrentContext() ctx: AuthContext, @Body() body: { contentType?: string; sizeBytes?: number }) {
+    this.assertCanCreateTwin(ctx);
     return this.media.startTwinUpload(ctx.tenant.tenantId, { contentType: String(body?.contentType ?? ''), sizeBytes: Number(body?.sizeBytes) });
   }
 
@@ -172,6 +188,7 @@ export class AvatarsController {
     @Query('partNumber') partNumber: string,
     @Req() req: NodeJS.ReadableStream,
   ) {
+    this.assertCanCreateTwin(ctx);
     const limit = MediaService.TWIN_PART_BYTES;
     const chunks: Buffer[] = [];
     let size = 0;
@@ -201,6 +218,7 @@ export class AvatarsController {
     @CurrentContext() ctx: AuthContext,
     @Body() body: { key?: string; uploadId?: string; parts?: Array<{ partNumber: number; etag: string }>; name?: string; consentConfirmed?: boolean },
   ) {
+    this.assertCanCreateTwin(ctx);
     const parts = Array.isArray(body?.parts)
       ? body.parts.map((p) => ({ partNumber: Number(p?.partNumber), etag: String(p?.etag ?? '') })).filter((p) => Number.isInteger(p.partNumber) && p.etag)
       : [];

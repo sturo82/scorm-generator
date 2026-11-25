@@ -518,6 +518,15 @@ export function useRefreshMyAvatars() {
 }
 
 /** Crea un avatar da FOTO (upload immagine). Invalida la lista al termine. */
+/** Cosa può creare l'utente corrente nella pagina Avatar. */
+export function useAvatarCapabilities() {
+  return useQuery({
+    queryKey: [...qk.avatars('capabilities')],
+    queryFn: () => api.getAvatarCapabilities(),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
 /**
  * Avatar dell'account come personaggi, con stato e consenso. Mentre qualcuno è in addestramento o in
  * attesa del consenso si rilegge da solo, così la pagina segue l'avanzamento senza ricaricarla.

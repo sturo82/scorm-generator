@@ -583,6 +583,9 @@ export class HttpApiClient implements ApiClient {
     const suffix = params.toString() ? `?${params.toString()}` : '';
     return this.request<Page<AvatarOption>>(`/tenant/avatars${suffix}`);
   }
+  getAvatarCapabilities() {
+    return this.request<{ canCreateTwin: boolean }>('/tenant/avatars/capabilities');
+  }
   listAvatarGroups(refresh?: boolean) {
     return this.request<AvatarGroupView[]>(`/tenant/avatars/groups${refresh ? '?refresh=true' : ''}`);
   }

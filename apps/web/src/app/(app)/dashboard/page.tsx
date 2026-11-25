@@ -194,7 +194,7 @@ export default function DashboardPage() {
       <h2 className="mb-3 mt-8 text-lg font-semibold">Scorciatoie</h2>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Quick href="/videos" icon={Video} title="Video" text="Carica e gestisci i video" />
-        <Quick href="/settings/avatars" icon={UserSquare2} title="Avatar" text="Crea il tuo digital twin" />
+        <Quick href="/settings/avatars" icon={UserSquare2} title="Avatar" text="Avatar per le video-lezioni" />
         <Quick href="/knowledge" icon={Database} title="Knowledge" text="Documenti per i corsi" />
         <Quick href="/brands" icon={Palette} title="Brand" text="Colori e logo" />
       </div>

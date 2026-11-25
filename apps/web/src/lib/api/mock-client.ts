@@ -1123,6 +1123,9 @@ export class MockApiClient implements ApiClient {
     const items = query ? this.myAvatars.filter((a) => a.name.toLowerCase().includes(query)) : [...this.myAvatars];
     return { items };
   }
+  async getAvatarCapabilities(): Promise<{ canCreateTwin: boolean }> {
+    return { canCreateTwin: false };
+  }
   async listAvatarGroups(): Promise<AvatarGroupView[]> {
     await delay(200);
     return this.myAvatars.map((a) => ({

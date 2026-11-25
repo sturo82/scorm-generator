@@ -32,6 +32,7 @@ import { CreditCost } from '@/components/ui/credit-cost';
 import { Skeleton } from '@/components/ui/skeleton';
 import { heygenAvatarCreationCustomerPriceUsd, HEYGEN_CREATABLE_AVATAR_TYPES } from '@scorm/contracts';
 import {
+  useAvatarCapabilities,
   useAvatarGroups,
   useCreateDigitalTwin,
   useCreatePhotoAvatar,
@@ -87,6 +88,8 @@ export default function AvatarsSettingsPage() {
   const refreshAvatars = useRefreshMyAvatars();
   const createPhoto = useCreatePhotoAvatar();
   const createTwin = useCreateDigitalTwin();
+  // I digital twin si creano solo dagli utenti Knowkube: per gli altri l'opzione non compare.
+  const canCreateTwin = useAvatarCapabilities().data?.canCreateTwin === true;
   const createPrompt = useCreatePromptAvatar();
   const requestConsent = useRequestAvatarConsent();
   const billed = useWallet().data?.enabled === true;
@@ -421,7 +424,7 @@ export default function AvatarsSettingsPage() {
           <CardContent>
             <div className="mb-4 space-y-2" role="radiogroup" aria-label="Tipo di avatar da creare">
               <span className="text-sm font-medium">Che tipo di avatar vuoi creare?</span>
-              {HEYGEN_CREATABLE_AVATAR_TYPES.map((t) => {
+              {HEYGEN_CREATABLE_AVATAR_TYPES.filter((t) => t.type !== 'digital_twin' || canCreateTwin).map((t) => {
                 const selected = mode === t.type;
                 return (
                   <button
