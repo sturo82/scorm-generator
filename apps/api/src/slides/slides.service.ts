@@ -36,6 +36,16 @@ export interface ImportedVideo {
   mode: VideoScriptSource;
   hint?: string;
   script?: string;
+  /** Il copione parte anche dal parlato del video (trascrizione del file, ritagliata sul tratto). */
+  transcribe?: boolean;
+}
+
+/**
+ * Identificatore del file sorgente: più capitoli (spezzoni) possono usare lo stesso file, e
+ * condividono la stessa chiave di storage. È il nome dell'oggetto, senza il percorso.
+ */
+export function sourceIdOf(key: string): string {
+  return key.split('/').pop() ?? key;
 }
 
 /** Durata effettiva di un video dell'import (il tratto scelto, o il file intero). */
@@ -59,7 +69,7 @@ export interface SlideImportView extends Omit<SlideImportManifest, 'slides'> {
   slides: Array<
     Omit<ImportedSlide, 'video'> & {
       imageUrl: string;
-      video?: Omit<ImportedVideo, 'key' | 'frameKeys'> & { url: string; durationSec: number; frames: number };
+      video?: Omit<ImportedVideo, 'key' | 'frameKeys'> & { url: string; durationSec: number; frames: number; sourceId: string };
     }
   >;
 }
@@ -245,13 +255,18 @@ export class SlidesService {
    * Aggiunge un video all'import, con il fotogramma di copertina e qualche fotogramma del tratto
    * (estratti dal browser: il server non decodifica video). La durata arriva dal browser e si
    * controlla che sia plausibile.
+   *
+   * Con `sourceId` non si carica nessun file: si aggiunge un nuovo capitolo (spezzone) che usa un
+   * video già caricato in questo import. Arrivano solo copertina e fotogrammi del nuovo tratto.
    */
   async addVideo(input: {
     tenantId: string;
     courseId: string;
     importId: string;
     /** Il video nel corpo della richiesta (file piccoli) oppure già caricato a pezzi (`upload`). */
-    video: { filename: string; contentType: string; content?: Buffer; upload?: { key: string; uploadId: string; parts: Array<{ partNumber: number; etag: string }> } };
+    video?: { filename: string; contentType: string; content?: Buffer; upload?: { key: string; uploadId: string; parts: Array<{ partNumber: number; etag: string }> } };
+    /** Nuovo capitolo dallo stesso file di un capitolo già presente (nessun caricamento). */
+    sourceId?: string;
     poster: { contentType: string; content: Buffer };
     frames: Array<{ contentType: string; content: Buffer }>;
     durationSec: number;
@@ -262,18 +277,24 @@ export class SlidesService {
       throw new ConflictException('I copioni sono già stati generati: per aggiungere video crea un nuovo import.');
     }
     if (manifest.slides.length >= VIDEO_SCRIPT.maxVideos) throw new BadRequestException(`Al massimo ${VIDEO_SCRIPT.maxVideos} video`);
-    const vExt = VIDEO_TYPES[input.video.contentType];
-    if (!vExt) throw new BadRequestException('Formato video non supportato (usa MP4, WebM o MOV)');
-    if (input.video.content) {
-      if (input.video.content.byteLength === 0) throw new BadRequestException('Video vuoto');
-      if (input.video.content.byteLength > VIDEO_SCRIPT.maxVideoBytes) {
-        throw new BadRequestException(`Video troppo grande (max ${VIDEO_SCRIPT.maxVideoBytes / 1024 / 1024} MB)`);
+    const shared = input.sourceId ? manifest.slides.find((x) => x.video && sourceIdOf(x.video.key) === input.sourceId)?.video : undefined;
+    if (input.sourceId && !shared) throw new BadRequestException('Il video di partenza non è in questo import');
+    const video = input.video;
+    if (!shared) {
+      if (!video) throw new BadRequestException('Video mancante');
+      const vExt = VIDEO_TYPES[video.contentType];
+      if (!vExt) throw new BadRequestException('Formato video non supportato (usa MP4, WebM o MOV)');
+      if (video.content) {
+        if (video.content.byteLength === 0) throw new BadRequestException('Video vuoto');
+        if (video.content.byteLength > VIDEO_SCRIPT.maxVideoBytes) {
+          throw new BadRequestException(`Video troppo grande (max ${VIDEO_SCRIPT.maxVideoBytes / 1024 / 1024} MB)`);
+        }
+      } else if (!video.upload) {
+        throw new BadRequestException('Video mancante');
       }
-    } else if (!input.video.upload) {
-      throw new BadRequestException('Video mancante');
-    }
-    if (!Number.isFinite(input.durationSec) || input.durationSec < 1 || input.durationSec > 3600) {
-      throw new BadRequestException('Durata del video non valida');
+      if (!Number.isFinite(input.durationSec) || input.durationSec < 1 || input.durationSec > 3600) {
+        throw new BadRequestException('Durata del video non valida');
+      }
     }
     const pExt = IMAGE_TYPES[input.poster.contentType];
     if (!pExt) throw new BadRequestException('Copertina del video non valida');
@@ -281,18 +302,22 @@ export class SlidesService {
     const prefix = this.prefix(input.tenantId, input.courseId, input.importId);
     const n = String(index).padStart(3, '0');
     const custom = { tenantId: input.tenantId, importId: input.importId };
-    let key = `${prefix}/video-${n}.${vExt}`;
-    if (input.video.content) {
-      await this.storage.putObject(key, input.video.content, { contentType: input.video.contentType, custom });
-    } else {
-      // Caricato a pezzi: si chiude il caricamento sulla chiave assegnata all'inizio (solo di questo import).
-      const up = input.video.upload!;
-      if (!new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/upload-[0-9a-f-]{36}\\.(mp4|webm|mov)$`).test(up.key)) {
-        throw new BadRequestException('Caricamento non valido');
+    let key = shared?.key ?? '';
+    if (!shared) {
+      const vExt = VIDEO_TYPES[video!.contentType]!;
+      key = `${prefix}/video-${n}.${vExt}`;
+      if (video!.content) {
+        await this.storage.putObject(key, video!.content, { contentType: video!.contentType, custom });
+      } else {
+        // Caricato a pezzi: si chiude il caricamento sulla chiave assegnata all'inizio (solo di questo import).
+        const up = video!.upload!;
+        if (!new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/upload-[0-9a-f-]{36}\\.(mp4|webm|mov)$`).test(up.key)) {
+          throw new BadRequestException('Caricamento non valido');
+        }
+        if (!this.storage.completeMultipart || up.parts.length === 0) throw new BadRequestException('Caricamento non completo');
+        await this.storage.completeMultipart(up.key, up.uploadId, up.parts);
+        key = up.key;
       }
-      if (!this.storage.completeMultipart || up.parts.length === 0) throw new BadRequestException('Caricamento non completo');
-      await this.storage.completeMultipart(up.key, up.uploadId, up.parts);
-      key = up.key;
     }
     const imageKey = `${prefix}/${n}.${pExt}`;
     await this.storage.putObject(imageKey, input.poster.content, { contentType: input.poster.contentType, custom });
@@ -310,11 +335,12 @@ export class SlidesService {
       text: '',
       video: {
         key,
-        filename: input.video.filename.slice(0, 200),
-        contentType: input.video.contentType,
-        fileDurationSec: Math.round(input.durationSec * 100) / 100,
+        filename: shared ? shared.filename : video!.filename.slice(0, 200),
+        contentType: shared ? shared.contentType : video!.contentType,
+        fileDurationSec: shared ? shared.fileDurationSec : Math.round(input.durationSec * 100) / 100,
         frameKeys,
         mode: 'frames',
+        ...(shared?.transcribe ? { transcribe: true } : {}),
       },
     });
     await this.saveManifest(input.tenantId, manifest);
@@ -405,9 +431,13 @@ export class SlidesService {
           mode: v.mode,
           hint: v.mode === 'hint' ? v.hint?.trim() : undefined,
           script: v.mode === 'manual' ? v.script?.trim() : undefined,
+          transcribe: v.transcribe ? true : undefined,
         },
       });
     }
+    // La trascrizione riguarda il file intero: se la vuole un capitolo, vale per tutti gli spezzoni dello stesso file.
+    const transcribed = new Set(next.filter((x) => x.video?.transcribe).map((x) => x.video!.key));
+    for (const x of next) if (x.video && transcribed.has(x.video.key)) x.video.transcribe = true;
     manifest.slides = next;
     await this.saveManifest(tenantId, manifest);
     return this.toView(manifest);
@@ -475,6 +505,8 @@ export class SlidesService {
                 mode: video.mode,
                 ...(video.hint ? { hint: video.hint } : {}),
                 ...(video.script ? { script: video.script } : {}),
+                ...(video.transcribe ? { transcribe: true } : {}),
+                sourceId: sourceIdOf(video.key),
                 url: await this.storage.getSignedUrl(video.key, { expiresInSec: PREVIEW_URL_TTL_SEC }),
                 durationSec: videoDurationSec(video),
                 frames: video.frameKeys.length,

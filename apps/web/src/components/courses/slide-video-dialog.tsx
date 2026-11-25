@@ -2251,6 +2251,7 @@ function apiErrorMessage(err: unknown): string {
 
 const SLIDE_LINE_LABEL: Record<string, string> = {
   scripts: 'Copioni',
+  transcription: 'Trascrizione del parlato',
   sections: 'Proposta delle sezioni',
   clips: 'Clip con avatar',
   render: 'Montaggio del video',

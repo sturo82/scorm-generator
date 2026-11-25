@@ -20,6 +20,10 @@ export interface SlideImportVideo {
   /** Durata effettiva (tratto scelto o video intero). */
   durationSec: number;
   frames: number;
+  /** File sorgente: più spezzoni dello stesso video hanno lo stesso `sourceId`. */
+  sourceId: string;
+  /** Il copione parte anche dal parlato del video (trascrizione). */
+  transcribe?: boolean;
 }
 export interface SlideImportView {
   importId: string;

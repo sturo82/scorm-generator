@@ -329,6 +329,12 @@ export class SlideLessonService {
     const videos = manifest.kind === 'videos';
     const videoSec = manifest.slides.reduce((t, x) => t + (x.video ? videoDurationSec(x.video) : 0), 0);
     const aiScripts = manifest.slides.filter((x) => x.video && x.video.mode !== 'manual').length;
+    // Trascrizione del parlato: una volta per file, al minuto intero, solo per i file che la richiedono.
+    const transcribeFiles = new Map<string, number>();
+    for (const x of manifest.slides) {
+      if (x.video?.transcribe && x.video.mode !== 'manual') transcribeFiles.set(x.video.key, x.video.fileDurationSec);
+    }
+    const transcribeMin = [...transcribeFiles.values()].reduce((t, sec) => t + Math.max(1, Math.ceil(sec / 60)), 0);
     const build = (knowledge: boolean) => {
       const words =
         n * (knowledge ? SLIDE_SCRIPT_CAPS.knowledgeMaxWords : SLIDE_SCRIPT_CAPS.slidesOnlyMaxWords) +
@@ -340,6 +346,9 @@ export class SlideLessonService {
         videos
           ? { kind: 'scripts' as const, quantity: aiScripts, credits: aiScripts > 0 ? this.billing.quote([{ feature: 'text_light', units: aiScripts }]) : { priced: true, total: 0 } }
           : { kind: 'scripts' as const, quantity: 1, credits: this.billing.quote([{ feature: 'text_standard', units: 1 }]) },
+        ...(transcribeMin > 0
+          ? [{ kind: 'transcription' as const, quantity: transcribeMin, credits: this.billing.quote([{ feature: 'video_transcription', units: transcribeMin }]) }]
+          : []),
         ...(q.sections ? [{ kind: 'sections' as const, quantity: 1, credits: this.billing.quote([{ feature: 'text_light', units: 1 }]) }] : []),
         { kind: 'clips' as const, quantity: clipsMin, credits: this.billing.quote([{ feature: avatarFeature(engine, type), units: clipsMin }]) },
         { kind: 'render' as const, quantity: renderMin, credits: this.billing.quote([{ feature: 'video_render', units: renderMin }]) },

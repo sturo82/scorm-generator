@@ -809,7 +809,8 @@ export interface ApiClient {
   addImportVideo(
     courseId: string,
     importId: string,
-    input: { file: File; poster: Blob; frames: Blob[]; durationSec: number },
+    /** `sourceId` al posto di `file`: nuovo spezzone di un video già caricato (nessun nuovo invio del file). */
+    input: { file?: File; sourceId?: string; poster: Blob; frames: Blob[]; durationSec: number },
     onProgress?: (fraction: number) => void,
   ): Promise<SlideImportView>;
   updateImportVideos(courseId: string, importId: string, input: import('@scorm/contracts').UpdateVideoImport): Promise<SlideImportView>;

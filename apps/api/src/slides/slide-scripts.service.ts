@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
-import type { DocumentExtractor, LLMProvider, ObjectStorage } from '@scorm/domain';
+import type { DocumentExtractor, LLMProvider, ObjectStorage, TranscriptionProvider, TranscriptSegment } from '@scorm/domain';
 import { VIDEO_SCRIPT, videoScriptFit, videoWordBudget, type GenerateSlideScripts, type PronunciationEntry, type UpdateSlideScripts, type VideoScriptSource } from '@scorm/contracts';
 import { DocumentExtractorRegistry } from '@scorm/adapters/extractors';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -8,8 +8,10 @@ import {
   DOCUMENT_EXTRACTORS,
   LLM_PROVIDER,
   OBJECT_STORAGE,
+  TRANSCRIPTION_PROVIDER,
 } from '../providers/provider.constants.js';
-import { SlidesService, videoDurationSec, type SlideImportManifest } from './slides.service.js';
+import { asrLocale } from '../generation/media.service.js';
+import { SlidesService, sourceIdOf, videoDurationSec, type SlideImportManifest } from './slides.service.js';
 import { meterCourseId } from './slide-owner.js';
 import { BillingService } from '../billing/billing.service.js';
 import { randomUUID } from 'node:crypto';
@@ -80,7 +82,7 @@ export interface SlideScriptsDoc {
   wordsPerSec?: number;
 }
 
-const VIDEO_RULES = (language: string, knowledge: boolean): string[] => [
+const VIDEO_RULES = (language: string, knowledge: boolean, speech = false): string[] => [
   'Sei l\u2019autore della voce di un docente-avatar che accompagna un VIDEO in una lezione aziendale.',
   'Ricevi i fotogrammi del video in ordine e/o un\u2019indicazione dell\u2019autore: scrivi il copione PARLATO che l\u2019avatar pronuncerà mentre il video scorre.',
   '',
@@ -90,11 +92,29 @@ const VIDEO_RULES = (language: string, knowledge: boolean): string[] => [
   '- Non inventare fatti, numeri, nomi o norme che non si vedono nei fotogrammi o non sono nell\u2019indicazione.',
   knowledge ? '- Puoi usare la KNOWLEDGE fornita solo per ciò che è pertinente a questo video.' : '- Non usare conoscenze esterne specifiche (nomi, dati): resta su quanto si vede e su quanto indicato.',
   '- Se c\u2019è l\u2019indicazione dell\u2019autore, seguila: ha la precedenza sui fotogrammi.',
+  ...(speech
+    ? [
+        '- Ricevi anche il PARLATO ORIGINALE del tratto (trascrizione automatica, può avere piccoli errori): è la fonte principale dei contenuti. Riformulalo per la voce dell\u2019avatar, fedele a ciò che dice, senza aggiungere fatti, numeri o nomi che non ci sono.',
+        '- Non citare chi parla né dire che è una trascrizione. Riporta i punti che contano nella lunghezza richiesta; i fotogrammi servono solo da contesto.',
+      ]
+    : []),
   `- Lingua: ${language}. Tono professionale ma caldo; dai del "voi" o usa forme impersonali.`,
   '- Parlato fluido: niente markdown, elenchi, simboli, numeri di video, né "in questo video vediamo".',
   '- Dai continuità con i copioni dei video precedenti, senza ripeterli e senza salutare di nuovo (saluta solo nel primo video, chiudi solo nell\u2019ultimo).',
 ];
 
+/** Testo parlato nel tratto [start, end] di un video (tutto il file se manca il tratto), limitato in lunghezza. */
+export function speechOf(segments: TranscriptSegment[] | undefined, trim?: { start: number; end: number }): string | undefined {
+  if (!segments || segments.length === 0) return undefined;
+  const start = trim?.start ?? 0;
+  const end = trim?.end ?? Number.POSITIVE_INFINITY;
+  const text = segments
+    .filter((x) => x.end > start && x.start < end)
+    .map((x) => x.text.trim())
+    .filter(Boolean)
+    .join(' ');
+  return text ? text.slice(0, 12_000) : undefined;
+}
 const SCHEMA_ONE = {
   type: 'object',
   properties: { script: { type: 'string' } },
@@ -220,6 +240,7 @@ export class SlideScriptsService {
     @Inject(DOCUMENT_EXTRACTORS) extractors: DocumentExtractor[],
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(LLM_PROVIDER) private readonly llm: LLMProvider,
+    @Inject(TRANSCRIPTION_PROVIDER) private readonly transcription: TranscriptionProvider,
   ) {
     this.registry = new DocumentExtractorRegistry(extractors);
   }
@@ -479,11 +500,20 @@ export class SlideScriptsService {
   ): Promise<ScriptsGenerationState> {
     if (manifest.slides.length === 0) throw new BadRequestException('Aggiungi almeno un video');
     const ai = manifest.slides.filter((x) => x.video && x.video.mode !== 'manual').length;
+    // Trascrizione: una volta per file (non per spezzone) e solo se non è già stata fatta.
+    const toTranscribe = await this.sourcesToTranscribe(tenantId, courseId, importId, manifest);
+    const transcribeMinutes = toTranscribe.reduce((t, x) => t + Math.max(1, Math.ceil(x.durationSec / 60)), 0);
     const reservation =
       ai > 0
-        ? await this.billing.reserve(tenantId, `kscorm:slide-scripts:${importId}:${randomUUID()}`, [{ feature: 'text_light', units: ai }], {
-            courseId: meterCourseId(courseId) ?? undefined,
-          })
+        ? await this.billing.reserve(
+            tenantId,
+            `kscorm:slide-scripts:${importId}:${randomUUID()}`,
+            [
+              { feature: 'text_light', units: ai },
+              ...(transcribeMinutes > 0 ? [{ feature: 'video_transcription', units: transcribeMinutes }] : []),
+            ],
+            { courseId: meterCourseId(courseId) ?? undefined },
+          )
         : null;
     const now = new Date().toISOString();
     const state: ScriptsGenerationState = { status: 'running', startedAt: now, updatedAt: now, leaseUntil: Date.now() + JOB_LEASE_MS };
@@ -497,10 +527,16 @@ export class SlideScriptsService {
         void this.saveGenerationState(tenantId, courseId, importId, state).catch(() => undefined);
       }, 60_000);
       let written = 0;
+      let transcribedMinutes = 0;
       try {
-        written = await this.runGenerateVideos(tenantId, courseId, importId, manifest, language, knowledge);
+        const done = await this.runGenerateVideos(tenantId, courseId, importId, manifest, language, knowledge);
+        written = done.written;
+        transcribedMinutes = done.transcribedMinutes;
         state.status = 'completed';
-        await this.billing.settle(tenantId, reservation, { text_light: written });
+        await this.billing.settle(tenantId, reservation, {
+          text_light: written,
+          ...(transcribeMinutes > 0 ? { video_transcription: transcribedMinutes } : {}),
+        });
       } catch (err) {
         await this.billing.release(tenantId, reservation);
         state.status = 'failed';
@@ -525,8 +561,9 @@ export class SlideScriptsService {
     manifest: SlideImportManifest,
     language: string,
     knowledge: { text: string; ids: string[]; names: string[] } | null,
-  ): Promise<number> {
+  ): Promise<{ written: number; transcribedMinutes: number }> {
     const wps = VIDEO_SCRIPT.wordsPerSec;
+    const transcripts = await this.transcribeSources(tenantId, courseId, importId, manifest, language);
     const entries: SlideScriptEntry[] = [];
     let model = 'manuale';
     let written = 0;
@@ -547,6 +584,7 @@ export class SlideScriptsService {
           previous: entries.slice(-2).map((e) => e.script),
           language,
           knowledge: knowledge?.text ?? null,
+          speech: v.transcribe ? speechOf(transcripts.segments.get(v.key), v.trim) : undefined,
         });
         script = res.script;
         model = res.model;
@@ -558,7 +596,79 @@ export class SlideScriptsService {
     const doc = this.toDoc(importId, courseId, language, 'draft', model, entries, knowledge, previous?.glossary);
     doc.wordsPerSec = wps;
     await this.save(tenantId, doc);
-    return written;
+    return { written, transcribedMinutes: transcripts.minutes };
+  }
+
+  private transcriptKey(tenantId: string, courseId: string, importId: string, videoKey: string): string {
+    return `media/${tenantId}/${courseId}/slides/${importId}/transcript-${sourceIdOf(videoKey).replace(/\.[^.]+$/, '')}.json`;
+  }
+
+  /** File da trascrivere: quelli con la trascrizione richiesta (da un capitolo non scritto a mano) e non ancora trascritti. */
+  async sourcesToTranscribe(
+    tenantId: string,
+    courseId: string,
+    importId: string,
+    manifest: SlideImportManifest,
+  ): Promise<Array<{ key: string; contentType: string; durationSec: number }>> {
+    const out = new Map<string, { key: string; contentType: string; durationSec: number }>();
+    for (const item of manifest.slides) {
+      const v = item.video;
+      if (!v?.transcribe || v.mode === 'manual' || out.has(v.key)) continue;
+      if (await this.storage.exists(this.transcriptKey(tenantId, courseId, importId, v.key))) continue;
+      out.set(v.key, { key: v.key, contentType: v.contentType, durationSec: v.fileDurationSec });
+    }
+    return [...out.values()];
+  }
+
+  /**
+   * Parlato dei file che lo richiedono: si trascrive una volta per file e si conserva accanto
+   * all'import, così rigenerare i copioni non lo rifà (né lo riaddebita). Se il file non ha parlato
+   * il copione si scrive come senza trascrizione.
+   */
+  private async transcribeSources(
+    tenantId: string,
+    courseId: string,
+    importId: string,
+    manifest: SlideImportManifest,
+    language: string,
+  ): Promise<{ segments: Map<string, TranscriptSegment[]>; minutes: number }> {
+    const segments = new Map<string, TranscriptSegment[]>();
+    let minutes = 0;
+    const wanted = new Map<string, { contentType: string; durationSec: number }>();
+    for (const item of manifest.slides) {
+      const v = item.video;
+      if (v?.transcribe && v.mode !== 'manual') wanted.set(v.key, { contentType: v.contentType, durationSec: v.fileDurationSec });
+    }
+    for (const [key, info] of wanted) {
+      const cacheKey = this.transcriptKey(tenantId, courseId, importId, key);
+      if (await this.storage.exists(cacheKey)) {
+        const cached = JSON.parse((await this.storage.getObject(cacheKey)).toString('utf8')) as { segments?: TranscriptSegment[] };
+        segments.set(key, cached.segments ?? []);
+        continue;
+      }
+      let result: { segments: TranscriptSegment[] };
+      try {
+        result = await this.transcription.transcribe({ storageKey: key, contentType: info.contentType, language: asrLocale(language) });
+      } catch (err) {
+        const reason = err instanceof Error ? err.message.slice(0, 200) : 'errore sconosciuto';
+        throw new Error(`Trascrizione del video non riuscita: ${reason}`);
+      }
+      segments.set(key, result.segments);
+      await this.storage.putObject(cacheKey, Buffer.from(JSON.stringify({ segments: result.segments })), { contentType: 'application/json' });
+      minutes += Math.max(1, Math.ceil(info.durationSec / 60));
+      await this.meter.record({
+        tenantId,
+        courseId: meterCourseId(courseId),
+        slideImportId: importId,
+        provider: 'TRANSCRIBE',
+        model: 'transcribe-batch',
+        unit: 'SECONDS',
+        quantity: Math.max(1, Math.ceil(info.durationSec)),
+        source: 'video_transcript',
+        region: 'global',
+      });
+    }
+    return { segments, minutes };
   }
 
   /**
@@ -581,6 +691,8 @@ export class SlideScriptsService {
       language: string;
       knowledge: string | null;
       current?: string;
+      /** Parlato originale del tratto (trascrizione), se richiesto. */
+      speech?: string;
     },
   ): Promise<{ script: string; model: string }> {
     const b = videoWordBudget(o.targetSec, o.wps);
@@ -589,12 +701,13 @@ export class SlideScriptsService {
       `Video ${o.position} di ${o.total}, durata ${Math.round(o.targetSec * 10) / 10} secondi.`,
       `LUNGHEZZA OBBLIGATORIA: tra ${b.min} e ${b.max} parole, idealmente ${b.target}.`,
       o.hint ? `Indicazione dell'autore: ${o.hint}` : '',
+      o.speech ? `=== PARLATO ORIGINALE DEL TRATTO ===\n${o.speech}` : '',
       frames.length ? `Ti mostro ${frames.length} fotogrammi del video, in ordine dall'inizio alla fine.` : '',
       o.previous.length ? `Copioni dei video precedenti (per continuità, non ripeterli):\n${o.previous.join('\n---\n')}` : '',
       o.current ? `Copione attuale da adattare alla durata, mantenendo senso e informazioni:\n${o.current}` : '',
       o.knowledge ? `=== KNOWLEDGE ===\n${o.knowledge.slice(0, 60_000)}` : '',
     ].filter(Boolean);
-    const system = [...VIDEO_RULES(o.language, Boolean(o.knowledge)), '', 'Rispondi SOLO con JSON conforme allo schema.'].join('\n');
+    const system = [...VIDEO_RULES(o.language, Boolean(o.knowledge), Boolean(o.speech)), '', 'Rispondi SOLO con JSON conforme allo schema.'].join('\n');
     let user = lines.join('\n\n');
     let best = '';
     let model = '';

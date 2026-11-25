@@ -109,14 +109,16 @@ export class SlidesController {
     @Param('courseId') courseId: string,
     @Param('importId') importId: string,
     @UploadedFiles() files: { file?: UploadedMulterFile[]; poster?: UploadedMulterFile[]; frames?: UploadedMulterFile[] } | undefined,
-    @Body() body: { durationSec?: string; filename?: string; contentType?: string; uploadKey?: string; uploadId?: string; parts?: string },
+    @Body() body: { durationSec?: string; filename?: string; contentType?: string; uploadKey?: string; uploadId?: string; parts?: string; sourceId?: string },
   ): Promise<SlideImportView> {
     const video = files?.file?.[0];
     const poster = files?.poster?.[0];
     if (!poster) throw new BadRequestException('Manca la copertina del video (campo "poster")');
     // Video grande già caricato a pezzi: qui arrivano solo copertina, fotogrammi e l'elenco dei pezzi.
     let upload: { key: string; uploadId: string; parts: Array<{ partNumber: number; etag: string }> } | undefined;
-    if (!video) {
+    // Nuovo spezzone di un video già caricato: nessun file, solo copertina e fotogrammi del tratto.
+    const sourceId = body.sourceId?.trim() || undefined;
+    if (!video && !sourceId) {
       if (!body.uploadKey || !body.uploadId || !body.parts || !body.contentType || !body.filename) {
         throw new BadRequestException('Nessun video ricevuto (campo "file" o caricamento a pezzi)');
       }
@@ -136,9 +138,13 @@ export class SlidesController {
       tenantId: ctx.tenant.tenantId,
       courseId,
       importId,
-      video: video
-        ? { filename: video.originalname, contentType: video.mimetype, content: video.buffer }
-        : { filename: body.filename!, contentType: body.contentType!, upload },
+      ...(sourceId
+        ? { sourceId }
+        : {
+            video: video
+              ? { filename: video.originalname, contentType: video.mimetype, content: video.buffer }
+              : { filename: body.filename!, contentType: body.contentType!, upload },
+          }),
       poster: { contentType: poster.mimetype, content: poster.buffer },
       frames: (files?.frames ?? []).map((f) => ({ contentType: f.mimetype, content: f.buffer })),
       durationSec: Number(durationSec),

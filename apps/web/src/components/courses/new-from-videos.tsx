@@ -12,7 +12,9 @@ import {
   Info,
   Lightbulb,
   Loader2,
+  Mic,
   PenLine,
+  Plus,
   Scissors,
   Trash2,
   Upload,
@@ -20,7 +22,6 @@ import {
 } from 'lucide-react';
 import { VIDEO_SCRIPT, videoWordBudget } from '@scorm/contracts';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dropzone } from '@/components/knowledge/dropzone';
 import { useToast } from '@/components/ui/toast';
@@ -40,6 +41,8 @@ const TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
 type Mode = 'frames' | 'hint' | 'manual';
 interface Item {
   id: string;
+  /** Il file da cui nasce: più spezzoni dello stesso video hanno lo stesso `src` e si caricano una volta sola. */
+  src: string;
   file: File;
   url: string;
   durationSec: number;
@@ -91,6 +94,8 @@ export function NewFromVideos({
   const [reviewScripts, setReviewScripts] = React.useState(true);
   const [sections, setSections] = React.useState(false);
   const [starting, setStarting] = React.useState(false);
+  /** Per file (`src`): il copione usa anche il parlato del video (trascrizione). */
+  const [speech, setSpeech] = React.useState<Record<string, boolean>>({});
 
   React.useEffect(() => () => items.forEach((i) => URL.revokeObjectURL(i.url)), []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -113,6 +118,30 @@ export function NewFromVideos({
       return next;
     });
 
+  /** Nuovo spezzone dello stesso video, subito dopo questo: parte dal punto in cui è fermo il video. */
+  function addChapter(it: Item) {
+    if (items.length >= VIDEO_SCRIPT.maxVideos) {
+      toast.show(`Al massimo ${VIDEO_SCRIPT.maxVideos} capitoli`, 'error');
+      return;
+    }
+    const el = document.getElementById(`vid-${it.id}`) as HTMLVideoElement | null;
+    let start = el ? Math.round(el.currentTime * 10) / 10 : (it.trim?.end ?? 0);
+    if (start >= it.durationSec - 2) start = Math.max(0, Math.round((it.durationSec - 15) * 10) / 10);
+    const end = Math.min(it.durationSec, Math.round((start + 15) * 10) / 10);
+    setItems((cur) => {
+      const at = cur.findIndex((x) => x.id === it.id);
+      const next = [...cur];
+      next.splice(at + 1, 0, { ...it, id: crypto.randomUUID(), trim: { start, end }, mode: 'frames', hint: '', script: '', progress: undefined });
+      return next;
+    });
+  }
+
+  /** Toglie un capitolo; l'anteprima del file si libera solo quando non serve a nessun altro spezzone. */
+  function removeChapter(it: Item) {
+    if (!items.some((x) => x.id !== it.id && x.src === it.src)) URL.revokeObjectURL(it.url);
+    setItems((cur) => cur.filter((x) => x.id !== it.id));
+  }
+
   async function onFiles(files: File[]) {
     const room = VIDEO_SCRIPT.maxVideos - items.length;
     if (room <= 0) {
@@ -133,7 +162,7 @@ export function NewFromVideos({
         const durationSec = await videoDuration(f, { longSide: VIDEO_SCRIPT.maxLongSidePx, shortSide: VIDEO_SCRIPT.maxShortSidePx });
         setItems((cur) => [
           ...cur,
-          { id: crypto.randomUUID(), file: f, url: URL.createObjectURL(f), durationSec, trim: null, mode: 'frames', hint: '', script: '' },
+          { id: crypto.randomUUID(), src: crypto.randomUUID(), file: f, url: URL.createObjectURL(f), durationSec, trim: null, mode: 'frames', hint: '', script: '' },
         ]);
       } catch (err) {
         toast.show(`${f.name}: ${err instanceof Error ? err.message : 'video non leggibile'}`, 'error');
@@ -160,7 +189,7 @@ export function NewFromVideos({
         const w = it.script.trim().split(/\s+/).length;
         if (w > videoWordBudget(len(it)).max) return `Il copione del video ${i + 1} è più lungo del video`;
       }
-      if (it.trim && it.trim.end - it.trim.start < 2) return `Il tratto del video ${i + 1} è troppo corto`;
+      if (it.trim && it.trim.end - it.trim.start < 2) return `Il tratto del capitolo ${i + 1} è troppo corto (almeno 2 secondi)`;
       return null;
     })
     .filter(Boolean) as string[];
@@ -172,15 +201,24 @@ export function NewFromVideos({
     try {
       const imp = await api.createVideoImport(courseId, { title: title.trim() || undefined, language });
       let view: SlideImportView = imp;
+      // Ogni file si invia una volta sola: gli altri spezzoni dello stesso video mandano solo copertina e fotogrammi.
+      const uploaded = new Map<string, string>();
       for (const it of items) {
         patch(it.id, { progress: 0 });
         const stills = await videoStills(it.file, it.trim ?? undefined);
+        const known = uploaded.get(it.src);
         view = await api.addImportVideo(
           courseId,
           imp.importId,
-          { file: it.file, poster: stills.poster, frames: stills.frames, durationSec: it.durationSec },
+          known
+            ? { sourceId: known, poster: stills.poster, frames: stills.frames, durationSec: it.durationSec }
+            : { file: it.file, poster: stills.poster, frames: stills.frames, durationSec: it.durationSec },
           (p) => patch(it.id, { progress: p }),
         );
+        if (!known) {
+          const added = view.slides[view.slides.length - 1]?.video;
+          if (added) uploaded.set(it.src, added.sourceId);
+        }
         patch(it.id, { progress: 1 });
       }
       // Gli indici seguono l'ordine di caricamento, che è quello scelto.
@@ -191,6 +229,7 @@ export function NewFromVideos({
           ...(it.mode === 'hint' ? { hint: it.hint.trim() } : {}),
           ...(it.mode === 'manual' ? { script: it.script.trim() } : {}),
           ...(it.trim ? { trim: it.trim } : {}),
+          ...(it.mode !== 'manual' && speech[it.src] ? { transcribe: true } : {}),
         })),
       });
       setImported(view);
@@ -250,7 +289,7 @@ export function NewFromVideos({
           <div className="flex items-center gap-3 rounded-lg border border-emerald-300/60 bg-emerald-50 p-3 text-sm text-emerald-900">
             <CheckCircle2 className="size-5 shrink-0" aria-hidden />
             <span>
-              {imported.slides.length} video caricati · {fmtTime(totalSec)} in tutto. Copioni:{' '}
+              {imported.slides.length} {imported.slides.length === 1 ? 'capitolo' : 'capitoli'} · {fmtTime(totalSec)} in tutto. Copioni:{' '}
               {items.filter((x) => x.mode === 'manual').length} scritti da te, {items.filter((x) => x.mode !== 'manual').length} dall&apos;AI.
             </span>
           </div>
@@ -357,7 +396,8 @@ export function NewFromVideos({
           hint={`MP4, WebM o MOV · fino a 1080p e ${VIDEO_SCRIPT.maxVideoBytes / 1024 / 1024} MB ciascuno`}
         />
         <p className="text-xs text-muted-foreground">
-          Al massimo {VIDEO_SCRIPT.maxVideos} video. Ogni video diventa un capitolo con l&apos;avatar che lo racconta.
+          Al massimo {VIDEO_SCRIPT.maxVideos} capitoli. Ogni video diventa un capitolo con l&apos;avatar che lo racconta; di un video lungo puoi
+          usare più spezzoni, ognuno con il suo copione: il file si carica una volta sola.
         </p>
         {reading > 0 && (
           <p className="inline-flex items-center gap-2 text-xs text-muted-foreground">
@@ -447,12 +487,9 @@ export function NewFromVideos({
                         size="icon"
                         variant="ghost"
                         className="size-8 text-muted-foreground"
-                        onClick={() => {
-                          URL.revokeObjectURL(it.url);
-                          setItems((cur) => cur.filter((x) => x.id !== it.id));
-                        }}
+                        onClick={() => removeChapter(it)}
                         disabled={uploading}
-                        aria-label="Togli il video"
+                        aria-label="Togli il capitolo"
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -461,8 +498,8 @@ export function NewFromVideos({
 
                   {it.mode === 'frames' && (
                     <p className="rounded-md bg-muted/40 px-2.5 py-2 text-xs text-muted-foreground">
-                      L&apos;AI guarda il video e scrive un copione di circa <strong>{b.target} parole</strong>, tarato sui {fmtTime(duration)} del video. Potrai
-                      rivederlo prima di generare le clip.
+                      L&apos;AI guarda il video{speech[it.src] ? ' e ascolta il parlato' : ''} e scrive un copione di circa <strong>{b.target} parole</strong>,
+                      tarato sui {fmtTime(duration)} del video. Potrai rivederlo prima di generare le clip.
                     </p>
                   )}
                   {it.mode === 'hint' && (
@@ -496,53 +533,34 @@ export function NewFromVideos({
                     </div>
                   )}
 
-                  <details className="text-xs" open={Boolean(it.trim)}>
-                    <summary className="inline-flex cursor-pointer items-center gap-1 text-muted-foreground hover:text-foreground">
-                      <Scissors className="size-3.5" /> Usa solo un tratto del video
-                    </summary>
-                    <div className="mt-2 flex flex-wrap items-end gap-2">
-                      {(['start', 'end'] as const).map((k) => (
-                        <label key={k} className="space-y-1">
-                          <span className="block text-muted-foreground">{k === 'start' ? 'Da (secondi)' : 'A (secondi)'}</span>
-                          <div className="flex items-center gap-1">
-                            <Input
-                              type="number"
-                              min={0}
-                              max={it.durationSec}
-                              step={0.5}
-                              className="h-8 w-24"
-                              value={(it.trim ?? { start: 0, end: it.durationSec })[k]}
-                              onChange={(e) => {
-                                const cur = it.trim ?? { start: 0, end: it.durationSec };
-                                const v = Math.min(it.durationSec, Math.max(0, Number(e.target.value) || 0));
-                                patch(it.id, { trim: { ...cur, [k]: v } });
-                              }}
-                            />
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="h-8 px-2"
-                              title="Usa il punto in cui è fermo il video qui accanto"
-                              onClick={() => {
-                                const el = document.getElementById(`vid-${it.id}`) as HTMLVideoElement | null;
-                                if (!el) return;
-                                const cur = it.trim ?? { start: 0, end: it.durationSec };
-                                patch(it.id, { trim: { ...cur, [k]: Math.round(el.currentTime * 10) / 10 } });
-                              }}
-                            >
-                              dal video
-                            </Button>
-                          </div>
-                        </label>
-                      ))}
-                      {it.trim && (
-                        <Button type="button" size="sm" variant="ghost" className="h-8" onClick={() => patch(it.id, { trim: null })}>
-                          Usa tutto il video
-                        </Button>
-                      )}
-                    </div>
-                  </details>
+                  {it.mode !== 'manual' && (
+                    <label className="flex cursor-pointer items-start gap-2 rounded-md bg-muted/40 px-2.5 py-2 text-xs">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 size-4 accent-[hsl(var(--primary))]"
+                        checked={Boolean(speech[it.src])}
+                        disabled={uploading}
+                        onChange={(e) => setSpeech((cur) => ({ ...cur, [it.src]: e.target.checked }))}
+                      />
+                      <span>
+                        <span className="inline-flex items-center gap-1 font-medium">
+                          <Mic className="size-3.5" /> Usa il parlato del video per scrivere il copione
+                        </span>
+                        <span className="block text-muted-foreground">
+                          Il video si trascrive una volta sola e ogni spezzone usa il testo del suo tratto. Si paga in crediti, al minuto di video, e il costo
+                          compare nel preventivo. Se è spento, l&apos;AI guarda solo le immagini.
+                        </span>
+                      </span>
+                    </label>
+                  )}
+
+                  <ChapterRange
+                    item={it}
+                    siblings={items.map((x, n) => ({ item: x, n: n + 1 })).filter((x) => x.item.src === it.src)}
+                    disabled={uploading}
+                    onTrim={(trim) => patch(it.id, { trim })}
+                    onAdd={() => addChapter(it)}
+                  />
                 </div>
               </div>
             </li>
@@ -569,6 +587,120 @@ export function NewFromVideos({
             </Button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+const clampT = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+const round1 = (v: number) => Math.round(v * 10) / 10;
+
+/**
+ * Tratto del video usato da un capitolo: una barra con tutti gli spezzoni dello stesso file (quello
+ * attuale evidenziato; un clic porta l'anteprima in quel punto), due cursori per inizio e fine, i
+ * pulsanti per prendere il punto in cui è fermo il video e quello per aggiungere un altro spezzone.
+ */
+function ChapterRange({
+  item,
+  siblings,
+  disabled,
+  onTrim,
+  onAdd,
+}: {
+  item: Item;
+  siblings: Array<{ item: Item; n: number }>;
+  disabled: boolean;
+  onTrim: (trim: { start: number; end: number } | null) => void;
+  onAdd: () => void;
+}) {
+  const d = item.durationSec;
+  const cur = item.trim ?? { start: 0, end: d };
+  const player = () => document.getElementById(`vid-${item.id}`) as HTMLVideoElement | null;
+  /** Un tratto che copre tutto il file equivale a "tutto il video". */
+  const set = (start: number, end: number) => {
+    const s = round1(clampT(start, 0, d));
+    const e = round1(clampT(end, 0, d));
+    onTrim(s <= 0.05 && e >= d - 0.05 ? null : { start: s, end: e });
+  };
+  const seekFromBar = (ev: React.MouseEvent<HTMLDivElement>) => {
+    const el = player();
+    if (!el) return;
+    const r = ev.currentTarget.getBoundingClientRect();
+    el.currentTime = clampT(((ev.clientX - r.left) / r.width) * d, 0, d);
+  };
+  return (
+    <div className="space-y-2 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1 text-muted-foreground">
+          <Scissors className="size-3.5" /> Tratto usato: <strong className="text-foreground">{fmtTime(cur.start)}</strong> →{' '}
+          <strong className="text-foreground">{fmtTime(cur.end)}</strong> di {fmtTime(d)}
+        </span>
+        <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2" onClick={onAdd} disabled={disabled} title="Aggiunge un capitolo con un altro tratto di questo video, partendo dal punto in cui è fermo">
+          <Plus className="size-3.5" /> Aggiungi spezzone
+        </Button>
+      </div>
+      <div
+        className="relative h-7 cursor-pointer overflow-hidden rounded-md bg-muted"
+        onClick={seekFromBar}
+        role="presentation"
+        title="Clicca per portare il video in quel punto"
+      >
+        {siblings.map(({ item: s, n }) => {
+          const t = s.trim ?? { start: 0, end: s.durationSec };
+          return (
+            <div
+              key={s.id}
+              className={cn(
+                'absolute inset-y-0 flex items-center justify-center overflow-hidden text-[10px] font-semibold',
+                s.id === item.id ? 'bg-primary text-primary-foreground' : 'bg-primary/25 text-foreground',
+              )}
+              style={{ left: `${(t.start / d) * 100}%`, width: `${Math.max(1.5, ((t.end - t.start) / d) * 100)}%` }}
+            >
+              {n}
+            </div>
+          );
+        })}
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {(['start', 'end'] as const).map((k) => (
+          <div key={k} className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">{k === 'start' ? 'Inizio' : 'Fine'}</span>
+              <button
+                type="button"
+                className="text-[11px] text-primary underline-offset-2 hover:underline disabled:opacity-50"
+                disabled={disabled}
+                onClick={() => {
+                  const t = round1(player()?.currentTime ?? 0);
+                  if (k === 'start') set(t, Math.max(cur.end, t + 1));
+                  else set(Math.min(cur.start, t - 1), t);
+                }}
+              >
+                {k === 'start' ? 'Inizia qui' : 'Finisci qui'}
+              </button>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={d}
+              step={0.1}
+              value={cur[k]}
+              disabled={disabled}
+              aria-label={k === 'start' ? 'Inizio del tratto' : 'Fine del tratto'}
+              className="w-full accent-[hsl(var(--primary))]"
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (k === 'start') set(Math.min(v, cur.end - 1), cur.end);
+                else set(cur.start, Math.max(v, cur.start + 1));
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      {item.trim && (
+        <Button type="button" size="sm" variant="ghost" className="h-7 px-2" disabled={disabled} onClick={() => onTrim(null)}>
+          Usa tutto il video
+        </Button>
       )}
     </div>
   );

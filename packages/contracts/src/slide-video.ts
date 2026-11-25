@@ -498,6 +498,12 @@ export const UpdateVideoImport = z.object({
         hint: z.string().trim().max(1000).optional(),
         script: z.string().max(4000).optional(),
         trim: z.object({ start: z.number().nonnegative(), end: z.number().positive() }).optional(),
+        /**
+         * Usa il parlato del video per scrivere il copione: il file si trascrive una volta sola
+         * (anche con più spezzoni) e a ogni spezzone va il testo del suo tratto. Vale per il file
+         * intero: gli spezzoni dello stesso file seguono la scelta dei suoi capitoli.
+         */
+        transcribe: z.boolean().optional(),
       }),
     )
     .min(1)

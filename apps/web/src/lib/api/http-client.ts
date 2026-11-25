@@ -787,7 +787,7 @@ export class HttpApiClient implements ApiClient {
   async addImportVideo(
     courseId: string,
     importId: string,
-    input: { file: File; poster: Blob; frames: Blob[]; durationSec: number },
+    input: { file?: File; sourceId?: string; poster: Blob; frames: Blob[]; durationSec: number },
     onProgress?: (fraction: number) => void,
   ): Promise<SlideImportView> {
     const base = `${this.baseUrl}/courses/${courseId}/slides/imports/${importId}/videos`;
@@ -795,26 +795,35 @@ export class HttpApiClient implements ApiClient {
     form.append('poster', input.poster, 'poster.png');
     input.frames.forEach((f, i) => form.append('frames', f, `frame-${i + 1}.jpg`));
     form.append('durationSec', String(input.durationSec));
-    const contentType = input.file.type || (/\.mov$/i.test(input.file.name) ? 'video/quicktime' : /\.webm$/i.test(input.file.name) ? 'video/webm' : 'video/mp4');
+    // Nuovo spezzone di un video già caricato: solo copertina e fotogrammi.
+    if (input.sourceId) {
+      form.append('sourceId', input.sourceId);
+      const view = await this.sendXhr<SlideImportView>('POST', base, form, undefined, onProgress);
+      onProgress?.(1);
+      return view;
+    }
+    const file = input.file;
+    if (!file) throw new Error('Video mancante');
+    const contentType = file.type || (/\.mov$/i.test(file.name) ? 'video/quicktime' : /\.webm$/i.test(file.name) ? 'video/webm' : 'video/mp4');
     const PART = 8 * 1024 * 1024;
-    if (input.file.size <= PART) {
-      form.append('file', new File([input.file], input.file.name, { type: contentType }));
+    if (file.size <= PART) {
+      form.append('file', new File([file], file.name, { type: contentType }));
       return this.sendXhr<SlideImportView>('POST', base, form, undefined, onProgress);
     }
     const up = await this.request<{ key: string; uploadId: string; partBytes: number; parts: number }>(`/courses/${courseId}/slides/imports/${importId}/videos/uploads`, {
       method: 'POST',
-      body: JSON.stringify({ contentType, sizeBytes: input.file.size }),
+      body: JSON.stringify({ contentType, sizeBytes: file.size }),
     });
     const parts: Array<{ partNumber: number; etag: string }> = [];
     try {
       for (let n = 1; n <= up.parts; n++) {
-        const chunk = input.file.slice((n - 1) * up.partBytes, Math.min(input.file.size, n * up.partBytes));
+        const chunk = file.slice((n - 1) * up.partBytes, Math.min(file.size, n * up.partBytes));
         const q = new URLSearchParams({ key: up.key, uploadId: up.uploadId, partNumber: String(n) });
         let last: unknown;
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
             const r = await this.sendXhr<{ etag: string }>('PUT', `${base}/uploads/part?${q.toString()}`, chunk, 'application/octet-stream', (f) =>
-              onProgress?.(((n - 1 + f) * up.partBytes) / input.file.size * 0.98),
+              onProgress?.(((n - 1 + f) * up.partBytes) / file.size * 0.98),
             );
             parts.push({ partNumber: n, etag: r.etag });
             last = undefined;
@@ -833,7 +842,7 @@ export class HttpApiClient implements ApiClient {
       }).catch(() => undefined);
       throw err;
     }
-    form.append('filename', input.file.name);
+    form.append('filename', file.name);
     form.append('contentType', contentType);
     form.append('uploadKey', up.key);
     form.append('uploadId', up.uploadId);

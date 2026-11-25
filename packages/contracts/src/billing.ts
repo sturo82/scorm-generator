@@ -105,7 +105,7 @@ export const SLIDE_SCRIPT_CAPS = {
 
 /** Voce del preventivo di un video da slide. */
 export interface SlideEstimateLine {
-  kind: 'scripts' | 'sections' | 'clips' | 'render' | 'summaries' | 'quizzes';
+  kind: 'scripts' | 'transcription' | 'sections' | 'clips' | 'render' | 'summaries' | 'quizzes';
   quantity: number;
   credits: number | null;
 }
