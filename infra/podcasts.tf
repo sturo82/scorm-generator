@@ -98,14 +98,6 @@ resource "aws_cloudfront_distribution" "podcast" {
     cache_policy_id = "658327ea-f89d-4fab-a63d-7e88639e58f6"
   }
 
-  # S3 risponde 403 per gli oggetti inesistenti (il bucket è privato): per i client è un 404.
-  custom_error_response {
-    error_code            = 403
-    response_code         = 404
-    response_page_path    = ""
-    error_caching_min_ttl = 30
-  }
-
   restrictions {
     geo_restriction {
       restriction_type = "none"
