@@ -1,0 +1,242 @@
+import { z } from 'zod';
+import { LanguageCode } from './primitives.js';
+
+/**
+ * Podcast: una SERIE di puntate audio su un tema, raccontate da due conduttori in dialogo.
+ * Contenuto autonomo (non è una lezione di un corso). Vedi .kiro/specs/podcast.
+ */
+
+/** Limiti della generazione (anche per il preventivo). */
+export const PODCAST_LIMITS = {
+  maxEpisodes: 20,
+  minMinutes: 3,
+  maxMinutes: 20,
+  /** Ritmo di parlato di partenza (parole al minuto); si tara sulle prime puntate generate. */
+  wordsPerMinute: 150,
+  /** Il copione deve stare tra questi rapporti rispetto alla durata richiesta. */
+  minRatio: 0.8,
+  maxRatio: 1.15,
+  minTurns: 4,
+  maxTurns: 300,
+  /** Caratteri massimi di una battuta: sotto il limite di una chiamata di sintesi (circa 3000). */
+  maxTurnChars: 1200,
+  maxArticles: 6,
+  maxDocs: 10,
+} as const;
+
+export const PodcastHostKey = z.enum(['A', 'B']);
+export type PodcastHostKey = z.infer<typeof PodcastHostKey>;
+
+/** Voce di un conduttore: del catalogo del fornitore, oppure (in futuro) clonata. */
+export const PodcastVoiceRef = z.object({
+  kind: z.enum(['catalog', 'clone']).default('catalog'),
+  id: z.string().min(1).max(64),
+});
+export type PodcastVoiceRef = z.infer<typeof PodcastVoiceRef>;
+
+export const PodcastHost = z.object({
+  key: PodcastHostKey,
+  name: z.string().trim().min(1).max(40),
+  voice: PodcastVoiceRef,
+});
+export type PodcastHost = z.infer<typeof PodcastHost>;
+
+/** Esattamente due conduttori, A e B. */
+export const PodcastHosts = z
+  .array(PodcastHost)
+  .length(2)
+  .refine((h) => h.some((x) => x.key === 'A') && h.some((x) => x.key === 'B'), 'Servono i conduttori A e B');
+
+export const PodcastBrief = z.object({
+  topic: z.string().trim().min(3).max(500),
+  audience: z.string().trim().max(300).optional(),
+  tone: z.string().trim().max(200).optional(),
+  objectives: z.array(z.string().trim().min(1).max(200)).max(8).default([]),
+});
+export type PodcastBrief = z.infer<typeof PodcastBrief>;
+
+/** Articolo (di un feed RSS) scelto come fonte. */
+export const PodcastArticleRef = z.object({
+  title: z.string().trim().min(1).max(300),
+  url: z.string().trim().url().max(2000),
+});
+export type PodcastArticleRef = z.infer<typeof PodcastArticleRef>;
+
+export const PodcastFeedVisibility = z.enum(['PUBLIC', 'PRIVATE']);
+export type PodcastFeedVisibility = z.infer<typeof PodcastFeedVisibility>;
+
+export const PodcastEpisodeState = z.enum(['DRAFT', 'WRITING', 'SCRIPT_READY', 'VOICING', 'READY', 'FAILED']);
+export type PodcastEpisodeState = z.infer<typeof PodcastEpisodeState>;
+
+const PodcastMeta = {
+  title: z.string().trim().min(1).max(140),
+  description: z.string().trim().max(1000).default(''),
+  category: z.string().trim().min(1).max(60).default('Education'),
+  author: z.string().trim().max(100).optional(),
+  contactEmail: z.string().trim().email().max(200).optional(),
+  explicit: z.boolean().default(false),
+};
+
+/** Creazione di una serie: metadati, conduttori, fonti e numero/durata delle puntate da pianificare. */
+export const CreatePodcast = z.object({
+  ...PodcastMeta,
+  language: LanguageCode.default('it'),
+  hosts: PodcastHosts,
+  brief: PodcastBrief,
+  knowledgeDocIds: z.array(z.string().min(1)).max(PODCAST_LIMITS.maxDocs).default([]),
+  articles: z.array(PodcastArticleRef).max(PODCAST_LIMITS.maxArticles).default([]),
+  episodeCount: z.number().int().min(1).max(PODCAST_LIMITS.maxEpisodes).default(4),
+  episodeMinutes: z.number().int().min(PODCAST_LIMITS.minMinutes).max(PODCAST_LIMITS.maxMinutes).default(8),
+});
+export type CreatePodcast = z.infer<typeof CreatePodcast>;
+
+export const UpdatePodcast = z.object({
+  title: PodcastMeta.title.optional(),
+  description: z.string().trim().max(1000).optional(),
+  category: PodcastMeta.category.optional(),
+  author: z.string().trim().max(100).nullable().optional(),
+  contactEmail: z.string().trim().email().max(200).nullable().optional(),
+  explicit: z.boolean().optional(),
+  hosts: PodcastHosts.optional(),
+});
+export type UpdatePodcast = z.infer<typeof UpdatePodcast>;
+
+export const SetPodcastFeed = z.object({ visibility: PodcastFeedVisibility });
+export type SetPodcastFeed = z.infer<typeof SetPodcastFeed>;
+
+/** Elenco ordinato delle puntate (piano): senza `id` = nuova, id assente dall'elenco = tolta. */
+export const UpdatePodcastEpisodes = z.object({
+  episodes: z
+    .array(
+      z.object({
+        id: z.string().min(1).optional(),
+        title: z.string().trim().min(1).max(140),
+        summary: z.string().trim().max(1000).default(''),
+        targetMinutes: z.number().int().min(PODCAST_LIMITS.minMinutes).max(PODCAST_LIMITS.maxMinutes).optional(),
+      }),
+    )
+    .min(1)
+    .max(PODCAST_LIMITS.maxEpisodes),
+});
+export type UpdatePodcastEpisodes = z.infer<typeof UpdatePodcastEpisodes>;
+
+/** Una battuta: chi parla e cosa dice. */
+export const PodcastTurn = z.object({
+  host: PodcastHostKey,
+  text: z.string().trim().min(1).max(PODCAST_LIMITS.maxTurnChars),
+});
+export type PodcastTurn = z.infer<typeof PodcastTurn>;
+
+export const PodcastScript = z.object({
+  turns: z.array(PodcastTurn).min(PODCAST_LIMITS.minTurns).max(PODCAST_LIMITS.maxTurns),
+});
+export type PodcastScript = z.infer<typeof PodcastScript>;
+
+export const UpdatePodcastScript = PodcastScript;
+
+/** Parole di un copione. */
+export function podcastScriptWords(script: { turns: Array<{ text: string }> }): number {
+  return script.turns.reduce((n, t) => n + t.text.split(/\s+/).filter(Boolean).length, 0);
+}
+
+/** Parole consentite per una puntata di `minutes` minuti. */
+export function podcastWordBudget(
+  minutes: number,
+  wordsPerMinute: number = PODCAST_LIMITS.wordsPerMinute,
+): { min: number; target: number; max: number } {
+  const w = Math.max(0, minutes) * wordsPerMinute;
+  return {
+    min: Math.max(1, Math.floor(w * PODCAST_LIMITS.minRatio)),
+    target: Math.max(1, Math.round(w)),
+    max: Math.max(1, Math.floor(w * PODCAST_LIMITS.maxRatio)),
+  };
+}
+
+/** Esito della taratura di un copione rispetto alla durata richiesta. */
+export function podcastScriptFit(
+  words: number,
+  minutes: number,
+  wordsPerMinute: number = PODCAST_LIMITS.wordsPerMinute,
+): { status: 'empty' | 'short' | 'ok' | 'long'; estMinutes: number; budget: ReturnType<typeof podcastWordBudget> } {
+  const budget = podcastWordBudget(minutes, wordsPerMinute);
+  const estMinutes = Math.round((words / wordsPerMinute) * 10) / 10;
+  const status = words === 0 ? 'empty' : words > budget.max ? 'long' : words < budget.min ? 'short' : 'ok';
+  return { status, estMinutes, budget };
+}
+
+export const PodcastTurnTiming = z.object({ i: z.number().int().nonnegative(), startMs: z.number().nonnegative(), endMs: z.number().nonnegative() });
+export type PodcastTurnTiming = z.infer<typeof PodcastTurnTiming>;
+
+/** Fonte usata da una puntata (documento di knowledge o articolo). */
+export const PodcastSource = z.object({ kind: z.enum(['document', 'article']), title: z.string(), url: z.string().optional() });
+export type PodcastSource = z.infer<typeof PodcastSource>;
+
+/** Voce del catalogo del fornitore. */
+export const PodcastVoiceOption = z.object({
+  id: z.string(),
+  name: z.string(),
+  gender: z.enum(['female', 'male', 'unknown']),
+  language: z.string(),
+});
+export type PodcastVoiceOption = z.infer<typeof PodcastVoiceOption>;
+
+export interface PodcastEpisodeView {
+  id: string;
+  position: number;
+  title: string;
+  summary: string;
+  targetMinutes: number;
+  state: PodcastEpisodeState;
+  error?: string;
+  script: PodcastScript | null;
+  words: number;
+  audioStale: boolean;
+  hasAudio: boolean;
+  durationSec?: number;
+  sizeBytes?: number;
+  turnTimings?: PodcastTurnTiming[];
+  sources: PodcastSource[];
+  published: boolean;
+  publishedAt?: string;
+}
+
+export interface PodcastView {
+  id: string;
+  title: string;
+  description: string;
+  language: string;
+  category: string;
+  author?: string;
+  contactEmail?: string;
+  explicit: boolean;
+  hosts: PodcastHost[];
+  brief: PodcastBrief;
+  knowledgeDocIds: string[];
+  articles: PodcastArticleRef[];
+  visibility: PodcastFeedVisibility;
+  /** Indirizzo del feed RSS; assente se la pubblicazione non è configurata. */
+  feedUrl?: string;
+  /** True se il server può pubblicare (dominio e distribuzione configurati). */
+  publishingEnabled: boolean;
+  episodes: PodcastEpisodeView[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PodcastListItem {
+  id: string;
+  title: string;
+  language: string;
+  episodeCount: number;
+  readyCount: number;
+  publishedCount: number;
+  updatedAt: string;
+}
+
+/** Preventivo in crediti di un passo della generazione. */
+export interface PodcastEstimateView {
+  billed: boolean;
+  priced: boolean;
+  total: number;
+  lines: Array<{ kind: 'plan' | 'scripts' | 'audio'; quantity: number; credits: number | null }>;
+}

@@ -137,6 +137,7 @@ model Tenant {
   auditEvents AuditEvent[]
   usage       UsageRecord[]
   videoAssets VideoAsset[]
+  podcasts    Podcast[]
   integrationClients IntegrationClient[]
   ssoTickets  SsoTicket[]
   feeds       TenantFeed[]
@@ -841,4 +842,90 @@ model AvatarConsentRecord {
   attestedAt DateTime @default(now())
 
   @@unique([tenantId, groupId])
+}
+
+
+// --- Podcast (serie di puntate audio a due voci) -----------------------------
+
+enum PodcastFeedVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum PodcastEpisodeState {
+  DRAFT
+  WRITING
+  SCRIPT_READY
+  VOICING
+  READY
+  FAILED
+}
+
+// Una serie di puntate su un tema, con due conduttori. Contenuto autonomo (non appartiene a un corso).
+model Podcast {
+  id              String                @id @default(cuid())
+  tenantId        String
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title           String
+  description     String                @default("")
+  language        String                @default("it")
+  category        String                @default("Education")
+  author          String?
+  contactEmail    String?
+  explicit        Boolean               @default(false)
+  coverKey        String?
+  // Conduttori: [{ key: 'A'|'B', name, voice: { kind, id } }].
+  hosts           Json
+  brief           Json
+  knowledgeDocIds Json                  @default("[]")
+  articles        Json                  @default("[]")
+  // Feed RSS: pubblico (Spotify/Apple) o privato (indirizzo con codice segreto).
+  visibility      PodcastFeedVisibility @default(PRIVATE)
+  // Identificativo casuale nell'indirizzo pubblico del feed e dei file.
+  publicId        String                @unique
+  // Codice segreto del feed privato (rigenerabile).
+  feedToken       String
+  createdBy       String?
+  episodes        PodcastEpisode[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([tenantId])
+}
+
+model PodcastEpisode {
+  id            String              @id @default(cuid())
+  podcastId     String
+  podcast       Podcast             @relation(fields: [podcastId], references: [id], onDelete: Cascade)
+  tenantId      String
+  position      Int
+  title         String
+  summary       String              @default("")
+  targetMinutes Int                 @default(10)
+  // Fonti usate: [{ kind: 'document'|'article', title, url? }].
+  sources       Json                @default("[]")
+  // Copione: { turns: [{ host, text }] }.
+  script        Json?
+  state         PodcastEpisodeState @default(DRAFT)
+  error         String?
+  // Lavoro in corso: scade se il processo si interrompe.
+  leaseUntil    DateTime?
+  // Riserva di crediti aperta per il lavoro in corso (per liberarla se si interrompe).
+  billing       Json?
+  audioKey      String?
+  // Il copione è cambiato dopo l'ultimo audio.
+  audioStale    Boolean             @default(false)
+  durationSec   Int?
+  sizeBytes     Int?
+  // Tempi per battuta: [{ i, startMs, endMs }].
+  turnTimings   Json?
+  // Identificativo stabile nel feed (non cambia mai).
+  guid          String              @unique
+  publishedAt   DateTime?
+  publicAudioKey String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([podcastId, position])
+  @@index([tenantId])
 }

@@ -31,3 +31,4 @@ export * from './slide-video.js';
 export * from './knowledge-structure.js';
 export * from './course-plan.js';
 export * from './autopilot.js';
+export * from './podcast.js';
