@@ -1,3 +1,4 @@
+import type { CreatePodcast, PodcastEstimateView, PodcastListItem, PodcastScript, PodcastView, PodcastVoiceOption, PodcastFeedVisibility, UpdatePodcast, UpdatePodcastEpisodes } from '@scorm/contracts';
 import type { StartSlidesAutopilot, DashboardSummary, AutopilotView, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteItem, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import type {
   Brief,
@@ -816,6 +817,30 @@ export interface ApiClient {
     onProgress?: (fraction: number) => void,
   ): Promise<SlideImportView>;
   updateImportVideos(courseId: string, importId: string, input: import('@scorm/contracts').UpdateVideoImport): Promise<SlideImportView>;
+  // --- Podcast ---------------------------------------------------------------
+  listPodcasts(): Promise<PodcastListItem[]>;
+  getPodcast(id: string): Promise<PodcastView>;
+  createPodcast(input: CreatePodcast): Promise<PodcastView>;
+  updatePodcast(id: string, input: UpdatePodcast): Promise<PodcastView>;
+  deletePodcast(id: string): Promise<void>;
+  estimateNewPodcast(episodeCount: number, minutes: number): Promise<PodcastEstimateView>;
+  estimatePodcast(id: string): Promise<PodcastEstimateView>;
+  listPodcastVoices(language: string): Promise<PodcastVoiceOption[]>;
+  previewPodcastVoice(voiceId: string, language: string): Promise<{ url: string }>;
+  listPodcastFeedItems(url: string): Promise<{ feedTitle?: string; items: Array<{ title: string; link?: string; summary: string; isoDate?: string }> }>;
+  planPodcast(id: string): Promise<PodcastView>;
+  updatePodcastEpisodes(id: string, input: UpdatePodcastEpisodes): Promise<PodcastView>;
+  writePodcastScripts(id: string, episodeIds?: string[]): Promise<PodcastView>;
+  updatePodcastScript(id: string, episodeId: string, script: PodcastScript): Promise<PodcastView>;
+  recordPodcastAudio(id: string, episodeIds?: string[]): Promise<PodcastView>;
+  cancelPodcastWork(id: string): Promise<void>;
+  getPodcastAudioUrl(id: string, episodeId: string): Promise<{ url: string; downloadUrl: string }>;
+  getPodcastTranscript(id: string, episodeId: string, format: 'txt' | 'srt' | 'vtt'): Promise<{ filename: string; contentType: string; body: string }>;
+  publishPodcastEpisode(id: string, episodeId: string): Promise<PodcastView>;
+  unpublishPodcastEpisode(id: string, episodeId: string): Promise<PodcastView>;
+  setPodcastFeed(id: string, visibility: PodcastFeedVisibility): Promise<PodcastView>;
+  rotatePodcastFeedToken(id: string): Promise<PodcastView>;
+  uploadPodcastCover(id: string, file: File): Promise<PodcastView>;
   fitSlideScript(courseId: string, importId: string, index: number): Promise<SlideScriptsDoc>;
   getVideoTiming(courseId: string, importId: string): Promise<VideoTiming[]>;
   getSlideScripts(courseId: string, importId: string): Promise<SlideScriptsResponse>;

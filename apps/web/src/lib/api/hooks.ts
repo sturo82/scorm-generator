@@ -1,7 +1,7 @@
 'use client';
 import * as React from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { StartSlidesAutopilot, Block, Brief, CourseEstimateInput, CourseEstimateOptions, CreditQuoteItem, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
+import type { CreatePodcast, PodcastFeedVisibility, PodcastScript, PodcastView, UpdatePodcast, UpdatePodcastEpisodes, StartSlidesAutopilot, Block, Brief, CourseEstimateInput, CourseEstimateOptions, CreditQuoteItem, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
 import { getApiClient } from './client';
 import type { PronunciationEntry, SlideAvatarType, StartSlideClipsInput, BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole, AttachStockImageInput, AttachStockCoverInput } from './types';
 
@@ -1426,4 +1426,82 @@ export function useChangeSlideAvatar(courseId: string, importId: string | null) 
     mutationFn: (input: StartSlideClipsInput) => api.changeSlideAvatar(courseId, importId as string, input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['courses', courseId, 'slides', importId, 'clips'] }),
   });
+}
+
+// --- Podcast -----------------------------------------------------------------
+
+export function usePodcasts() {
+  return useQuery({ queryKey: ['podcasts'], queryFn: () => api.listPodcasts() });
+}
+
+/** Una serie. Si rilegge da sola finché qualche puntata è in lavorazione. */
+export function usePodcast(id: string | null) {
+  return useQuery({
+    queryKey: ['podcasts', id],
+    queryFn: () => api.getPodcast(id!),
+    enabled: Boolean(id),
+    refetchInterval: (query) => {
+      const busy = query.state.data?.episodes.some((e) => e.state === 'WRITING' || e.state === 'VOICING');
+      return busy ? 3000 : false;
+    },
+  });
+}
+
+export function usePodcastVoices(language: string) {
+  return useQuery({ queryKey: ['podcasts', 'voices', language], queryFn: () => api.listPodcastVoices(language), staleTime: 5 * 60_000 });
+}
+
+export function usePodcastEstimateNew(episodeCount: number, minutes: number) {
+  return useQuery({
+    queryKey: ['podcasts', 'estimate-new', episodeCount, minutes],
+    queryFn: () => api.estimateNewPodcast(episodeCount, minutes),
+    staleTime: 30_000,
+  });
+}
+
+export function usePodcastEstimate(id: string | null) {
+  return useQuery({ queryKey: ['podcasts', id, 'estimate'], queryFn: () => api.estimatePodcast(id!), enabled: Boolean(id) });
+}
+
+export function useCreatePodcast() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreatePodcast) => api.createPodcast(input),
+    onSuccess: (view) => {
+      qc.setQueryData(['podcasts', view.id], view);
+      qc.invalidateQueries({ queryKey: ['podcasts'] });
+    },
+  });
+}
+
+export function useDeletePodcast() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deletePodcast(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['podcasts'] }),
+  });
+}
+
+/** Azioni su una serie: ognuna restituisce la serie aggiornata e la mette subito in cache. */
+export function usePodcastActions(id: string) {
+  const qc = useQueryClient();
+  const done = (view: PodcastView | void): void => {
+    if (view) qc.setQueryData(['podcasts', id], view);
+    qc.invalidateQueries({ queryKey: ['podcasts', id, 'estimate'] });
+    qc.invalidateQueries({ queryKey: ['podcasts'], exact: true });
+  };
+  return {
+    update: useMutation({ mutationFn: (input: UpdatePodcast) => api.updatePodcast(id, input), onSuccess: done }),
+    plan: useMutation({ mutationFn: () => api.planPodcast(id), onSuccess: done }),
+    saveEpisodes: useMutation({ mutationFn: (input: UpdatePodcastEpisodes) => api.updatePodcastEpisodes(id, input), onSuccess: done }),
+    writeScripts: useMutation({ mutationFn: (episodeIds?: string[]) => api.writePodcastScripts(id, episodeIds), onSuccess: done }),
+    saveScript: useMutation({ mutationFn: (v: { episodeId: string; script: PodcastScript }) => api.updatePodcastScript(id, v.episodeId, v.script), onSuccess: done }),
+    recordAudio: useMutation({ mutationFn: (episodeIds?: string[]) => api.recordPodcastAudio(id, episodeIds), onSuccess: done }),
+    cancel: useMutation({ mutationFn: () => api.cancelPodcastWork(id) }),
+    publish: useMutation({ mutationFn: (episodeId: string) => api.publishPodcastEpisode(id, episodeId), onSuccess: done }),
+    unpublish: useMutation({ mutationFn: (episodeId: string) => api.unpublishPodcastEpisode(id, episodeId), onSuccess: done }),
+    setFeed: useMutation({ mutationFn: (visibility: PodcastFeedVisibility) => api.setPodcastFeed(id, visibility), onSuccess: done }),
+    rotateToken: useMutation({ mutationFn: () => api.rotatePodcastFeedToken(id), onSuccess: done }),
+    uploadCover: useMutation({ mutationFn: (file: File) => api.uploadPodcastCover(id, file), onSuccess: done }),
+  };
 }

@@ -99,7 +99,7 @@ export function scriptPrompt(input: {
     `Scrivi il copione di UNA puntata come dialogo naturale tra due conduttori: ${a.name} (A) e ${b.name} (B), in ${languageName(input.language)}.`,
     'Regole:',
     `- Lunghezza: tra ${budget.min} e ${budget.max} parole in totale, idealmente ${budget.target}. È la regola più importante: la puntata deve durare circa ${input.episode.minutes} minuti.`,
-    `- Battute brevi e vere: di norma 1-4 frasi, mai oltre ${Math.floor(PODCAST_LIMITS.maxTurnChars / 2)} caratteri. Alterna i due conduttori; ogni tanto uno reagisce, chiede, riassume o fa un esempio.`,
+    `- Battute brevi e vere, come in una conversazione: di norma 1-3 frasi (10-40 parole), mai oltre ${Math.floor(PODCAST_LIMITS.maxTurnChars / 2)} caratteri. Alterna spesso i due conduttori; ogni tanto uno reagisce con una battuta breve, chiede, riassume o fa un esempio. Evita monologhi lunghi.`,
     '- Solo parlato: niente markdown, elenchi, simboli, emoji, indicazioni di scena tra parentesi, né riferimenti a elementi visivi.',
     '- Spiega i concetti con parole semplici e un esempio concreto; evita il gergo non spiegato.',
     '- Se citi un\u2019informazione presa da un articolo, nomina la fonte a voce (es. "secondo un articolo di …").',

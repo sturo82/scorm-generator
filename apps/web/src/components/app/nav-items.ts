@@ -1,4 +1,4 @@
-import { BookOpen, Database, LayoutDashboard, Palette, Gauge, ScrollText, Settings, Video, Wallet } from 'lucide-react';
+import { BookOpen, Database, LayoutDashboard, Palette, Gauge, Mic, ScrollText, Settings, Video, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AppUserRole } from '@/lib/api/types';
 
@@ -18,6 +18,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/courses', label: 'Corsi', icon: BookOpen },
   { href: '/knowledge', label: 'Knowledge', icon: Database },
   { href: '/videos', label: 'Video', icon: Video },
+  { href: '/podcasts', label: 'Podcast', icon: Mic },
   { href: '/brands', label: 'Brand', icon: Palette },
   { href: '/usage', label: 'Utilizzo', icon: Gauge },
   { href: '/wallet', label: 'Wallet', icon: Wallet, requiresWallet: true },

@@ -1,3 +1,4 @@
+import type { CreatePodcast, PodcastEstimateView, PodcastListItem, PodcastScript, PodcastView, PodcastVoiceOption, PodcastFeedVisibility, UpdatePodcast, UpdatePodcastEpisodes } from '@scorm/contracts';
 import type { StartSlidesAutopilot, DashboardSummary, AutopilotView, Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteView, FeedCategory, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import { confirmOverBudget, notifyInsufficientCredits, parseOverBudget } from '../billing-events';
 import { getSession, handleSessionExpired } from '../auth';
@@ -877,6 +878,86 @@ export class HttpApiClient implements ApiClient {
   }
   updateImportVideos(courseId: string, importId: string, input: import('@scorm/contracts').UpdateVideoImport) {
     return this.request<SlideImportView>(`/courses/${courseId}/slides/imports/${importId}/videos`, { method: 'PUT', body: JSON.stringify(input) });
+  }
+  // --- Podcast ---------------------------------------------------------------
+  listPodcasts() {
+    return this.request<PodcastListItem[]>('/podcasts');
+  }
+  getPodcast(id: string) {
+    return this.request<PodcastView>(`/podcasts/${id}`);
+  }
+  createPodcast(input: CreatePodcast) {
+    return this.request<PodcastView>('/podcasts', { method: 'POST', body: JSON.stringify(input) });
+  }
+  updatePodcast(id: string, input: UpdatePodcast) {
+    return this.request<PodcastView>(`/podcasts/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+  }
+  async deletePodcast(id: string) {
+    await this.request<unknown>(`/podcasts/${id}`, { method: 'DELETE' });
+  }
+  estimateNewPodcast(episodeCount: number, minutes: number) {
+    return this.request<PodcastEstimateView>(`/podcasts/estimate?episodeCount=${episodeCount}&minutes=${minutes}`);
+  }
+  estimatePodcast(id: string) {
+    return this.request<PodcastEstimateView>(`/podcasts/${id}/estimate`);
+  }
+  listPodcastVoices(language: string) {
+    return this.request<PodcastVoiceOption[]>(`/podcasts/voices?language=${encodeURIComponent(language)}`);
+  }
+  previewPodcastVoice(voiceId: string, language: string) {
+    return this.request<{ url: string }>('/podcasts/voices/preview', { method: 'POST', body: JSON.stringify({ voiceId, language }) });
+  }
+  listPodcastFeedItems(url: string) {
+    return this.request<{ feedTitle?: string; items: Array<{ title: string; link?: string; summary: string; isoDate?: string }> }>(
+      `/podcasts/feed-items?url=${encodeURIComponent(url)}`,
+    );
+  }
+  planPodcast(id: string) {
+    return this.request<PodcastView>(`/podcasts/${id}/plan`, { method: 'POST' });
+  }
+  updatePodcastEpisodes(id: string, input: UpdatePodcastEpisodes) {
+    return this.request<PodcastView>(`/podcasts/${id}/episodes`, { method: 'PUT', body: JSON.stringify(input) });
+  }
+  writePodcastScripts(id: string, episodeIds?: string[]) {
+    return this.request<PodcastView>(`/podcasts/${id}/scripts`, { method: 'POST', body: JSON.stringify({ episodeIds }) });
+  }
+  updatePodcastScript(id: string, episodeId: string, script: PodcastScript) {
+    return this.request<PodcastView>(`/podcasts/${id}/episodes/${episodeId}/script`, { method: 'PUT', body: JSON.stringify(script) });
+  }
+  recordPodcastAudio(id: string, episodeIds?: string[]) {
+    return this.request<PodcastView>(`/podcasts/${id}/audio`, { method: 'POST', body: JSON.stringify({ episodeIds }) });
+  }
+  async cancelPodcastWork(id: string) {
+    await this.request<unknown>(`/podcasts/${id}/cancel`, { method: 'POST' });
+  }
+  getPodcastAudioUrl(id: string, episodeId: string) {
+    return this.request<{ url: string; downloadUrl: string }>(`/podcasts/${id}/episodes/${episodeId}/audio`);
+  }
+  getPodcastTranscript(id: string, episodeId: string, format: 'txt' | 'srt' | 'vtt') {
+    return this.request<{ filename: string; contentType: string; body: string }>(`/podcasts/${id}/episodes/${episodeId}/transcript?format=${format}`);
+  }
+  publishPodcastEpisode(id: string, episodeId: string) {
+    return this.request<PodcastView>(`/podcasts/${id}/episodes/${episodeId}/publish`, { method: 'POST' });
+  }
+  unpublishPodcastEpisode(id: string, episodeId: string) {
+    return this.request<PodcastView>(`/podcasts/${id}/episodes/${episodeId}/publish`, { method: 'DELETE' });
+  }
+  setPodcastFeed(id: string, visibility: PodcastFeedVisibility) {
+    return this.request<PodcastView>(`/podcasts/${id}/feed`, { method: 'PUT', body: JSON.stringify({ visibility }) });
+  }
+  rotatePodcastFeedToken(id: string) {
+    return this.request<PodcastView>(`/podcasts/${id}/feed/rotate-token`, { method: 'POST' });
+  }
+  async uploadPodcastCover(id: string, file: File) {
+    const session = getSession();
+    const form = new FormData();
+    form.append('file', file);
+    const headers = new Headers();
+    if (session) headers.set('Authorization', `Bearer ${session.token}`);
+    const res = await fetch(`${this.baseUrl}/podcasts/${id}/cover`, { method: 'POST', headers, body: form });
+    if (res.status === 401) void handleSessionExpired();
+    if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    return (await res.json()) as PodcastView;
   }
   fitSlideScript(courseId: string, importId: string, index: number) {
     return this.request<SlideScriptsDoc>(`/courses/${courseId}/slides/imports/${importId}/scripts/${index}/fit`, { method: 'POST' });

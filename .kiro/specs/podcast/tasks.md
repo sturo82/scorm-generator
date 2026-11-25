@@ -1,5 +1,21 @@
 # Tasks — Podcast (serie di puntate audio)
 
+> **Stato (novembre 2026): prima versione senza clonazione vocale.** Fatto e verificato: contratti, tabelle, voci del
+> catalogo (Polly generativo, Francoforte), piano, copioni a due conduttori, audio, trascritto (TXT/SRT/VTT), feed RSS,
+> pubblicazione, Terraform (non applicato) e interfaccia web. Provato con database reale e fornitori finti, e con AI
+> (Bedrock) e voci (Polly) vere su una puntata da 3 minuti. **Da fare:** clonazione vocale (fase C: aspetta l'abilitazione
+> AWS), trascritto parola per parola, pagina pubblica della serie, blocco audio nei corsi.
+>
+> **Scelte diverse dalla specifica iniziale:**
+> - Se il servizio si riavvia durante un lavoro, la puntata non riprende da sola: torna in errore, la riserva di crediti
+>   si libera e l'utente preme Riprova (requisito 12.2 non coperto per intero).
+> - La pagina della serie è `/podcasts/serie?id=…` (non una route dinamica): funziona con l'export statico senza
+>   modificare la funzione di riscrittura di CloudFront.
+> - La pubblicazione si attiva solo con `podcast_domain` in Terraform e `PODCAST_PUBLIC_BASE_URL` nell'API; senza, si
+>   può generare e ascoltare ma non pubblicare (l'interfaccia lo spiega).
+> - Le voci dei podcast usano la regione `SPEECH_REGION` (default `eu-central-1`), separata da `MEDIA_REGION`.
+> - Il livello sonoro dei due conduttori non è normalizzato (con le voci Polly provate non serve).
+
 Convenzioni: build, lint e test con il controllo completo (container Docker) dopo
 ogni fase. Il ruolo si controlla sempre sul server. Nessun segreto nel repo. Ogni
 passo a pagamento ha preventivo, riserva e addebito del solo lavoro riuscito.

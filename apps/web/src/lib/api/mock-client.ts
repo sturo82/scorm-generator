@@ -1279,6 +1279,29 @@ export class MockApiClient implements ApiClient {
   async createVideoImport(): Promise<never> { return this.slidesUnavailable(); }
   async addImportVideo(): Promise<never> { return this.slidesUnavailable(); }
   async updateImportVideos(): Promise<never> { return this.slidesUnavailable(); }
+  async listPodcasts(): Promise<never> { return this.slidesUnavailable(); }
+  async getPodcast(): Promise<never> { return this.slidesUnavailable(); }
+  async createPodcast(): Promise<never> { return this.slidesUnavailable(); }
+  async updatePodcast(): Promise<never> { return this.slidesUnavailable(); }
+  async deletePodcast(): Promise<never> { return this.slidesUnavailable(); }
+  async estimateNewPodcast(): Promise<never> { return this.slidesUnavailable(); }
+  async estimatePodcast(): Promise<never> { return this.slidesUnavailable(); }
+  async listPodcastVoices(): Promise<never> { return this.slidesUnavailable(); }
+  async previewPodcastVoice(): Promise<never> { return this.slidesUnavailable(); }
+  async listPodcastFeedItems(): Promise<never> { return this.slidesUnavailable(); }
+  async planPodcast(): Promise<never> { return this.slidesUnavailable(); }
+  async updatePodcastEpisodes(): Promise<never> { return this.slidesUnavailable(); }
+  async writePodcastScripts(): Promise<never> { return this.slidesUnavailable(); }
+  async updatePodcastScript(): Promise<never> { return this.slidesUnavailable(); }
+  async recordPodcastAudio(): Promise<never> { return this.slidesUnavailable(); }
+  async cancelPodcastWork(): Promise<never> { return this.slidesUnavailable(); }
+  async getPodcastAudioUrl(): Promise<never> { return this.slidesUnavailable(); }
+  async getPodcastTranscript(): Promise<never> { return this.slidesUnavailable(); }
+  async publishPodcastEpisode(): Promise<never> { return this.slidesUnavailable(); }
+  async unpublishPodcastEpisode(): Promise<never> { return this.slidesUnavailable(); }
+  async setPodcastFeed(): Promise<never> { return this.slidesUnavailable(); }
+  async rotatePodcastFeedToken(): Promise<never> { return this.slidesUnavailable(); }
+  async uploadPodcastCover(): Promise<never> { return this.slidesUnavailable(); }
   async fitSlideScript(): Promise<never> { return this.slidesUnavailable(); }
   async getVideoTiming(): Promise<never> { return this.slidesUnavailable(); }
   async getSlideScripts(): Promise<never> { return this.slidesUnavailable(); }

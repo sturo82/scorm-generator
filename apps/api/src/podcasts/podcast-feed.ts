@@ -2,8 +2,14 @@ import { PODCAST_COVER, PODCAST_CATEGORIES } from '@scorm/contracts';
 
 /** Scappa un testo per XML 1.0: caratteri speciali e caratteri di controllo non ammessi. */
 export function xmlEscape(text: string): string {
-  return text
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+  // XML 1.0 ammette solo tab, a capo e i caratteri da 32 in su.
+  let clean = '';
+  for (const ch of text) {
+    const code = ch.charCodeAt(0);
+    if (code < 32 && code !== 9 && code !== 10 && code !== 13) continue;
+    clean += ch;
+  }
+  return clean
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
