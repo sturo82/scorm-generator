@@ -368,7 +368,7 @@ export class PodcastGenerationService implements OnModuleInit {
         context,
         retry,
       });
-      const raw = await this.callLlm(tenantId, 'podcast_script', system, user, SCRIPT_SCHEMA, Math.min(16_000, Math.ceil(budget.max * 2.4) + 400));
+      const raw = await this.callLlm(tenantId, 'podcast_script', system, user, SCRIPT_SCHEMA, Math.min(16_000, Math.ceil(budget.max * 3) + 800), 0.85);
       const tidy = tidyScript(ScriptOut.parse(JSON.parse(raw)));
       if (tidy.problems.length > 0) {
         if (attempt === 1 && !best) throw new Error(`Copione non valido: ${tidy.problems.join('; ')}`);

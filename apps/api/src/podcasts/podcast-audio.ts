@@ -31,16 +31,30 @@ export function estimateSpeechMs(text: string): number {
   return Math.round((words / PODCAST_LIMITS.wordsPerMinute) * 60_000);
 }
 
+const wordCount = (text: string): number => text.split(/\s+/).filter(Boolean).length;
+
 /**
- * Unisce gli MP3 delle battute in un solo file, con una pausa tra una battuta e l'altra, e calcola
- * inizio e fine di ogni battuta (dalla durata reale dei file). La pausa non si aggiunge dopo l'ultima.
+ * Pausa (ms) tra una battuta e la successiva, come in una conversazione vera: quasi nulla se chi
+ * parla è stato interrotto o se segue una reazione breve, più lunga dopo una domanda o un punto,
+ * con una piccola variazione per non suonare a metronomo (deterministica: stesso copione, stesso audio).
+ */
+export function gapBetween(prevText: string, nextText: string, index: number): number {
+  const prev = prevText.trim();
+  if (/[\u2014\u2013-]$/.test(prev)) return 30;
+  if (wordCount(nextText) <= 4) return 110;
+  if (wordCount(prev) <= 4) return 140;
+  const jitter = ((index * 7919) % 11) * 14;
+  if (/\?$/.test(prev)) return 230 + jitter;
+  return 300 + jitter;
+}
+
+/**
+ * Unisce gli MP3 delle battute in un solo file, con le pause di `gapBetween`, e calcola inizio e fine
+ * di ogni battuta (dalla durata reale dei file). La pausa non si aggiunge dopo l'ultima.
  */
 export function assembleAudio(
   parts: Array<{ bytes: Uint8Array; text: string }>,
-  pauseMs = 380,
 ): { audio: Buffer; timings: PodcastTurnTiming[]; durationMs: number } {
-  const pause = silence(pauseMs);
-  const pauseReal = mp3DurationMs(pause) || pauseMs;
   const buffers: Buffer[] = [];
   const timings: PodcastTurnTiming[] = [];
   let cursor = 0;
@@ -51,9 +65,12 @@ export function assembleAudio(
     timings.push({ i, startMs: Math.round(cursor), endMs: Math.round(cursor + dur) });
     buffers.push(data);
     cursor += dur;
-    if (i < parts.length - 1) {
+    const next = parts[i + 1];
+    if (next) {
+      const gap = gapBetween(p.text, next.text, i);
+      const pause = silence(gap);
       buffers.push(pause);
-      cursor += pauseReal;
+      cursor += mp3DurationMs(pause) || gap;
     }
   });
   return { audio: Buffer.concat(buffers), timings, durationMs: Math.round(cursor) };

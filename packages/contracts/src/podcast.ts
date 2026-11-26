@@ -20,7 +20,7 @@ export const PODCAST_LIMITS = {
   minRatio: 0.8,
   maxRatio: 1.15,
   minTurns: 4,
-  maxTurns: 300,
+  maxTurns: 600,
   /** Caratteri massimi di una battuta: sotto il limite di una chiamata di sintesi (circa 3000). */
   maxTurnChars: 1200,
   maxArticles: 6,
