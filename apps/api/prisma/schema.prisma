@@ -257,8 +257,15 @@ model Brand {
 
 // Cartella per organizzare i corsi, annidabile (self-relation parent/children).
 // Isolata per tenant. L'unicità del nome è per livello (stesso parent).
+// Tipo di contenuto organizzato da una cartella: ogni albero è separato.
+enum FolderKind {
+  COURSE
+  PODCAST
+}
+
 model Folder {
   id        String   @id @default(cuid())
+  kind      FolderKind @default(COURSE)
   tenantId  String
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name      String
@@ -270,10 +277,11 @@ model Folder {
   // Ordinamento esplicito tra pari livello.
   position  Int      @default(0)
   courses   Course[]
+  podcasts  Podcast[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, parentId, name])
+  @@unique([tenantId, kind, parentId, name])
   @@index([tenantId])
   @@index([tenantId, parentId])
 }
@@ -876,6 +884,9 @@ model Podcast {
   coverKey        String?
   coverWidth      Int?
   coverHeight     Int?
+  // Cartella di organizzazione (null = radice).
+  folderId        String?
+  folder          Folder?               @relation(fields: [folderId], references: [id], onDelete: SetNull)
   // Conduttori: [{ key: 'A'|'B', name, voice: { kind, id } }].
   hosts           Json
   brief           Json
@@ -893,6 +904,7 @@ model Podcast {
   updatedAt       DateTime              @updatedAt
 
   @@index([tenantId])
+  @@index([tenantId, folderId])
 }
 
 model PodcastEpisode {

@@ -12,6 +12,7 @@ import type {
   PricingQuote,
   PricingQuoteInput,
   FolderView,
+  FolderKind,
   CreateFolder,
   UpdateFolder,
   AppBrandingView,
@@ -674,11 +675,12 @@ export interface ApiClient {
   getCourseQuote(courseId: string, input: PricingQuoteInput): Promise<CourseQuoteView>;
 
   // Cartelle
-  listFolders(): Promise<FolderView[]>;
+  listFolders(kind?: FolderKind): Promise<FolderView[]>;
   createFolder(input: CreateFolder): Promise<FolderView>;
   updateFolder(id: string, input: UpdateFolder): Promise<FolderView>;
   deleteFolder(id: string): Promise<void>;
   moveCourse(courseId: string, folderId: string | null): Promise<void>;
+  movePodcast(podcastId: string, folderId: string | null): Promise<void>;
 
   // Sotto-brand del tenant (nome visibile + logo)
   getBranding(): Promise<AppBrandingView>;
@@ -889,6 +891,7 @@ export type {
   PricingQuote,
   PricingQuoteInput,
   FolderView,
+  FolderKind,
   CreateFolder,
   UpdateFolder,
   AppBrandingView,

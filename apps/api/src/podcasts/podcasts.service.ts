@@ -81,15 +81,32 @@ export class PodcastsService {
       orderBy: { updatedAt: 'desc' },
       include: { episodes: { select: { state: true, publishedAt: true } } },
     });
-    return rows.map((p) => ({
+    return Promise.all(rows.map(async (p) => ({
       id: p.id,
       title: p.title,
+      description: p.description,
       language: p.language,
+      category: p.category,
+      author: p.author ?? undefined,
+      hostNames: (p.hosts as Array<{ name?: string }>).map((h) => h.name ?? '').filter(Boolean),
+      folderId: p.folderId,
+      visibility: p.visibility,
+      coverUrl: p.coverKey ? await this.storage.getSignedUrl(p.coverKey, { expiresInSec: URL_TTL_SEC }) : undefined,
       episodeCount: p.episodes.length,
       readyCount: p.episodes.filter((e) => e.state === 'READY').length,
       publishedCount: p.episodes.filter((e) => e.publishedAt).length,
       updatedAt: p.updatedAt.toISOString(),
-    }));
+    })));
+  }
+
+  /** Sposta la serie in una cartella di podcast (null = radice). */
+  async moveToFolder(tenantId: string, id: string, folderId: string | null): Promise<void> {
+    await this.require(tenantId, id);
+    if (folderId) {
+      const f = await this.prisma.folder.findFirst({ where: { id: folderId, tenantId, kind: 'PODCAST' }, select: { id: true } });
+      if (!f) throw new NotFoundException('Cartella non trovata');
+    }
+    await this.prisma.podcast.update({ where: { id }, data: { folderId } });
   }
 
   private async require(tenantId: string, id: string): Promise<PodcastRow> {
@@ -188,6 +205,10 @@ export class PodcastsService {
       throw new BadRequestException(`Hai raggiunto il massimo di ${MAX_PODCASTS_PER_TENANT} podcast.`);
     }
     await this.assertVoices(dto.hosts, dto.language);
+    if (dto.folderId) {
+      const f = await this.prisma.folder.findFirst({ where: { id: dto.folderId, tenantId, kind: 'PODCAST' }, select: { id: true } });
+      if (!f) throw new BadRequestException('Cartella non trovata');
+    }
     const created = await this.prisma.podcast.create({
       data: {
         tenantId,
@@ -202,6 +223,7 @@ export class PodcastsService {
         brief: dto.brief as unknown as Prisma.InputJsonValue,
         publicId: newPublicId(),
         feedToken: newFeedToken(),
+        folderId: dto.folderId ?? null,
         createdBy: userId ?? null,
       },
     });

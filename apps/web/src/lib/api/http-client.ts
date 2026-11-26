@@ -29,6 +29,7 @@ import type {
   CourseQuoteView,
   PricingQuoteInput,
   FolderView,
+  FolderKind,
   CreateFolder,
   UpdateFolder,
   AppBrandingView,
@@ -446,7 +447,7 @@ export class HttpApiClient implements ApiClient {
       body: JSON.stringify(input),
     });
   }
-  listFolders() { return this.request<FolderView[]>('/folders'); }
+  listFolders(kind: FolderKind = 'COURSE') { return this.request<FolderView[]>(`/folders?kind=${kind}`); }
   createFolder(input: CreateFolder) {
     return this.request<FolderView>('/folders', { method: 'POST', body: JSON.stringify(input) });
   }
@@ -454,6 +455,9 @@ export class HttpApiClient implements ApiClient {
     return this.request<FolderView>(`/folders/${id}`, { method: 'PUT', body: JSON.stringify(input) });
   }
   async deleteFolder(id: string) { await this.request(`/folders/${id}`, { method: 'DELETE' }); }
+  async movePodcast(podcastId: string, folderId: string | null) {
+    await this.request(`/podcasts/${podcastId}/folder`, { method: 'PUT', body: JSON.stringify({ folderId }) });
+  }
   async moveCourse(courseId: string, folderId: string | null) {
     await this.request(`/courses/${courseId}/folder`, { method: 'PUT', body: JSON.stringify({ folderId }) });
   }

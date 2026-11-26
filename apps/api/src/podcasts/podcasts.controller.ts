@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   CreatePodcast,
   CreatePodcastEpisode,
+  MoveCourse,
   PODCAST_COVER,
   PODCAST_LIMITS,
   SetPodcastFeed,
@@ -93,6 +94,14 @@ export class PodcastsController {
   @Roles('EDITOR')
   update(@CurrentContext() ctx: AuthContext, @Param('id') id: string, @Body(new ZodValidationPipe(UpdatePodcast)) dto: UpdatePodcastType) {
     return this.podcasts.update(ctx.tenant.tenantId, id, dto);
+  }
+
+  /** Sposta la serie in una cartella (folderId null = radice). */
+  @Put(':id/folder')
+  @Roles('EDITOR')
+  async moveToFolder(@CurrentContext() ctx: AuthContext, @Param('id') id: string, @Body(new ZodValidationPipe(MoveCourse)) dto: z.infer<typeof MoveCourse>) {
+    await this.podcasts.moveToFolder(ctx.tenant.tenantId, id, dto.folderId);
+    return { moved: true };
   }
 
   @Delete(':id')

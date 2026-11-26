@@ -123,6 +123,8 @@ export const CreatePodcast = z.object({
   language: LanguageCode.default('it'),
   hosts: PodcastHosts,
   brief: PodcastBrief.default({}),
+  /** Cartella di organizzazione (omessa = radice). */
+  folderId: z.string().min(1).nullable().optional(),
 });
 export type CreatePodcast = z.infer<typeof CreatePodcast>;
 
@@ -302,7 +304,16 @@ export interface PodcastView {
 export interface PodcastListItem {
   id: string;
   title: string;
+  description: string;
   language: string;
+  category: string;
+  author?: string;
+  /** Nomi dei conduttori. */
+  hostNames: string[];
+  folderId: string | null;
+  visibility: PodcastFeedVisibility;
+  /** Copertina (link a scadenza). */
+  coverUrl?: string;
   episodeCount: number;
   readyCount: number;
   publishedCount: number;

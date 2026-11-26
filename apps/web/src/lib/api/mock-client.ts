@@ -19,6 +19,7 @@ import type {
   EditorialStatus,
   ExportResultView,
   FolderView,
+  FolderKind,
   JobRef,
   JobView,
   KnowledgeDocView,
@@ -798,8 +799,9 @@ export class MockApiClient implements ApiClient {
     const quote = computeQuote(summary.providerCostUsd, input);
     return { ...quote, summary };
   }
-  async listFolders(): Promise<FolderView[]> {
+  async listFolders(kind: FolderKind = 'COURSE'): Promise<FolderView[]> {
     await delay();
+    if (kind === 'PODCAST') return [];
     return this.folders.map((f) => ({
       ...f,
       courseCount: this.courses.filter((c) => (c.folderId ?? null) === f.id).length,
@@ -809,6 +811,7 @@ export class MockApiClient implements ApiClient {
     await delay();
     const folder: FolderView = {
       id: id('fld'),
+      kind: input.kind ?? 'COURSE',
       name: input.name,
       parentId: input.parentId ?? null,
       position: this.folders.filter((f) => f.parentId === (input.parentId ?? null)).length,
@@ -1280,6 +1283,7 @@ export class MockApiClient implements ApiClient {
   async addImportVideo(): Promise<never> { return this.slidesUnavailable(); }
   async updateImportVideos(): Promise<never> { return this.slidesUnavailable(); }
   async listPodcasts(): Promise<never> { return this.slidesUnavailable(); }
+  async movePodcast(): Promise<never> { return this.slidesUnavailable(); }
   async getPodcast(): Promise<never> { return this.slidesUnavailable(); }
   async createPodcast(): Promise<never> { return this.slidesUnavailable(); }
   async updatePodcast(): Promise<never> { return this.slidesUnavailable(); }

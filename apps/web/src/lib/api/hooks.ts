@@ -1,7 +1,7 @@
 'use client';
 import * as React from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CreatePodcast, CreatePodcastEpisode, SuggestPodcastIdeas, PodcastFeedVisibility, PodcastScript, PodcastView, UpdatePodcast, UpdatePodcastEpisodes, StartSlidesAutopilot, Block, Brief, CourseEstimateInput, CourseEstimateOptions, CreditQuoteItem, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
+import type { FolderKind, CreatePodcast, CreatePodcastEpisode, SuggestPodcastIdeas, PodcastFeedVisibility, PodcastScript, PodcastView, UpdatePodcast, UpdatePodcastEpisodes, StartSlidesAutopilot, Block, Brief, CourseEstimateInput, CourseEstimateOptions, CreditQuoteItem, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
 import { getApiClient } from './client';
 import type { PronunciationEntry, SlideAvatarType, StartSlideClipsInput, BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole, AttachStockImageInput, AttachStockCoverInput } from './types';
 
@@ -154,12 +154,13 @@ export function useDeleteCourse() {
 
 // --- Cartelle ---------------------------------------------------------------
 
-export const useFolders = () => useQuery({ queryKey: qk.folders, queryFn: () => api.listFolders() });
+export const useFolders = (kind: FolderKind = 'COURSE') =>
+  useQuery({ queryKey: [...qk.folders, kind], queryFn: () => api.listFolders(kind) });
 
 export function useCreateFolder() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; parentId?: string | null }) => api.createFolder(input),
+    mutationFn: (input: { name: string; parentId?: string | null; kind?: FolderKind }) => api.createFolder(input),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.folders }),
   });
 }
@@ -1506,4 +1507,16 @@ export function usePodcastActions(id: string) {
     rotateToken: useMutation({ mutationFn: () => api.rotatePodcastFeedToken(id), onSuccess: done }),
     uploadCover: useMutation({ mutationFn: (file: File) => api.uploadPodcastCover(id, file), onSuccess: done }),
   };
+}
+
+/** Sposta una serie in una cartella (null = radice). */
+export function useMovePodcast() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { podcastId: string; folderId: string | null }) => api.movePodcast(vars.podcastId, vars.folderId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['podcasts'] });
+      qc.invalidateQueries({ queryKey: qk.folders });
+    },
+  });
 }

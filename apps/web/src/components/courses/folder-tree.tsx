@@ -40,6 +40,8 @@ interface FolderTreeProps {
   onSelect: (sel: Selection) => void;
   onRename: (folder: FolderView) => void;
   onDelete: (folder: FolderView) => void;
+  /** Etichette delle voci speciali (default: corsi). */
+  allLabel?: string;
 }
 
 /**
@@ -55,6 +57,7 @@ export function FolderTree({
   onSelect,
   onRename,
   onDelete,
+  allLabel = 'Tutti i corsi',
 }: FolderTreeProps) {
   const tree = React.useMemo(() => buildFolderTree(folders), [folders]);
 
@@ -62,7 +65,7 @@ export function FolderTree({
     <nav aria-label="Cartelle" className="space-y-1">
       <SpecialRow
         icon={<Layers className="size-4" />}
-        label="Tutti i corsi"
+        label={allLabel}
         count={totalCount}
         active={selected.kind === 'all'}
         onClick={() => onSelect({ kind: 'all' })}

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import {
   CreateFolder,
   UpdateFolder,
@@ -20,8 +20,8 @@ export class FoldersController {
   constructor(private readonly folders: FoldersService) {}
 
   @Get()
-  list(@CurrentContext() ctx: AuthContext) {
-    return this.folders.list(ctx.tenant.tenantId);
+  list(@CurrentContext() ctx: AuthContext, @Query('kind') kind?: string) {
+    return this.folders.list(ctx.tenant.tenantId, kind === 'PODCAST' ? 'PODCAST' : 'COURSE');
   }
 
   @Post()

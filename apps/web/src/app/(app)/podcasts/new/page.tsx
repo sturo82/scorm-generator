@@ -13,7 +13,8 @@ import { useToast } from '@/components/ui/toast';
 import { VoiceSelect } from '@/components/podcasts/voice-select';
 import { PODCAST_LANGUAGES, errText } from '@/components/podcasts/podcast-labels';
 import { getApiClient } from '@/lib/api/client';
-import { useCreatePodcast, usePodcastVoices } from '@/lib/api/hooks';
+import { useCreatePodcast, useFolders, usePodcastVoices } from '@/lib/api/hooks';
+import { flatOptions } from '@/components/courses/folder-dialog';
 
 function Section({ n, title, hint, children }: { n: number; title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -59,6 +60,13 @@ export default function NewPodcastPage() {
   const [description, setDescription] = React.useState('');
   const [language, setLanguage] = React.useState('it');
   const [category, setCategory] = React.useState<PodcastCategory>('Education');
+  const [folderId, setFolderId] = React.useState('');
+  const folders = useFolders('PODCAST');
+  // Cartella proposta: quella da cui si è partiti (?folder=…), letta nel browser.
+  React.useEffect(() => {
+    const f = new URLSearchParams(window.location.search).get('folder');
+    if (f) setFolderId(f);
+  }, []);
   const [author, setAuthor] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [explicit, setExplicit] = React.useState(false);
@@ -135,6 +143,7 @@ export default function NewPodcastPage() {
         author: author.trim() || undefined,
         contactEmail: email.trim() || undefined,
         explicit,
+        folderId: folderId || null,
         hosts: [
           { key: 'A', name: nameA.trim(), voice: { kind: 'catalog', id: voiceA } },
           { key: 'B', name: nameB.trim(), voice: { kind: 'catalog', id: voiceB } },
@@ -200,6 +209,17 @@ export default function NewPodcastPage() {
               {PODCAST_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
                   {c}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="pc-folder">Cartella</Label>
+            <Select id="pc-folder" value={folderId} onChange={(e) => setFolderId(e.target.value)}>
+              <option value="">— Nessuna cartella —</option>
+              {flatOptions(folders.data ?? []).map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
                 </option>
               ))}
             </Select>
