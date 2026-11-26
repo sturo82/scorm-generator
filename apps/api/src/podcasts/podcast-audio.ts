@@ -41,12 +41,13 @@ const wordCount = (text: string): number => text.split(/\s+/).filter(Boolean).le
  */
 export function gapBetween(prevText: string, nextText: string, index: number): number {
   const prev = prevText.trim();
-  if (/[\u2014\u2013-]$/.test(prev)) return 30;
-  if (wordCount(nextText) <= 4) return 110;
-  if (wordCount(prev) <= 4) return 140;
-  const jitter = ((index * 7919) % 11) * 14;
-  if (/\?$/.test(prev)) return 230 + jitter;
-  return 300 + jitter;
+  if (/[\u2014\u2013-]$/.test(prev)) return 20;
+  if (wordCount(nextText) <= 4) return 90;
+  if (wordCount(prev) <= 4) return 110;
+  const jitter = ((index * 7919) % 11) * 12;
+  if (/\?$/.test(prev)) return 150 + jitter;
+  if (/(\.\.\.|\u2026)$/.test(prev)) return 180 + jitter;
+  return 200 + jitter;
 }
 
 /**
@@ -143,12 +144,12 @@ export function scriptChars(script: { turns: Array<{ text: string }> }): number 
  * senza sovrapposizioni, si uniscono una dopo l'altra con pause brevi (come `assembleAudio`).
  */
 export async function assembleDialogue(
-  parts: Array<{ bytes: Uint8Array; text: string; overlap?: PodcastOverlap }>,
+  parts: Array<{ bytes: Uint8Array; text: string; overlap?: PodcastOverlap; host?: string }>,
 ): Promise<{ audio: Buffer; timings: PodcastTurnTiming[]; durationMs: number; mixed: boolean }> {
   const wantsMix = parts.some((p) => p.overlap) && (await ffmpegAvailable());
   if (!wantsMix) return { ...assembleAudio(parts), mixed: false };
   const pcms = await Promise.all(parts.map((p) => decodeToPcm(stripId3(Buffer.from(p.bytes)))));
-  const turns = pcms.map((pcm, i) => ({ durationMs: Math.round((pcm.length / MIX_RATE) * 1000), overlap: parts[i]!.overlap }));
+  const turns = pcms.map((pcm, i) => ({ durationMs: Math.round((pcm.length / MIX_RATE) * 1000), overlap: parts[i]!.overlap, host: parts[i]!.host }));
   const { slots, totalMs } = planTimeline(turns, (i) => gapBetween(parts[i - 1]!.text, parts[i]!.text, i - 1));
   const mixed = mixPcm(
     pcms.map((pcm, i) => ({ pcm, startMs: slots[i]!.startMs, gain: slots[i]!.gain })),

@@ -88,6 +88,8 @@ export function mixPcm(tracks: MixTrack[], totalMs: number): Int16Array {
 export interface TimelineTurn {
   durationMs: number;
   overlap?: PodcastOverlap;
+  /** Chi parla: serve a capire se dopo una reazione riprende la stessa persona. */
+  host?: string;
 }
 export interface TimelineSlot {
   startMs: number;
@@ -98,16 +100,21 @@ export interface TimelineSlot {
 /**
  * Colloca le battute nel tempo. `gap(i)` dà la pausa prima della battuta i quando non si sovrappone.
  * - cut_in: parte poco prima che l'altro finisca;
- * - reaction: breve, sopra le ultime parole dell'altro, a volume più basso;
+ * - reaction: breve, sopra le ultime parole dell'altro, a volume più basso; non ferma il discorso:
+ *   se riprende chi parlava, riparte subito, come in una conversazione vera;
  * - over: ci si parla sopra per un momento.
  */
 export function planTimeline(turns: TimelineTurn[], gap: (i: number) => number): { slots: TimelineSlot[]; totalMs: number } {
   const slots: TimelineSlot[] = [];
-  let cursor = 0;
+  let cursor = 0; // fine del discorso "principale"
+  let end = 0; // fine di tutto ciò che è stato detto finora (reazioni comprese)
+  let hostBeforeReaction: string | undefined;
+  let afterReaction = false;
   turns.forEach((t, i) => {
     let start: number;
     let gain = 1;
-    switch (i === 0 ? undefined : t.overlap) {
+    const kind = i === 0 ? undefined : t.overlap;
+    switch (kind) {
       case 'cut_in':
         start = Math.max(0, cursor - (150 + ((i * 37) % 110)));
         break;
@@ -120,11 +127,22 @@ export function planTimeline(turns: TimelineTurn[], gap: (i: number) => number):
         gain = 0.9;
         break;
       default:
-        start = i === 0 ? 0 : cursor + gap(i);
+        if (i === 0) start = 0;
+        else if (afterReaction && t.host === hostBeforeReaction) start = cursor + 70;
+        else if (afterReaction) start = Math.max(cursor, end) + 90;
+        else start = cursor + gap(i);
     }
-    const end = start + t.durationMs;
-    slots.push({ startMs: Math.round(start), endMs: Math.round(end), gain });
-    cursor = Math.max(cursor, end);
+    const stop = start + t.durationMs;
+    slots.push({ startMs: Math.round(start), endMs: Math.round(stop), gain });
+    end = Math.max(end, stop);
+    if (kind === 'reaction') {
+      // Il discorso principale non avanza: la reazione sta sopra.
+      if (!afterReaction) hostBeforeReaction = turns[i - 1]?.host;
+      afterReaction = true;
+    } else {
+      cursor = Math.max(cursor, stop);
+      afterReaction = false;
+    }
   });
-  return { slots, totalMs: Math.round(cursor) };
+  return { slots, totalMs: Math.round(end) };
 }

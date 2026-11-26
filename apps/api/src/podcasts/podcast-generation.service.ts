@@ -458,13 +458,13 @@ export class PodcastGenerationService implements OnModuleInit {
     const hosts = PodcastHosts.parse(podcast.hosts);
     const voiceOf = new Map(hosts.map((h) => [h.key, h.voice]));
     const locale = podcastLocale(podcast.language);
-    const parts: Array<{ bytes: Uint8Array; text: string; overlap?: PodcastOverlap }> = [];
+    const parts: Array<{ bytes: Uint8Array; text: string; overlap?: PodcastOverlap; host?: string }> = [];
     const charsBy: Record<'polly' | 'heygen', number> = { polly: 0, heygen: 0 };
     for (const turn of script.turns) {
       const voice = voiceOf.get(turn.host)!;
       const spoken = textForVoice(turn, voice.provider);
       const res = await this.synthWithRetry(this.voices.speechFor(voice.provider), spoken, locale, voice.id, cfg.speechEngine);
-      parts.push({ bytes: res.bytes, text: turn.text, overlap: turn.overlap });
+      parts.push({ bytes: res.bytes, text: turn.text, overlap: turn.overlap, host: turn.host });
       charsBy[voice.provider] += spoken.length;
     }
     const { audio, timings, durationMs } = await assembleDialogue(parts);

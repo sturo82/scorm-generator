@@ -1,4 +1,4 @@
-import { podcastWordBudget, PODCAST_LIMITS, type PodcastBrief, type PodcastHost } from '@scorm/contracts';
+import { podcastWordBudget, type PodcastBrief, type PodcastHost } from '@scorm/contracts';
 import { languageDirective, languageName } from '../generation/prompts.js';
 
 /** Schema JSON delle risposte dell'AI (validate poi con zod). */
@@ -128,10 +128,16 @@ export function scriptPrompt(input: {
     `- Lunghezza: tra ${budget.min} e ${budget.max} parole in totale, idealmente ${budget.target}. È la regola più importante: la puntata deve durare circa ${input.episode.minutes} minuti.`,
     '- Solo parlato: niente markdown, elenchi, simboli, emoji, indicazioni di scena tra parentesi, né riferimenti a elementi visivi.',
     '- Se citi un\u2019informazione presa da un articolo, nomina la fonte a voce (es. "secondo un articolo di …").',
-    isFirst
-      ? '- È la prima puntata della serie: apri con un breve saluto e presenta la serie e i partecipanti, in modo naturale, non da elenco.'
-      : '- Non rifare la presentazione della serie né saluti iniziali lunghi: un saluto breve e si entra nel tema; richiama la puntata precedente solo se serve.',
-    '- Chiudi con un breve saluto e un invito a seguire le prossime puntate, senza annunciare contenuti precisi che non conosci.',
+    solo
+      ? isFirst
+        ? '- È la prima puntata della serie: apri con un breve saluto e presenta la serie, in modo naturale.'
+        : '- Non rifare la presentazione della serie né saluti iniziali lunghi: un saluto breve e si entra nel tema; richiama la puntata precedente solo se serve.'
+      : isFirst
+        ? '- È la prima puntata della serie: chi ascolta capisce chi sono i partecipanti e di cosa parla il podcast strada facendo, tra battute e saluti, senza presentazioni formali.'
+        : '- Non è la prima puntata: un saluto veloce e si entra nel tema; richiama la puntata precedente solo se serve.',
+    solo
+      ? '- Chiudi con un breve saluto e un invito a seguire le prossime puntate, senza annunciare contenuti precisi che non conosci.'
+      : '- Chiudi senza riassumere: una battuta, un saluto affrettato e un invito a seguire il podcast, senza annunciare contenuti precisi che non conosci.',
     `- Il primo a parlare è ${hosts[0]!.key}.`,
     '- Prima delle battute scrivi "beats": la scaletta di 5-8 punti della puntata (vedi sotto). Poi scrivi "turns".',
     'Rispondi SOLO con JSON conforme allo schema.',
@@ -149,21 +155,44 @@ export function scriptPrompt(input: {
       ].join('\n')
     : [
         SYSTEM_BASE,
-        `Scrivi il copione di UNA puntata di un podcast in cui discutono ${hosts.length} persone: ${names}, in ${languageName(input.language)}.`,
-        'NON è una spiegazione a turni. È una DISCUSSIONE su un argomento, tra persone con caratteri e opinioni diverse che si ascoltano, si contraddicono e si interrompono.',
-        'Partecipanti (rispetta ruolo, storia, carattere e modo di parlare di ciascuno, e fai sentire la differenza tra le voci):',
+        `Scrivi la TRASCRIZIONE di UNA puntata di un podcast in cui chiacchierano ${hosts.length} persone: ${names}, in ${languageName(input.language)}.`,
+        'NON è un copione pulito e NON è una spiegazione a turni. È la trascrizione di una conversazione registrata dal vivo tra persone che si conoscono, che parlano a ruota libera di un argomento: si sovrappongono, si perdono, ridono, tornano indietro. Deve sembrare DAVVERO parlato, sporco e imperfetto, non scritto da un autore.',
+        'Partecipanti (rispetta ruolo, storia, carattere e modo di parlare di ciascuno; si deve sentire chi è chi anche senza leggere il nome):',
         ...personaLines(hosts),
         'Regole:',
         ...common,
-        '- "beats": prima di scrivere, pianifica la discussione come una scaletta di 5-8 punti: per ciascuno chi lo introduce, chi non è d\u2019accordo o aggiunge una sfumatura, dove c\u2019è una divagazione, un aneddoto, una battuta, un cambio di direzione. La discussione NON procede in linea retta: ci sono deviazioni, ritorni, correzioni ("no, aspetta, non è proprio così"), punti su cui restano in disaccordo.',
-        '- Ogni partecipante porta il proprio punto di vista, in base a ciò che è (studi, esperienza, carattere). Nessuno fa da spalla che dice solo "interessante": ognuno ha opinioni, dubbi, esempi suoi. Chi sa di più su un punto lo spiega, ma gli altri lo mettono in discussione o lo riportano su esempi concreti.',
-        '- I contenuti delle fonti emergono dalla conversazione (qualcuno cita un dato, un altro obietta, un terzo lo applica a un caso), non come lezione a puntate. Mai due battute lunghe di spiegazione di fila.',
-        `- Ritmo da conversazione vera: battute di lunghezza molto diversa. Molte brevi (1-2 frasi), qualcuna media, rare le lunghe (fino a ${Math.floor(PODCAST_LIMITS.maxTurnChars / 3)} caratteri). Chi parla non segue un turno fisso: uno può intervenire due volte di seguito, un altro restare in silenzio per un po\u2019. Con più di due persone, tutti intervengono in modo non ordinato.`,
-        '- Sovrapposizioni: usa il campo "overlap" di una battuta per dire come si innesta sulla precedente. "cut_in": interrompe l\u2019altro (la battuta INTERROTTA, quella precedente, deve finire a metà frase con un trattino lungo "—" e senza punto finale; poi chi interrompe parla). "reaction": breve reazione di 1-4 parole di chi ascolta ("Mh.", "Esatto.", "Davvero?", "Ah, certo.") mentre l\u2019altro sta ancora parlando. "over": si parlano sopra un momento, per entusiasmo o battibecco (battuta breve e vivace). Usali con naturalezza: 1 battuta su 5 circa ha un overlap; le reazioni sono le più frequenti, le interruzioni 3-6 per puntata. Le altre battute non hanno "overlap".',
-        '- Tono: usa il campo "mood" (excited, amused, surprised, sarcastic, warm, serious, calm, frustrated, thoughtful) sulle battute dove il tono cambia in modo evidente: non su tutte, circa una su quattro, coerente con il carattere di chi parla.',
-        '- Linguaggio parlato, non scritto: frasi spezzate, "Allora", "Beh", "Cioè", "Ecco", ripartenze ("No, aspetta, mi correggo"), esitazioni rare e credibili, domande dirette, ironia, accordi e disaccordi educati ma veri. Ognuno ha i suoi intercalari: non farli parlare tutti nello stesso modo.',
-        '- Evita i tic dei podcast finti: nessuna lode di rito ("Bellissima domanda!", "Hai centrato il punto!"), nessun riassunto dopo ogni battuta, nessuna ripetizione a pappagallo di ciò che ha appena detto l\u2019altro, nessun elenco "primo, secondo, terzo" recitato, nessun nome dell\u2019altro in ogni battuta.',
-        '- La punteggiatura (virgole, punti, "…", "—") guida respiro e pause della voce: usala con cura. Mai una battuta spezzata a metà senza motivo.',
+        '- "beats": scaletta di 5-8 punti, ma la conversazione NON la segue in modo ordinato: ci sono deviazioni, ritorni ("dicevo…"), un punto che resta in sospeso, una battuta che porta fuori strada, un disaccordo non risolto. Chi sa di più su un punto ne parla, ma gli altri lo interrompono, lo mettono in dubbio o lo trascinano su un esempio loro.',
+        '- I fatti e i dati delle fonti restano CORRETTI e non inventati: ciò che è sporco è la forma, non il contenuto. Emergono a pezzi dentro la conversazione (uno cita, un altro obietta, un terzo lo applica a un caso), mai come lezione.',
+        '',
+        'FORMA DEL PARLATO (la parte più importante):',
+        '- Battute CORTE. La maggior parte ha 2-14 parole. Qualcuna 15-30. Raramente di più. Una frase lunga si spezza in più battute con interventi in mezzo.',
+        '- Frasi lasciate a metà o finite da un altro: "Cioè il punto è che se tu—" / "—lo deleghi, sì, e poi non sai più chi ha deciso." Chi viene interrotto si ferma con un trattino lungo "—" senza punto.',
+        '- Falsi inizi, ripetizioni e ripensamenti: "è… è un po\u2019 come, no, aspetta, non è come, è che…", "Cioè, cioè, io dico", "No ma, no, nel senso—".',
+        '- Intercalari e riempitivi veri, diversi per persona: "cioè", "tipo", "praticamente", "boh", "eh", "mah", "ehm", "mmh", "insomma", "diciamo", "dai", "figurati", "no?", "capito?", "senti", "guarda", "allora", "ecco". Non tutti nella stessa battuta, non sempre.',
+        '- Verso e rumore: risate scritte come "ah ah", "ahah", sospiri come "eh…", "mmh", "uff", un "oh!" o un "ah!" di sorpresa. Mai tra parentesi, mai descrizioni di scena.',
+        '- Reazioni brevissime degli altri mentre uno parla ("mh", "eh sì", "ma va", "davvero?", "ah ecco", "esatto", "boh") con overlap "reaction". Anche a metà di un pensiero lungo: spezza la battuta lunga, metti la reazione in mezzo e fai continuare chi parlava (stessa persona, battuta successiva, che riprende senza ricominciare).',
+        '- Si parla sopra, si anticipa la parola dell\u2019altro, si risponde a una domanda con un\u2019altra domanda, si cambia discorso a metà e si torna indietro: "scusate, divago, comunque—".',
+        '- Registro colloquiale e a volte scorretto come nel parlato: "c\u2019è un sacco di gente che…", "che poi", "e niente", "sta cosa", "ma no dai", "figurati", frasi senza verbo, soggetti ripetuti. Niente subordinate lunghe e perfette, niente "Inoltre", "Pertanto", "In conclusione", niente elenchi ordinati.',
+        '- Niente apertura da presentatore ("Benvenuti alla puntata di oggi in cui parleremo di…"): si entra già dentro, con un saluto veloce e una battuta, e il tema emerge. Niente chiusura riassuntiva: si chiude con una battuta, un saluto affrettato, magari tagliato.',
+        '- Il tono cambia: chi si scalda accelera e accorcia le frasi, chi è scettico sbuffa, chi ride perde il filo. Usa il campo "mood" (excited, amused, surprised, sarcastic, warm, serious, calm, frustrated, thoughtful) su circa una battuta su tre, dove il tono cambia in modo evidente, coerente con il carattere.',
+        '',
+        'SOVRAPPOSIZIONI (campo "overlap" di una battuta, rispetto alla precedente di un\u2019altra persona):',
+        '- "cut_in": interrompe (la battuta PRECEDENTE deve finire a metà frase con "—", senza punto).',
+        '- "reaction": brevissima reazione (1-4 parole) sopra le ultime parole dell\u2019altro.',
+        '- "over": si parlano sopra per un momento (entusiasmo, battibecco, risata comune), battuta breve e viva.',
+        '- Almeno UNA battuta su tre ha un overlap: tante reazioni, parecchie interruzioni (almeno 8 in una puntata di 10 minuti), qualche "over". Le battute dello stesso parlante di seguito non hanno overlap.',
+        '',
+        'ESEMPIO DI REGISTRO (solo come stile; l\u2019argomento è un altro e non va copiato):',
+        'A: Allora, ehm, ma voi l\u2019avete provato, sì? Quello nuovo.',
+        'B (reaction): Mmh.',
+        'A: No perché io tipo l\u2019ho aperto e—',
+        'C (cut_in): —e hai chiuso dopo due minuti, ah ah, lo so, ti conosco.',
+        'A (over): Ma no! Cioè, sì, ma non è quello, è che—',
+        'B: Boh, a me non è dispiaciuto, eh. Cioè, non è che…',
+        'B: …non lo so, mi sembra uno di quei casi in cui, praticamente, fa tutto lui.',
+        'C (reaction): Eh.',
+        'B: E tu dici "ok", e intanto non capisci più chi—',
+        'A (cut_in): Ecco, quello! Quello è il punto, no?',
       ].join('\n');
   const user = [
     languageDirective(input.language),
