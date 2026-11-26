@@ -185,6 +185,7 @@ export class PodcastsService {
       sources: z.array(z.object({ kind: z.enum(['document', 'article']), title: z.string(), url: z.string().optional() })).catch([]).parse(e.sources) as PodcastSource[],
       published: Boolean(e.publishedAt),
       publishedAt: e.publishedAt?.toISOString(),
+      publicOutdated: Boolean(e.publishedAt && e.audioKey && (e.publicSizeBytes !== e.sizeBytes || e.publicDurationSec !== e.durationSec)),
     };
   }
 

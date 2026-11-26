@@ -1,6 +1,6 @@
 'use client';
 import * as React from 'react';
-import { PODCAST_CATEGORIES, podcastVoiceKey, type PodcastCategory, type PodcastView } from '@scorm/contracts';
+import { PODCAST_CATEGORIES, type PodcastCategory, type PodcastView } from '@scorm/contracts';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Input, Label, Textarea } from '@/components/ui/input';
@@ -8,7 +8,7 @@ import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import { usePodcastActions, usePodcastVoices } from '@/lib/api/hooks';
 import { errText } from './podcast-labels';
-import { VoiceSelect } from './voice-select';
+import { HostsEditor } from './hosts-editor';
 
 /** Impostazioni della serie: dati del feed e conduttori. */
 export function SettingsDialog({ podcast, open, onClose }: { podcast: PodcastView; open: boolean; onClose: () => void }) {
@@ -35,13 +35,6 @@ export function SettingsDialog({ podcast, open, onClose }: { podcast: PodcastVie
   }, [open, podcast]);
 
   const voicesChanged = JSON.stringify(hosts.map((h) => h.voice)) !== JSON.stringify(podcast.hosts.map((h) => h.voice));
-  /** Riferimento salvato per la voce scelta (chiave `provider:id`). */
-  const voiceRefOf = (voiceKey: string) => {
-    const v = (voices.data ?? []).find((x) => x.key === voiceKey);
-    return { kind: 'catalog' as const, provider: v?.provider ?? ('polly' as const), id: v?.id ?? voiceKey };
-  };
-  const patchHost = (key: 'A' | 'B', p: Partial<{ name: string; voiceId: string }>) =>
-    setHosts((cur) => cur.map((h) => (h.key === key ? { ...h, ...(p.name !== undefined ? { name: p.name } : {}), ...(p.voiceId !== undefined ? { voice: voiceRefOf(p.voiceId) } : {}) } : h)));
 
   async function save() {
     try {
@@ -96,14 +89,10 @@ export function SettingsDialog({ podcast, open, onClose }: { podcast: PodcastVie
             Contenuto per adulti
           </label>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {hosts.map((h) => (
-            <div key={h.key} className="space-y-2 rounded-lg border p-3">
-              <p className="text-sm font-medium">Conduttore {h.key === 'A' ? 'principale' : 'ospite'}</p>
-              <Input aria-label={`Nome del conduttore ${h.key}`} value={h.name} maxLength={40} onChange={(e) => patchHost(h.key, { name: e.target.value })} />
-              <VoiceSelect voices={voices.data ?? []} value={podcastVoiceKey(h.voice)} language={podcast.language} label={`Voce del conduttore ${h.key}`} onChange={(v) => patchHost(h.key, { voiceId: v })} />
-            </div>
-          ))}
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Partecipanti</p>
+          <HostsEditor hosts={hosts} voices={voices.data ?? []} language={podcast.language} onChange={setHosts} />
+          <p className="text-xs text-muted-foreground">Il carattere dei partecipanti vale per i copioni che scrivi da ora: per cambiare una puntata già scritta usa «Riscrivi il copione».</p>
         </div>
         {voicesChanged && podcast.episodes.some((e) => e.hasAudio) && (
           <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">Cambiando le voci, l&apos;audio già registrato risulterà da rifare (con il suo costo).</p>

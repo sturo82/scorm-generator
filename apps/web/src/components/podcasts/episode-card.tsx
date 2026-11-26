@@ -18,6 +18,8 @@ interface Props {
   total: number;
   /** Un lavoro è in corso sulla serie: le azioni sono bloccate. */
   busy: boolean;
+  /** Mostra le frecce per spostare la puntata (non con filtri o ricerca attivi). */
+  reorder?: boolean;
   onMove: (dir: -1 | 1) => void;
   onRemove: () => void;
   onSaveTitle: (title: string, summary: string) => void;
@@ -141,7 +143,7 @@ export function EpisodeCard(p: Props) {
           {e.words > 0 ? ` · ${e.words} parole` : ''}
           {e.durationSec ? ` · audio ${fmtDuration(e.durationSec)}` : ''}
           {e.sources.length > 0
-            ? ` · fonti usate: ${e.sources.map((s) => s.title).join(', ')}`
+            ? ` · fonti usate: ${Array.from(new Set(e.sources.map((s) => s.title))).join(', ')}`
             : e.knowledgeDocIds.length + e.articles.length > 0
               ? ` · ${e.knowledgeDocIds.length + e.articles.length} ${e.knowledgeDocIds.length + e.articles.length === 1 ? 'fonte scelta' : 'fonti scelte'}`
               : ''}
@@ -205,13 +207,18 @@ export function EpisodeCard(p: Props) {
               )}
             </>
           )}
+          {e.published && e.publicOutdated && !e.audioStale && !working && (
+            <Button size="sm" disabled={p.busy} title="Il feed ha ancora il vecchio audio: sostituiscilo con quello nuovo, senza ritirare la puntata" onClick={p.onPublish}>
+              <Globe /> Aggiorna nel feed
+            </Button>
+          )}
           {e.hasAudio && !working && !e.published && (
             <Button size="sm" variant="outline" disabled={e.audioStale || p.busy || !p.podcast.publishingEnabled} title={!p.podcast.publishingEnabled ? 'La pubblicazione non è ancora configurata su questo ambiente' : e.audioStale ? 'Rigenera prima l\u2019audio' : undefined} onClick={p.onPublish}>
               <Globe /> Pubblica
             </Button>
           )}
           {e.published && !working && (
-            <Button size="sm" variant="outline" disabled={p.busy} onClick={p.onUnpublish}>
+            <Button size="sm" variant="outline" disabled={p.busy} title="Toglie la puntata dal feed: gli ascoltatori non la vedranno più" onClick={p.onUnpublish}>
               <Undo2 /> Ritira
             </Button>
           )}
@@ -219,12 +226,16 @@ export function EpisodeCard(p: Props) {
             <Button size="icon" variant="ghost" aria-label="Modifica titolo e sintesi" disabled={p.busy || working} onClick={() => setEditing(true)}>
               <Pencil />
             </Button>
+            {p.reorder !== false && (
+              <>
             <Button size="icon" variant="ghost" aria-label="Sposta su" disabled={p.busy || p.index === 0} onClick={() => p.onMove(-1)}>
               <ArrowUp />
             </Button>
             <Button size="icon" variant="ghost" aria-label="Sposta giù" disabled={p.busy || p.index === p.total - 1} onClick={() => p.onMove(1)}>
               <ArrowDown />
             </Button>
+              </>
+            )}
             <Button size="icon" variant="ghost" aria-label="Togli la puntata" disabled={p.busy || working || p.total <= 1} onClick={p.onRemove}>
               <Trash2 />
             </Button>

@@ -129,6 +129,12 @@ export function FeedPanel({ podcast, busy }: { podcast: PodcastView; busy: boole
           </div>
         </div>
 
+        {podcast.publishingEnabled && publishedCount === 0 && (
+          <p className="flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+            Il feed non contiene ancora nessuna puntata: Spotify e Apple Podcasts lo rifiutano finché non ne pubblichi almeno una (scheda Puntate, pulsante Pubblica).
+          </p>
+        )}
         {podcast.feedWarnings.length > 0 && (
           <ul className="list-disc space-y-0.5 rounded-md bg-muted/50 py-2 pl-7 pr-3 text-xs text-muted-foreground">
             {podcast.feedWarnings.map((w) => (

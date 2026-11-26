@@ -1,12 +1,29 @@
 'use client';
 import * as React from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { PODCAST_LIMITS, podcastScriptFit, podcastScriptWords, type PodcastHost, type PodcastScript } from '@scorm/contracts';
+import { PODCAST_LIMITS, podcastScriptFit, podcastScriptWords, type PodcastHost, type PodcastMood, type PodcastOverlap, type PodcastScript } from '@scorm/contracts';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/input';
 
-/** Editor del copione: una riga per battuta, con il conduttore che parla. */
+const OVERLAP_LABELS: Record<PodcastOverlap, string> = {
+  cut_in: 'Interrompe l\u2019altro',
+  reaction: 'Reazione sopra l\u2019altro',
+  over: 'Si parlano sopra',
+};
+const MOOD_LABELS: Record<PodcastMood, string> = {
+  excited: 'Entusiasta',
+  amused: 'Divertito',
+  surprised: 'Sorpreso',
+  sarcastic: 'Sarcastico',
+  warm: 'Caloroso',
+  serious: 'Serio',
+  calm: 'Calmo',
+  frustrated: 'Frustrato',
+  thoughtful: 'Pensieroso',
+};
+
+/** Editor del copione: una riga per battuta, con chi parla, come entra nel discorso e il tono. */
 export function ScriptEditor({
   script,
   hosts,
@@ -34,21 +51,43 @@ export function ScriptEditor({
       <ol className="space-y-2">
         {turns.map((t, i) => (
           <li key={i} className="grid gap-2 sm:grid-cols-[150px_1fr_auto]">
-            <Select aria-label={`Chi parla alla battuta ${i + 1}`} value={t.host} onChange={(e) => patch(i, { host: e.target.value as 'A' | 'B' })}>
+            <Select aria-label={`Chi parla alla battuta ${i + 1}`} value={t.host} onChange={(e) => patch(i, { host: e.target.value as PodcastHost['key'] })}>
               {hosts.map((h) => (
                 <option key={h.key} value={h.key}>
                   {h.name}
                 </option>
               ))}
             </Select>
-            <Textarea aria-label={`Testo della battuta ${i + 1}`} rows={Math.min(6, Math.max(2, Math.ceil(t.text.length / 90)))} value={t.text} onChange={(e) => patch(i, { text: e.target.value })} />
+            <div className="space-y-1.5">
+              <Textarea aria-label={`Testo della battuta ${i + 1}`} rows={Math.min(6, Math.max(2, Math.ceil(t.text.length / 90)))} value={t.text} onChange={(e) => patch(i, { text: e.target.value })} />
+              {hosts.length > 1 && (
+                <div className="flex flex-wrap gap-2">
+                  <Select aria-label={`Come entra la battuta ${i + 1}`} className="h-8 w-52 text-xs" value={t.overlap ?? ''} disabled={i === 0} onChange={(e) => patch(i, { overlap: (e.target.value || undefined) as PodcastOverlap | undefined })}>
+                    <option value="">Parla dopo l&apos;altro</option>
+                    {(Object.keys(OVERLAP_LABELS) as PodcastOverlap[]).map((k) => (
+                      <option key={k} value={k}>
+                        {OVERLAP_LABELS[k]}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select aria-label={`Tono della battuta ${i + 1}`} className="h-8 w-44 text-xs" value={t.mood ?? ''} onChange={(e) => patch(i, { mood: (e.target.value || undefined) as PodcastMood | undefined })}>
+                    <option value="">Tono neutro</option>
+                    {(Object.keys(MOOD_LABELS) as PodcastMood[]).map((k) => (
+                      <option key={k} value={k}>
+                        {MOOD_LABELS[k]}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )}
+            </div>
             <div className="flex gap-1 sm:flex-col">
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
                 aria-label={`Aggiungi una battuta dopo la ${i + 1}`}
-                onClick={() => setTurns((cur) => [...cur.slice(0, i + 1), { host: t.host === 'A' ? 'B' : 'A', text: '' }, ...cur.slice(i + 1)])}
+                onClick={() => setTurns((cur) => [...cur.slice(0, i + 1), { host: hosts[(hosts.findIndex((h) => h.key === t.host) + 1) % hosts.length]!.key, text: '' }, ...cur.slice(i + 1)])}
               >
                 <Plus />
               </Button>
@@ -65,7 +104,7 @@ export function ScriptEditor({
       </p>
       {tooLong && <p className="text-xs text-destructive">Una battuta supera {PODCAST_LIMITS.maxTurnChars} caratteri: dividila.</p>}
       <div className="flex gap-2">
-        <Button type="button" disabled={invalid || saving} onClick={() => onSave({ turns: turns.map((t) => ({ host: t.host, text: t.text.trim() })) })}>
+        <Button type="button" disabled={invalid || saving} onClick={() => onSave({ turns: turns.map((t, i) => ({ host: t.host, text: t.text.trim(), ...(i > 0 && t.overlap ? { overlap: t.overlap } : {}), ...(t.mood ? { mood: t.mood } : {}) })) })}>
           Salva il copione
         </Button>
         <Button type="button" variant="ghost" onClick={onCancel} disabled={saving}>

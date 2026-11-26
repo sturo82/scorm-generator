@@ -14,6 +14,7 @@ import {
   podcastScriptWords,
   type PodcastEstimateView,
   type PodcastIdea,
+  type PodcastOverlap,
   type PodcastSource,
   type SuggestPodcastIdeas,
 } from '@scorm/contracts';
@@ -24,7 +25,7 @@ import { formatContext } from '../generation/prompts.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LLM_PROVIDER, OBJECT_STORAGE } from '../providers/provider.constants.js';
-import { assembleAudio, scriptChars, tidyScript } from './podcast-audio.js';
+import { assembleDialogue, scriptChars, textForVoice, tidyScript } from './podcast-audio.js';
 import { IDEAS_SCHEMA, SCRIPT_SCHEMA, ideasPrompt, scriptPrompt } from './podcast-prompts.js';
 import { PODCAST_FEED } from './podcast.constants.js';
 import { HEYGEN_VOICE_MODEL, PodcastVoicesService, podcastLocale } from './podcast-voices.service.js';
@@ -38,7 +39,7 @@ const CHARS_PER_WORD = 6.5;
 const INTERRUPTED = 'Il lavoro è stato interrotto da un riavvio del servizio: riprova.';
 
 const IdeasOut = z.object({ episodes: z.array(z.object({ title: z.string().trim().min(1), summary: z.string().trim() })) });
-const ScriptOut = z.object({ turns: z.array(z.object({ host: z.string(), text: z.string() })) });
+const ScriptOut = z.object({ turns: z.array(z.object({ host: z.string(), text: z.string(), overlap: z.string().optional(), mood: z.string().optional() })) });
 
 type Episode = Prisma.PodcastEpisodeGetPayload<Record<string, never>>;
 type PodcastRow = Prisma.PodcastGetPayload<Record<string, never>>;
@@ -367,8 +368,8 @@ export class PodcastGenerationService implements OnModuleInit {
         context,
         retry,
       });
-      const raw = await this.callLlm(tenantId, 'podcast_script', system, user, SCRIPT_SCHEMA, Math.min(16_000, Math.ceil(budget.max * 3) + 800), 0.85);
-      const tidy = tidyScript(ScriptOut.parse(JSON.parse(raw)));
+      const raw = await this.callLlm(tenantId, 'podcast_script', system, user, SCRIPT_SCHEMA, Math.min(16_000, Math.ceil(budget.max * 3.6) + 1500), 0.9);
+      const tidy = tidyScript(ScriptOut.parse(JSON.parse(raw)), hosts.map((h) => h.key));
       if (tidy.problems.length > 0) {
         if (attempt === 1 && !best) throw new Error(`Copione non valido: ${tidy.problems.join('; ')}`);
         continue;
@@ -457,15 +458,16 @@ export class PodcastGenerationService implements OnModuleInit {
     const hosts = PodcastHosts.parse(podcast.hosts);
     const voiceOf = new Map(hosts.map((h) => [h.key, h.voice]));
     const locale = podcastLocale(podcast.language);
-    const parts: Array<{ bytes: Uint8Array; text: string }> = [];
+    const parts: Array<{ bytes: Uint8Array; text: string; overlap?: PodcastOverlap }> = [];
     const charsBy: Record<'polly' | 'heygen', number> = { polly: 0, heygen: 0 };
     for (const turn of script.turns) {
       const voice = voiceOf.get(turn.host)!;
-      const res = await this.synthWithRetry(this.voices.speechFor(voice.provider), turn.text, locale, voice.id, cfg.speechEngine);
-      parts.push({ bytes: res.bytes, text: turn.text });
-      charsBy[voice.provider] += turn.text.length;
+      const spoken = textForVoice(turn, voice.provider);
+      const res = await this.synthWithRetry(this.voices.speechFor(voice.provider), spoken, locale, voice.id, cfg.speechEngine);
+      parts.push({ bytes: res.bytes, text: turn.text, overlap: turn.overlap });
+      charsBy[voice.provider] += spoken.length;
     }
-    const { audio, timings, durationMs } = assembleAudio(parts);
+    const { audio, timings, durationMs } = await assembleDialogue(parts);
     const key = `podcasts/${tenantId}/${podcast.id}/${e.id}.mp3`;
     await this.storage.putObject(key, audio, { contentType: 'audio/mpeg' });
     await this.meter.record({

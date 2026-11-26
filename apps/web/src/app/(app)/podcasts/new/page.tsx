@@ -3,14 +3,14 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ImageUp, Loader2, Mic } from 'lucide-react';
-import { PODCAST_CATEGORIES, PODCAST_COVER, PODCAST_LIMITS, type PodcastCategory } from '@scorm/contracts';
+import { PODCAST_CATEGORIES, PODCAST_COVER, PODCAST_LIMITS, podcastVoiceKey, type PodcastCategory, type PodcastHost } from '@scorm/contracts';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input, Label, Textarea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
-import { VoiceSelect } from '@/components/podcasts/voice-select';
+import { HostsEditor, nextVoice } from '@/components/podcasts/hosts-editor';
 import { PODCAST_LANGUAGES, errText } from '@/components/podcasts/podcast-labels';
 import { getApiClient } from '@/lib/api/client';
 import { useCreatePodcast, useFolders, usePodcastVoices } from '@/lib/api/hooks';
@@ -71,10 +71,11 @@ export default function NewPodcastPage() {
   const [email, setEmail] = React.useState('');
   const [explicit, setExplicit] = React.useState(false);
   const [cover, setCover] = React.useState<{ file: File; url: string; width: number; height: number } | null>(null);
-  const [nameA, setNameA] = React.useState('');
-  const [nameB, setNameB] = React.useState('');
-  const [voiceA, setVoiceA] = React.useState('');
-  const [voiceB, setVoiceB] = React.useState('');
+  // Partecipanti: si parte con due voci; da uno (monologo) a quattro (tavola rotonda).
+  const [hosts, setHosts] = React.useState<PodcastHost[]>([
+    { key: 'A', name: '', voice: { kind: 'catalog', provider: 'polly', id: '' } },
+    { key: 'B', name: '', voice: { kind: 'catalog', provider: 'polly', id: '' } },
+  ]);
   const [topic, setTopic] = React.useState('');
   const [audience, setAudience] = React.useState('');
   const [tone, setTone] = React.useState('');
@@ -85,30 +86,20 @@ export default function NewPodcastPage() {
 
   React.useEffect(() => () => { if (cover) URL.revokeObjectURL(cover.url); }, [cover]);
 
-  // Voci di partenza: una donna e un uomo, se ci sono. Si riallineano se la lingua cambia.
+  // Voci di partenza: una per partecipante, diverse tra loro. Si riallineano se la lingua cambia.
   React.useEffect(() => {
     const list = voices.data ?? [];
-    if (list.length === 0) {
-      setVoiceA('');
-      setVoiceB('');
-      return;
-    }
-    // Di partenza le voci Polly (le migliori per l'italiano nel catalogo); le altre si scelgono a mano.
-    const base = list.some((v) => v.provider === 'polly') ? list.filter((v) => v.provider === 'polly') : list;
-    const female = base.find((v) => v.gender === 'female') ?? base[0]!;
-    const male = base.find((v) => v.gender === 'male') ?? base.find((v) => v.key !== female.key) ?? base[0]!;
-    if (!list.some((v) => v.key === voiceA)) setVoiceA(female.key);
-    if (!list.some((v) => v.key === voiceB)) setVoiceB(male.key);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setHosts((cur) => {
+      const out: PodcastHost[] = [];
+      for (const h of cur) {
+        const valid = list.some((v) => v.key === podcastVoiceKey(h.voice));
+        const voice = valid ? h.voice : (nextVoice(list, out) ?? h.voice);
+        const name = h.name || list.find((v) => v.key === podcastVoiceKey(voice))?.name || '';
+        out.push({ ...h, voice, name: valid || !h.voice.id ? name : name });
+      }
+      return JSON.stringify(out) === JSON.stringify(cur) ? cur : out;
+    });
   }, [voices.data]);
-
-  React.useEffect(() => {
-    const list = voices.data ?? [];
-    if (!nameA) setNameA(list.find((v) => v.key === voiceA)?.name ?? '');
-    if (!nameB) setNameB(list.find((v) => v.key === voiceB)?.name ?? '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voiceA, voiceB, voices.data]);
-
   async function pickCover(file: File | undefined) {
     if (!file) return;
     if (!/^image\/(jpeg|png)$/.test(file.type)) {
@@ -131,14 +122,9 @@ export default function NewPodcastPage() {
 
   const problems: string[] = [];
   if (!title.trim()) problems.push('Dai un titolo al podcast');
-  if (!nameA.trim() || !nameB.trim()) problems.push('Scrivi il nome dei due conduttori');
-  if (!voiceA || !voiceB) problems.push('Scegli la voce dei due conduttori');
+  if (hosts.some((h) => !h.name.trim())) problems.push('Scrivi il nome di ogni partecipante');
+  if (hosts.some((h) => !h.voice.id)) problems.push('Scegli la voce di ogni partecipante');
 
-  /** Riferimento salvato per la voce scelta (chiave `provider:id`). */
-  function voiceRef(key: string) {
-    const v = (voices.data ?? []).find((x) => x.key === key);
-    return { kind: 'catalog' as const, provider: v?.provider ?? ('polly' as const), id: v?.id ?? key };
-  }
   async function submit() {
     setSaving(true);
     try {
@@ -151,10 +137,7 @@ export default function NewPodcastPage() {
         contactEmail: email.trim() || undefined,
         explicit,
         folderId: folderId || null,
-        hosts: [
-          { key: 'A', name: nameA.trim(), voice: voiceRef(voiceA) },
-          { key: 'B', name: nameB.trim(), voice: voiceRef(voiceB) },
-        ],
+        hosts: hosts.map((h) => ({ ...h, name: h.name.trim() })),
         brief: {
           topic: topic.trim(),
           audience: audience.trim() || undefined,
@@ -268,21 +251,8 @@ export default function NewPodcastPage() {
         </div>
       </Section>
 
-      <Section n={3} title="Conduttori" hint="Due voci che dialogano in ogni puntata. Puoi ascoltarne l'anteprima prima di sceglierle.">
-        <div className="grid gap-4 sm:grid-cols-2">
-          {(
-            [
-              { key: 'A', name: nameA, setName: setNameA, voice: voiceA, setVoice: setVoiceA },
-              { key: 'B', name: nameB, setName: setNameB, voice: voiceB, setVoice: setVoiceB },
-            ] as const
-          ).map((h) => (
-            <div key={h.key} className="space-y-2 rounded-lg border p-3">
-              <p className="text-sm font-medium">Conduttore {h.key === 'A' ? 'principale' : 'ospite'}</p>
-              <Input aria-label={`Nome del conduttore ${h.key}`} value={h.name} maxLength={40} onChange={(e) => h.setName(e.target.value)} placeholder="Nome" />
-              <VoiceSelect voices={voices.data ?? []} value={h.voice} language={language} label={`Voce del conduttore ${h.key}`} onChange={h.setVoice} />
-            </div>
-          ))}
-        </div>
+      <Section n={3} title="Partecipanti" hint="Da uno a quattro. Con più partecipanti la puntata è una discussione: dai a ciascuno un carattere e una voce. Puoi ascoltare l'anteprima delle voci.">
+        <HostsEditor hosts={hosts} voices={voices.data ?? []} language={language} onChange={setHosts} />
         {voices.isSuccess && (voices.data?.length ?? 0) === 0 && (
           <p className="text-sm text-destructive">Per questa lingua non ci sono ancora voci disponibili. Scegli un&apos;altra lingua.</p>
         )}

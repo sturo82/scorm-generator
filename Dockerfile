@@ -61,9 +61,10 @@ ARG APP_VERSION=dev
 ARG BUILD_TIME=""
 ENV APP_VERSION=$APP_VERSION
 ENV BUILD_TIME=$BUILD_TIME
-# Prisma richiede OpenSSL a runtime; poppler-utils serve per leggere i PDF delle slide.
+# Prisma richiede OpenSSL a runtime; poppler-utils serve per leggere i PDF delle slide;
+# ffmpeg serve a sovrapporre le voci dei podcast (interruzioni e reazioni) e a codificare l'MP3.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    openssl poppler-utils \
+    openssl poppler-utils ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 # Utente non-root
 RUN groupadd --system --gid 1001 nodejs \

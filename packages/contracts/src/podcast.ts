@@ -23,11 +23,13 @@ export const PODCAST_LIMITS = {
   maxTurns: 600,
   /** Caratteri massimi di una battuta: sotto il limite di una chiamata di sintesi (circa 3000). */
   maxTurnChars: 1200,
+  /** Partecipanti per podcast: da un monologo a una tavola rotonda. */
+  maxHosts: 4,
   maxArticles: 6,
   maxDocs: 10,
 } as const;
 
-export const PodcastHostKey = z.enum(['A', 'B']);
+export const PodcastHostKey = z.enum(['A', 'B', 'C', 'D']);
 export type PodcastHostKey = z.infer<typeof PodcastHostKey>;
 
 /** Chi produce la voce: Amazon Polly o HeyGen (voci del catalogo e voci proprie clonate). */
@@ -43,18 +45,35 @@ export const PodcastVoiceRef = z.object({
 });
 export type PodcastVoiceRef = z.infer<typeof PodcastVoiceRef>;
 
+/**
+ * Carattere di un partecipante: orienta il copione (cosa dice, come lo dice, come reagisce agli altri).
+ * Tutti i campi sono facoltativi e liberi.
+ */
+export const PodcastPersona = z.object({
+  /** Ruolo nella discussione (es. "conduce", "l'esperto", "lo scettico"). */
+  role: z.string().trim().max(120).optional(),
+  /** Chi è: studi, lavoro, esperienze. */
+  background: z.string().trim().max(400).optional(),
+  /** Carattere (es. "ironico, impaziente, ama le provocazioni"). */
+  personality: z.string().trim().max(400).optional(),
+  /** Modo di parlare (es. "frasi corte, intercala 'cioè', fa battute"). */
+  speech: z.string().trim().max(400).optional(),
+});
+export type PodcastPersona = z.infer<typeof PodcastPersona>;
+
 export const PodcastHost = z.object({
   key: PodcastHostKey,
   name: z.string().trim().min(1).max(40),
   voice: PodcastVoiceRef,
+  persona: PodcastPersona.optional(),
 });
 export type PodcastHost = z.infer<typeof PodcastHost>;
-
-/** Esattamente due conduttori, A e B. */
+/** Da uno a quattro partecipanti con chiavi diverse. Con uno solo è un monologo; da due in su, una discussione. */
 export const PodcastHosts = z
   .array(PodcastHost)
-  .length(2)
-  .refine((h) => h.some((x) => x.key === 'A') && h.some((x) => x.key === 'B'), 'Servono i conduttori A e B');
+  .min(1)
+  .max(PODCAST_LIMITS.maxHosts)
+  .refine((h) => new Set(h.map((x) => x.key)).size === h.length, 'Ogni partecipante ha una chiave diversa');
 
 /** Linea editoriale della serie: vale per tutte le puntate. Ogni campo è facoltativo. */
 export const PodcastBrief = z.object({
@@ -196,9 +215,24 @@ export interface PodcastIdea {
 }
 
 /** Una battuta: chi parla e cosa dice. */
+/**
+ * Come una battuta si innesta sulla precedente:
+ *  - cut_in: interrompe, parte prima che l'altro finisca (la battuta interrotta resta a metà, con "—");
+ *  - reaction: breve reazione ("mh", "davvero?") sopra le ultime parole dell'altro;
+ *  - over: si parlano sopra per un momento (entusiasmo, battibecco).
+ * Assente = parla quando l'altro ha finito.
+ */
+export const PodcastOverlap = z.enum(['cut_in', 'reaction', 'over']);
+export type PodcastOverlap = z.infer<typeof PodcastOverlap>;
+/** Tono della battuta (usato dalle voci che lo sanno rendere). */
+export const PodcastMood = z.enum(['excited', 'amused', 'surprised', 'sarcastic', 'warm', 'serious', 'calm', 'frustrated', 'thoughtful']);
+export type PodcastMood = z.infer<typeof PodcastMood>;
+
 export const PodcastTurn = z.object({
   host: PodcastHostKey,
   text: z.string().trim().min(1).max(PODCAST_LIMITS.maxTurnChars),
+  overlap: PodcastOverlap.optional(),
+  mood: PodcastMood.optional(),
 });
 export type PodcastTurn = z.infer<typeof PodcastTurn>;
 
@@ -287,6 +321,8 @@ export interface PodcastEpisodeView {
   sources: PodcastSource[];
   published: boolean;
   publishedAt?: string;
+  /** Pubblicata, ma nel feed c'è ancora un audio più vecchio di quello attuale: va aggiornata. */
+  publicOutdated?: boolean;
 }
 
 export interface PodcastView {

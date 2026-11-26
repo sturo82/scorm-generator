@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
+import { MIX_RATE, decodeToPcm, encodeMp3, ffmpegAvailable, mixPcm, planTimeline } from './podcast-mix.js';
 import { mp3DurationMs, splitTextForTts } from '@scorm/adapters/polly';
-import { PODCAST_LIMITS, type PodcastScript, type PodcastTurnTiming } from '@scorm/contracts';
+import { PODCAST_LIMITS, PodcastMood, type PodcastOverlap, type PodcastScript, type PodcastTurnTiming } from '@scorm/contracts';
 
 /**
  * Frame MP3 di silenzio: MPEG-2 Layer III, 24 kHz, mono, 32 kbit/s (96 byte, 24 ms). 24 kHz è la
@@ -85,34 +86,92 @@ export function cleanTurnText(text: string): string {
     .trim();
 }
 
+const OVERLAPS = new Set<string>(['cut_in', 'reaction', 'over']);
+const MOODS = new Set<string>(PodcastMood.options);
+/** Una reazione è una battuta di poche parole. */
+const REACTION_MAX_WORDS = 6;
+
 /**
  * Sistema il copione scritto dall'AI: pulisce le battute, divide quelle troppo lunghe alla fine di
- * una frase e scarta le vuote. Restituisce anche i problemi che rendono il copione inutilizzabile
- * (troppo corto, un solo conduttore, troppe battute).
+ * una frase, scarta le vuote o di chi non c'è e rende coerenti le sovrapposizioni (un'interruzione
+ * vuole la battuta precedente lasciata a metà, una reazione è breve, nessuno si sovrappone a sé
+ * stesso). Restituisce anche i problemi che rendono il copione inutilizzabile (troppo corto,
+ * un solo partecipante in una discussione, troppe battute).
  */
-export function tidyScript(raw: { turns?: Array<{ host?: string; text?: string }> }): {
+export function tidyScript(
+  raw: { turns?: Array<{ host?: string; text?: string; overlap?: string; mood?: string }> },
+  hostKeys: string[] = ['A', 'B'],
+): {
   script: PodcastScript;
   problems: string[];
 } {
+  const keys = new Set(hostKeys);
   const turns: PodcastScript['turns'] = [];
   for (const t of raw.turns ?? []) {
-    const host = t.host === 'B' ? 'B' : t.host === 'A' ? 'A' : null;
+    const host = t.host && keys.has(t.host) ? (t.host as PodcastScript['turns'][number]['host']) : null;
     const text = cleanTurnText(String(t.text ?? ''));
     if (!host || !text) continue;
+    const mood = t.mood && MOODS.has(t.mood) ? (t.mood as PodcastMood) : undefined;
+    let overlap = t.overlap && OVERLAPS.has(t.overlap) ? (t.overlap as PodcastOverlap) : undefined;
+    const prev = turns[turns.length - 1];
+    // Sovrapposizioni possibili solo su un'altra persona già in scena.
+    if (!prev || prev.host === host) overlap = undefined;
+    if (overlap === 'reaction' && text.split(/\s+/).length > REACTION_MAX_WORDS) overlap = undefined;
+    // Un'interruzione richiede che l'altro sia rimasto a metà frase: altrimenti ci si parla sopra.
+    if (overlap === 'cut_in' && prev && !/[\u2014\u2013-]\s*$/.test(prev.text)) overlap = 'over';
     const pieces = text.length > PODCAST_LIMITS.maxTurnChars ? splitTextForTts(text, Math.floor(PODCAST_LIMITS.maxTurnChars * 0.8)) : [text];
-    for (const piece of pieces) {
+    pieces.forEach((piece, k) => {
       const clean = piece.trim();
-      if (clean) turns.push({ host, text: clean.slice(0, PODCAST_LIMITS.maxTurnChars) });
-    }
+      if (!clean) return;
+      turns.push({ host, text: clean.slice(0, PODCAST_LIMITS.maxTurnChars), ...(k === 0 && overlap ? { overlap } : {}), ...(mood ? { mood } : {}) });
+    });
   }
   const problems: string[] = [];
   if (turns.length < PODCAST_LIMITS.minTurns) problems.push(`copione troppo corto (${turns.length} battute)`);
   if (turns.length > PODCAST_LIMITS.maxTurns) problems.push(`troppe battute (${turns.length})`);
-  if (turns.length > 0 && new Set(turns.map((t) => t.host)).size < 2) problems.push('parla un solo conduttore');
+  if (hostKeys.length > 1 && turns.length > 0 && new Set(turns.map((t) => t.host)).size < 2) problems.push('parla un solo partecipante');
   return { script: { turns: turns.slice(0, PODCAST_LIMITS.maxTurns) }, problems };
 }
-
 /** Caratteri da sintetizzare per un copione (base del costo dell'audio). */
 export function scriptChars(script: { turns: Array<{ text: string }> }): number {
   return script.turns.reduce((n, t) => n + t.text.length, 0);
+}
+
+/**
+ * Unisce le battute in un solo MP3 come in una conversazione: dove il copione prevede interruzioni,
+ * reazioni o sovrapposizioni le battute si sovrappongono davvero (serve ffmpeg). Senza ffmpeg, o
+ * senza sovrapposizioni, si uniscono una dopo l'altra con pause brevi (come `assembleAudio`).
+ */
+export async function assembleDialogue(
+  parts: Array<{ bytes: Uint8Array; text: string; overlap?: PodcastOverlap }>,
+): Promise<{ audio: Buffer; timings: PodcastTurnTiming[]; durationMs: number; mixed: boolean }> {
+  const wantsMix = parts.some((p) => p.overlap) && (await ffmpegAvailable());
+  if (!wantsMix) return { ...assembleAudio(parts), mixed: false };
+  const pcms = await Promise.all(parts.map((p) => decodeToPcm(stripId3(Buffer.from(p.bytes)))));
+  const turns = pcms.map((pcm, i) => ({ durationMs: Math.round((pcm.length / MIX_RATE) * 1000), overlap: parts[i]!.overlap }));
+  const { slots, totalMs } = planTimeline(turns, (i) => gapBetween(parts[i - 1]!.text, parts[i]!.text, i - 1));
+  const mixed = mixPcm(
+    pcms.map((pcm, i) => ({ pcm, startMs: slots[i]!.startMs, gain: slots[i]!.gain })),
+    totalMs + 200,
+  );
+  const audio = await encodeMp3(mixed);
+  const timings: PodcastTurnTiming[] = slots.map((x, i) => ({ i, startMs: x.startMs, endMs: x.endMs }));
+  return { audio, timings, durationMs: Math.round((mixed.length / MIX_RATE) * 1000), mixed: true };
+}
+
+/** Etichette di tono che HeyGen interpreta (in inglese, tra parentesi quadre, prima del testo). */
+const HEYGEN_MOOD_TAGS: Record<PodcastMood, string> = {
+  excited: '[excited]',
+  amused: '[chuckles]',
+  surprised: '[surprised]',
+  sarcastic: '[sarcastic]',
+  warm: '[warm]',
+  serious: '[serious]',
+  calm: '[calm]',
+  frustrated: '[frustrated]',
+  thoughtful: '[hmm]',
+};
+/** Testo da sintetizzare: con le voci HeyGen il tono della battuta diventa un\u2019etichetta; con Polly resta solo la punteggiatura. */
+export function textForVoice(turn: { text: string; mood?: PodcastMood }, provider: 'polly' | 'heygen'): string {
+  return provider === 'heygen' && turn.mood ? `${HEYGEN_MOOD_TAGS[turn.mood]} ${turn.text}` : turn.text;
 }
