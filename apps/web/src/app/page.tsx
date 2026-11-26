@@ -51,7 +51,7 @@ export default function HomePage() {
 
       <section className="container grid gap-4 pb-24 md:grid-cols-3">
         {[
-          { icon: Sparkles, title: 'Generazione AI', desc: 'Outline, lezioni e test dal tuo brief, ancorati alla tua knowledge.' },
+          { icon: Sparkles, title: 'Generazione AI', desc: 'Moduli, lezioni e test dalle tue indicazioni, ancorati ai tuoi documenti.' },
           { icon: Palette, title: 'Branding multiplo', desc: 'Lo stesso corso, N brand: colori, logo e font applicati in export.' },
           { icon: ShieldCheck, title: 'Enterprise & SCORM', desc: 'Multi-tenant sicuro, revisione umana, pacchetti SCORM 2004 e 1.2.' },
         ].map((f) => (

@@ -205,7 +205,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
     try {
       await setShareable.mutateAsync(next);
       toast.show(
-        next ? 'Corso condiviso nel catalogo integrazioni' : 'Condivisione disattivata',
+        next ? 'Corso condiviso con le altre piattaforme' : 'Condivisione disattivata',
         'success',
       );
     } catch {
@@ -855,10 +855,10 @@ function ShareablePanel({
   const live = shareable && approved;
   return (
     <fieldset className="rounded-xl border bg-card p-4" disabled={saving}>
-      <legend className="px-1 text-sm font-medium">Condivisione catalogo integrazioni</legend>
+      <legend className="px-1 text-sm font-medium">Condivisione con altre piattaforme</legend>
       <p className="mb-3 text-xs text-muted-foreground">
-        Rende il corso disponibile al download (pacchetto SCORM) per le piattaforme terze
-        autorizzate dal tuo workspace. Diventa effettivo solo quando il corso è anche
+        Rende il corso scaricabile (pacchetto SCORM) dalle piattaforme esterne
+        autorizzate dalla tua azienda. Diventa effettivo solo quando il corso è anche
         <span className="font-medium"> approvato</span>.
       </p>
       <div className="flex items-center justify-between gap-4">
@@ -868,9 +868,9 @@ function ShareablePanel({
             className="size-4 accent-[var(--primary,#4f46e5)]"
             checked={shareable}
             onChange={(e) => onToggle(e.target.checked)}
-            aria-label="Condividi nel catalogo integrazioni"
+            aria-label="Condividi questo corso con le altre piattaforme"
           />
-          <span>Condividi questo corso nel catalogo</span>
+          <span>Condividi questo corso</span>
         </label>
         <span
           className={cn(
@@ -882,13 +882,13 @@ function ShareablePanel({
                 : 'bg-muted text-muted-foreground',
           )}
         >
-          {live ? 'Nel catalogo' : shareable ? 'In attesa di approvazione' : 'Privato'}
+          {live ? 'Condiviso' : shareable ? 'In attesa di approvazione' : 'Privato'}
         </span>
       </div>
       {shareable && !approved && (
         <p className="mt-3 text-xs text-amber-700">
           Il corso è marcato come condivisibile ma non è ancora approvato: non sarà visibile alle
-          integrazioni finché lo stato non diventa «Approvato».
+          altre piattaforme finché lo stato non diventa «Approvato».
         </p>
       )}
     </fieldset>

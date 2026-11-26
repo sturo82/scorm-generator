@@ -158,10 +158,10 @@ export function CourseBuilder({
                   <Sparkles className="size-5" />
                 </div>
                 <div>
-                  <p className="font-medium">Moduli di testo dal brief</p>
+                  <p className="font-medium">Moduli e lezioni dalle impostazioni</p>
                   <p className="text-sm text-muted-foreground">
-                    Dal brief (e dalle fonti) genero l’outline e creo moduli e lezioni con contenuti
-                    interattivi. Richiede un brief compilato.
+                    Dalle impostazioni del corso (e dalle fonti) preparo moduli e lezioni.
+                    Servono almeno titolo e obiettivi, che trovi nella scheda Impostazioni.
                   </p>
                 </div>
               </div>
@@ -370,11 +370,10 @@ function ContentBuilder({ courseId, highlightTests = false }: { courseId: string
               <Sparkles className="size-5" />
             </div>
             <div>
-              <p className="font-medium">Contenuti assistiti</p>
+              <p className="font-medium">Scrittura delle lezioni</p>
               <p className="text-sm text-muted-foreground">
-                Genero i contenuti di tutte le lezioni in un&apos;unica operazione sul server:
-                prosegue anche se ricarichi o cambi pagina. Puoi anche generarli (o rigenerarli)
-                una lezione alla volta qui sotto.
+                Scrivo tutte le lezioni in un&apos;unica operazione sul server: prosegue anche se
+                ricarichi o cambi pagina. Puoi anche scriverle o riscriverle una alla volta qui sotto.
               </p>
             </div>
           </div>
@@ -561,7 +560,7 @@ function AssessmentManager({
                 ? 'Genera prima la struttura del corso'
                 : 'Tutti i test sono stati generati'
               : readyCount > 0
-                ? `${pendingCount} da generare · ${readyCount} pronti` +
+                ? `${pendingCount} da generare · ${readyCount} generabili ora` +
                   (blockedCount > 0 ? ` · ${blockedCount} in attesa dei contenuti` : '')
                 : `${pendingCount} da generare · genera prima i contenuti delle lezioni`}
           </p>
@@ -578,10 +577,10 @@ function AssessmentManager({
               size="sm"
               onClick={handleGenerateAllPending}
               disabled={batchRunning || generating}
-              title="Genera i test pronti (il cui contenuto esiste già) in un job sul server"
+              title="Genera i test delle lezioni che hanno già i contenuti: prosegue sul server anche se chiudi la pagina"
             >
               <Wand2 className="size-4" />
-              {batchRunning ? 'Generazione…' : `Genera ${readyCount} pronti`}
+              {batchRunning ? 'Generazione…' : `Genera ${readyCount} test`}
               {!batchRunning && (
                 <CreditsTag
                   value={estimate.data?.prices.test === null || estimate.data?.prices.test === undefined ? estimate.data?.prices.test : estimate.data.prices.test * readyCount}
