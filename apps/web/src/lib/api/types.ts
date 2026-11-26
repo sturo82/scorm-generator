@@ -829,6 +829,9 @@ export interface ApiClient {
   estimatePodcast(id: string): Promise<PodcastEstimateView>;
   listPodcastVoices(language: string): Promise<PodcastVoiceOption[]>;
   previewPodcastVoice(voiceId: string, provider: PodcastVoiceProvider, language: string): Promise<{ url: string }>;
+  getPodcastVoiceCapabilities(): Promise<{ design: boolean }>;
+  designPodcastVoice(input: { name: string; description: string; language: string }): Promise<{ voiceId: string }>;
+  getPodcastVoiceDesignStatus(voiceId: string): Promise<{ status: 'PENDING' | 'ACTIVE' | 'FAILED'; previewUrl?: string }>;
   listPodcastFeedItems(url: string): Promise<{ feedTitle?: string; items: Array<{ title: string; link?: string; summary: string; isoDate?: string }> }>;
   addPodcastEpisode(id: string, input: CreatePodcastEpisode): Promise<PodcastView>;
   suggestPodcastIdeas(id: string, input: SuggestPodcastIdeas): Promise<PodcastIdea[]>;

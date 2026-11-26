@@ -30,6 +30,7 @@ import { PodcastVoicesService } from './podcast-voices.service.js';
 import { PodcastsService } from './podcasts.service.js';
 
 const EpisodeIds = z.object({ episodeIds: z.array(z.string().min(1)).max(PODCAST_LIMITS.maxEpisodes).optional() });
+const VoiceDesign = z.object({ name: z.string().trim().min(1).max(60), description: z.string().trim().min(10).max(500), language: z.string().min(2).max(10) });
 const VoicePreview = z.object({ voiceId: z.string().min(1).max(64), provider: PodcastVoiceProvider.default('polly'), language: z.string().min(2).max(10) });
 
 /**
@@ -63,6 +64,25 @@ export class PodcastsController {
   @Get('voices')
   listVoices(@CurrentContext() ctx: AuthContext, @Query('language') language?: string) {
     return this.voices.list(language || 'it', ctx.tenant.tenantId);
+  }
+
+  /** Se si possono creare voci nuove (HeyGen, solo azienda della piattaforma). */
+  @Get('voices/capabilities')
+  voiceCapabilities(@CurrentContext() ctx: AuthContext) {
+    return { design: this.voices.canDesign(ctx.tenant.tenantId) };
+  }
+
+  /** Crea una voce nuova da una descrizione. */
+  @Post('voices/design')
+  @Roles('EDITOR')
+  designVoice(@CurrentContext() ctx: AuthContext, @Body(new ZodValidationPipe(VoiceDesign)) body: z.infer<typeof VoiceDesign>) {
+    return this.voices.designVoice(ctx.tenant.tenantId, body);
+  }
+
+  /** Stato di una voce in creazione. */
+  @Get('voices/design/:voiceId')
+  designStatus(@CurrentContext() ctx: AuthContext, @Param('voiceId') voiceId: string) {
+    return this.voices.designStatus(ctx.tenant.tenantId, voiceId);
   }
 
   /** Breve audio di prova di una voce. */

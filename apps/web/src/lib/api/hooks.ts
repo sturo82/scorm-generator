@@ -1452,6 +1452,11 @@ export function usePodcastVoices(language: string) {
   return useQuery({ queryKey: ['podcasts', 'voices', language], queryFn: () => api.listPodcastVoices(language), staleTime: 5 * 60_000 });
 }
 
+/** Se l'utente può creare voci nuove (HeyGen). */
+export function usePodcastVoiceCapabilities() {
+  return useQuery({ queryKey: ['podcasts', 'voices', 'capabilities'], queryFn: () => api.getPodcastVoiceCapabilities(), staleTime: 10 * 60_000 });
+}
+
 /** Costo di una nuova puntata (copione e audio). */
 export function usePodcastEstimateNew(minutes: number) {
   return useQuery({

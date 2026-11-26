@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { ObjectStorage, SpeechProvider } from '@scorm/domain';
 import { podcastVoiceKey, type PodcastVoiceOption, type PodcastVoiceProvider, type PodcastVoiceRef } from '@scorm/contracts';
@@ -118,6 +118,29 @@ export class PodcastVoicesService {
       this.logger.warn(`Voci HeyGen non disponibili (${locale}): ${err instanceof Error ? err.message : 'errore'}`);
       return [];
     }
+  }
+
+  /** Le voci nuove dall'account HeyGen le crea solo l'azienda della piattaforma (account e quote sono condivisi). */
+  canDesign(tenantId: string): boolean {
+    return tenantId === platformTenantId() && this.heygen !== null && 'designVoice' in this.heygen;
+  }
+
+  private designer(tenantId: string): { designVoice(i: { name: string; language: string; description: string }): Promise<string>; voiceStatus(id: string): Promise<{ status: 'PENDING' | 'ACTIVE' | 'FAILED'; previewUrl?: string }> } {
+    if (!this.canDesign(tenantId)) throw new ForbiddenException('Creare voci nuove è riservato agli utenti Knowkube.');
+    return this.heygen as never;
+  }
+
+  /** Avvia la creazione di una voce HeyGen da una descrizione. */
+  async designVoice(tenantId: string, input: { name: string; description: string; language: string }): Promise<{ voiceId: string }> {
+    const voiceId = await this.designer(tenantId).designVoice({ name: input.name, description: input.description, language: podcastLocale(input.language) });
+    return { voiceId };
+  }
+
+  /** Stato di una voce in creazione; quando è pronta si svuota l'elenco in memoria, così compare tra le voci. */
+  async designStatus(tenantId: string, voiceId: string): Promise<{ status: 'PENDING' | 'ACTIVE' | 'FAILED'; previewUrl?: string }> {
+    const st = await this.designer(tenantId).voiceStatus(voiceId);
+    if (st.status === 'ACTIVE') this.cache.clear();
+    return st;
   }
 
   /** Voci disponibili per la lingua della serie, per chi le chiede (le voci proprie sono riservate). */

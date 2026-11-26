@@ -911,6 +911,15 @@ export class HttpApiClient implements ApiClient {
   previewPodcastVoice(voiceId: string, provider: PodcastVoiceProvider, language: string) {
     return this.request<{ url: string }>('/podcasts/voices/preview', { method: 'POST', body: JSON.stringify({ voiceId, provider, language }) });
   }
+  getPodcastVoiceCapabilities() {
+    return this.request<{ design: boolean }>('/podcasts/voices/capabilities');
+  }
+  designPodcastVoice(input: { name: string; description: string; language: string }) {
+    return this.request<{ voiceId: string }>('/podcasts/voices/design', { method: 'POST', body: JSON.stringify(input) });
+  }
+  getPodcastVoiceDesignStatus(voiceId: string) {
+    return this.request<{ status: 'PENDING' | 'ACTIVE' | 'FAILED'; previewUrl?: string }>(`/podcasts/voices/design/${encodeURIComponent(voiceId)}`);
+  }
   listPodcastFeedItems(url: string) {
     return this.request<{ feedTitle?: string; items: Array<{ title: string; link?: string; summary: string; isoDate?: string }> }>(
       `/podcasts/feed-items?url=${encodeURIComponent(url)}`,

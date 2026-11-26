@@ -113,6 +113,34 @@ export class HeygenSpeechProvider implements SpeechProvider {
     return all;
   }
 
+  /** Crea una voce nuova da una descrizione (età, tono, accento, stile). Restituisce subito l'id: la voce è pronta dopo qualche secondo. */
+  async designVoice(input: { name: string; language: string; description: string }): Promise<string> {
+    const res = await this.fetchImpl(`${this.baseUrl}/v3/models/audio/voices`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ mode: 'design', name: input.name, language: baseLang(input.language) || 'it', description: input.description }),
+    });
+    if (res.status === 429) throw new ProviderUnavailableError('HeyGen: troppe voci create di recente, riprova più tardi');
+    if (!res.ok) {
+      const detail = (await res.text().catch(() => '')).slice(0, 200);
+      throw new ProviderUnavailableError(`HeyGen non ha creato la voce: HTTP ${res.status} ${detail}`);
+    }
+    const json = (await res.json()) as { data?: { voice_id?: string } };
+    const id = json.data?.voice_id;
+    if (!id) throw new ProviderUnavailableError('HeyGen: risposta senza identificativo della voce');
+    return id;
+  }
+
+  /** Stato di una voce dell'account: PENDING finché si prepara, ACTIVE quando si può usare. */
+  async voiceStatus(voiceId: string): Promise<{ status: 'PENDING' | 'ACTIVE' | 'FAILED'; previewUrl?: string }> {
+    const res = await this.fetchImpl(`${this.baseUrl}/v3/models/audio/voices/${encodeURIComponent(voiceId)}`, { headers: this.headers() });
+    if (!res.ok) throw new ProviderUnavailableError(`HeyGen voce: HTTP ${res.status}`);
+    const json = (await res.json()) as { data?: AudioVoice };
+    const st = json.data?.status;
+    const status = st === 'ACTIVE' && json.data?.preview_audio_url ? 'ACTIVE' : st === 'FAILED' ? 'FAILED' : 'PENDING';
+    return { status, previewUrl: json.data?.preview_audio_url };
+  }
+
   /** Aspetta il proprio turno per restare sotto il limite di richieste al minuto. */
   private async pace(): Promise<void> {
     const now = Date.now();

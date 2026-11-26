@@ -1292,6 +1292,9 @@ export class MockApiClient implements ApiClient {
   async estimatePodcast(): Promise<never> { return this.slidesUnavailable(); }
   async listPodcastVoices(): Promise<never> { return this.slidesUnavailable(); }
   async previewPodcastVoice(): Promise<never> { return this.slidesUnavailable(); }
+  async getPodcastVoiceCapabilities(): Promise<{ design: boolean }> { return { design: false }; }
+  async designPodcastVoice(): Promise<never> { return this.slidesUnavailable(); }
+  async getPodcastVoiceDesignStatus(): Promise<never> { return this.slidesUnavailable(); }
   async listPodcastFeedItems(): Promise<never> { return this.slidesUnavailable(); }
   async addPodcastEpisode(): Promise<never> { return this.slidesUnavailable(); }
   async suggestPodcastIdeas(): Promise<never> { return this.slidesUnavailable(); }

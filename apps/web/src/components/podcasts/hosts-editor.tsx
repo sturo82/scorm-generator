@@ -1,9 +1,11 @@
 'use client';
 import * as React from 'react';
-import { ChevronDown, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { PODCAST_LIMITS, podcastVoiceKey, type PodcastHost, type PodcastPersona, type PodcastVoiceOption } from '@scorm/contracts';
 import { Button } from '@/components/ui/button';
 import { Input, Label, Textarea } from '@/components/ui/input';
+import { usePodcastVoiceCapabilities } from '@/lib/api/hooks';
+import { DesignVoiceDialog } from './design-voice-dialog';
 import { VoiceSelect } from './voice-select';
 
 const KEYS = ['A', 'B', 'C', 'D'] as const;
@@ -70,10 +72,16 @@ export function HostsEditor({
   onChange: (hosts: PodcastHost[]) => void;
 }) {
   const [open, setOpen] = React.useState<string | null>(null);
+  const caps = usePodcastVoiceCapabilities();
+  // Partecipante per cui si sta creando una voce nuova.
+  const [designFor, setDesignFor] = React.useState<string | null>(null);
   const patch = (key: string, p: Partial<PodcastHost>) => onChange(hosts.map((h) => (h.key === key ? { ...h, ...p } : h)));
   const refOf = (voiceKey: string): PodcastHost['voice'] => {
     const v = voices.find((x) => x.key === voiceKey);
-    return { kind: 'catalog', provider: v?.provider ?? 'polly', id: v?.id ?? voiceKey };
+    if (v) return { kind: 'catalog', provider: v.provider, id: v.id };
+    // Voce appena creata, non ancora nell'elenco: la chiave è `provider:id`.
+    const [provider, ...rest] = voiceKey.split(':');
+    return { kind: 'catalog', provider: provider === 'heygen' ? 'heygen' : 'polly', id: rest.length > 0 ? rest.join(':') : voiceKey };
   };
   const label = (i: number) => (hosts.length === 1 ? 'Voce narrante' : i === 0 ? 'Conduttore principale' : `Partecipante ${i + 1}`);
 
@@ -106,6 +114,11 @@ export function HostsEditor({
             </div>
             <Input aria-label={`Nome del partecipante ${h.key}`} placeholder="Nome" value={h.name} maxLength={40} onChange={(e) => patch(h.key, { name: e.target.value })} />
             <VoiceSelect voices={voices} value={podcastVoiceKey(h.voice)} language={language} label={`Voce del partecipante ${h.key}`} onChange={(v) => patch(h.key, { voice: refOf(v) })} />
+            {caps.data?.design && (
+              <button type="button" className="flex items-center gap-1 text-xs font-medium text-primary" onClick={() => setDesignFor(h.key)}>
+                <Sparkles className="size-3.5" /> Crea una voce nuova per {h.name || 'questo partecipante'}
+              </button>
+            )}
             <button type="button" className="flex items-center gap-1 text-xs font-medium text-primary" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : h.key)}>
               <ChevronDown className={`size-3.5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
               Carattere e storia {persona.role || persona.personality || persona.background || persona.speech ? '(impostati)' : '(facoltativo)'}
@@ -128,6 +141,15 @@ export function HostsEditor({
           </div>
         );
       })}
+      <DesignVoiceDialog
+        open={designFor !== null}
+        language={language}
+        onClose={() => setDesignFor(null)}
+        onCreated={(voiceKey) => {
+          const key = designFor;
+          if (key) patch(key, { voice: refOf(voiceKey) });
+        }}
+      />
       {hosts.length < PODCAST_LIMITS.maxHosts && (
         <Button type="button" variant="outline" size="sm" onClick={add} disabled={voices.length === 0}>
           <Plus /> Aggiungi un partecipante
