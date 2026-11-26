@@ -82,7 +82,7 @@ export function EpisodeCard(p: Props) {
   }
 
   const currentTurn = e.turnTimings && !e.audioStale ? e.turnTimings.findIndex((t) => now * 1000 >= t.startMs && now * 1000 < t.endMs + 380) : -1;
-  const canWrite = !p.busy && !working && (e.state === 'DRAFT' || e.state === 'FAILED' || !e.script);
+  const canWrite = !p.busy && !working;
   const canRecord = !p.busy && !working && Boolean(e.script) && (!e.hasAudio || e.audioStale || e.state === 'FAILED');
 
   return (
@@ -156,7 +156,15 @@ export function EpisodeCard(p: Props) {
 
         <div className="flex flex-wrap gap-2">
           {canWrite && (
-            <Button size="sm" onClick={p.onWriteScript}>
+            <Button
+              size="sm"
+              variant={e.script ? 'outline' : 'default'}
+              onClick={() => {
+                // Riscrivere sostituisce il copione attuale e rende da rifare l'audio già registrato.
+                if (e.script && !window.confirm('Riscrivere il copione? Sostituisce quello attuale e l\u2019audio andrà rifatto. Il costo è quello di una nuova scrittura.')) return;
+                p.onWriteScript();
+              }}
+            >
               {e.script ? 'Riscrivi il copione' : 'Scrivi il copione'}
             </Button>
           )}
