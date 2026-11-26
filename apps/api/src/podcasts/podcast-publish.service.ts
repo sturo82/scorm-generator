@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { basename } from 'node:path';
 import { Prisma } from '@prisma/client';
 import type { ObjectStorage } from '@scorm/domain';
 import { PODCAST_COVER, type PodcastFeedVisibility } from '@scorm/contracts';
@@ -136,7 +137,11 @@ export class PodcastPublishService {
     if (!ep.audioKey || ep.state !== 'READY') throw new BadRequestException('La puntata non ha ancora l\u2019audio: generalo prima di pubblicare.');
     if (ep.audioStale) throw new BadRequestException('Il copione è cambiato dopo l\u2019audio: rigenera l\u2019audio prima di pubblicare.');
     const dir = this.dirOf(podcast);
-    const key = this.keyOf(dir, `${ep.guid}.mp3`);
+    // Ogni versione dell'audio ha un nome nuovo: Spotify, Apple e la distribuzione tengono in memoria i file per
+    // indirizzo, e con lo stesso nome continuerebbero a servire il vecchio audio. Il guid resta uguale (è la
+    // stessa puntata), cambia l'indirizzo del file.
+    const key = this.keyOf(dir, `${ep.guid}-${Date.now().toString(36)}.mp3`);
+    const oldKey = ep.publicAudioKey;
     const bytes = await this.storage.getObject(ep.audioKey);
     await this.storage.putObject(key, bytes, { contentType: 'audio/mpeg', cacheControl: AUDIO_CACHE });
     await this.prisma.podcastEpisode.update({
@@ -150,6 +155,8 @@ export class PodcastPublishService {
       },
     });
     await this.refreshFeed(tenantId, podcastId);
+    // Il vecchio file si toglie solo dopo che il feed punta al nuovo.
+    if (oldKey && oldKey !== key) await this.storage.deleteObject(oldKey).catch(() => undefined);
   }
 
   async unpublish(tenantId: string, podcastId: string, episodeId: string): Promise<void> {
@@ -193,7 +200,7 @@ export class PodcastPublishService {
       durationSec: e.publicDurationSec ?? e.durationSec ?? 1,
       sizeBytes: e.publicSizeBytes ?? e.sizeBytes ?? 0,
       publishedAt: e.publishedAt!,
-      audioUrl: this.urlOf(dir, `${e.guid}.mp3`),
+      audioUrl: this.urlOf(dir, basename(e.publicAudioKey!)),
     }));
     const feedUrl = this.urlOf(dir, 'feed.xml');
     const xml = buildFeedXml({
@@ -221,13 +228,13 @@ export class PodcastPublishService {
     });
     // Prima si scrive il nuovo, poi si aggiorna il database, poi si toglie il vecchio.
     for (const e of published) {
-      const newKey = this.keyOf(newDir, `${e.guid}.mp3`);
+      const newKey = this.keyOf(newDir, basename(e.publicAudioKey!));
       await this.storage.putObject(newKey, await this.storage.getObject(e.publicAudioKey!), { contentType: 'audio/mpeg', cacheControl: AUDIO_CACHE });
       await this.prisma.podcastEpisode.update({ where: { id: e.id }, data: { publicAudioKey: newKey } });
     }
     await this.prisma.podcast.update({ where: { id: podcast.id }, data: { visibility: next.visibility, feedToken: next.feedToken } });
     await this.refreshFeed(podcast.tenantId, podcast.id);
-    for (const e of published) await this.storage.deleteObject(this.keyOf(oldDir, `${e.guid}.mp3`)).catch(() => undefined);
+    for (const e of published) await this.storage.deleteObject(this.keyOf(oldDir, basename(e.publicAudioKey!))).catch(() => undefined);
     if (podcast.coverKey) await this.storage.deleteObject(this.keyOf(oldDir, this.coverName(podcast.coverKey))).catch(() => undefined);
     await this.storage.deleteObject(this.keyOf(oldDir, 'feed.xml')).catch(() => undefined);
   }

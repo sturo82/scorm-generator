@@ -54,7 +54,8 @@ export function buildFeedXml(input: { podcast: FeedPodcast; feedUrl: string; sit
   const description = p.description.trim() || p.title;
   const author = p.author?.trim() || p.title;
   const episodes = [...input.episodes].sort((a, b) => b.position - a.position || b.publishedAt.getTime() - a.publishedAt.getTime());
-  const lastBuild = episodes.reduce((max, x) => (x.publishedAt > max ? x.publishedAt : max), new Date(0));
+  // Data di ultima modifica del feed: cambia a ogni riscrittura (anche se cambia solo l'audio di una puntata), così chi lo legge se ne accorge.
+  const lastBuild = new Date();
   const items = episodes
     .map(
       (x) => `    <item>
