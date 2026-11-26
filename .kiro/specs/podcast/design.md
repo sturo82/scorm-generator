@@ -234,3 +234,11 @@ Questi requisiti derivano dalle regole generali degli elenchi di podcast; vanno 
 3. **Chi richiede** l'accesso alla clonazione a AWS (titolare dell'account) e quando.
 4. **Lingue:** solo le lingue clonabili per le voci clonate; per le voci del catalogo, le lingue effettivamente disponibili in regione vanno verificate.
 5. **Ritmo di parlato** per `podcastWordBudget`: tarare con le prime puntate.
+
+## Revisione: serie come contenitore
+
+- La creazione di una serie produce solo il contenitore (titolo, cover, descrizione, voci, linea editoriale). Nessun piano e nessun costo.
+- Le puntate si aggiungono una alla volta con `POST /podcasts/:id/episodes`, ciascuna con fonti proprie (documenti, articoli, note) unite a quelle di default della serie.
+- `POST /podcasts/:id/ideas` propone idee di puntata (text_light) senza creare nulla.
+- Non esiste una "ultima puntata": la serie cresce senza limite fisso (max 200). Solo la prima puntata presenta la serie. Il contesto usa le ultime 6 puntate.
+- Migrazione 0055: note, knowledgeDocIds, articles su PodcastEpisode.

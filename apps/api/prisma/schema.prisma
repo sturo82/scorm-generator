@@ -904,6 +904,10 @@ model PodcastEpisode {
   title         String
   summary       String              @default("")
   targetMinutes Int                 @default(10)
+  // Indicazioni di chi propone la puntata e fonti scelte per lei (documenti e articoli).
+  notes         String              @default("")
+  knowledgeDocIds Json              @default("[]")
+  articles      Json                @default("[]")
   // Fonti usate: [{ kind: 'document'|'article', title, url? }].
   sources       Json                @default("[]")
   // Copione: { turns: [{ host, text }] }.

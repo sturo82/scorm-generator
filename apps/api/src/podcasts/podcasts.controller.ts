@@ -3,13 +3,17 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import {
   CreatePodcast,
+  CreatePodcastEpisode,
   PODCAST_COVER,
   PODCAST_LIMITS,
   SetPodcastFeed,
+  SuggestPodcastIdeas,
   UpdatePodcast,
   UpdatePodcastEpisodes,
   UpdatePodcastScript,
   type CreatePodcast as CreatePodcastType,
+  type CreatePodcastEpisode as CreatePodcastEpisodeType,
+  type SuggestPodcastIdeas as SuggestPodcastIdeasType,
   type SetPodcastFeed as SetPodcastFeedType,
   type UpdatePodcast as UpdatePodcastType,
   type UpdatePodcastEpisodes as UpdatePodcastEpisodesType,
@@ -46,12 +50,11 @@ export class PodcastsController {
     return this.podcasts.list(ctx.tenant.tenantId);
   }
 
-  /** Preventivo di una nuova serie: piano, copioni e audio. */
+  /** Preventivo di una nuova puntata: copione e audio. */
   @Get('estimate')
-  estimateNew(@CurrentContext() ctx: AuthContext, @Query('episodeCount') count?: string, @Query('minutes') minutes?: string) {
-    const n = Math.min(PODCAST_LIMITS.maxEpisodes, Math.max(1, Math.round(Number(count) || 4)));
+  estimateNew(@CurrentContext() ctx: AuthContext, @Query('minutes') minutes?: string) {
     const m = Math.min(PODCAST_LIMITS.maxMinutes, Math.max(PODCAST_LIMITS.minMinutes, Math.round(Number(minutes) || 8)));
-    return this.podcasts.estimateNew(ctx.tenant.tenantId, n, m);
+    return this.podcasts.estimateNew(ctx.tenant.tenantId, m);
   }
 
   /** Voci disponibili per la lingua della serie. */
@@ -117,12 +120,18 @@ export class PodcastsController {
 
   // --- Piano, copioni, audio -------------------------------------------------------
 
-  /** Rifà il piano di una serie rimasta in errore (solo se non ha copioni né audio). */
-  @Post(':id/plan')
+  /** Aggiunge una puntata in fondo alla serie. */
+  @Post(':id/episodes')
   @Roles('EDITOR')
-  async plan(@CurrentContext() ctx: AuthContext, @Param('id') id: string) {
-    await this.generation.startPlan(ctx.tenant.tenantId, id);
-    return this.podcasts.get(ctx.tenant.tenantId, id);
+  addEpisode(@CurrentContext() ctx: AuthContext, @Param('id') id: string, @Body(new ZodValidationPipe(CreatePodcastEpisode)) dto: CreatePodcastEpisodeType) {
+    return this.podcasts.addEpisode(ctx.tenant.tenantId, id, dto);
+  }
+
+  /** Idee per le prossime puntate: non crea nulla, l'utente sceglie quali usare. */
+  @Post(':id/ideas')
+  @Roles('EDITOR')
+  ideas(@CurrentContext() ctx: AuthContext, @Param('id') id: string, @Body(new ZodValidationPipe(SuggestPodcastIdeas)) dto: SuggestPodcastIdeasType) {
+    return this.podcasts.ideas(ctx.tenant.tenantId, id, dto);
   }
 
   @Put(':id/episodes')

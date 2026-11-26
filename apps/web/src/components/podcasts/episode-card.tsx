@@ -140,7 +140,11 @@ export function EpisodeCard(p: Props) {
           {e.targetMinutes} min previsti
           {e.words > 0 ? ` · ${e.words} parole` : ''}
           {e.durationSec ? ` · audio ${fmtDuration(e.durationSec)}` : ''}
-          {e.sources.length > 0 ? ` · fonti: ${e.sources.map((s) => s.title).join(', ')}` : ''}
+          {e.sources.length > 0
+            ? ` · fonti usate: ${e.sources.map((s) => s.title).join(', ')}`
+            : e.knowledgeDocIds.length + e.articles.length > 0
+              ? ` · ${e.knowledgeDocIds.length + e.articles.length} ${e.knowledgeDocIds.length + e.articles.length === 1 ? 'fonte scelta' : 'fonti scelte'}`
+              : ''}
         </p>
 
         {audio && (

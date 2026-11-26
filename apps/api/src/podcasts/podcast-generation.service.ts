@@ -6,13 +6,16 @@ import { z } from 'zod';
 import type { FeedProvider, LLMProvider, ObjectStorage, SpeechProvider } from '@scorm/domain';
 import {
   PODCAST_LIMITS,
+  PodcastArticleRef,
   PodcastBrief,
   PodcastHosts,
   PodcastScript,
   podcastScriptFit,
   podcastScriptWords,
   type PodcastEstimateView,
+  type PodcastIdea,
   type PodcastSource,
+  type SuggestPodcastIdeas,
 } from '@scorm/contracts';
 import type { AppConfig } from '../config/configuration.js';
 import { BillingService, type BillItem, type Reservation } from '../billing/billing.service.js';
@@ -22,7 +25,7 @@ import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LLM_PROVIDER, OBJECT_STORAGE } from '../providers/provider.constants.js';
 import { assembleAudio, scriptChars, tidyScript } from './podcast-audio.js';
-import { PLAN_SCHEMA, SCRIPT_SCHEMA, planPrompt, scriptPrompt } from './podcast-prompts.js';
+import { IDEAS_SCHEMA, SCRIPT_SCHEMA, ideasPrompt, scriptPrompt } from './podcast-prompts.js';
 import { PODCAST_FEED, PODCAST_SPEECH } from './podcast.constants.js';
 import { PodcastVoicesService, podcastLocale } from './podcast-voices.service.js';
 
@@ -34,7 +37,7 @@ const ARTICLE_CHARS = 5_000;
 const CHARS_PER_WORD = 6.5;
 const INTERRUPTED = 'Il lavoro è stato interrotto da un riavvio del servizio: riprova.';
 
-const PlanOut = z.object({ episodes: z.array(z.object({ title: z.string().trim().min(1), summary: z.string().trim() })) });
+const IdeasOut = z.object({ episodes: z.array(z.object({ title: z.string().trim().min(1), summary: z.string().trim() })) });
 const ScriptOut = z.object({ turns: z.array(z.object({ host: z.string(), text: z.string() })) });
 
 type Episode = Prisma.PodcastEpisodeGetPayload<Record<string, never>>;
@@ -136,36 +139,45 @@ export class PodcastGenerationService implements OnModuleInit {
 
   // --- Fonti ----------------------------------------------------------------
 
-  /** Contesto per l'AI: passaggi dei documenti scelti e testo degli articoli scelti. */
-  private async buildContext(tenantId: string, podcast: PodcastRow, query: string): Promise<{ text: string; sources: PodcastSource[] }> {
+  /** Contesto per l'AI: passaggi dei documenti scelti e testo degli articoli scelti (fonti della puntata, più quelle di default della serie). */
+  private async buildContext(
+    tenantId: string,
+    sources: { docIds: string[]; articles: PodcastArticleRef[] },
+    query: string,
+  ): Promise<{ text: string; sources: PodcastSource[] }> {
     const parts: string[] = [];
-    const sources: PodcastSource[] = [];
-    const docIds = z.array(z.string()).catch([]).parse(podcast.knowledgeDocIds);
-    if (docIds.length > 0) {
-      const found = await this.retrieval.retrieve({ tenantId, text: query, documentIds: docIds, topK: 8 });
+    const used: PodcastSource[] = [];
+    if (sources.docIds.length > 0) {
+      const found = await this.retrieval.retrieve({ tenantId, text: query, documentIds: sources.docIds, topK: 8 });
       const ctx = formatContext(found.chunks);
       if (ctx) parts.push(ctx);
-      for (const c of found.citations) sources.push({ kind: 'document', title: c.documentName });
+      for (const c of found.citations) used.push({ kind: 'document', title: c.documentName });
     }
-    const articles = z
-      .array(z.object({ title: z.string(), url: z.string() }))
-      .catch([])
-      .parse(podcast.articles);
     const texts: string[] = [];
-    for (const a of articles) {
+    for (const a of sources.articles) {
       try {
         const fetched = await this.feeds.fetchArticle(a.url);
         const text = fetched.text.replace(/\s+/g, ' ').trim().slice(0, ARTICLE_CHARS);
         if (text) {
           texts.push(`### ${a.title}\n(${a.url})\n${text}`);
-          sources.push({ kind: 'article', title: a.title, url: a.url });
+          used.push({ kind: 'article', title: a.title, url: a.url });
         }
       } catch (err) {
         this.logger.warn(`Articolo non letto (${a.url}): ${userMessage(err)}`);
       }
     }
     if (texts.length > 0) parts.push(`Articoli di riferimento:\n${texts.join('\n\n')}`);
-    return { text: parts.join('\n\n').slice(0, MAX_CONTEXT_CHARS), sources };
+    return { text: parts.join('\n\n').slice(0, MAX_CONTEXT_CHARS), sources: used };
+  }
+
+  /** Fonti di una puntata: le sue, più quelle di default della serie (senza doppioni). */
+  private sourcesOf(podcast: PodcastRow, e?: Episode): { docIds: string[]; articles: PodcastArticleRef[] } {
+    const strings = z.array(z.string()).catch([]);
+    const arts = z.array(PodcastArticleRef).catch([]);
+    const docIds = [...new Set([...strings.parse(podcast.knowledgeDocIds), ...(e ? strings.parse(e.knowledgeDocIds) : [])])];
+    const articles = [...arts.parse(podcast.articles), ...(e ? arts.parse(e.articles) : [])];
+    const seen = new Set<string>();
+    return { docIds, articles: articles.filter((a) => (seen.has(a.url) ? false : (seen.add(a.url), true))) };
   }
 
   private async callLlm(tenantId: string, source: string, system: string, user: string, schema: object, maxTokens: number, temperature = 0.6): Promise<string> {
@@ -220,89 +232,38 @@ export class PodcastGenerationService implements OnModuleInit {
     return Math.ceil(units * 1.1 * 10) / 10;
   }
 
-  // --- Piano ----------------------------------------------------------------
+  // --- Idee per le prossime puntate -------------------------------------------
 
-  /** Riserva i crediti del piano. Restituisce null se l'azienda non paga a crediti. */
-  async reservePlan(tenantId: string, podcastKey: string): Promise<Reservation | null> {
-    return this.billing.reserve(tenantId, `kscorm:podcast-plan:${podcastKey}:${randomUUID()}`, [{ feature: 'text_light', units: 1 }]);
-  }
-
-  /** Rilancia il piano di una serie (le puntate tornano segnaposto). */
-  async startPlan(tenantId: string, podcastId: string): Promise<void> {
-    await this.requirePodcast(tenantId, podcastId);
-    const eps = await this.episodesOf(tenantId, podcastId);
-    if (eps.length === 0) throw new BadRequestException('La serie non ha puntate');
-    this.assertIdle(eps);
-    if (eps.some((e) => e.script || e.audioKey)) {
-      throw new BadRequestException('La serie ha già copioni o audio: il piano non si può rifare. Modifica le puntate o creane una nuova serie.');
-    }
-    const reservation = await this.reservePlan(tenantId, podcastId);
-    await this.prisma.podcastEpisode.updateMany({
-      where: { podcastId, tenantId },
-      data: {
-        state: 'WRITING',
-        error: null,
-        script: Prisma.DbNull,
-        audioStale: false,
-        leaseUntil: new Date(Date.now() + LEASE_MS),
-        billing: reservation ? (reservation as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
-      },
-    });
-    this.planInBackground(tenantId, podcastId, reservation);
-  }
-
-  /** Avvia in background la scrittura del piano; le puntate segnaposto sono già in stato WRITING. */
-  planInBackground(tenantId: string, podcastId: string, reservation: Reservation | null): void {
-    this.active.add(podcastId);
-    void this.runPlan(tenantId, podcastId, reservation).finally(() => this.active.delete(podcastId));
-  }
-
-  private async runPlan(tenantId: string, podcastId: string, reservation: Reservation | null): Promise<void> {
-    const ids = (await this.episodesOf(tenantId, podcastId)).map((e) => e.id);
-    const hb = this.heartbeat(ids);
+  /** Propone idee di puntata (non crea nulla). Costa quanto un testo leggero e si addebita solo se riesce. */
+  async suggestIdeas(tenantId: string, podcastId: string, input: SuggestPodcastIdeas): Promise<PodcastIdea[]> {
+    const podcast = await this.requirePodcast(tenantId, podcastId);
+    const brief = PodcastBrief.parse(podcast.brief);
+    const hosts = PodcastHosts.parse(podcast.hosts);
+    const existing = (await this.episodesOf(tenantId, podcastId)).map((e) => e.title);
+    const reservation = await this.billing.reserve(tenantId, `kscorm:podcast-ideas:${podcastId}:${randomUUID()}`, [{ feature: 'text_light', units: 1 }]);
     try {
-      const podcast = await this.requirePodcast(tenantId, podcastId);
-      const brief = PodcastBrief.parse(podcast.brief);
-      const hosts = PodcastHosts.parse(podcast.hosts);
-      const eps = await this.episodesOf(tenantId, podcastId);
-      const ctx = await this.buildContext(tenantId, podcast, [brief.topic, ...brief.objectives].join('. '));
-      const { system, user } = planPrompt({
+      const ctx = await this.buildContext(tenantId, this.sourcesOf(podcast), [input.focus ?? '', brief.topic, ...brief.objectives].filter(Boolean).join('. ') || podcast.title);
+      const { system, user } = ideasPrompt({
         language: podcast.language,
         title: podcast.title,
+        description: podcast.description,
         brief,
         hosts,
-        episodeCount: eps.length,
-        minutes: eps[0]?.targetMinutes ?? 8,
+        count: input.count,
+        minutes: brief.episodeMinutes,
+        focus: input.focus,
+        existing: existing.slice(-40),
         context: ctx.text,
       });
-      const raw = await this.callLlm(tenantId, 'podcast_plan', system, user, PLAN_SCHEMA, 3000);
-      const plan = PlanOut.parse(JSON.parse(raw));
-      if (plan.episodes.length < eps.length) throw new Error(`Il piano proposto ha ${plan.episodes.length} puntate invece di ${eps.length}`);
-      for (const [i, e] of eps.entries()) {
-        const p = plan.episodes[i]!;
-        await this.prisma.podcastEpisode.update({
-          where: { id: e.id },
-          data: {
-            title: p.title.slice(0, 140),
-            summary: p.summary.slice(0, 1000),
-            state: 'DRAFT',
-            error: null,
-            leaseUntil: null,
-            billing: Prisma.DbNull,
-            sources: ctx.sources as unknown as Prisma.InputJsonValue,
-          },
-        });
-      }
+      const raw = await this.callLlm(tenantId, 'podcast_ideas', system, user, IDEAS_SCHEMA, 2500, 0.8);
+      const ideas = IdeasOut.parse(JSON.parse(raw)).episodes.slice(0, input.count).map((i) => ({ title: i.title.slice(0, 140), summary: i.summary.slice(0, 1000) }));
+      if (ideas.length === 0) throw new Error('Nessuna idea proposta');
       await this.billing.settle(tenantId, reservation, { text_light: 1 });
+      return ideas;
     } catch (err) {
-      this.logger.error(`Piano podcast ${podcastId} fallito: ${userMessage(err)}`);
-      await this.prisma.podcastEpisode.updateMany({
-        where: { podcastId, tenantId, state: 'WRITING' },
-        data: { state: 'FAILED', error: `Piano non riuscito: ${userMessage(err)}`, leaseUntil: null, billing: Prisma.DbNull },
-      });
       await this.billing.release(tenantId, reservation).catch(() => undefined);
-    } finally {
-      clearInterval(hb);
+      this.logger.error(`Idee podcast ${podcastId} non riuscite: ${userMessage(err)}`);
+      throw new BadRequestException(`Non sono riuscito a proporre idee: ${userMessage(err)}`);
     }
   }
 
@@ -348,9 +309,10 @@ export class PodcastGenerationService implements OnModuleInit {
           continue;
         }
         try {
-          const previous = all.filter((x) => x.position < e.position).map((x) => ({ title: x.title, summary: x.summary }));
-          const ctx = await this.buildContext(tenantId, podcast, `${e.title}. ${e.summary}. ${brief.topic}`);
-          const script = await this.writeScript(tenantId, podcast, brief, hosts, e, all.length, previous, ctx.text);
+          // Per la continuità bastano le ultime puntate: una serie può averne molte.
+          const previous = all.filter((x) => x.position < e.position).slice(-6).map((x) => ({ title: x.title, summary: x.summary }));
+          const ctx = await this.buildContext(tenantId, this.sourcesOf(podcast, e), `${e.title}. ${e.summary}. ${e.notes}. ${brief.topic}`);
+          const script = await this.writeScript(tenantId, podcast, brief, hosts, e, previous, ctx.text);
           await this.prisma.podcastEpisode.update({
             where: { id: e.id },
             data: {
@@ -390,7 +352,6 @@ export class PodcastGenerationService implements OnModuleInit {
     brief: PodcastBrief,
     hosts: ReturnType<typeof PodcastHosts.parse>,
     e: Episode,
-    total: number,
     previous: Array<{ title: string; summary: string }>,
     context: string,
   ): Promise<PodcastScript> {
@@ -402,7 +363,7 @@ export class PodcastGenerationService implements OnModuleInit {
         title: podcast.title,
         brief,
         hosts,
-        episode: { position: e.position, total, title: e.title, summary: e.summary, minutes: e.targetMinutes },
+        episode: { position: e.position, title: e.title, summary: e.summary, notes: e.notes, minutes: e.targetMinutes },
         previous,
         context,
         retry,

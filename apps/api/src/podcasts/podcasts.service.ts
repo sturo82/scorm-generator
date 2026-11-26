@@ -7,10 +7,14 @@ import {
   PodcastArticleRef,
   PodcastBrief,
   PodcastHosts,
+  PODCAST_LIMITS,
   PodcastScript,
   podcastScriptWords,
   type CreatePodcast,
+  type CreatePodcastEpisode,
   type PodcastHost,
+  type PodcastIdea,
+  type SuggestPodcastIdeas,
   type PodcastEpisodeView,
   type PodcastEstimateView,
   type PodcastListItem,
@@ -34,7 +38,6 @@ type EpisodeRow = Prisma.PodcastEpisodeGetPayload<Record<string, never>>;
 
 const MAX_PODCASTS_PER_TENANT = 50;
 const URL_TTL_SEC = 3600;
-const LEASE_MS = 5 * 60_000;
 
 function slug(text: string): string {
   return (
@@ -159,6 +162,9 @@ export class PodcastsService {
       durationSec: e.durationSec ?? undefined,
       sizeBytes: e.sizeBytes ?? undefined,
       turnTimings: Array.isArray(e.turnTimings) ? (e.turnTimings as unknown as PodcastTurnTiming[]) : undefined,
+      notes: e.notes,
+      knowledgeDocIds: z.array(z.string()).catch([]).parse(e.knowledgeDocIds),
+      articles: z.array(PodcastArticleRef).catch([]).parse(e.articles),
       sources: z.array(z.object({ kind: z.enum(['document', 'article']), title: z.string(), url: z.string().optional() })).catch([]).parse(e.sources) as PodcastSource[],
       published: Boolean(e.publishedAt),
       publishedAt: e.publishedAt?.toISOString(),
@@ -176,56 +182,59 @@ export class PodcastsService {
     }
   }
 
+  /** Crea il contenitore della serie. Nessuna puntata e nessun costo: le puntate si aggiungono dopo, una alla volta. */
   async create(tenantId: string, userId: string | undefined, dto: CreatePodcast): Promise<PodcastView> {
     if ((await this.prisma.podcast.count({ where: { tenantId } })) >= MAX_PODCASTS_PER_TENANT) {
       throw new BadRequestException(`Hai raggiunto il massimo di ${MAX_PODCASTS_PER_TENANT} podcast.`);
     }
-    if (dto.knowledgeDocIds.length === 0 && dto.articles.length === 0 && dto.brief.topic.trim().length < 3) {
-      throw new BadRequestException('Indica un tema o almeno una fonte.');
-    }
     await this.assertVoices(dto.hosts, dto.language);
-    // I crediti si riservano prima di creare qualsiasi cosa: se non bastano, niente resta a metà.
-    const reservation = await this.generation.reservePlan(tenantId, 'new');
-    let created: PodcastRow;
-    try {
-      const lease = new Date(Date.now() + LEASE_MS);
-      created = await this.prisma.podcast.create({
-        data: {
-          tenantId,
-          title: dto.title,
-          description: dto.description,
-          language: dto.language,
-          category: dto.category,
-          author: dto.author ?? null,
-          contactEmail: dto.contactEmail ?? null,
-          explicit: dto.explicit,
-          hosts: dto.hosts as unknown as Prisma.InputJsonValue,
-          brief: dto.brief as unknown as Prisma.InputJsonValue,
-          knowledgeDocIds: dto.knowledgeDocIds as unknown as Prisma.InputJsonValue,
-          articles: dto.articles as unknown as Prisma.InputJsonValue,
-          publicId: newPublicId(),
-          feedToken: newFeedToken(),
-          createdBy: userId ?? null,
-          episodes: {
-            create: Array.from({ length: dto.episodeCount }, (_, i) => ({
-              tenantId,
-              position: i + 1,
-              title: `Puntata ${i + 1}`,
-              targetMinutes: dto.episodeMinutes,
-              state: 'WRITING' as const,
-              leaseUntil: lease,
-              billing: reservation ? (reservation as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
-              guid: randomUUID(),
-            })),
-          },
-        },
-      });
-    } catch (err) {
-      await this.billing.release(tenantId, reservation).catch(() => undefined);
-      throw err;
-    }
-    this.generation.planInBackground(tenantId, created.id, reservation);
+    const created = await this.prisma.podcast.create({
+      data: {
+        tenantId,
+        title: dto.title,
+        description: dto.description,
+        language: dto.language,
+        category: dto.category,
+        author: dto.author ?? null,
+        contactEmail: dto.contactEmail ?? null,
+        explicit: dto.explicit,
+        hosts: dto.hosts as unknown as Prisma.InputJsonValue,
+        brief: dto.brief as unknown as Prisma.InputJsonValue,
+        publicId: newPublicId(),
+        feedToken: newFeedToken(),
+        createdBy: userId ?? null,
+      },
+    });
     return this.get(tenantId, created.id);
+  }
+
+  /** Aggiunge una puntata in fondo alla serie (da scrivere: copione e audio si avviano quando serve). */
+  async addEpisode(tenantId: string, id: string, dto: CreatePodcastEpisode): Promise<PodcastView> {
+    const p = await this.require(tenantId, id);
+    const last = await this.prisma.podcastEpisode.aggregate({ where: { podcastId: id, tenantId }, _max: { position: true }, _count: true });
+    if (last._count >= PODCAST_LIMITS.maxEpisodes) throw new BadRequestException(`Una serie può avere al massimo ${PODCAST_LIMITS.maxEpisodes} puntate.`);
+    await this.prisma.podcastEpisode.create({
+      data: {
+        podcastId: id,
+        tenantId,
+        position: (last._max.position ?? 0) + 1,
+        title: dto.title,
+        summary: dto.summary,
+        notes: dto.notes,
+        targetMinutes: dto.targetMinutes ?? PodcastBrief.parse(p.brief).episodeMinutes,
+        knowledgeDocIds: dto.knowledgeDocIds as unknown as Prisma.InputJsonValue,
+        articles: dto.articles as unknown as Prisma.InputJsonValue,
+        state: 'DRAFT',
+        guid: randomUUID(),
+      },
+    });
+    return this.get(tenantId, id);
+  }
+
+  /** Idee per le prossime puntate (non crea nulla). */
+  async ideas(tenantId: string, id: string, dto: SuggestPodcastIdeas): Promise<PodcastIdea[]> {
+    await this.require(tenantId, id);
+    return this.generation.suggestIdeas(tenantId, id, dto);
   }
 
   async update(tenantId: string, id: string, dto: UpdatePodcast): Promise<PodcastView> {
@@ -241,6 +250,7 @@ export class PodcastsService {
         ...(dto.contactEmail !== undefined ? { contactEmail: dto.contactEmail } : {}),
         ...(dto.explicit !== undefined ? { explicit: dto.explicit } : {}),
         ...(dto.hosts ? { hosts: dto.hosts as unknown as Prisma.InputJsonValue } : {}),
+        ...(dto.brief ? { brief: dto.brief as unknown as Prisma.InputJsonValue } : {}),
       },
     });
     // Voci diverse = audio diverso: le puntate già registrate risultano da rigenerare.
@@ -275,25 +285,44 @@ export class PodcastsService {
     }
     const keep = new Set(dto.episodes.map((e) => e.id).filter(Boolean));
     const removed = current.filter((e) => !keep.has(e.id));
-    const defaultMinutes = current[0]?.targetMinutes ?? 8;
+    const defaultMinutes = PodcastBrief.parse(p.brief).episodeMinutes;
     await this.prisma.$transaction(async (tx) => {
       for (const e of removed) await tx.podcastEpisode.delete({ where: { id: e.id } });
       for (const [i, item] of dto.episodes.entries()) {
         if (item.id) {
           await tx.podcastEpisode.update({
             where: { id: item.id },
-            data: { position: i + 1, title: item.title, summary: item.summary, ...(item.targetMinutes ? { targetMinutes: item.targetMinutes } : {}) },
+            data: {
+              position: i + 1,
+              title: item.title,
+              summary: item.summary,
+              ...(item.targetMinutes ? { targetMinutes: item.targetMinutes } : {}),
+              ...(item.notes !== undefined ? { notes: item.notes } : {}),
+              ...(item.knowledgeDocIds ? { knowledgeDocIds: item.knowledgeDocIds as unknown as Prisma.InputJsonValue } : {}),
+              ...(item.articles ? { articles: item.articles as unknown as Prisma.InputJsonValue } : {}),
+            },
           });
         } else {
           await tx.podcastEpisode.create({
-            data: { podcastId: id, tenantId, position: i + 1, title: item.title, summary: item.summary, targetMinutes: item.targetMinutes ?? defaultMinutes, state: 'DRAFT', guid: randomUUID() },
+            data: {
+              podcastId: id,
+              tenantId,
+              position: i + 1,
+              title: item.title,
+              summary: item.summary,
+              notes: item.notes ?? '',
+              knowledgeDocIds: (item.knowledgeDocIds ?? []) as unknown as Prisma.InputJsonValue,
+              articles: (item.articles ?? []) as unknown as Prisma.InputJsonValue,
+              targetMinutes: item.targetMinutes ?? defaultMinutes,
+              state: 'DRAFT',
+              guid: randomUUID(),
+            },
           });
         }
       }
     });
     for (const e of removed) await this.publish.removeEpisodeFiles(e);
     if (removed.some((e) => e.publishedAt) || dto.episodes.length > 0) await this.publish.refreshFeed(tenantId, id).catch(() => undefined);
-    void p;
     return this.get(tenantId, id);
   }
 
@@ -361,12 +390,9 @@ export class PodcastsService {
 
   // --- Preventivo e fonti ----------------------------------------------------------
 
-  async estimateNew(tenantId: string, episodeCount: number, minutes: number): Promise<PodcastEstimateView> {
-    return this.generation.estimate(await this.billing.isBilled(tenantId), {
-      plan: true,
-      scripts: episodeCount,
-      audio: Array.from({ length: episodeCount }, () => ({ minutes })),
-    });
+  /** Preventivo di UNA nuova puntata: copione e audio. */
+  async estimateNew(tenantId: string, minutes: number): Promise<PodcastEstimateView> {
+    return this.generation.estimate(await this.billing.isBilled(tenantId), { plan: false, scripts: 1, audio: [{ minutes }] });
   }
 
   /** Preventivo del lavoro ancora da fare su una serie: copioni mancanti e audio da generare. */

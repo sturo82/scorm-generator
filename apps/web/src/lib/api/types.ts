@@ -1,4 +1,4 @@
-import type { CreatePodcast, PodcastEstimateView, PodcastListItem, PodcastScript, PodcastView, PodcastVoiceOption, PodcastFeedVisibility, UpdatePodcast, UpdatePodcastEpisodes } from '@scorm/contracts';
+import type { CreatePodcast, CreatePodcastEpisode, PodcastIdea, SuggestPodcastIdeas, PodcastEstimateView, PodcastListItem, PodcastScript, PodcastView, PodcastVoiceOption, PodcastFeedVisibility, UpdatePodcast, UpdatePodcastEpisodes } from '@scorm/contracts';
 import type { StartSlidesAutopilot, DashboardSummary, AutopilotView, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteItem, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import type {
   Brief,
@@ -823,12 +823,13 @@ export interface ApiClient {
   createPodcast(input: CreatePodcast): Promise<PodcastView>;
   updatePodcast(id: string, input: UpdatePodcast): Promise<PodcastView>;
   deletePodcast(id: string): Promise<void>;
-  estimateNewPodcast(episodeCount: number, minutes: number): Promise<PodcastEstimateView>;
+  estimateNewPodcast(minutes: number): Promise<PodcastEstimateView>;
   estimatePodcast(id: string): Promise<PodcastEstimateView>;
   listPodcastVoices(language: string): Promise<PodcastVoiceOption[]>;
   previewPodcastVoice(voiceId: string, language: string): Promise<{ url: string }>;
   listPodcastFeedItems(url: string): Promise<{ feedTitle?: string; items: Array<{ title: string; link?: string; summary: string; isoDate?: string }> }>;
-  planPodcast(id: string): Promise<PodcastView>;
+  addPodcastEpisode(id: string, input: CreatePodcastEpisode): Promise<PodcastView>;
+  suggestPodcastIdeas(id: string, input: SuggestPodcastIdeas): Promise<PodcastIdea[]>;
   updatePodcastEpisodes(id: string, input: UpdatePodcastEpisodes): Promise<PodcastView>;
   writePodcastScripts(id: string, episodeIds?: string[]): Promise<PodcastView>;
   updatePodcastScript(id: string, episodeId: string, script: PodcastScript): Promise<PodcastView>;

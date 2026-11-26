@@ -2,8 +2,8 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, FileText, Loader2, Rss, Wand2 } from 'lucide-react';
-import { PODCAST_CATEGORIES, PODCAST_LIMITS, type PodcastArticleRef, type PodcastCategory } from '@scorm/contracts';
+import { ArrowLeft, ImageUp, Loader2, Mic } from 'lucide-react';
+import { PODCAST_CATEGORIES, PODCAST_COVER, PODCAST_LIMITS, type PodcastCategory } from '@scorm/contracts';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -13,9 +13,7 @@ import { useToast } from '@/components/ui/toast';
 import { VoiceSelect } from '@/components/podcasts/voice-select';
 import { PODCAST_LANGUAGES, errText } from '@/components/podcasts/podcast-labels';
 import { getApiClient } from '@/lib/api/client';
-import { useCreatePodcast, useKnowledge, usePodcastEstimateNew, usePodcastVoices } from '@/lib/api/hooks';
-
-const fmt = (n: number) => n.toLocaleString('it-IT');
+import { useCreatePodcast, usePodcastVoices } from '@/lib/api/hooks';
 
 function Section({ n, title, hint, children }: { n: number; title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -34,37 +32,50 @@ function Section({ n, title, hint, children }: { n: number; title: string; hint?
   );
 }
 
+/** Legge le dimensioni di un'immagine nel browser, per avvisare subito se la copertina non va bene per i feed. */
+function imageSize(file: File): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+      reject(new Error('Immagine non leggibile'));
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  });
+}
+
 export default function NewPodcastPage() {
   const router = useRouter();
   const toast = useToast();
   const create = useCreatePodcast();
-  const knowledge = useKnowledge('GLOBAL');
+  const fileRef = React.useRef<HTMLInputElement>(null);
 
   const [title, setTitle] = React.useState('');
-  const [topic, setTopic] = React.useState('');
-  const [audience, setAudience] = React.useState('');
-  const [tone, setTone] = React.useState('');
-  const [language, setLanguage] = React.useState('it');
-  const [episodeCount, setEpisodeCount] = React.useState(4);
-  const [minutes, setMinutes] = React.useState(8);
-  const [docIds, setDocIds] = React.useState<string[]>([]);
-  const [feedUrl, setFeedUrl] = React.useState('');
-  const [feedLoading, setFeedLoading] = React.useState(false);
-  const [feedItems, setFeedItems] = React.useState<Array<{ title: string; link?: string; summary: string }>>([]);
-  const [articles, setArticles] = React.useState<PodcastArticleRef[]>([]);
-  const [nameA, setNameA] = React.useState('');
-  const [nameB, setNameB] = React.useState('');
-  const [voiceA, setVoiceA] = React.useState('');
-  const [voiceB, setVoiceB] = React.useState('');
   const [description, setDescription] = React.useState('');
+  const [language, setLanguage] = React.useState('it');
   const [category, setCategory] = React.useState<PodcastCategory>('Education');
   const [author, setAuthor] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [explicit, setExplicit] = React.useState(false);
+  const [cover, setCover] = React.useState<{ file: File; url: string; width: number; height: number } | null>(null);
+  const [nameA, setNameA] = React.useState('');
+  const [nameB, setNameB] = React.useState('');
+  const [voiceA, setVoiceA] = React.useState('');
+  const [voiceB, setVoiceB] = React.useState('');
+  const [topic, setTopic] = React.useState('');
+  const [audience, setAudience] = React.useState('');
+  const [tone, setTone] = React.useState('');
+  const [minutes, setMinutes] = React.useState(8);
+  const [saving, setSaving] = React.useState(false);
 
   const voices = usePodcastVoices(language);
-  const estimate = usePodcastEstimateNew(episodeCount, minutes);
-  const readyDocs = React.useMemo(() => (knowledge.data ?? []).filter((d) => d.status === 'READY'), [knowledge.data]);
+
+  React.useEffect(() => () => { if (cover) URL.revokeObjectURL(cover.url); }, [cover]);
 
   // Voci di partenza: una donna e un uomo, se ci sono. Si riallineano se la lingua cambia.
   React.useEffect(() => {
@@ -88,39 +99,33 @@ export default function NewPodcastPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceA, voiceB, voices.data]);
 
-  async function loadFeed() {
-    if (!feedUrl.trim()) return;
-    setFeedLoading(true);
+  async function pickCover(file: File | undefined) {
+    if (!file) return;
+    if (!/^image\/(jpeg|png)$/.test(file.type)) {
+      toast.show('Usa un\u2019immagine JPEG o PNG', 'error');
+      return;
+    }
+    if (file.size > PODCAST_COVER.maxBytes) {
+      toast.show('Copertina troppo grande (massimo 10 MB)', 'error');
+      return;
+    }
     try {
-      const res = await getApiClient().listPodcastFeedItems(feedUrl.trim());
-      setFeedItems(res.items.filter((i) => i.link));
-      if (res.items.length === 0) toast.show('Il feed non ha articoli', 'error');
+      const size = await imageSize(file);
+      setCover({ file, url: URL.createObjectURL(file), ...size });
     } catch (e) {
-      toast.show(errText(e, 'Feed non raggiungibile'), 'error');
-    } finally {
-      setFeedLoading(false);
+      toast.show(errText(e), 'error');
     }
   }
 
-  function toggleArticle(item: { title: string; link?: string }, on: boolean) {
-    if (!item.link) return;
-    setArticles((cur) => {
-      if (!on) return cur.filter((a) => a.url !== item.link);
-      if (cur.length >= PODCAST_LIMITS.maxArticles) {
-        toast.show(`Al massimo ${PODCAST_LIMITS.maxArticles} articoli`, 'error');
-        return cur;
-      }
-      return [...cur, { title: item.title, url: item.link! }];
-    });
-  }
+  const coverOk = cover && cover.width === cover.height && cover.width >= PODCAST_COVER.minPx && cover.width <= PODCAST_COVER.maxPx;
 
   const problems: string[] = [];
   if (!title.trim()) problems.push('Dai un titolo al podcast');
-  if (topic.trim().length < 3) problems.push('Descrivi il tema');
   if (!nameA.trim() || !nameB.trim()) problems.push('Scrivi il nome dei due conduttori');
   if (!voiceA || !voiceB) problems.push('Scegli la voce dei due conduttori');
 
   async function submit() {
+    setSaving(true);
     try {
       const view = await create.mutateAsync({
         title: title.trim(),
@@ -134,19 +139,28 @@ export default function NewPodcastPage() {
           { key: 'A', name: nameA.trim(), voice: { kind: 'catalog', id: voiceA } },
           { key: 'B', name: nameB.trim(), voice: { kind: 'catalog', id: voiceB } },
         ],
-        brief: { topic: topic.trim(), audience: audience.trim() || undefined, tone: tone.trim() || undefined, objectives: [] },
-        knowledgeDocIds: docIds,
-        articles,
-        episodeCount,
-        episodeMinutes: minutes,
+        brief: {
+          topic: topic.trim(),
+          audience: audience.trim() || undefined,
+          tone: tone.trim() || undefined,
+          objectives: [],
+          episodeMinutes: minutes,
+        },
       });
+      // La copertina si carica dopo la creazione: se non riesce, il podcast c'è e si può riprovare dalla sua pagina.
+      if (cover) {
+        try {
+          await getApiClient().uploadPodcastCover(view.id, cover.file);
+        } catch (e) {
+          toast.show(`Podcast creato, ma la copertina non è stata caricata: ${errText(e)}`, 'error');
+        }
+      }
       router.push(`/podcasts/serie?id=${view.id}`);
     } catch (e) {
       toast.show(errText(e, 'Creazione non riuscita'), 'error');
+      setSaving(false);
     }
   }
-
-  const est = estimate.data;
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -155,25 +169,20 @@ export default function NewPodcastPage() {
           <ArrowLeft /> Podcast
         </Link>
       </Button>
-      <PageHeader title="Nuovo podcast" description="Pochi dati: il sistema pianifica le puntate, scrive i copioni e registra le voci." />
+      <PageHeader
+        title="Nuovo podcast"
+        description="Crei il contenitore: titolo, copertina, conduttori e linea editoriale. Le puntate le aggiungi dopo, una alla volta, quando vuoi."
+      />
 
-      <Section n={1} title="Di cosa parla">
+      <Section n={1} title="Il podcast">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="pc-title">Titolo del podcast</Label>
+            <Label htmlFor="pc-title">Titolo</Label>
             <Input id="pc-title" value={title} maxLength={140} onChange={(e) => setTitle(e.target.value)} placeholder="Es. Allenare senza fare danni" />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="pc-topic">Tema</Label>
-            <Textarea id="pc-topic" rows={3} maxLength={500} value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Cosa vuoi raccontare e a chi serve" />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="pc-aud">Pubblico (facoltativo)</Label>
-            <Input id="pc-aud" value={audience} maxLength={300} onChange={(e) => setAudience(e.target.value)} placeholder="Es. allenatori delle giovanili" />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="pc-tone">Tono (facoltativo)</Label>
-            <Input id="pc-tone" value={tone} maxLength={200} onChange={(e) => setTone(e.target.value)} placeholder="Es. amichevole e concreto" />
+            <Label htmlFor="pc-desc">Descrizione</Label>
+            <Textarea id="pc-desc" rows={3} maxLength={1000} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Di cosa parla il podcast e a chi si rivolge" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="pc-lang">Lingua</Label>
@@ -185,95 +194,54 @@ export default function NewPodcastPage() {
               ))}
             </Select>
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="pc-cat">Categoria</Label>
+            <Select id="pc-cat" value={category} onChange={(e) => setCategory(e.target.value as PodcastCategory)}>
+              {PODCAST_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="pc-author">Autore</Label>
+            <Input id="pc-author" value={author} maxLength={100} onChange={(e) => setAuthor(e.target.value)} placeholder="Chi firma il podcast" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="pc-email">Email di contatto</Label>
+            <Input id="pc-email" type="email" value={email} maxLength={200} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <label className="flex items-center gap-2 text-sm sm:col-span-2">
+            <input type="checkbox" className="size-4 accent-[hsl(var(--primary))]" checked={explicit} onChange={(e) => setExplicit(e.target.checked)} />
+            Contenuto per adulti
+          </label>
         </div>
       </Section>
 
-      <Section n={2} title="Fonti" hint="Facoltative. Con documenti o articoli le puntate si basano su quelli e non inventano oltre.">
-        {readyDocs.length > 0 && (
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Documenti della knowledge</p>
-            <div className="flex max-h-40 flex-col gap-1 overflow-auto rounded-lg border p-2">
-              {readyDocs.map((d) => (
-                <label key={d.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-accent/50">
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-[hsl(var(--primary))]"
-                    checked={docIds.includes(d.id)}
-                    onChange={(e) =>
-                      setDocIds((prev) => (e.target.checked ? (prev.length >= PODCAST_LIMITS.maxDocs ? prev : [...prev, d.id]) : prev.filter((x) => x !== d.id)))
-                    }
-                  />
-                  <FileText className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 truncate">{d.filename}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
-        <div className="space-y-2">
-          <p className="flex items-center gap-1.5 text-sm font-medium">
-            <Rss className="size-4" /> Articoli da un feed RSS
-          </p>
-          <div className="flex gap-2">
-            <Input aria-label="Indirizzo del feed RSS" value={feedUrl} onChange={(e) => setFeedUrl(e.target.value)} placeholder="https://esempio.it/feed.xml" />
-            <Button type="button" variant="outline" onClick={() => void loadFeed()} disabled={feedLoading || !feedUrl.trim()}>
-              {feedLoading ? <Loader2 className="animate-spin" /> : null} Cerca
+      <Section n={2} title="Copertina" hint={`Facoltativa adesso. Per Spotify e Apple Podcasts serve quadrata, da ${PODCAST_COVER.minPx} a ${PODCAST_COVER.maxPx} px, JPEG o PNG.`}>
+        <div className="flex flex-wrap items-center gap-4">
+          {cover ? (
+            // eslint-disable-next-line @next/next/no-img-element -- anteprima locale
+            <img src={cover.url} alt="Anteprima della copertina" className="size-24 rounded-md border object-cover" />
+          ) : (
+            <div className="grid size-24 place-items-center rounded-md border border-dashed text-xs text-muted-foreground">Nessuna</div>
+          )}
+          <div className="space-y-1.5">
+            <input ref={fileRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={(e) => { void pickCover(e.target.files?.[0]); e.target.value = ''; }} />
+            <Button type="button" variant="outline" onClick={() => fileRef.current?.click()}>
+              <ImageUp /> {cover ? 'Cambia immagine' : 'Scegli un\u2019immagine'}
             </Button>
-          </div>
-          {feedItems.length > 0 && (
-            <div className="flex max-h-56 flex-col gap-1 overflow-auto rounded-lg border p-2">
-              {feedItems.map((i) => (
-                <label key={i.link} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 size-4 accent-[hsl(var(--primary))]"
-                    checked={articles.some((a) => a.url === i.link)}
-                    onChange={(e) => toggleArticle(i, e.target.checked)}
-                  />
-                  <span className="min-w-0">
-                    <span className="block font-medium">{i.title}</span>
-                    <span className="line-clamp-2 text-xs text-muted-foreground">{i.summary}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          )}
-          {articles.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              {articles.length} {articles.length === 1 ? 'articolo scelto' : 'articoli scelti'} (massimo {PODCAST_LIMITS.maxArticles}).
-            </p>
-          )}
-        </div>
-      </Section>
-
-      <Section n={3} title="Puntate">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="pc-count">Numero di puntate</Label>
-            <Input
-              id="pc-count"
-              type="number"
-              min={1}
-              max={PODCAST_LIMITS.maxEpisodes}
-              value={episodeCount}
-              onChange={(e) => setEpisodeCount(Math.min(PODCAST_LIMITS.maxEpisodes, Math.max(1, Math.round(Number(e.target.value) || 1))))}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="pc-min">Minuti per puntata</Label>
-            <Input
-              id="pc-min"
-              type="number"
-              min={PODCAST_LIMITS.minMinutes}
-              max={PODCAST_LIMITS.maxMinutes}
-              value={minutes}
-              onChange={(e) => setMinutes(Math.min(PODCAST_LIMITS.maxMinutes, Math.max(PODCAST_LIMITS.minMinutes, Math.round(Number(e.target.value) || PODCAST_LIMITS.minMinutes))))}
-            />
+            {cover && (
+              <p className={coverOk ? 'text-xs text-muted-foreground' : 'text-xs text-amber-800'}>
+                {cover.width}×{cover.height} px{coverOk ? ': va bene.' : `: non rispetta le misure per Apple Podcasts (quadrata, da ${PODCAST_COVER.minPx} a ${PODCAST_COVER.maxPx} px). Puoi cambiarla dopo.`}
+              </p>
+            )}
           </div>
         </div>
       </Section>
 
-      <Section n={4} title="Conduttori" hint="Due voci che dialogano. Puoi ascoltarne l'anteprima prima di sceglierle.">
+      <Section n={3} title="Conduttori" hint="Due voci che dialogano in ogni puntata. Puoi ascoltarne l'anteprima prima di sceglierle.">
         <div className="grid gap-4 sm:grid-cols-2">
           {(
             [
@@ -293,51 +261,37 @@ export default function NewPodcastPage() {
         )}
       </Section>
 
-      <Section n={5} title="Dati del feed" hint="Servono per pubblicare su Spotify, Apple Podcasts o altre piattaforme. Puoi completarli anche dopo.">
+      <Section n={4} title="Linea editoriale" hint="Facoltativa: guida l'AI in tutte le puntate. Ogni puntata avrà poi il suo argomento e le sue fonti.">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="pc-desc">Descrizione</Label>
-            <Textarea id="pc-desc" rows={2} maxLength={1000} value={description} onChange={(e) => setDescription(e.target.value)} />
+            <Label htmlFor="pc-topic">Tema generale</Label>
+            <Textarea id="pc-topic" rows={2} maxLength={500} value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Il filo che lega tutte le puntate" />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="pc-cat">Categoria</Label>
-            <Select id="pc-cat" value={category} onChange={(e) => setCategory(e.target.value as PodcastCategory)}>
-              {PODCAST_CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </Select>
+            <Label htmlFor="pc-aud">Pubblico</Label>
+            <Input id="pc-aud" value={audience} maxLength={300} onChange={(e) => setAudience(e.target.value)} placeholder="Es. allenatori delle giovanili" />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="pc-author">Autore</Label>
-            <Input id="pc-author" value={author} maxLength={100} onChange={(e) => setAuthor(e.target.value)} />
+            <Label htmlFor="pc-tone">Tono</Label>
+            <Input id="pc-tone" value={tone} maxLength={200} onChange={(e) => setTone(e.target.value)} placeholder="Es. amichevole e concreto" />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="pc-email">Email di contatto</Label>
-            <Input id="pc-email" type="email" value={email} maxLength={200} onChange={(e) => setEmail(e.target.value)} />
+            <Label htmlFor="pc-min">Durata di una puntata (minuti)</Label>
+            <Input
+              id="pc-min"
+              type="number"
+              min={PODCAST_LIMITS.minMinutes}
+              max={PODCAST_LIMITS.maxMinutes}
+              value={minutes}
+              onChange={(e) => setMinutes(Math.min(PODCAST_LIMITS.maxMinutes, Math.max(PODCAST_LIMITS.minMinutes, Math.round(Number(e.target.value) || PODCAST_LIMITS.minMinutes))))}
+            />
           </div>
-          <label className="flex items-center gap-2 self-end pb-2 text-sm">
-            <input type="checkbox" className="size-4 accent-[hsl(var(--primary))]" checked={explicit} onChange={(e) => setExplicit(e.target.checked)} />
-            Contenuto per adulti
-          </label>
         </div>
       </Section>
 
       <Card>
         <CardContent className="space-y-3 p-5">
-          {est?.billed && (
-            <p className="text-sm">
-              {est.priced ? (
-                <>
-                  Costo stimato fino alla fine: <strong>{fmt(est.total)} crediti</strong> ({episodeCount} {episodeCount === 1 ? 'puntata' : 'puntate'} da {minutes} min: piano,
-                  copioni e audio). Ora parte solo il piano; copioni e audio si avviano dopo, con il loro costo.
-                </>
-              ) : (
-                <span className="text-muted-foreground">Il prezzo di alcune voci non è ancora disponibile.</span>
-              )}
-            </p>
-          )}
+          <p className="text-sm text-muted-foreground">Creare il podcast non costa nulla: i crediti si usano quando scrivi un copione o registri un&apos;audio.</p>
           {problems.length > 0 && (
             <ul className="list-disc space-y-0.5 pl-5 text-xs text-amber-900">
               {problems.map((p) => (
@@ -345,9 +299,9 @@ export default function NewPodcastPage() {
               ))}
             </ul>
           )}
-          <Button type="button" size="lg" disabled={problems.length > 0 || create.isPending} onClick={() => void submit()}>
-            {create.isPending ? <Loader2 className="animate-spin" /> : <Wand2 />}
-            {create.isPending ? 'Creo…' : 'Crea il podcast e pianifica le puntate'}
+          <Button type="button" size="lg" disabled={problems.length > 0 || saving} onClick={() => void submit()}>
+            {saving ? <Loader2 className="animate-spin" /> : <Mic />}
+            {saving ? 'Creo…' : 'Crea il podcast'}
           </Button>
         </CardContent>
       </Card>

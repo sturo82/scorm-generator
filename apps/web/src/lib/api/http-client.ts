@@ -1,4 +1,4 @@
-import type { CreatePodcast, PodcastEstimateView, PodcastListItem, PodcastScript, PodcastView, PodcastVoiceOption, PodcastFeedVisibility, UpdatePodcast, UpdatePodcastEpisodes } from '@scorm/contracts';
+import type { CreatePodcast, CreatePodcastEpisode, PodcastIdea, SuggestPodcastIdeas, PodcastEstimateView, PodcastListItem, PodcastScript, PodcastView, PodcastVoiceOption, PodcastFeedVisibility, UpdatePodcast, UpdatePodcastEpisodes } from '@scorm/contracts';
 import type { StartSlidesAutopilot, DashboardSummary, AutopilotView, Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteView, FeedCategory, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import { confirmOverBudget, notifyInsufficientCredits, parseOverBudget } from '../billing-events';
 import { getSession, handleSessionExpired } from '../auth';
@@ -895,8 +895,8 @@ export class HttpApiClient implements ApiClient {
   async deletePodcast(id: string) {
     await this.request<unknown>(`/podcasts/${id}`, { method: 'DELETE' });
   }
-  estimateNewPodcast(episodeCount: number, minutes: number) {
-    return this.request<PodcastEstimateView>(`/podcasts/estimate?episodeCount=${episodeCount}&minutes=${minutes}`);
+  estimateNewPodcast(minutes: number) {
+    return this.request<PodcastEstimateView>(`/podcasts/estimate?minutes=${minutes}`);
   }
   estimatePodcast(id: string) {
     return this.request<PodcastEstimateView>(`/podcasts/${id}/estimate`);
@@ -912,8 +912,11 @@ export class HttpApiClient implements ApiClient {
       `/podcasts/feed-items?url=${encodeURIComponent(url)}`,
     );
   }
-  planPodcast(id: string) {
-    return this.request<PodcastView>(`/podcasts/${id}/plan`, { method: 'POST' });
+  addPodcastEpisode(id: string, input: CreatePodcastEpisode) {
+    return this.request<PodcastView>(`/podcasts/${id}/episodes`, { method: 'POST', body: JSON.stringify(input) });
+  }
+  suggestPodcastIdeas(id: string, input: SuggestPodcastIdeas) {
+    return this.request<PodcastIdea[]>(`/podcasts/${id}/ideas`, { method: 'POST', body: JSON.stringify(input) });
   }
   updatePodcastEpisodes(id: string, input: UpdatePodcastEpisodes) {
     return this.request<PodcastView>(`/podcasts/${id}/episodes`, { method: 'PUT', body: JSON.stringify(input) });

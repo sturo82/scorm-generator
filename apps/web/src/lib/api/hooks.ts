@@ -1,7 +1,7 @@
 'use client';
 import * as React from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CreatePodcast, PodcastFeedVisibility, PodcastScript, PodcastView, UpdatePodcast, UpdatePodcastEpisodes, StartSlidesAutopilot, Block, Brief, CourseEstimateInput, CourseEstimateOptions, CreditQuoteItem, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
+import type { CreatePodcast, CreatePodcastEpisode, SuggestPodcastIdeas, PodcastFeedVisibility, PodcastScript, PodcastView, UpdatePodcast, UpdatePodcastEpisodes, StartSlidesAutopilot, Block, Brief, CourseEstimateInput, CourseEstimateOptions, CreditQuoteItem, PricingQuoteInput, FeedCategory } from '@scorm/contracts';
 import { getApiClient } from './client';
 import type { PronunciationEntry, SlideAvatarType, StartSlideClipsInput, BrandView, EditorialStatus, KnowledgeScope, ScormProfile, UpdateAppBranding, CreateExternalVideo, UpdateVideoAsset, TranscriptCue, AppUserRole, AttachStockImageInput, AttachStockCoverInput } from './types';
 
@@ -1451,10 +1451,11 @@ export function usePodcastVoices(language: string) {
   return useQuery({ queryKey: ['podcasts', 'voices', language], queryFn: () => api.listPodcastVoices(language), staleTime: 5 * 60_000 });
 }
 
-export function usePodcastEstimateNew(episodeCount: number, minutes: number) {
+/** Costo di una nuova puntata (copione e audio). */
+export function usePodcastEstimateNew(minutes: number) {
   return useQuery({
-    queryKey: ['podcasts', 'estimate-new', episodeCount, minutes],
-    queryFn: () => api.estimateNewPodcast(episodeCount, minutes),
+    queryKey: ['podcasts', 'estimate-new', minutes],
+    queryFn: () => api.estimateNewPodcast(minutes),
     staleTime: 30_000,
   });
 }
@@ -1492,7 +1493,8 @@ export function usePodcastActions(id: string) {
   };
   return {
     update: useMutation({ mutationFn: (input: UpdatePodcast) => api.updatePodcast(id, input), onSuccess: done }),
-    plan: useMutation({ mutationFn: () => api.planPodcast(id), onSuccess: done }),
+    addEpisode: useMutation({ mutationFn: (input: CreatePodcastEpisode) => api.addPodcastEpisode(id, input), onSuccess: done }),
+    ideas: useMutation({ mutationFn: (input: SuggestPodcastIdeas) => api.suggestPodcastIdeas(id, input) }),
     saveEpisodes: useMutation({ mutationFn: (input: UpdatePodcastEpisodes) => api.updatePodcastEpisodes(id, input), onSuccess: done }),
     writeScripts: useMutation({ mutationFn: (episodeIds?: string[]) => api.writePodcastScripts(id, episodeIds), onSuccess: done }),
     saveScript: useMutation({ mutationFn: (v: { episodeId: string; script: PodcastScript }) => api.updatePodcastScript(id, v.episodeId, v.script), onSuccess: done }),

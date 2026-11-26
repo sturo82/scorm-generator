@@ -8,7 +8,10 @@ import { LanguageCode } from './primitives.js';
 
 /** Limiti della generazione (anche per il preventivo). */
 export const PODCAST_LIMITS = {
-  maxEpisodes: 20,
+  /** Puntate per serie: una serie cresce nel tempo, una puntata alla volta. */
+  maxEpisodes: 200,
+  /** Idee di puntata chieste in una volta. */
+  maxIdeas: 10,
   minMinutes: 3,
   maxMinutes: 20,
   /** Ritmo di parlato di partenza (parole al minuto); si tara sulle prime puntate generate. */
@@ -47,11 +50,14 @@ export const PodcastHosts = z
   .length(2)
   .refine((h) => h.some((x) => x.key === 'A') && h.some((x) => x.key === 'B'), 'Servono i conduttori A e B');
 
+/** Linea editoriale della serie: vale per tutte le puntate. Ogni campo è facoltativo. */
 export const PodcastBrief = z.object({
-  topic: z.string().trim().min(3).max(500),
+  topic: z.string().trim().max(500).default(''),
   audience: z.string().trim().max(300).optional(),
   tone: z.string().trim().max(200).optional(),
   objectives: z.array(z.string().trim().min(1).max(200)).max(8).default([]),
+  /** Durata di partenza di una nuova puntata (minuti). */
+  episodeMinutes: z.number().int().min(PODCAST_LIMITS.minMinutes).max(PODCAST_LIMITS.maxMinutes).default(8),
 });
 export type PodcastBrief = z.infer<typeof PodcastBrief>;
 
@@ -108,16 +114,15 @@ const PodcastMeta = {
   explicit: z.boolean().default(false),
 };
 
-/** Creazione di una serie: metadati, conduttori, fonti e numero/durata delle puntate da pianificare. */
+/**
+ * Creazione di una serie: solo il contenitore (dati generali, conduttori, linea editoriale). Le puntate
+ * si aggiungono dopo, una alla volta, ciascuna con le sue fonti.
+ */
 export const CreatePodcast = z.object({
   ...PodcastMeta,
   language: LanguageCode.default('it'),
   hosts: PodcastHosts,
-  brief: PodcastBrief,
-  knowledgeDocIds: z.array(z.string().min(1)).max(PODCAST_LIMITS.maxDocs).default([]),
-  articles: z.array(PodcastArticleRef).max(PODCAST_LIMITS.maxArticles).default([]),
-  episodeCount: z.number().int().min(1).max(PODCAST_LIMITS.maxEpisodes).default(4),
-  episodeMinutes: z.number().int().min(PODCAST_LIMITS.minMinutes).max(PODCAST_LIMITS.maxMinutes).default(8),
+  brief: PodcastBrief.default({}),
 });
 export type CreatePodcast = z.infer<typeof CreatePodcast>;
 
@@ -129,6 +134,7 @@ export const UpdatePodcast = z.object({
   contactEmail: z.string().trim().email().max(200).nullable().optional(),
   explicit: z.boolean().optional(),
   hosts: PodcastHosts.optional(),
+  brief: PodcastBrief.optional(),
 });
 export type UpdatePodcast = z.infer<typeof UpdatePodcast>;
 
@@ -144,12 +150,42 @@ export const UpdatePodcastEpisodes = z.object({
         title: z.string().trim().min(1).max(140),
         summary: z.string().trim().max(1000).default(''),
         targetMinutes: z.number().int().min(PODCAST_LIMITS.minMinutes).max(PODCAST_LIMITS.maxMinutes).optional(),
+        /** Se assenti, restano quelli già salvati. */
+        notes: z.string().trim().max(2000).optional(),
+        knowledgeDocIds: z.array(z.string().min(1)).max(PODCAST_LIMITS.maxDocs).optional(),
+        articles: z.array(PodcastArticleRef).max(PODCAST_LIMITS.maxArticles).optional(),
       }),
     )
     .min(1)
     .max(PODCAST_LIMITS.maxEpisodes),
 });
 export type UpdatePodcastEpisodes = z.infer<typeof UpdatePodcastEpisodes>;
+
+/** Una nuova puntata: di cosa parla e da quali fonti nasce. Si aggiunge in fondo alla serie. */
+export const CreatePodcastEpisode = z.object({
+  title: z.string().trim().min(1).max(140),
+  /** Di cosa parla (2-3 frasi). */
+  summary: z.string().trim().max(1000).default(''),
+  /** Indicazioni per chi scrive il copione: taglio, cose da dire o da evitare. */
+  notes: z.string().trim().max(2000).default(''),
+  targetMinutes: z.number().int().min(PODCAST_LIMITS.minMinutes).max(PODCAST_LIMITS.maxMinutes).optional(),
+  knowledgeDocIds: z.array(z.string().min(1)).max(PODCAST_LIMITS.maxDocs).default([]),
+  articles: z.array(PodcastArticleRef).max(PODCAST_LIMITS.maxArticles).default([]),
+});
+export type CreatePodcastEpisode = z.infer<typeof CreatePodcastEpisode>;
+
+/** Richiesta di idee per le prossime puntate (non crea nulla). */
+export const SuggestPodcastIdeas = z.object({
+  count: z.number().int().min(1).max(PODCAST_LIMITS.maxIdeas).default(5),
+  /** Argomento su cui orientare le idee (facoltativo). */
+  focus: z.string().trim().max(500).optional(),
+});
+export type SuggestPodcastIdeas = z.infer<typeof SuggestPodcastIdeas>;
+
+export interface PodcastIdea {
+  title: string;
+  summary: string;
+}
 
 /** Una battuta: chi parla e cosa dice. */
 export const PodcastTurn = z.object({
@@ -226,6 +262,11 @@ export interface PodcastEpisodeView {
   durationSec?: number;
   sizeBytes?: number;
   turnTimings?: PodcastTurnTiming[];
+  /** Fonti scelte per la puntata e indicazioni di chi la propone. */
+  notes: string;
+  knowledgeDocIds: string[];
+  articles: PodcastArticleRef[];
+  /** Fonti effettivamente usate dal copione. */
   sources: PodcastSource[];
   published: boolean;
   publishedAt?: string;

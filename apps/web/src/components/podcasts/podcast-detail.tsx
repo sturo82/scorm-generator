@@ -3,7 +3,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Mic, Plus, Settings2, Trash2, Wand2 } from 'lucide-react';
-import type { PodcastEpisodeView, PodcastScript, UpdatePodcastEpisodes } from '@scorm/contracts';
+import { PODCAST_LIMITS, type PodcastEpisodeView, type PodcastScript, type UpdatePodcastEpisodes } from '@scorm/contracts';
 import { PageHeader } from '@/components/app/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -13,6 +13,8 @@ import { useToast } from '@/components/ui/toast';
 import { useDeletePodcast, usePodcast, usePodcastActions, usePodcastEstimate } from '@/lib/api/hooks';
 import { EpisodeCard } from './episode-card';
 import { FeedPanel } from './feed-panel';
+import { IdeasCard } from './ideas-card';
+import { NewEpisodeDialog } from './new-episode-dialog';
 import { PODCAST_LANGUAGES, errText } from './podcast-labels';
 import { SettingsDialog } from './settings-dialog';
 
@@ -36,6 +38,7 @@ export function PodcastDetail() {
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [removing, setRemoving] = React.useState<PodcastEpisodeView | null>(null);
+  const [newEpisode, setNewEpisode] = React.useState<{ open: boolean; initial: { title: string; summary: string } | null }>({ open: false, initial: null });
 
   async function run<T>(p: Promise<T>, ok?: string) {
     try {
@@ -69,7 +72,6 @@ export function PodcastDetail() {
   const voicing = episodes.filter((e) => e.state === 'VOICING').length;
   const needScripts = episodes.filter((e) => !e.script && e.state !== 'WRITING' && e.state !== 'VOICING').length;
   const needAudio = episodes.filter((e) => e.script && (!e.hasAudio || e.audioStale) && e.state !== 'WRITING' && e.state !== 'VOICING').length;
-  const planFailed = episodes.length > 0 && episodes.every((e) => e.state === 'FAILED' && !e.script && !e.hasAudio);
   const est = estimate.data;
   const lang = PODCAST_LANGUAGES.find((l) => l.code === p.language.slice(0, 2))?.label ?? p.language;
 
@@ -91,7 +93,7 @@ export function PodcastDetail() {
       </Button>
       <PageHeader
         title={p.title}
-        description={`${lang} · ${episodes.length} ${episodes.length === 1 ? 'puntata' : 'puntate'} · ${p.hosts.map((h) => h.name).join(' e ')}`}
+        description={`${lang} · ${episodes.length === 0 ? 'nessuna puntata' : `${episodes.length} ${episodes.length === 1 ? 'puntata' : 'puntate'}`} · ${p.hosts.map((h) => h.name).join(' e ')}`}
         actions={
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setSettingsOpen(true)}>
@@ -121,18 +123,7 @@ export function PodcastDetail() {
         </Card>
       )}
 
-      {planFailed && !busy && (
-        <Card>
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-            <p className="text-sm text-destructive">{episodes[0]?.error ?? 'Il piano non è riuscito.'}</p>
-            <Button size="sm" onClick={() => void run(act.plan.mutateAsync(), 'Rifaccio il piano')} disabled={act.plan.isPending}>
-              <Wand2 /> Riprova il piano
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {!busy && !planFailed && (needScripts > 0 || needAudio > 0) && (
+      {!busy && (needScripts > 0 || needAudio > 0) && (
         <Card>
           <CardContent className="space-y-3 p-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -159,6 +150,25 @@ export function PodcastDetail() {
         </Card>
       )}
 
+      <div className="flex flex-wrap items-start gap-2">
+        <Button onClick={() => setNewEpisode({ open: true, initial: null })} disabled={busy || episodes.length >= PODCAST_LIMITS.maxEpisodes}>
+          <Plus /> Nuova puntata
+        </Button>
+      </div>
+      <IdeasCard podcast={p} disabled={busy} onUse={(idea) => setNewEpisode({ open: true, initial: idea })} />
+
+      {episodes.length === 0 && (
+        <Card>
+          <CardContent className="space-y-2 py-10 text-center">
+            <Mic className="mx-auto size-7 text-muted-foreground" aria-hidden />
+            <p className="font-medium">Il podcast è pronto, ma non ha ancora puntate</p>
+            <p className="mx-auto max-w-md text-sm text-muted-foreground">
+              Aggiungi la prima quando vuoi, con il suo argomento e le sue fonti, oppure chiedi qualche idea. Le puntate si aggiungono una alla volta, man mano che le prepari.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="space-y-3">
         {episodes.map((e, i) => (
           <EpisodeCard
@@ -179,20 +189,12 @@ export function PodcastDetail() {
             onUnpublish={() => void run(act.unpublish.mutateAsync(e.id), 'Puntata ritirata')}
           />
         ))}
-        {!busy && (
-          <Button
-            variant="outline"
-            disabled={act.saveEpisodes.isPending || episodes.length >= 20}
-            onClick={() => void saveList([...toInput(episodes), { title: `Puntata ${episodes.length + 1}`, summary: '' }], 'Puntata aggiunta')}
-          >
-            <Plus /> Aggiungi una puntata
-          </Button>
-        )}
       </div>
 
       <FeedPanel podcast={p} busy={busy} />
 
       <SettingsDialog podcast={p} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <NewEpisodeDialog podcast={p} open={newEpisode.open} initial={newEpisode.initial} onClose={() => setNewEpisode({ open: false, initial: null })} />
       <ConfirmDialog
         open={confirmDelete}
         title="Eliminare il podcast?"
