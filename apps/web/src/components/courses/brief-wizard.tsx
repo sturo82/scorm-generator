@@ -25,6 +25,8 @@ interface BriefWizardProps {
   defaultLanguage: string;
   onSubmit: (brief: BriefType) => Promise<void> | void;
   saving?: boolean;
+  /** `page`: una sola pagina con tutte le sezioni e un solo «Salva» (impostazioni del corso). */
+  layout?: 'wizard' | 'page';
 }
 
 const STEPS = ['Informazioni', 'Obiettivi', 'Test e brand'] as const;
@@ -37,7 +39,8 @@ const KNOWLEDGE_ACCEPT =
  * Wizard del brief in 3 step, validato con lo schema Brief dei contracts
  * (fonte di verità unica col backend). Mobile-first.
  */
-export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, onSubmit, saving }: BriefWizardProps) {
+export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, onSubmit, saving, layout = 'wizard' }: BriefWizardProps) {
+  const page = layout === 'page';
   const brands = useBrands();
   // Documenti selezionabili: knowledge globale del tenant + knowledge del corso.
   const globalDocs = useKnowledge('GLOBAL');
@@ -45,6 +48,7 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
   const uploadKnowledge = useUploadKnowledge();
   const toast = useToast();
   const [step, setStep] = React.useState(0);
+  const show = (n: number) => page || step === n;
   // Id dei documenti caricati inline dal wizard: appena diventano READY vengono
   // auto-selezionati (aggiunti a knowledgeDocIds). Il polling di useKnowledge li
   // porta da PENDING/PROCESSING a READY senza refresh manuale.
@@ -147,11 +151,13 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
     if (ok) setStep((s) => Math.min(s + 1, STEPS.length - 1));
   }
 
+  const Wrapper = page ? 'div' : Card;
+  const Body = page ? 'div' : CardContent;
   return (
-    <Card>
-      <CardContent className="pt-6">
+    <Wrapper>
+      <Body className={page ? '' : 'pt-6'}>
         {/* Stepper */}
-        <ol className="mb-6 flex items-center gap-2 text-sm">
+        {!page && <ol className="mb-6 flex items-center gap-2 text-sm">
           {STEPS.map((label, i) => (
             <li key={label} className="flex flex-1 items-center gap-2">
               <span
@@ -167,10 +173,10 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
               {i < STEPS.length - 1 && <span className="h-px flex-1 bg-border" />}
             </li>
           ))}
-        </ol>
+        </ol>}
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
-          {step === 0 && (
+          {show(0) && (
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="b-title">Titolo</Label>
@@ -232,7 +238,7 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
             </div>
           )}
 
-          {step === 1 && (
+          {show(1) && (
             <div className="space-y-4">
               <Label>Obiettivi di apprendimento</Label>
               {objectives.map((_, i) => (
@@ -257,7 +263,7 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
             </div>
           )}
 
-          {step === 2 && (
+          {show(2) && (
             <div className="space-y-6">
               <div className="space-y-3">
                 <Label>Test richiesti</Label>
@@ -442,7 +448,7 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
             </div>
           )}
 
-          {step === STEPS.length - 1 && (
+          {show(STEPS.length - 1) && (
             <CourseEstimate
               input={{
                 suggestedLessons: initial?.suggestedLessons ?? [],
@@ -459,10 +465,13 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
             />
           )}
           <div className="flex items-center justify-between pt-2">
-            <Button type="button" variant="ghost" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>
-              Indietro
-            </Button>
-            {step < STEPS.length - 1 ? (
+            {!page && (
+              <Button type="button" variant="ghost" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>
+                Indietro
+              </Button>
+            )}
+            {page && <span />}
+            {!page && step < STEPS.length - 1 ? (
               // key distinto dal pulsante submit: evita che React riusi lo stesso
               // nodo DOM cambiandone solo il type (altrimenti il click su «Avanti»
               // che porta all'ultimo step farebbe partire subito il submit).
@@ -471,13 +480,13 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
               </Button>
             ) : (
               <Button key="submit" type="submit" disabled={saving}>
-                {saving ? 'Salvataggio…' : 'Salva brief'}
+                {saving ? 'Salvataggio…' : page ? 'Salva impostazioni' : 'Salva brief'}
               </Button>
             )}
           </div>
         </form>
-      </CardContent>
-    </Card>
+      </Body>
+    </Wrapper>
   );
 }
 

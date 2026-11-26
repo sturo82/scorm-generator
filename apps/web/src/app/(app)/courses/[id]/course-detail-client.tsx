@@ -59,7 +59,7 @@ export function CourseDetailClient() {
     <>
       <PageHeader
         title={course.data.title}
-        description={slidesImportId && !classic ? 'Rivedi il video, correggi i copioni e pubblica.' : 'Segui i passi guidati: dal brief all’export del pacchetto SCORM.'}
+        description={slidesImportId && !classic ? 'Rivedi il video, correggi i copioni e pubblica.' : 'Contenuti, impostazioni e pubblicazione del corso.'}
         actions={
           <div className="flex items-center gap-2">
             {generating && <GeneratingBadge />}

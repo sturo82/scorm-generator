@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Check, ChevronRight, ChevronDown, FileText, ListTree, Wand2, Image as ImageIcon, Eye, Search, Database } from 'lucide-react';
+import { Check, ChevronRight, ChevronDown, FileText, Wand2, Image as ImageIcon, Eye, Search } from 'lucide-react';
 import type { Brief } from '@scorm/contracts';
 import { CreditCost } from '@/components/ui/credit-cost';
 import { Button } from '@/components/ui/button';
@@ -36,31 +36,23 @@ import { cn } from '@/lib/cn';
 import { wizardLandingKey } from '@/lib/wizard-landing';
 import { getSession } from '@/lib/auth';
 import { slidesAutoOpenKey } from '@/lib/slides-autoopen';
-import { ClipboardCheck } from 'lucide-react';
 
-type StepId = 'brief' | 'sources' | 'structure' | 'content' | 'cover' | 'review';
-
-interface StepDef {
-  id: StepId;
+type TabId = 'content' | 'settings' | 'publish';
+interface TabDef {
+  id: TabId;
   title: string;
   hint: string;
   icon: React.ComponentType<{ className?: string }>;
 }
-
-const STEPS: StepDef[] = [
-  { id: 'brief', title: 'Brief', hint: 'Definisci obiettivi e pubblico del corso.', icon: FileText },
-  { id: 'sources', title: 'Fonti', hint: 'I contenuti su cui è costruito il corso.', icon: Database },
-  { id: 'structure', title: 'Struttura', hint: 'Genera moduli e lezioni dal brief con un clic.', icon: ListTree },
-  { id: 'content', title: 'Contenuti', hint: 'Genera i contenuti didattici delle lezioni.', icon: Wand2 },
-  { id: 'cover', title: 'Media', hint: 'Copertina, immagini e narrazione.', icon: ImageIcon },
-  { id: 'review', title: 'Anteprima & Export', hint: 'Rivedi e scarica il pacchetto SCORM.', icon: Eye },
+/** Le tre aree del corso: che cosa insegna, come si presenta, come si pubblica. */
+const TABS: TabDef[] = [
+  { id: 'content', title: 'Contenuti', hint: 'Moduli, lezioni e test.', icon: Wand2 },
+  { id: 'settings', title: 'Impostazioni', hint: 'Obiettivi, fonti, copertina, brand e docente.', icon: FileText },
+  { id: 'publish', title: 'Pubblica', hint: 'Anteprima, esportazione SCORM e costi.', icon: Eye },
 ];
-
 /**
- * Wizard guidato end-to-end: accompagna dalla definizione del brief fino
- * all'export, con stato di avanzamento derivato dai dati reali del corso. Ogni
- * step è navigabile; quelli completati sono marcati e si può procedere al
- * successivo con un pulsante esplicito.
+ * Pagina del corso: una frase di stato con la prossima azione e tre aree (Contenuti, Impostazioni,
+ * Pubblica). Lo stato deriva dai dati reali del corso; la generazione automatica prosegue sul server.
  */
 export function CourseWizard({ courseId }: { courseId: string }) {
   const course = useCourse(courseId);
@@ -75,7 +67,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
   const setShareable = useSetCourseShareable(courseId);
   const activeJobs = useActiveJobs(courseId);
   const toast = useToast();
-  const [active, setActive] = React.useState<StepId>('brief');
+  const [active, setActive] = React.useState<TabId>('content');
   // Il passo iniziale si calcola dallo stato reale del corso (una volta sola), così chi apre un corso
   // già avanzato, anche di un collega, non riparte dal brief. I flag locali (anteprima dopo la
   // generazione automatica, dialog slide) hanno la precedenza.
@@ -89,7 +81,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
       if (window.localStorage.getItem(key) === '1') {
         window.localStorage.removeItem(key);
         landedRef.current = true;
-        setActive('structure');
+        setActive('content');
         setAutoOpenSlides(true);
       }
       // Dopo una generazione automatica si apre l'anteprima.
@@ -97,7 +89,7 @@ export function CourseWizard({ courseId }: { courseId: string }) {
       if (window.localStorage.getItem(landing) === 'review') {
         window.localStorage.removeItem(landing);
         landedRef.current = true;
-        setActive('review');
+        setActive('publish');
       }
     } catch {
       /* storage non disponibile */
@@ -150,37 +142,41 @@ export function CourseWizard({ courseId }: { courseId: string }) {
   const hasBrief = Boolean(course.data?.brief?.title && course.data.brief.learningObjectives?.length);
   const mods = modules.data ?? [];
   const hasStructure = mods.length > 0 && mods.some((m) => m.lessons.length > 0);
-  const hasContent = mods.some((m) => m.lessons.some((l) => l.blocks.length > 0));
   const hasCover = Boolean(course.data?.coverImageUrl);
-  const done: Record<StepId, boolean> = {
-    brief: hasBrief,
-    sources: hasBrief,
-    structure: hasStructure,
-    content: hasContent,
-    cover: hasCover,
-    review: false,
-  };
   const allLessonsReady = hasStructure && mods.every((m) => m.lessons.every((l) => l.blocks.length > 0));
   React.useEffect(() => {
     if (startedRef.current || !course.data || !modules.data) return;
     startedRef.current = true;
     if (landedRef.current) return;
-    if (allLessonsReady) setActive('review');
-    else if (hasStructure) setActive('content');
-  }, [course.data, modules.data, allLessonsReady, hasStructure]);
+    if (allLessonsReady) setActive('publish');
+    else if (!hasStructure && !hasBrief) setActive('settings');
+  }, [course.data, modules.data, allLessonsReady, hasStructure, hasBrief]);
   const me = getSession()?.user.id;
   const author = course.data?.createdBy;
   const othersCourse = Boolean(author && me && author.id !== me);
-  const completedCount = Object.values(done).filter(Boolean).length;
-  const progressPct = Math.round((completedCount / STEPS.length) * 100);
+  // Avanzamento: struttura, contenuti, test, copertina, tutto approvato dall'utente (quando serve).
+  const milestones = [hasStructure, allLessonsReady, pendingTests.pendingCount === 0 && hasStructure, hasCover];
+  const progressPct = Math.round((milestones.filter(Boolean).length / milestones.length) * 100);
+  const [structureOpen, setStructureOpen] = React.useState(false);
+  // Frase di stato e prossima azione: l'utente deve sapere sempre dove si trova.
+  const next: { text: string; action?: { label: string; run: () => void } } = generationActive
+    ? { text: batchActive ? 'Stiamo scrivendo le lezioni. Puoi chiudere la pagina: il lavoro prosegue sul server.' : 'Stiamo generando: il lavoro prosegue sul server anche se chiudi la pagina.' }
+    : !hasStructure
+      ? { text: 'Il corso non ha ancora moduli e lezioni.', action: { label: 'Crea la struttura', run: () => setActive('content') } }
+      : !allLessonsReady
+        ? { text: 'Alcune lezioni non hanno ancora i contenuti.', action: { label: 'Genera i contenuti', run: () => setActive('content') } }
+        : pendingTests.pendingCount > 0
+          ? { text: pendingTests.pendingCount === 1 ? 'Manca 1 test.' : `Mancano ${pendingTests.pendingCount} test.`, action: pendingTests.readyCount > 0 ? { label: 'Genera i test', run: () => void handleGenerateAllTests() } : { label: 'Vedi i test', run: goToTests } }
+          : !hasCover
+            ? { text: 'Aggiungi una copertina al corso.', action: { label: 'Vai alle impostazioni', run: () => setActive('settings') } }
+            : { text: 'Il corso è pronto: controlla l’anteprima e pubblicalo.', action: { label: 'Vai alla pubblicazione', run: () => setActive('publish') } };
 
   async function handleSaveBrief(brief: Brief) {
     try {
       await saveBrief.mutateAsync(brief);
       // Il preventivo mostrato nel brief diventa il budget del corso.
       await confirmBudget.mutateAsync(undefined).catch(() => undefined);
-      toast.show('Brief salvato', 'success');
-      setActive('structure');
+      toast.show('Impostazioni salvate', 'success');
     } catch {
       toast.show('Salvataggio non riuscito', 'error');
     }
@@ -271,183 +267,109 @@ export function CourseWizard({ courseId }: { courseId: string }) {
     }
   }
 
-  function goNext() {
-    const idx = STEPS.findIndex((s) => s.id === active);
-    if (idx < STEPS.length - 1) setActive(STEPS[idx + 1]!.id);
-  }
-
   return (
     <div className="space-y-6">
-      {/* Banner persistente: generazione in corso, visibile in ogni step. */}
-      {generationActive && (
-        <div className="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4 shadow-card">
-          <span className="relative flex size-2.5 shrink-0">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary/60" />
-            <span className="relative inline-flex size-2.5 rounded-full bg-primary" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-primary">
-              {batchActive ? 'Generazione dei contenuti in corso' : 'Generazione AI in corso'}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Prosegue sul server anche se ricarichi o navighi altrove. Puoi continuare a lavorare
-              sugli altri passi; evita di rigenerare struttura o contenuti finché non termina.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Banner sempre visibile: test ancora DA GENERARE. Indipendente dai job,
-          così l'utente non li perde (prima erano in fondo allo step Contenuti).
-          Compatto: niente elenco esteso (andava in overflow), solo conteggio e
-          stato. I test si basano sul contenuto delle lezioni, quindi i "pronti"
-          sono solo quelli il cui modulo/corso ha già contenuti. */}
-      {hasStructure && pendingTests.pendingCount > 0 && (
-        <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-amber-500/50 bg-amber-500/15 p-4 shadow-card dark:bg-amber-400/10">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-amber-500 text-amber-950 dark:bg-amber-400 dark:text-amber-950">
-              <ClipboardCheck className="size-5" />
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-amber-950 dark:text-amber-100">
-                {pendingTests.pendingCount === 1
-                  ? '1 test da generare'
-                  : `${pendingTests.pendingCount} test da generare`}
-              </p>
-              <p className="truncate text-xs font-medium text-amber-900 dark:text-amber-200">
-                {pendingTests.running
-                  ? 'Generazione in corso sul server…'
-                  : pendingTests.readyCount > 0
-                    ? `${pendingTests.readyCount} pronti` +
-                      (pendingTests.blockedCount > 0
-                        ? ` · ${pendingTests.blockedCount} in attesa dei contenuti`
-                        : '')
-                    : 'Genera prima i contenuti delle lezioni'}
-              </p>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button variant="outline" size="sm" onClick={goToTests} disabled={pendingTests.running}>
-              Vedi i test
-            </Button>
-            {(pendingTests.readyCount > 0 || pendingTests.running) && (
-              <Button size="sm" onClick={handleGenerateAllTests} disabled={pendingTests.running}>
-                <Wand2 className="size-4" />
-                {pendingTests.running ? 'Generazione…' : `Genera ${pendingTests.readyCount} pronti`}
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Stepper */}
+      {/* Stato del corso: una frase e la prossima azione. */}
       <div className="rounded-xl border bg-card p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm font-medium">Avanzamento</p>
-          <span className="text-xs text-muted-foreground">{progressPct}%</span>
-        </div>
         {othersCourse && author && (
           <p className="mb-3 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
             Corso creato da <span className="font-medium text-foreground">{author.name}</span>. Riprendi da dove era
             arrivato: le modifiche valgono per tutta l&apos;azienda.
           </p>
         )}
-        <CourseBudget courseId={courseId} className="mb-3" />
-        <div className="mb-4 h-2 w-full overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            {generationActive && (
+              <span className="relative flex size-2.5 shrink-0">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary/60" />
+                <span className="relative inline-flex size-2.5 rounded-full bg-primary" />
+              </span>
+            )}
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">{generationActive ? 'Generazione in corso' : `Corso completo al ${progressPct}%`}</p>
+              <p className="text-sm text-muted-foreground">{next.text}</p>
+            </div>
+          </div>
+          {next.action && (
+            <Button onClick={next.action.run} disabled={pendingTests.running}>
+              {next.action.label} <ChevronRight className="size-4" />
+            </Button>
+          )}
+        </div>
+        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
           <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progressPct}%` }} />
         </div>
-        <ol className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          {STEPS.map((step, i) => {
-            const isActive = step.id === active;
-            const isDone = done[step.id];
-            const Icon = step.icon;
-            return (
-              <li key={step.id}>
-                <button
-                  onClick={() => setActive(step.id)}
-                  className={cn(
-                    'flex w-full items-start gap-2 rounded-lg border p-2 text-left transition',
-                    isActive ? 'border-primary bg-accent/50' : 'hover:bg-accent/30',
-                  )}
-                  aria-current={isActive ? 'step' : undefined}
-                >
-                  <span
-                    className={cn(
-                      'mt-0.5 grid size-6 shrink-0 place-items-center rounded-full text-xs font-semibold',
-                      isDone ? 'bg-primary text-primary-foreground' : 'border text-muted-foreground',
-                    )}
-                  >
-                    {isDone ? <Check className="size-3.5" /> : i + 1}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="flex items-center gap-1 text-sm font-medium">
-                      <Icon className="size-3.5" /> {step.title}
-                    </span>
-                    <span className="block text-xs text-muted-foreground">{step.hint}</span>
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
+        <CourseBudget courseId={courseId} className="mt-3" />
+      </div>
+      {/* Aree del corso */}
+      <div role="tablist" aria-label="Aree del corso" className="flex gap-1 border-b">
+        {TABS.map((t) => {
+          const Icon = t.icon;
+          const isActive = t.id === active;
+          return (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setActive(t.id)}
+              className={cn(
+                '-mb-px flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition',
+                isActive ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Icon className="size-4" /> {t.title}
+              {t.id === 'content' && pendingTests.pendingCount > 0 && hasStructure && (
+                <span className="rounded-full bg-amber-500/20 px-1.5 text-xs text-amber-900 dark:text-amber-200">{pendingTests.pendingCount} test</span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Contenuto dello step attivo */}
-      {active === 'brief' && (
-        <StepShell title="1. Definisci il brief" onNext={hasBrief ? goNext : undefined} nextLabel="Vai alla struttura">
-          <BriefWizard
-            courseId={courseId}
-            initial={course.data?.brief ?? undefined}
-            defaultTitle={course.data?.title ?? ''}
-            defaultLanguage={course.data?.language ?? 'it'}
-            onSubmit={handleSaveBrief}
-            saving={saveBrief.isPending}
-          />
-        </StepShell>
-      )}
-
-      {active === 'sources' && (
-        <StepShell
-          title="Fonti del corso"
-          description="I contenuti su cui è costruito il corso: scaricali o rimuovili. Non compaiono nella Knowledge globale perché appartengono a questo corso."
-          onNext={goNext}
-          nextLabel="Vai alla struttura"
-        >
-          <CourseSourcesPanel courseId={courseId} />
-        </StepShell>
-      )}
-
-      {active === 'structure' && (
-        <StepShell
-          title="2. Struttura del corso"
-          description="Genera l’outline dal brief, poi crea moduli e lezioni con «Crea struttura dall’outline»."
-          onNext={hasStructure ? goNext : undefined}
-          nextLabel="Vai ai contenuti"
-          blockedHint={!hasStructure ? 'Genera la struttura (o aggiungi un modulo) per procedere.' : undefined}
-        >
-          <CourseBuilder courseId={courseId} mode="structure" autoOpenSlides={autoOpenSlides} />
-        </StepShell>
-      )}
-
       {active === 'content' && (
-        <StepShell
-          title="3. Contenuti delle lezioni"
-          description="Genera i contenuti di tutte le lezioni con un clic, o una alla volta. Il materiale spiega prima, poi verifica."
-          onNext={hasContent ? goNext : undefined}
-          nextLabel="Vai ai media"
-          blockedHint={!hasContent ? 'Genera i contenuti di almeno una lezione per procedere.' : undefined}
-        >
-          <CourseBuilder courseId={courseId} mode="content" highlightTests={highlightTests} />
-        </StepShell>
+        <section className="space-y-4">
+          {!hasStructure ? (
+            <>
+              <p className="text-sm text-muted-foreground">Genera moduli e lezioni dalle impostazioni del corso, oppure aggiungili a mano.</p>
+              <CourseBuilder courseId={courseId} mode="structure" autoOpenSlides={autoOpenSlides} />
+            </>
+          ) : (
+            <>
+              <CourseBuilder courseId={courseId} mode="content" highlightTests={highlightTests} />
+              <details className="rounded-lg border bg-muted/20" onToggle={(e) => setStructureOpen((e.currentTarget as HTMLDetailsElement).open)}>
+                <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground">
+                  Modifica moduli e lezioni
+                  <ChevronDown className="size-4" />
+                </summary>
+                {structureOpen && (
+                  <div className="border-t p-4">
+                    <CourseBuilder courseId={courseId} mode="structure" />
+                  </div>
+                )}
+              </details>
+            </>
+          )}
+        </section>
       )}
 
-      {active === 'cover' && (
-        <StepShell
-          title="4. Media del corso"
-          description="Genera la copertina del corso. Immagini e narrazione delle lezioni si generano nello step Contenuti."
-          onNext={goNext}
-          nextLabel="Vai all’anteprima"
-        >
+      {active === 'settings' && (
+        <section className="space-y-4">
+          <SettingsSection title="Informazioni e obiettivi" hint="Titolo, pubblico, lingua, test richiesti e fonti usate per generare." defaultOpen={!hasBrief}>
+            <BriefWizard
+              layout="page"
+              courseId={courseId}
+              initial={course.data?.brief ?? undefined}
+              defaultTitle={course.data?.title ?? ''}
+              defaultLanguage={course.data?.language ?? 'it'}
+              onSubmit={handleSaveBrief}
+              saving={saveBrief.isPending}
+            />
+          </SettingsSection>
+          <SettingsSection title="Fonti del corso" hint="I contenuti su cui è costruito il corso: scaricali o rimuovili.">
+            <CourseSourcesPanel courseId={courseId} />
+          </SettingsSection>
+          <SettingsSection title="Aspetto" hint="Copertina, brand, docente, stile e voce." defaultOpen={hasBrief && !hasCover}>
+            <div className="space-y-4">
           <div className="w-full max-w-2xl overflow-hidden rounded-xl border bg-card">
             {course.data?.coverImageUrl ? (
               <>
@@ -563,43 +485,43 @@ export function CourseWizard({ courseId }: { courseId: string }) {
             onChange={handleSetSpeechEngine}
             saving={updateSettings.isPending}
           />
-        </StepShell>
+            </div>
+          </SettingsSection>
+        </section>
       )}
 
-      {active === 'review' && (
-        <StepShell title="5. Anteprima & Export" description="Controlla il risultato, poi scarica il pacchetto SCORM.">
-          <div className="mb-4 flex justify-end">
+      {active === 'publish' && (
+        <section className="space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm text-muted-foreground">Controlla il risultato, poi scarica il pacchetto SCORM.</p>
             <ExportDialog courseId={courseId} />
           </div>
-          <div className="mb-6">
-            <ShareablePanel
-              shareable={course.data?.shareable ?? false}
-              approved={course.data?.status === 'APPROVED'}
-              saving={setShareable.isPending}
-              onToggle={handleToggleShareable}
-            />
-          </div>
-          {/* Costi & prezzo: informazione secondaria, in un pannello collassabile
-              e discreto (chiuso di default) così non ruba spazio all'anteprima. */}
-          <details className="group mb-6 rounded-lg border bg-muted/20">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground">
-              <span className="flex items-center gap-2">
-                <span aria-hidden>💰</span>
-                {creditsOn ? 'Crediti usati' : <>Costi &amp; prezzo del corso</>}
-                {!creditsOn && (
-                  <span className="font-normal text-xs text-muted-foreground/80">
-                    (consumo AI e margine — opzionale)
-                  </span>
-                )}
-              </span>
+          <CoursePreview courseId={courseId} />
+          {/* Costo: lo vede chi paga il corso. */}
+          <details className="group rounded-lg border bg-card" open>
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-sm font-medium">
+              {creditsOn ? 'Crediti usati per questo corso' : 'Costo del corso'}
               <ChevronDown className="size-4 shrink-0 transition-transform group-open:rotate-180" />
             </summary>
             <div className="border-t p-4">
               <CoursePricingPanel courseId={courseId} />
             </div>
           </details>
-          <CoursePreview courseId={courseId} />
-        </StepShell>
+          <details className="group rounded-lg border bg-muted/20">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground">
+              Opzioni avanzate: condivisione con altre piattaforme
+              <ChevronDown className="size-4 shrink-0 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="border-t p-4">
+              <ShareablePanel
+                shareable={course.data?.shareable ?? false}
+                approved={course.data?.status === 'APPROVED'}
+                saving={setShareable.isPending}
+                onToggle={handleToggleShareable}
+              />
+            </div>
+          </details>
+        </section>
       )}
     </div>
   );
@@ -973,37 +895,18 @@ function ShareablePanel({
   );
 }
 
-/** Contenitore di uno step con titolo, descrizione e azione «Avanti». */
-function StepShell({
-  title,
-  description,
-  children,
-  onNext,
-  nextLabel = 'Avanti',
-  blockedHint,
-}: {
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-  onNext?: () => void;
-  nextLabel?: string;
-  blockedHint?: string;
-}) {
+/** Sezione richiudibile della scheda Impostazioni. */
+function SettingsSection({ title, hint, defaultOpen, children }: { title: string; hint: string; defaultOpen?: boolean; children: React.ReactNode }) {
   return (
-    <section className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold">{title}</h2>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
-      </div>
-      {children}
-      <div className="flex items-center justify-end gap-3 border-t pt-4">
-        {blockedHint && <p className="text-xs text-muted-foreground">{blockedHint}</p>}
-        {onNext && (
-          <Button onClick={onNext}>
-            {nextLabel} <ChevronRight className="size-4" />
-          </Button>
-        )}
-      </div>
-    </section>
+    <details className="group rounded-xl border bg-card" open={defaultOpen}>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+        <span>
+          <span className="block text-sm font-semibold">{title}</span>
+          <span className="block text-xs text-muted-foreground">{hint}</span>
+        </span>
+        <ChevronDown className="size-4 shrink-0 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="border-t p-4">{children}</div>
+    </details>
   );
 }

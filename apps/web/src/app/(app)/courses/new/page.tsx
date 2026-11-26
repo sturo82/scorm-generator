@@ -59,7 +59,7 @@ type Source = 'everywhere' | 'mine';
 
 const FORMAT_OPTIONS = LESSON_FORMATS;
 
-const STEPS = ['Sorgente', 'Dettagli', 'Formato', 'Crea'];
+const STEPS = ['Sorgente', 'Dettagli', 'Formato e conferma'];
 /** Percorso "da slide": sorgente, titolo e lingua, poi slide e avatar; il resto lo fa la generazione automatica. */
 const STEPS_AVATAR = ['Sorgente', 'Dettagli', 'Materiale e avatar'];
 
@@ -209,7 +209,7 @@ export default function NewCoursePage() {
     cover: true,
     options: { lessonVideos: true, ...extras },
   };
-  const estimate = useCourseEstimate(step === 3 ? estimateInput : null);
+  const estimate = useCourseEstimate(step === 2 && !isMedia(origin) ? estimateInput : null);
   const notEnough = Boolean(
     estimate.data?.billed && estimate.data.available !== undefined && estimate.data.available < estimate.data.total,
   );
@@ -677,9 +677,10 @@ export default function NewCoursePage() {
               </div>
             )}
 
-            {/* STEP 4 — Crea */}
-            {step === 3 && (
-              <div className="flex flex-col gap-4">
+            {/* STEP 3 (seconda parte) — Conferma e crea */}
+            {step === 2 && !isMedia(origin) && (
+              <div className="flex flex-col gap-4 border-t pt-6">
+                <h2 className="text-base font-semibold">Conferma e crea</h2>
                 <div className="rounded-lg border bg-muted/30 p-4 text-sm">
                   <p className="font-medium">{title.trim() || preview?.proposedTitle || 'Nuovo corso'}</p>
                   <p className="mt-1 text-muted-foreground">
