@@ -18,6 +18,7 @@ export default defineConfig({
       { find: '@scorm/adapters/bedrock', replacement: r('./packages/adapters/src/bedrock/index.ts') },
       { find: '@scorm/adapters/stock', replacement: r('./packages/adapters/src/stock/index.ts') },
       { find: '@scorm/adapters/polly', replacement: r('./packages/adapters/src/polly/index.ts') },
+      { find: '@scorm/adapters/heygen', replacement: r('./packages/adapters/src/heygen/index.ts') },
       { find: '@scorm/adapters/rss', replacement: r('./packages/adapters/src/rss/index.ts') },
       { find: '@scorm/adapters', replacement: r('./packages/adapters/src/index.ts') },
     ],

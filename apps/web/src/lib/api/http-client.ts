@@ -1,4 +1,4 @@
-import type { CreatePodcast, CreatePodcastEpisode, PodcastIdea, SuggestPodcastIdeas, PodcastEstimateView, PodcastListItem, PodcastScript, PodcastView, PodcastVoiceOption, PodcastFeedVisibility, UpdatePodcast, UpdatePodcastEpisodes } from '@scorm/contracts';
+import type { PodcastVoiceProvider, CreatePodcast, CreatePodcastEpisode, PodcastIdea, SuggestPodcastIdeas, PodcastEstimateView, PodcastListItem, PodcastScript, PodcastView, PodcastVoiceOption, PodcastFeedVisibility, UpdatePodcast, UpdatePodcastEpisodes } from '@scorm/contracts';
 import type { StartSlidesAutopilot, DashboardSummary, AutopilotView, Assessment, Block, Brief, BriefDraft, CreditQuoteItem, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteView, FeedCategory, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import { confirmOverBudget, notifyInsufficientCredits, parseOverBudget } from '../billing-events';
 import { getSession, handleSessionExpired } from '../auth';
@@ -908,8 +908,8 @@ export class HttpApiClient implements ApiClient {
   listPodcastVoices(language: string) {
     return this.request<PodcastVoiceOption[]>(`/podcasts/voices?language=${encodeURIComponent(language)}`);
   }
-  previewPodcastVoice(voiceId: string, language: string) {
-    return this.request<{ url: string }>('/podcasts/voices/preview', { method: 'POST', body: JSON.stringify({ voiceId, language }) });
+  previewPodcastVoice(voiceId: string, provider: PodcastVoiceProvider, language: string) {
+    return this.request<{ url: string }>('/podcasts/voices/preview', { method: 'POST', body: JSON.stringify({ voiceId, provider, language }) });
   }
   listPodcastFeedItems(url: string) {
     return this.request<{ feedTitle?: string; items: Array<{ title: string; link?: string; summary: string; isoDate?: string }> }>(

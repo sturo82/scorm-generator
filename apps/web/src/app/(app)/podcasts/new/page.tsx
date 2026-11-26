@@ -93,17 +93,19 @@ export default function NewPodcastPage() {
       setVoiceB('');
       return;
     }
-    const female = list.find((v) => v.gender === 'female') ?? list[0]!;
-    const male = list.find((v) => v.gender === 'male') ?? list.find((v) => v.id !== female.id) ?? list[0]!;
-    if (!list.some((v) => v.id === voiceA)) setVoiceA(female.id);
-    if (!list.some((v) => v.id === voiceB)) setVoiceB(male.id);
+    // Di partenza le voci Polly (le migliori per l'italiano nel catalogo); le altre si scelgono a mano.
+    const base = list.some((v) => v.provider === 'polly') ? list.filter((v) => v.provider === 'polly') : list;
+    const female = base.find((v) => v.gender === 'female') ?? base[0]!;
+    const male = base.find((v) => v.gender === 'male') ?? base.find((v) => v.key !== female.key) ?? base[0]!;
+    if (!list.some((v) => v.key === voiceA)) setVoiceA(female.key);
+    if (!list.some((v) => v.key === voiceB)) setVoiceB(male.key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voices.data]);
 
   React.useEffect(() => {
     const list = voices.data ?? [];
-    if (!nameA) setNameA(list.find((v) => v.id === voiceA)?.name ?? '');
-    if (!nameB) setNameB(list.find((v) => v.id === voiceB)?.name ?? '');
+    if (!nameA) setNameA(list.find((v) => v.key === voiceA)?.name ?? '');
+    if (!nameB) setNameB(list.find((v) => v.key === voiceB)?.name ?? '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceA, voiceB, voices.data]);
 
@@ -132,6 +134,11 @@ export default function NewPodcastPage() {
   if (!nameA.trim() || !nameB.trim()) problems.push('Scrivi il nome dei due conduttori');
   if (!voiceA || !voiceB) problems.push('Scegli la voce dei due conduttori');
 
+  /** Riferimento salvato per la voce scelta (chiave `provider:id`). */
+  function voiceRef(key: string) {
+    const v = (voices.data ?? []).find((x) => x.key === key);
+    return { kind: 'catalog' as const, provider: v?.provider ?? ('polly' as const), id: v?.id ?? key };
+  }
   async function submit() {
     setSaving(true);
     try {
@@ -145,8 +152,8 @@ export default function NewPodcastPage() {
         explicit,
         folderId: folderId || null,
         hosts: [
-          { key: 'A', name: nameA.trim(), voice: { kind: 'catalog', id: voiceA } },
-          { key: 'B', name: nameB.trim(), voice: { kind: 'catalog', id: voiceB } },
+          { key: 'A', name: nameA.trim(), voice: voiceRef(voiceA) },
+          { key: 'B', name: nameB.trim(), voice: voiceRef(voiceB) },
         ],
         brief: {
           topic: topic.trim(),

@@ -30,9 +30,15 @@ export const PODCAST_LIMITS = {
 export const PodcastHostKey = z.enum(['A', 'B']);
 export type PodcastHostKey = z.infer<typeof PodcastHostKey>;
 
+/** Chi produce la voce: Amazon Polly o HeyGen (voci del catalogo e voci proprie clonate). */
+export const PodcastVoiceProvider = z.enum(['polly', 'heygen']);
+export type PodcastVoiceProvider = z.infer<typeof PodcastVoiceProvider>;
+
 /** Voce di un conduttore: del catalogo del fornitore, oppure (in futuro) clonata. */
 export const PodcastVoiceRef = z.object({
   kind: z.enum(['catalog', 'clone']).default('catalog'),
+  /** Le serie create prima di HeyGen non lo hanno: sono voci Polly. */
+  provider: PodcastVoiceProvider.default('polly'),
   id: z.string().min(1).max(64),
 });
 export type PodcastVoiceRef = z.infer<typeof PodcastVoiceRef>;
@@ -242,10 +248,19 @@ export type PodcastSource = z.infer<typeof PodcastSource>;
 
 /** Voce del catalogo del fornitore. */
 export const PodcastVoiceOption = z.object({
+  /** Identificativo univoco tra fornitori: `provider:id`. */
+  key: z.string(),
+  provider: PodcastVoiceProvider,
   id: z.string(),
   name: z.string(),
   gender: z.enum(['female', 'male', 'unknown']),
   language: z.string(),
+  /** Voce propria dell'account (clonata): non del catalogo. */
+  mine: z.boolean().default(false),
+  /** La lingua della serie non è quella originale della voce: può avere un accento straniero. */
+  accent: z.boolean().default(false),
+  /** Audio di prova già pronto, se il fornitore lo offre. */
+  previewUrl: z.string().optional(),
 });
 export type PodcastVoiceOption = z.infer<typeof PodcastVoiceOption>;
 
@@ -327,3 +342,6 @@ export interface PodcastEstimateView {
   total: number;
   lines: Array<{ kind: 'plan' | 'scripts' | 'audio'; quantity: number; credits: number | null }>;
 }
+
+/** Chiave di una voce, uguale per Polly e HeyGen. */
+export const podcastVoiceKey = (v: { provider?: PodcastVoiceProvider; id: string }): string => `${v.provider ?? 'polly'}:${v.id}`;

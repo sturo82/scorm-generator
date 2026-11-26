@@ -65,6 +65,12 @@ export interface SpeechVoice {
   gender: 'female' | 'male' | 'unknown';
   /** Lingua principale della voce (es. "it-IT"). */
   language: string;
+  /** Voce propria dell'account (clonata), non del catalogo. */
+  mine?: boolean;
+  /** Parla la lingua richiesta ma non è la sua lingua originale (possibile accento). */
+  accent?: boolean;
+  /** Audio di prova già pronto. */
+  previewUrl?: string;
 }
 
 export interface SpeechProvider {

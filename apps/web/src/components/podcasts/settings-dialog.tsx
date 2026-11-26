@@ -1,6 +1,6 @@
 'use client';
 import * as React from 'react';
-import { PODCAST_CATEGORIES, type PodcastCategory, type PodcastView } from '@scorm/contracts';
+import { PODCAST_CATEGORIES, podcastVoiceKey, type PodcastCategory, type PodcastView } from '@scorm/contracts';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Input, Label, Textarea } from '@/components/ui/input';
@@ -35,8 +35,13 @@ export function SettingsDialog({ podcast, open, onClose }: { podcast: PodcastVie
   }, [open, podcast]);
 
   const voicesChanged = JSON.stringify(hosts.map((h) => h.voice)) !== JSON.stringify(podcast.hosts.map((h) => h.voice));
+  /** Riferimento salvato per la voce scelta (chiave `provider:id`). */
+  const voiceRefOf = (voiceKey: string) => {
+    const v = (voices.data ?? []).find((x) => x.key === voiceKey);
+    return { kind: 'catalog' as const, provider: v?.provider ?? ('polly' as const), id: v?.id ?? voiceKey };
+  };
   const patchHost = (key: 'A' | 'B', p: Partial<{ name: string; voiceId: string }>) =>
-    setHosts((cur) => cur.map((h) => (h.key === key ? { ...h, ...(p.name !== undefined ? { name: p.name } : {}), ...(p.voiceId !== undefined ? { voice: { kind: 'catalog' as const, id: p.voiceId } } : {}) } : h)));
+    setHosts((cur) => cur.map((h) => (h.key === key ? { ...h, ...(p.name !== undefined ? { name: p.name } : {}), ...(p.voiceId !== undefined ? { voice: voiceRefOf(p.voiceId) } : {}) } : h)));
 
   async function save() {
     try {
@@ -96,7 +101,7 @@ export function SettingsDialog({ podcast, open, onClose }: { podcast: PodcastVie
             <div key={h.key} className="space-y-2 rounded-lg border p-3">
               <p className="text-sm font-medium">Conduttore {h.key === 'A' ? 'principale' : 'ospite'}</p>
               <Input aria-label={`Nome del conduttore ${h.key}`} value={h.name} maxLength={40} onChange={(e) => patchHost(h.key, { name: e.target.value })} />
-              <VoiceSelect voices={voices.data ?? []} value={h.voice.id} language={podcast.language} label={`Voce del conduttore ${h.key}`} onChange={(v) => patchHost(h.key, { voiceId: v })} />
+              <VoiceSelect voices={voices.data ?? []} value={podcastVoiceKey(h.voice)} language={podcast.language} label={`Voce del conduttore ${h.key}`} onChange={(v) => patchHost(h.key, { voiceId: v })} />
             </div>
           ))}
         </div>

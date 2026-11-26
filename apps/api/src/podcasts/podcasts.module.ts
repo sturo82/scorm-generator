@@ -2,11 +2,12 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { FeedProvider, SpeechProvider } from '@scorm/domain';
 import { PollySpeechProvider } from '@scorm/adapters/polly';
+import { HeygenSpeechProvider } from '@scorm/adapters/heygen';
 import { RssFeedProvider } from '@scorm/adapters/rss';
 import type { AppConfig } from '../config/configuration.js';
 import { KnowledgeModule } from '../knowledge/knowledge.module.js';
 import { SPEECH_PROVIDER } from '../providers/provider.constants.js';
-import { PODCAST_FEED, PODCAST_SPEECH } from './podcast.constants.js';
+import { PODCAST_FEED, PODCAST_HEYGEN_SPEECH, PODCAST_SPEECH } from './podcast.constants.js';
 import { PodcastGenerationService } from './podcast-generation.service.js';
 import { PodcastPublishService } from './podcast-publish.service.js';
 import { PodcastVoicesService } from './podcast-voices.service.js';
@@ -38,6 +39,17 @@ const podcastSpeech = {
   },
 };
 
+/** Voci HeyGen (anche quelle proprie, clonate con gli avatar): solo se c'è la chiave API. */
+const podcastHeygenSpeech = {
+  provide: PODCAST_HEYGEN_SPEECH,
+  inject: [ConfigService],
+  useFactory: (config: ConfigService<AppConfig, true>): SpeechProvider | null => {
+    const h = config.get('heygen', { infer: true });
+    if (!h.apiKey) return null;
+    return new HeygenSpeechProvider({ apiKey: h.apiKey, baseUrl: h.baseUrl, model: process.env['HEYGEN_VOICE_MODEL'] || undefined });
+  },
+};
+
 const podcastFeed = {
   provide: PODCAST_FEED,
   useFactory: (): FeedProvider => new RssFeedProvider(),
@@ -53,6 +65,7 @@ const podcastFeed = {
     PodcastVoicesService,
     PodcastPublishService,
     podcastSpeech,
+    podcastHeygenSpeech,
     podcastFeed,
   ],
   exports: [PodcastsService],

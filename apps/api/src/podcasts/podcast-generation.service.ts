@@ -26,8 +26,8 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { LLM_PROVIDER, OBJECT_STORAGE } from '../providers/provider.constants.js';
 import { assembleAudio, scriptChars, tidyScript } from './podcast-audio.js';
 import { IDEAS_SCHEMA, SCRIPT_SCHEMA, ideasPrompt, scriptPrompt } from './podcast-prompts.js';
-import { PODCAST_FEED, PODCAST_SPEECH } from './podcast.constants.js';
-import { PodcastVoicesService, podcastLocale } from './podcast-voices.service.js';
+import { PODCAST_FEED } from './podcast.constants.js';
+import { HEYGEN_VOICE_MODEL, PodcastVoicesService, podcastLocale } from './podcast-voices.service.js';
 
 const LEASE_MS = 5 * 60_000;
 const HEARTBEAT_MS = 60_000;
@@ -66,7 +66,6 @@ export class PodcastGenerationService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(LLM_PROVIDER) private readonly llm: LLMProvider,
-    @Inject(PODCAST_SPEECH) private readonly speech: SpeechProvider,
     @Inject(PODCAST_FEED) private readonly feeds: FeedProvider,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     private readonly retrieval: RetrievalService,
@@ -399,7 +398,7 @@ export class PodcastGenerationService implements OnModuleInit {
     if (missing) throw new BadRequestException(`La puntata «${missing.title}» non ha ancora il copione`);
     const hosts = PodcastHosts.parse(podcast.hosts);
     for (const h of hosts) {
-      if (!(await this.voices.isValid(h.voice.id, podcast.language))) {
+      if (!(await this.voices.isValid(h.voice, podcast.language, tenantId))) {
         throw new BadRequestException(`La voce di ${h.name} non è disponibile per questa lingua: sceglierne un'altra`);
       }
     }
@@ -456,14 +455,15 @@ export class PodcastGenerationService implements OnModuleInit {
     const cfg = this.config.get('podcast', { infer: true });
     const script = PodcastScript.parse(e.script);
     const hosts = PodcastHosts.parse(podcast.hosts);
-    const voiceOf = new Map(hosts.map((h) => [h.key, h.voice.id]));
+    const voiceOf = new Map(hosts.map((h) => [h.key, h.voice]));
     const locale = podcastLocale(podcast.language);
     const parts: Array<{ bytes: Uint8Array; text: string }> = [];
-    let chars = 0;
+    const charsBy: Record<'polly' | 'heygen', number> = { polly: 0, heygen: 0 };
     for (const turn of script.turns) {
-      const res = await this.synthWithRetry(turn.text, locale, voiceOf.get(turn.host)!, cfg.speechEngine);
+      const voice = voiceOf.get(turn.host)!;
+      const res = await this.synthWithRetry(this.voices.speechFor(voice.provider), turn.text, locale, voice.id, cfg.speechEngine);
       parts.push({ bytes: res.bytes, text: turn.text });
-      chars += turn.text.length;
+      charsBy[voice.provider] += turn.text.length;
     }
     const { audio, timings, durationMs } = assembleAudio(parts);
     const key = `podcasts/${tenantId}/${podcast.id}/${e.id}.mp3`;
@@ -474,10 +474,20 @@ export class PodcastGenerationService implements OnModuleInit {
       provider: 'POLLY',
       model: `polly-${cfg.speechEngine}`,
       unit: 'CHARACTERS',
-      quantity: chars,
+      quantity: charsBy.polly,
       source: 'podcast_audio',
       region: cfg.speechRegion,
     });
+    await this.meter.record({
+      tenantId,
+      courseId: null,
+      provider: 'HEYGEN',
+      model: HEYGEN_VOICE_MODEL,
+      unit: 'CHARACTERS',
+      quantity: charsBy.heygen,
+      source: 'podcast_audio',
+    });
+    const chars = charsBy.polly + charsBy.heygen;
     await this.prisma.podcastEpisode.update({
       where: { id: e.id },
       data: {
@@ -496,11 +506,11 @@ export class PodcastGenerationService implements OnModuleInit {
   }
 
   /** Una battuta: fino a 3 tentativi con attesa crescente (limiti di frequenza o errori passeggeri). */
-  private async synthWithRetry(text: string, language: string, voice: string, engine: 'standard' | 'neural' | 'generative') {
+  private async synthWithRetry(speech: SpeechProvider, text: string, language: string, voice: string, engine: 'standard' | 'neural' | 'generative') {
     let last: unknown;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        return await this.speech.synthesize({ text, language, voice, engine });
+        return await speech.synthesize({ text, language, voice, engine });
       } catch (err) {
         last = err;
         await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));

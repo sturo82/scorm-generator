@@ -191,9 +191,9 @@ export class PodcastsService {
   // --- Creazione e modifica ----------------------------------------------------
 
   /** Verifica che le voci scelte esistano per la lingua della serie. */
-  private async assertVoices(hosts: PodcastHost[], language: string): Promise<void> {
+  private async assertVoices(tenantId: string, hosts: PodcastHost[], language: string): Promise<void> {
     for (const h of hosts) {
-      if (!(await this.voices.isValid(h.voice.id, language))) {
+      if (!(await this.voices.isValid(h.voice, language, tenantId))) {
         throw new BadRequestException(`La voce di ${h.name} non è disponibile per questa lingua: scegline un'altra.`);
       }
     }
@@ -204,7 +204,7 @@ export class PodcastsService {
     if ((await this.prisma.podcast.count({ where: { tenantId } })) >= MAX_PODCASTS_PER_TENANT) {
       throw new BadRequestException(`Hai raggiunto il massimo di ${MAX_PODCASTS_PER_TENANT} podcast.`);
     }
-    await this.assertVoices(dto.hosts, dto.language);
+    await this.assertVoices(tenantId, dto.hosts, dto.language);
     if (dto.folderId) {
       const f = await this.prisma.folder.findFirst({ where: { id: dto.folderId, tenantId, kind: 'PODCAST' }, select: { id: true } });
       if (!f) throw new BadRequestException('Cartella non trovata');
@@ -261,7 +261,7 @@ export class PodcastsService {
 
   async update(tenantId: string, id: string, dto: UpdatePodcast): Promise<PodcastView> {
     const p = await this.require(tenantId, id);
-    if (dto.hosts) await this.assertVoices(dto.hosts, p.language);
+    if (dto.hosts) await this.assertVoices(tenantId, dto.hosts, p.language);
     await this.prisma.podcast.update({
       where: { id },
       data: {

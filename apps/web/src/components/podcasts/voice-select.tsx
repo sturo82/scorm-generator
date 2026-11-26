@@ -8,6 +8,14 @@ import { getApiClient } from '@/lib/api/client';
 import type { PodcastVoiceOption } from '@scorm/contracts';
 import { errText } from './podcast-labels';
 
+/** Raggruppamento delle voci nell'elenco: prima le proprie, poi i cataloghi. */
+const GROUPS: Array<{ label: string; test: (v: PodcastVoiceOption) => boolean }> = [
+  { label: 'Le tue voci (HeyGen)', test: (v) => v.mine },
+  { label: 'Amazon Polly', test: (v) => v.provider === 'polly' },
+  { label: 'HeyGen', test: (v) => v.provider === 'heygen' && !v.mine && !v.accent },
+  { label: 'HeyGen multilingua: possibile accento straniero', test: (v) => v.provider === 'heygen' && !v.mine && v.accent },
+];
+
 /** Scelta della voce di un conduttore, con anteprima. */
 export function VoiceSelect({
   voices,
@@ -18,9 +26,10 @@ export function VoiceSelect({
   disabled,
 }: {
   voices: PodcastVoiceOption[];
+  /** Chiave della voce scelta (`provider:id`). */
   value: string;
   language: string;
-  onChange: (voiceId: string) => void;
+  onChange: (voiceKey: string) => void;
   label: string;
   disabled?: boolean;
 }) {
@@ -28,10 +37,11 @@ export function VoiceSelect({
   const [playing, setPlaying] = React.useState(false);
 
   async function preview() {
-    if (!value) return;
+    const option = voices.find((v) => v.key === value);
+    if (!option) return;
     setPlaying(true);
     try {
-      const { url } = await getApiClient().previewPodcastVoice(value, language);
+      const { url } = await getApiClient().previewPodcastVoice(option.id, option.provider, language);
       const audio = new Audio(url);
       audio.onended = () => setPlaying(false);
       audio.onerror = () => setPlaying(false);
@@ -47,11 +57,18 @@ export function VoiceSelect({
       <div className="min-w-0 flex-1">
         <Select aria-label={label} value={value} disabled={disabled || voices.length === 0} onChange={(e) => onChange(e.target.value)}>
           {voices.length === 0 && <option value="">Nessuna voce per questa lingua</option>}
-          {voices.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name} ({v.gender === 'female' ? 'donna' : v.gender === 'male' ? 'uomo' : 'voce'})
-            </option>
-          ))}
+          {GROUPS.map((g) => {
+            const list = voices.filter(g.test);
+            return list.length === 0 ? null : (
+              <optgroup key={g.label} label={g.label}>
+                {list.map((v) => (
+                  <option key={v.key} value={v.key}>
+                    {v.name} ({v.gender === 'female' ? 'donna' : v.gender === 'male' ? 'uomo' : 'voce'})
+                  </option>
+                ))}
+              </optgroup>
+            );
+          })}
         </Select>
       </div>
       <Button type="button" variant="outline" size="icon" aria-label={`Ascolta la voce: ${label}`} onClick={() => void preview()} disabled={disabled || !value || playing}>

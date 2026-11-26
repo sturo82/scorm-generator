@@ -7,6 +7,7 @@ import {
   MoveCourse,
   PODCAST_COVER,
   PODCAST_LIMITS,
+  PodcastVoiceProvider,
   SetPodcastFeed,
   SuggestPodcastIdeas,
   UpdatePodcast,
@@ -29,7 +30,7 @@ import { PodcastVoicesService } from './podcast-voices.service.js';
 import { PodcastsService } from './podcasts.service.js';
 
 const EpisodeIds = z.object({ episodeIds: z.array(z.string().min(1)).max(PODCAST_LIMITS.maxEpisodes).optional() });
-const VoicePreview = z.object({ voiceId: z.string().min(1).max(64), language: z.string().min(2).max(10) });
+const VoicePreview = z.object({ voiceId: z.string().min(1).max(64), provider: PodcastVoiceProvider.default('polly'), language: z.string().min(2).max(10) });
 
 /**
  * API dei podcast: serie, puntate, voci, generazione, pubblicazione e feed. Lettura per tutti gli
@@ -60,15 +61,15 @@ export class PodcastsController {
 
   /** Voci disponibili per la lingua della serie. */
   @Get('voices')
-  listVoices(@Query('language') language?: string) {
-    return this.voices.list(language || 'it');
+  listVoices(@CurrentContext() ctx: AuthContext, @Query('language') language?: string) {
+    return this.voices.list(language || 'it', ctx.tenant.tenantId);
   }
 
   /** Breve audio di prova di una voce. */
   @Post('voices/preview')
   @Roles('EDITOR')
   previewVoice(@CurrentContext() ctx: AuthContext, @Body(new ZodValidationPipe(VoicePreview)) body: z.infer<typeof VoicePreview>) {
-    return this.voices.preview(ctx.tenant.tenantId, body.voiceId, body.language);
+    return this.voices.preview(ctx.tenant.tenantId, { provider: body.provider, id: body.voiceId }, body.language);
   }
 
   /** Articoli recenti di un feed RSS, per sceglierli come fonte. */

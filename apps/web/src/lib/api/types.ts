@@ -1,4 +1,4 @@
-import type { CreatePodcast, CreatePodcastEpisode, PodcastIdea, SuggestPodcastIdeas, PodcastEstimateView, PodcastListItem, PodcastScript, PodcastView, PodcastVoiceOption, PodcastFeedVisibility, UpdatePodcast, UpdatePodcastEpisodes } from '@scorm/contracts';
+import type { PodcastVoiceProvider, CreatePodcast, CreatePodcastEpisode, PodcastIdea, SuggestPodcastIdeas, PodcastEstimateView, PodcastListItem, PodcastScript, PodcastView, PodcastVoiceOption, PodcastFeedVisibility, UpdatePodcast, UpdatePodcastEpisodes } from '@scorm/contracts';
 import type { StartSlidesAutopilot, DashboardSummary, AutopilotView, CourseCreditsView, CourseEstimateInput, CourseEstimateOptions, CourseEstimateView, LessonEstimateView, SlideImportEstimateView, CreditQuoteItem, CreditQuoteView, WalletTransactionsView, WalletView } from '@scorm/contracts';
 import type {
   Brief,
@@ -828,7 +828,7 @@ export interface ApiClient {
   estimateNewPodcast(minutes: number): Promise<PodcastEstimateView>;
   estimatePodcast(id: string): Promise<PodcastEstimateView>;
   listPodcastVoices(language: string): Promise<PodcastVoiceOption[]>;
-  previewPodcastVoice(voiceId: string, language: string): Promise<{ url: string }>;
+  previewPodcastVoice(voiceId: string, provider: PodcastVoiceProvider, language: string): Promise<{ url: string }>;
   listPodcastFeedItems(url: string): Promise<{ feedTitle?: string; items: Array<{ title: string; link?: string; summary: string; isoDate?: string }> }>;
   addPodcastEpisode(id: string, input: CreatePodcastEpisode): Promise<PodcastView>;
   suggestPodcastIdeas(id: string, input: SuggestPodcastIdeas): Promise<PodcastIdea[]>;
