@@ -377,6 +377,13 @@ export const INTERACTIONS_CSS = `/* interactions.css — micro-interazioni condi
 .scenario-fs-btn { position: absolute; top: 0.6rem; right: 0.6rem; z-index: 2; pointer-events: auto; display: grid; place-items: center; width: 2.25rem; height: 2.25rem; padding: 0; border: 1px solid rgba(255,255,255,0.35); border-radius: 10px; background: rgba(17,24,39,0.6); color: #fff; backdrop-filter: blur(4px); font-size: 1.05rem; line-height: 1; cursor: pointer; transition: background var(--mo-dur) var(--mo-ease), border-color var(--mo-dur) var(--mo-ease); }
 .scenario-fs-btn:hover { border-color: var(--ix-accent); background: rgba(17,24,39,0.82); }
 /* Esito finale: pannello centrale sopra il video. */
+.scenario-consequence { pointer-events: auto; align-self: stretch; margin-top: auto; margin-bottom: auto; display: grid; gap: 0.6rem; padding: 1.1rem 1.25rem; border-radius: 14px; border-left: 6px solid #9ca3af; background: rgba(17,24,39,0.88); color: #fff; backdrop-filter: blur(6px); max-height: 85%; overflow-y: auto; }
+.scenario-consequence--good { border-left-color: #22c55e; }
+.scenario-consequence--partial { border-left-color: #f59e0b; }
+.scenario-consequence--bad { border-left-color: #ef4444; }
+.scenario-consequence-choice { margin: 0; font-size: 0.85rem; opacity: 0.8; }
+.scenario-consequence-text { margin: 0; font-size: clamp(1rem, 2.2vw, 1.25rem); line-height: 1.4; }
+.scenario-next { width: auto; justify-self: start; background: var(--ix-accent); border-color: transparent; font-weight: 600; }
 .scenario-outcome { pointer-events: auto; align-self: center; margin-top: auto; margin-bottom: auto; display: grid; gap: 0.75rem; justify-items: center; text-align: center; padding: 1.25rem 1.5rem; border-radius: 14px; background: rgba(17,24,39,0.82); color: #fff; backdrop-filter: blur(6px); max-height: 80%; overflow-y: auto; }
 .scenario-outcome .scenario-end { margin: 0; font-size: clamp(1.05rem, 2.6vw, 1.5rem); font-weight: 700; }
 .scenario-restart { pointer-events: auto; padding: 0.6rem 1.1rem; border: 1px solid rgba(255,255,255,0.4); border-radius: 999px; background: var(--ix-accent); color: var(--ix-on-primary, #fff); font-weight: 600; cursor: pointer; }

@@ -369,14 +369,22 @@ export function lessonPillolaInterattivaPrompt(input: {
       : '',
     input.toneInstruction ? `Indicazione aggiuntiva: ${input.toneInstruction}` : '',
     '',
-    'STRUTTURA del libro-game (un percorso a scene):',
-    'FASE 1 — SETUP/SPIEGAZIONE (scene role="teach"): 1-2 scene che presentano la situazione e il concetto. '
-      + 'Ogni scena ha UN mini-video e UNA sola scelta "Continua" (nextNodeId verso la scena dopo), NON valutata.',
-    'FASE 2 — DECISIONI (scene role="quiz"): 1-3 scene che mettono l\'utente davanti a un bivio concreto, con '
-      + '2-3 scelte VALUTATE (score + feedback) che diramano verso scene diverse o verso gli esiti. La scelta '
-      + 'giusta avvicina alla risoluzione; quelle sbagliate portano verso un esito negativo o una scena di recupero.',
-    'ESITI (scene terminali, choices: []): ALMENO un esito POSITIVO (situazione RISOLTA) e ALMENO uno NEGATIVO '
-      + '(situazione NON risolta / conseguenza), ciascuno con un mini-video e un testo che chiarisce cosa è successo e perché.',
+    'COS\'È: un percorso a decisioni su una SITUAZIONE REALE del lavoro (un cliente arrabbiato, un incidente, ' +
+      'una richiesta sospetta, un collega in difficoltà…). L\'utente interpreta sé stesso, sceglie cosa FARE e vede ' +
+      'subito le CONSEGUENZE di ogni scelta. Non è una lezione teorica con un pulsante "Continua".',
+    '',
+    'STRUTTURA (un grafo di scene):',
+    '1) SCENA INIZIALE (role="teach"): presenta la situazione concreta (chi, dove, cosa sta succedendo) in 2-3 frasi. ' +
+      'È l\'UNICA scena con una sola scelta, con label "Continua" (o equivalente nella lingua).',
+    '2) DECISIONI (role="quiz"): 2-3 scene in sequenza, ciascuna un bivio con 3 scelte (mai meno di 2). Ogni scelta è ' +
+      'un\'AZIONE concreta in prima persona ("Chiamo subito il responsabile", "Rispondo al cliente senza verificare"), ' +
+      'plausibile: nessuna scelta ovvia o ridicola. Una scelta è la migliore, una è accettabile ma parziale, una è ' +
+      'sbagliata. Ogni scelta porta a una scena diversa: la scelta giusta avanza verso la risoluzione, quella ' +
+      'parziale verso una decisione di recupero o un esito intermedio, quella sbagliata aggrava la situazione.',
+    '3) CONSEGUENZE: OGNI scelta ha "feedback": 1-2 frasi su COSA SUCCEDE a seguito di quella scelta (la conseguenza ' +
+      'nel mondo reale, non un giudizio astratto) e perché. Il feedback viene mostrato subito dopo la scelta.',
+    '4) ESITI (scene terminali, choices: []): almeno un esito POSITIVO (situazione risolta) e almeno uno NEGATIVO ' +
+      '(situazione compromessa), ciascuno con il testo di cosa è successo, perché, e la lezione da portarsi a casa.',
     '',
     'Produci ESATTAMENTE UN block "branching_scenario" con questo payload:',
     '{ ',
@@ -388,12 +396,10 @@ export function lessonPillolaInterattivaPrompt(input: {
     '    { ',
     '      "id": "<slug-scena>", ',
     '      "role": "teach" | "quiz", ',
-    '      "content": { "format": "html", "html": "<p>Testo breve (1-3 frasi): teach presenta/spiega; quiz pone la situazione e la domanda.</p>" }, ',
-    `      "media": { "kind": "video", "alt": "<descrizione breve della scena in ${lang}>", "placeholderPrompt": "<STORYBOARD del mini-cartoon: soggetto/personaggio coerente, azione, ambientazione, 1 sola idea, stile explainer illustrato, in ${lang}>" }, `,
+    '      "content": { "format": "html", "html": "<p>Testo breve (1-3 frasi): la situazione o la domanda \\"Cosa fai?\\".</p>" }, ',
+    `      "media": { "kind": "video", "alt": "<descrizione breve della scena in ${lang}>", "placeholderPrompt": "<STORYBOARD del mini-cartoon: personaggio coerente, azione, ambientazione, 1 sola idea, stile explainer illustrato, in ${lang}>" }, `,
     '      "choices": [ ',
-    '        /* teach: UNA scelta "Continua" con nextNodeId, senza score. */ ',
-    '        /* quiz: 2-3 scelte con nextNodeId (scena/esito), score (positivo se avvicina alla soluzione, 0/negativo se errata) e feedback. */ ',
-    '        { "id": "<slug-scelta>", "label": "<testo scelta>", "nextNodeId": "<id scena successiva; ASSENTE se porta a un esito terminale>", "score": <numero, solo quiz>, "feedback": "<solo quiz: conseguenza 1-2 frasi>" } ',
+    '        { "id": "<slug-scelta>", "label": "<azione in prima persona>", "nextNodeId": "<id scena successiva; ASSENTE solo se la scelta chiude il percorso>", "score": <numero: 10 scelta migliore, 5 parziale, 0 sbagliata; solo scene quiz>, "feedback": "<conseguenza 1-2 frasi; solo scene quiz>" } ',
     '      ] ',
     '    } ',
     '  ] ',
@@ -401,14 +407,16 @@ export function lessonPillolaInterattivaPrompt(input: {
     '',
     'REGOLE:',
     `- Scrivi TUTTO in ${lang} (testi scena, label scelte, feedback, alt e placeholderPrompt).`,
-    '- 4-8 scene totali: prima le scene teach, poi le quiz, infine gli esiti terminali (almeno 1 positivo e 1 negativo).',
-    '- Imposta SEMPRE "role" su ogni scena. Scene teach: UNA sola scelta "Continua" con nextNodeId; niente score/feedback.',
-    '- Scene quiz: 2-3 scelte valutate; conseguenze coerenti e istruttive. Le vie diverse DEVONO poter condurre sia all\'esito positivo sia al negativo.',
+    '- 6-9 scene totali: 1 iniziale, 2-3 decisioni (più eventuali scene di recupero), 2-3 esiti terminali.',
+    '- Le label delle scelte sono azioni concrete e diverse tra loro: MAI "Continua", "Avanti", "Prosegui" nelle scene quiz.',
+    '- Le scelte di una stessa scena devono avere punteggi DIVERSI e portare a scene DIVERSE.',
+    '- Le vie diverse DEVONO poter condurre sia all\'esito positivo sia al negativo; ogni scena è raggiungibile dalla prima.',
     '- Gli esiti terminali hanno "choices": [] e un media video segnaposto con testo che spiega l\'esito.',
-    '- Ogni nextNodeId DEVE puntare a un id di nodo esistente; startNodeId DEVE essere la prima scena teach.',
-    '- Il media di OGNI scena è un VIDEO SEGNAPOSTO (cartoon): NON inventare storageKey/URL; lo storyboard va in placeholderPrompt. I cartoon verranno prodotti a parte.',
+    '- Ogni nextNodeId DEVE puntare a un id di nodo esistente; startNodeId DEVE essere la scena iniziale.',
+    '- Il media di OGNI scena è un VIDEO SEGNAPOSTO (cartoon): NON inventare storageKey/URL; lo storyboard va in placeholderPrompt.',
     '- Personaggio/ambientazione COERENTI tra le scene (stesso protagonista), così il percorso sembra un\'unica storia.',
-    '- Gli id dei nodi/scelte sono slug brevi univoci (es. "intro-1", "bivio-1", "esito-ok", "esito-ko", "scelta-a").',
+    '- Gli id dei nodi/scelte sono slug brevi univoci (es. "intro", "bivio-1", "recupero-1", "esito-ok", "esito-ko").',
+    '- Resta fedele alle fonti: la situazione e le conseguenze devono riflettere ciò che il materiale insegna (procedure, norme, buone pratiche).',
     '',
     input.context,
   ];

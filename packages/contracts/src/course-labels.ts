@@ -99,6 +99,12 @@ export interface CourseLabels {
    */
   scenarioOutcome: (ratio: number) => string;
   scenarioRestart: string;
+  /** Pulsante che porta alla scena successiva dopo aver letto la conseguenza di una scelta. */
+  scenarioContinue: string;
+  /** Etichetta del riquadro «hai scelto…» che apre la conseguenza. */
+  scenarioYouChose: string;
+  /** Segnaposto di una clip non ancora prodotta (mai il testo dello storyboard). */
+  scenarioVideoSoon: string;
   /** Tooltip/aria del pulsante schermo intero del player libro-game. */
   scenarioFullscreen: string;
   transcript: string;
@@ -188,6 +194,9 @@ const EN: CourseLabels = {
   scenarioOutcome: (r) =>
     r >= 0.8 ? 'Well done!' : r >= 0.4 ? 'Good, but you can do better.' : 'Be careful: review this topic.',
   scenarioRestart: 'Restart',
+  scenarioContinue: 'Continue',
+  scenarioYouChose: 'You chose',
+  scenarioVideoSoon: 'Video coming soon',
   scenarioFullscreen: 'Full screen',
   transcript: 'Transcript',
   captions: 'Captions',
@@ -273,6 +282,9 @@ const IT: CourseLabels = {
   scenarioOutcome: (r) =>
     r >= 0.8 ? 'Ben fatto!' : r >= 0.4 ? 'Bravo, ma potevi fare meglio.' : 'Fai attenzione: rivedi questo argomento.',
   scenarioRestart: 'Ricomincia',
+  scenarioContinue: 'Continua',
+  scenarioYouChose: 'Hai scelto',
+  scenarioVideoSoon: 'Video in arrivo',
   scenarioFullscreen: 'Schermo intero',
   transcript: 'Trascrizione',
   captions: 'Sottotitoli',

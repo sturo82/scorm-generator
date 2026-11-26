@@ -402,7 +402,7 @@ export function BriefWizard({ courseId, initial, defaultTitle, defaultLanguage, 
                 <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Formato del corso">
                   {([
                     ['completo', 'Completo', 'Testo, immagini, interazioni e quiz. Il formato classico.'],
-                    ['video_first', 'Video-first', 'Ogni lezione è incentrata su un video, con elementi e quiz affiancati.'],
+                    ['video_first', 'Lezione con video', 'Ogni lezione è incentrata su un video, con elementi e quiz affiancati.'],
                     ['pillole', 'Pillole', 'Micro-lezioni da 2-4 minuti su un concetto: mini-video, spiegazione, verifica.'],
                     ['pillole_interattive', 'Pillole interattive', 'Libro-game: una situazione in cui scegli e, per vie diverse, risolvi o meno.'],
                   ] as Array<['completo' | 'video_first' | 'pillole' | 'pillole_interattive', string, string]>).map(

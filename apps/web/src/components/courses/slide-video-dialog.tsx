@@ -168,7 +168,7 @@ export function SlideVideoDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title={libraryMode ? 'Video da slide con avatar' : 'Video-lezione da slide con avatar'}
+      title={libraryMode ? 'Video-lezione da slide con avatar' : 'Video-lezione da slide con avatar'}
       size="xl"
     >
       <LibraryContext.Provider value={{ library: libraryMode }}>

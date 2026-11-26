@@ -28,6 +28,7 @@ import { cn } from '@/lib/cn';
 import { NewAvatarLesson } from '@/components/courses/new-avatar-lesson';
 import { getApiClient } from '@/lib/api/client';
 import type { LessonFormatValue, RssPreviewResult } from '@/lib/api/types';
+import { LESSON_FORMATS } from '@/lib/lesson-formats';
 import {
   useCreateCourseFromRss,
   useRssPreview,
@@ -56,12 +57,7 @@ type Origin = 'topic' | 'material' | 'avatar';
 const isMedia = (o: Origin | null): o is 'avatar' => o === 'avatar';
 type Source = 'everywhere' | 'mine';
 
-const FORMAT_OPTIONS: Array<{ value: LessonFormatValue; label: string; hint: string }> = [
-  { value: 'standard', label: 'Standard', hint: 'Testo, immagini e interazioni. Studio anche senza audio/video.' },
-  { value: 'video_first', label: 'Video-first', hint: 'Lezione incentrata su un video portante con capitoli e verifiche.' },
-  { value: 'pillola', label: 'Pillola', hint: 'Micro-lezione 2-4 min su un concetto, con mini-video di aggancio.' },
-  { value: 'pillola_interattiva', label: 'Pillola interattiva', hint: 'Libro-game: una situazione in cui scegli e, per vie diverse, risolvi o meno.' },
-];
+const FORMAT_OPTIONS = LESSON_FORMATS;
 
 const STEPS = ['Sorgente', 'Dettagli', 'Formato', 'Crea'];
 /** Percorso "da slide": sorgente, titolo e lingua, poi slide e avatar; il resto lo fa la generazione automatica. */
@@ -156,13 +152,13 @@ export default function NewCoursePage() {
   }
 
   // --- Anteprima -------------------------------------------------------------
-  async function handlePreview() {
+  async function handlePreview(): Promise<boolean> {
     try {
       let res: RssPreviewResult;
       if (origin === 'topic') {
         if (topic.trim().length < 2) {
           toast.show('Scrivi l’argomento del corso', 'error');
-          return;
+          return false;
         }
         res = await previewRss.mutateAsync({
           topic: topic.trim(),
@@ -175,7 +171,7 @@ export default function NewCoursePage() {
       } else {
         if (selectedDocs.length === 0) {
           toast.show('Seleziona almeno un documento', 'error');
-          return;
+          return false;
         }
         res = await previewKnow.mutateAsync({
           documentIds: selectedDocs,
@@ -193,9 +189,11 @@ export default function NewCoursePage() {
       setPreview(res);
       setEditedLessons(res.suggestedLessons ?? []);
       setLessonFormats({});
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message.replace(/^API \d+:\s*/, '') : '';
       toast.show(msg || 'Anteprima non riuscita', 'error');
+      return false;
     }
   }
 
@@ -544,14 +542,16 @@ export default function NewCoursePage() {
                   </div>
                 )}
 
-                {/* Anteprima */}
-                <div>
-                  <Button type="button" variant="outline" disabled={!canLeaveDetails || busyPreview} onClick={() => void handlePreview()}>
-                    {busyPreview ? <Loader2 className="size-4 animate-spin" /> : <Eye className="size-4" />}
-                    {busyPreview ? 'Anteprima…' : preview ? 'Rigenera anteprima' : 'Genera anteprima'}
-                    {!busyPreview && <CreditCost items={[{ feature: 'text_light', units: 1 }]} />}
-                  </Button>
-                </div>
+                {/* L'anteprima si prepara premendo «Continua»; qui solo per rifarla dopo aver cambiato i dati. */}
+                {preview && (
+                  <div>
+                    <Button type="button" variant="outline" disabled={!canLeaveDetails || busyPreview} onClick={() => void handlePreview()}>
+                      {busyPreview ? <Loader2 className="size-4 animate-spin" /> : <Eye className="size-4" />}
+                      {busyPreview ? 'Anteprima…' : 'Rigenera anteprima'}
+                      {!busyPreview && <CreditCost items={[{ feature: 'text_light', units: 1 }]} />}
+                    </Button>
+                  </div>
+                )}
 
                 {preview && (
                   <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-4">
@@ -586,7 +586,7 @@ export default function NewCoursePage() {
                 <div className="space-y-2">
                   <Label className="text-base">Formato di default</Label>
                   <p className="text-xs text-muted-foreground">Applicato a tutte le lezioni, salvo le eccezioni che imposti sotto. Potrai rifinire ogni lezione anche dopo, nello step Struttura.</p>
-                  <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Formato di default">
+                  <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Formato di default">
                     {FORMAT_OPTIONS.map((o) => (
                       <button
                         key={o.value}
@@ -595,12 +595,21 @@ export default function NewCoursePage() {
                         aria-checked={formatDefault === o.value}
                         onClick={() => setFormatDefault(o.value)}
                         className={cn(
-                          'rounded-lg border px-3 py-2 text-left transition-colors',
+                          'flex flex-col gap-1.5 rounded-lg border px-3 py-3 text-left transition-colors',
                           formatDefault === o.value ? 'border-primary bg-primary/10' : 'border-input hover:bg-accent/60',
                         )}
                       >
-                        <span className="block text-sm font-medium">{o.label}</span>
-                        <span className="mt-0.5 block text-xs text-muted-foreground">{o.hint}</span>
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-semibold">{o.label}</span>
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{o.duration}</span>
+                        </span>
+                        <span className="text-xs text-muted-foreground">{o.summary}</span>
+                        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs">
+                          {o.outputs.map((t) => (
+                            <li key={t}>{t}</li>
+                          ))}
+                        </ul>
+                        <span className="mt-1 text-[11px] text-muted-foreground">{o.video}</span>
                       </button>
                     ))}
                   </div>
@@ -625,12 +634,12 @@ export default function NewCoursePage() {
                         />
                         <Select
                           aria-label={`Formato lezione ${i + 1}`}
-                          className="h-9 w-32 text-xs"
+                          className="h-9 w-40 text-xs"
                           value={lessonFormats[i] ?? formatDefault}
                           onChange={(e) => setLessonFormats((prev) => ({ ...prev, [i]: e.target.value as LessonFormatValue }))}
                         >
                           {FORMAT_OPTIONS.map((o) => (
-                            <option key={o.value} value={o.value}>{o.label}</option>
+                            <option key={o.value} value={o.value} title={o.summary}>{o.label}</option>
                           ))}
                         </Select>
                         <button
@@ -677,6 +686,23 @@ export default function NewCoursePage() {
                     {origin === 'topic' ? `Da argomento: "${topic.trim()}"` : `Dal mio materiale: ${selectedDocs.length} documento${selectedDocs.length === 1 ? '' : 'i'}`}
                     {' · '}{editedLessons.length} lezioni · default {FORMAT_OPTIONS.find((o) => o.value === formatDefault)?.label}
                   </p>
+                </div>
+                <div className="space-y-1.5 rounded-lg border p-4 text-sm">
+                  <p className="font-medium">Cosa riceverai</p>
+                  <ul className="space-y-1 text-muted-foreground">
+                    {FORMAT_OPTIONS.map((o) => {
+                      const n = editedLessons.filter((l, i) => l.trim() && (lessonFormats[i] ?? formatDefault) === o.value).length;
+                      return n > 0 ? (
+                        <li key={o.value}>
+                          <span className="font-medium text-foreground">
+                            {n} {n === 1 ? 'lezione' : 'lezioni'} · {o.label}
+                          </span>{' '}
+                          ({o.duration}): {o.outputs.join(', ').toLowerCase()}. {o.video}
+                        </li>
+                      ) : null;
+                    })}
+                    <li>Più i test scelti qui sotto e la copertina del corso.</li>
+                  </ul>
                 </div>
                 <fieldset className="space-y-2">
                   <legend className="text-sm font-medium">Test del corso</legend>
@@ -772,16 +798,21 @@ export default function NewCoursePage() {
               ) : step < steps.length - 1 ? (
                 <Button
                   type="button"
-                  disabled={(step === 0 && !canLeaveSource) || (step === 1 && !canLeaveDetails)}
+                  disabled={(step === 0 && !canLeaveSource) || (step === 1 && (!canLeaveDetails || busyPreview))}
                   onClick={() => {
                     if (step === 1 && !preview) {
-                      toast.show('Genera prima l’anteprima', 'info');
+                      // Prepara l'anteprima (concetti e lezioni proposte) e poi passa al formato.
+                      void handlePreview().then((ok) => {
+                        if (ok) setStep((s) => Math.min(steps.length - 1, s + 1));
+                      });
                       return;
                     }
                     setStep((s) => Math.min(steps.length - 1, s + 1));
                   }}
                 >
-                  Continua
+                  {step === 1 && busyPreview ? <Loader2 className="size-4 animate-spin" /> : null}
+                  {step === 1 && busyPreview ? 'Preparo il corso…' : 'Continua'}
+                  {step === 1 && !preview && !busyPreview && <CreditCost items={[{ feature: 'text_light', units: 1 }]} />}
                 </Button>
               ) : (
                 <span />

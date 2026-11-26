@@ -26,10 +26,22 @@ export interface DndSortState {
 export interface DndOrderState {
   order: string[]; // itemId nell'ordine corrente
 }
+/** Conseguenza di una scelta, mostrata prima di passare alla scena successiva. */
+export interface ScenarioConsequence {
+  /** Testo della scelta fatta. */
+  choice: string;
+  /** Cosa succede a seguito della scelta. */
+  text: string;
+  /** Scena a cui si va dopo; assente = lo scenario finisce. */
+  nextId?: string;
+  /** 'good' = scelta migliore, 'partial' = accettabile, 'bad' = sbagliata. */
+  tone: 'good' | 'partial' | 'bad';
+}
 export interface ScenarioState {
   currentId: string;
   score: number;
   ended: boolean;
+  consequence?: ScenarioConsequence;
 }
 export type StatefulState = DndMatchState | DndSortState | DndOrderState | ScenarioState;
 
@@ -121,8 +133,25 @@ function reduceScenario(spec: StatefulSpec, s: ScenarioState, e: StatefulEvent):
     const choice = (node?.choices || []).find((c) => c.id === e.arg);
     const delta = choice && typeof choice.score === 'number' ? choice.score : 0;
     const nextScore = s.score + delta;
+    // Più scelte e una conseguenza scritta: prima si mostra cosa succede, poi si prosegue.
+    const feedback = choice?.feedback?.trim();
+    if (choice && feedback && (node?.choices || []).length > 1) {
+      const best = Math.max(...(node?.choices || []).map((c) => (typeof c.score === 'number' ? c.score : 0)));
+      const tone: ScenarioConsequence['tone'] = delta <= 0 ? 'bad' : delta >= best ? 'good' : 'partial';
+      return {
+        currentId: s.currentId,
+        score: nextScore,
+        ended: false,
+        consequence: { choice: choice.label, text: feedback, nextId: choice.nextNodeId, tone },
+      };
+    }
     if (choice?.nextNodeId) return { currentId: choice.nextNodeId, score: nextScore, ended: false };
     return { ...s, score: nextScore, ended: true };
+  }
+  if (e.ev === 'next' && s.consequence) {
+    const nextId = s.consequence.nextId;
+    if (nextId) return { currentId: nextId, score: s.score, ended: false };
+    return { currentId: s.currentId, score: s.score, ended: true };
   }
   if (e.ev === 'restart') return { currentId: String(spec.payload.startNodeId || ''), score: 0, ended: false };
   return s;
@@ -333,6 +362,7 @@ interface Choice {
   label: string;
   nextNodeId?: string;
   score?: number;
+  feedback?: string;
 }
 interface ScenarioNode {
   id: string;
@@ -436,9 +466,8 @@ function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: Medi
     );
   } else if (isVideo && !mediaSrc) {
     stageChildren.push(
-      h('div', { class: 'scenario-video-placeholder', 'aria-label': String(media?.alt || '') }, [
-        String(media?.alt || media?.placeholderPrompt || ''),
-      ]),
+      // Clip non ancora prodotta: mai mostrare lo storyboard (è un'istruzione per chi crea il corso).
+      h('div', { class: 'scenario-video-placeholder', 'aria-label': String(media?.alt || '') }, [L.scenarioVideoSoon]),
     );
   } else if (mediaSrc) {
     stageChildren.push(
@@ -471,13 +500,22 @@ function renderScenario(spec: StatefulSpec, s: ScenarioState, resolveMedia: Medi
   const overlayChildren: VChild[] = [];
   const html = node.content?.html || '';
   const hasPlayableVideo = isVideo && !!mediaSrc;
-  if (html && !hasPlayableVideo) {
+  if (html && !hasPlayableVideo && !s.consequence) {
     overlayChildren.push(hHtml('div', { class: 'block-rich scenario-text' }, html));
   }
 
   // Overlay di SCELTE (sovrapposte al video). Se "gated" parte nascosto e il
   // behavior lo rivela a fine video (data-choices-gated="1").
-  if (!ended) {
+  if (s.consequence) {
+    const c = s.consequence;
+    overlayChildren.push(
+      h('div', { class: 'scenario-consequence scenario-consequence--' + c.tone, role: 'status' }, [
+        h('p', { class: 'scenario-consequence-choice' }, [`${L.scenarioYouChose}: ${c.choice}`]),
+        h('p', { class: 'scenario-consequence-text' }, [c.text]),
+        h('button', { class: 'scenario-choice scenario-next', type: 'button', 'data-ev': 'next' }, [L.scenarioContinue]),
+      ]),
+    );
+  } else if (!ended) {
     const choiceButtons: VChild[] = (node.choices || []).map((ch) =>
       h('button', { class: 'scenario-choice', type: 'button', 'data-ev': 'choose', 'data-arg': ch.id }, [ch.label]),
     );

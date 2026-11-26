@@ -69,6 +69,7 @@ import {
 import { AiWorking, AiWorkingInline } from '@/components/courses/ai-working';
 import { usePendingAssessments } from '@/lib/use-pending-assessments';
 import type { EditorialStatus } from '@/lib/api/types';
+import { LESSON_FORMATS } from '@/lib/lesson-formats';
 
 /**
  * mode:
@@ -188,7 +189,7 @@ export function CourseBuilder({
                 </div>
               </div>
               <Button className="mt-auto self-start" variant="outline" onClick={() => setSlideVideoOpen(true)} disabled={generatingStructure}>
-                <Clapperboard className="size-4" /> Crea da slide
+                <Clapperboard className="size-4" /> Aggiungi video-lezione da slide
               </Button>
             </CardContent>
           </Card>
@@ -382,9 +383,9 @@ function ContentBuilder({ courseId, highlightTests = false }: { courseId: string
               variant="outline"
               onClick={() => setSlideVideoOpen(true)}
               disabled={batchActive}
-              title="Crea una video-lezione da un PDF di slide, narrata da un avatar"
+              title="Aggiunge al corso una lezione video: carichi un PDF di slide e un avatar le racconta, con riepilogo e quiz. Vedi il costo prima di confermare."
             >
-              <Clapperboard className="size-4" /> Video da slide
+              <Clapperboard className="size-4" /> Aggiungi video-lezione da slide
             </Button>
             <Button
               variant="outline"
@@ -1102,7 +1103,7 @@ function LessonCard({
           )}
         </span>
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="Formato didattico della lezione">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="Formato della lezione: cambia come viene scritta e che cosa produce. Dopo il cambio, rigenera i contenuti.">
             <span className="sr-only">Formato della lezione {lesson.title}</span>
             <select
               className="rounded-md border border-input bg-background px-2 py-1 text-xs"
@@ -1116,10 +1117,11 @@ function LessonCard({
                 })
               }
             >
-              <option value="standard">Standard</option>
-              <option value="video_first">Video-first</option>
-              <option value="pillola">Pillola</option>
-              <option value="pillola_interattiva">Pillola interattiva</option>
+              {LESSON_FORMATS.map((f) => (
+                <option key={f.value} value={f.value} title={`${f.summary} ${f.video}`}>
+                  {f.label}
+                </option>
+              ))}
             </select>
           </label>
           {/* Rigenera i contenuti della lezione col formato/parametri CORRENTI.
@@ -1188,7 +1190,7 @@ function LessonCard({
           const fmt = lessonFormatOf(lesson);
           if (fmt === 'standard') return null;
           const label =
-            fmt === 'pillola' ? 'Pillola' : fmt === 'pillola_interattiva' ? 'Pillola interattiva' : 'Video-first';
+            fmt === 'pillola' ? 'Pillola' : fmt === 'pillola_interattiva' ? 'Pillola interattiva' : 'Lezione con video';
           const title =
             fmt === 'pillola'
               ? 'Micro-lezione a contenitore scorrevole (pillola)'

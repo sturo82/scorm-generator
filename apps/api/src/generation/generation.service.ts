@@ -6,6 +6,7 @@ import {
   Block,
   Assessment,
   tidyAssessment,
+  tidyPillolaInterattivaBlocks,
   BrandVoice,
   outlineJsonSchema,
   blockJsonSchema,
@@ -715,10 +716,12 @@ export class GenerationService {
       limits.inputTokens,
     );
     if (fitted.droppedChunks > 0) this.logger.log(`Lezione ${lessonId}: ${fitted.droppedChunks} estratti di knowledge tolti per il limite di ingresso`);
+    // Problema trovato al tentativo precedente (libro-game inutilizzabile): si dice al modello cosa correggere.
+    let retryHint = '';
     const attempt = async (temperature: number): Promise<{ blocks: BlockType[]; result: LLMResult }> => {
       const result = await this.llm.generate({
         system,
-        messages: [{ role: 'user', content: fitted.content }],
+        messages: [{ role: 'user', content: retryHint ? `${fitted.content}\n\n${retryHint}` : fitted.content }],
         schema,
         temperature,
         maxTokens: limits.outputTokens,
@@ -735,6 +738,14 @@ export class GenerationService {
           `Lezione ${lessonId}: 0 block. shape=${describeShape(parsed)} finishReason=${result.finishReason} textLen=${result.text.length}`,
         );
         throw new Error('Il modello non ha prodotto block validi');
+      }
+      if (lessonFormat === 'pillola_interattiva') {
+        const tidy = tidyPillolaInterattivaBlocks(blocks);
+        if (tidy.problems.length > 0) {
+          retryHint = `ATTENZIONE: la versione precedente è stata scartata perché il libro-game non andava bene: ${tidy.problems.join('; ')}. Riscrivilo correggendo questi punti.`;
+          throw new Error(`Scenario non valido: ${tidy.problems.join('; ')}`);
+        }
+        return { blocks: tidy.blocks, result };
       }
       return { blocks, result };
     };
@@ -1267,6 +1278,8 @@ export function isRecoverableGenerationError(err: unknown): boolean {
   if (/Expected array, received string/i.test(msg)) return true;
   // Test con domande impossibili da rispondere (vedi tidyAssessment): un nuovo tentativo di solito le sistema.
   if (/^Quiz non valido:/.test(msg)) return true;
+  // Libro-game senza vere scelte o senza esiti (vedi tidyBranchingScenario): si riscrive.
+  if (/^Scenario non valido:/.test(msg)) return true;
   // Troncamento (max_tokens) NON è recuperabile a parità di limite: ritentare
   // darebbe lo stesso esito. Si risolve alzando maxTokens, non col retry.
   // Provider non disponibile e simili: NON ritentare qui.
