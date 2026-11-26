@@ -10,6 +10,8 @@ export interface SpeechSynthesizeInput {
   language?: string;
   /** Voce specifica del provider (es. "Bianca"); prevale su language. */
   voice?: string;
+  /** Velocità di parlata (1 = naturale), per i provider che la supportano. */
+  speed?: number;
   /**
    * Motore di sintesi: 'standard' (economico), 'neural' (qualità superiore) o
    * 'generative' (voce iper-realistica, quasi umana). Se assente, il provider

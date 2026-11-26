@@ -7,7 +7,7 @@ import { Input, Label, Textarea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import { usePodcastActions, usePodcastVoices } from '@/lib/api/hooks';
-import { errText } from './podcast-labels';
+import { PODCAST_ENERGY, errText } from './podcast-labels';
 import { HostsEditor } from './hosts-editor';
 
 /** Impostazioni della serie: dati del feed e conduttori. */
@@ -22,6 +22,7 @@ export function SettingsDialog({ podcast, open, onClose }: { podcast: PodcastVie
   const [email, setEmail] = React.useState(podcast.contactEmail ?? '');
   const [explicit, setExplicit] = React.useState(podcast.explicit);
   const [hosts, setHosts] = React.useState(podcast.hosts);
+  const [energy, setEnergy] = React.useState(podcast.brief.energy ?? 'lively');
 
   React.useEffect(() => {
     if (!open) return;
@@ -32,6 +33,7 @@ export function SettingsDialog({ podcast, open, onClose }: { podcast: PodcastVie
     setEmail(podcast.contactEmail ?? '');
     setExplicit(podcast.explicit);
     setHosts(podcast.hosts);
+    setEnergy(podcast.brief.energy ?? 'lively');
   }, [open, podcast]);
 
   const voicesChanged = JSON.stringify(hosts.map((h) => h.voice)) !== JSON.stringify(podcast.hosts.map((h) => h.voice));
@@ -46,6 +48,7 @@ export function SettingsDialog({ podcast, open, onClose }: { podcast: PodcastVie
         contactEmail: email.trim() || null,
         explicit,
         hosts,
+        brief: { ...podcast.brief, energy },
       });
       toast.show('Impostazioni salvate', 'success');
       onClose();
@@ -88,6 +91,17 @@ export function SettingsDialog({ podcast, open, onClose }: { podcast: PodcastVie
             <input type="checkbox" className="size-4 accent-[hsl(var(--primary))]" checked={explicit} onChange={(e) => setExplicit(e.target.checked)} />
             Contenuto per adulti
           </label>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="st-energy">Ritmo e stile della conversazione</Label>
+          <Select id="st-energy" value={energy} onChange={(e) => setEnergy(e.target.value as 'relaxed' | 'lively' | 'wild')}>
+            {PODCAST_ENERGY.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          <p className="text-xs text-muted-foreground">{PODCAST_ENERGY.find((o) => o.value === energy)?.hint} Vale per i copioni che scrivi da ora e per il montaggio dell&apos;audio.</p>
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium">Partecipanti</p>

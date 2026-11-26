@@ -14,7 +14,7 @@ const CHIPS: Array<{ group: string; items: string[] }> = [
   { group: 'Chi', items: ['Donna', 'Uomo'] },
   { group: 'Età', items: ['sui 25 anni', 'sui 35 anni', 'sui 50 anni', 'oltre i 60'] },
   { group: 'Voce', items: ['calda', 'profonda', 'chiara e brillante', 'roca', 'sottile'] },
-  { group: 'Ritmo e tono', items: ['ritmo veloce', 'pacata', 'ironica', 'autorevole', 'entusiasta', 'sarcastica', 'rassicurante'] },
+  { group: 'Ritmo e tono', items: ['ritmo veloce', 'parla a raffica', 'pacata', 'ironica', 'autorevole', 'entusiasta', 'sarcastica', 'ride facilmente', 'sfottente', 'rassicurante'] },
   { group: 'Accento', items: ['accento neutro', 'accento romano', 'accento milanese', 'accento del sud'] },
 ];
 

@@ -11,7 +11,7 @@ import { Input, Label, Textarea } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import { HostsEditor, nextVoice } from '@/components/podcasts/hosts-editor';
-import { PODCAST_LANGUAGES, errText } from '@/components/podcasts/podcast-labels';
+import { PODCAST_ENERGY, PODCAST_LANGUAGES, errText } from '@/components/podcasts/podcast-labels';
 import { getApiClient } from '@/lib/api/client';
 import { useCreatePodcast, useFolders, usePodcastVoices } from '@/lib/api/hooks';
 import { flatOptions } from '@/components/courses/folder-dialog';
@@ -80,6 +80,7 @@ export default function NewPodcastPage() {
   const [audience, setAudience] = React.useState('');
   const [tone, setTone] = React.useState('');
   const [minutes, setMinutes] = React.useState(8);
+  const [energy, setEnergy] = React.useState<'relaxed' | 'lively' | 'wild'>('lively');
   const [saving, setSaving] = React.useState(false);
 
   const voices = usePodcastVoices(language);
@@ -144,6 +145,7 @@ export default function NewPodcastPage() {
           tone: tone.trim() || undefined,
           objectives: [],
           episodeMinutes: minutes,
+          energy,
         },
       });
       // La copertina si carica dopo la creazione: se non riesce, il podcast c'è e si può riprovare dalla sua pagina.
@@ -271,6 +273,17 @@ export default function NewPodcastPage() {
           <div className="space-y-1.5">
             <Label htmlFor="pc-tone">Tono</Label>
             <Input id="pc-tone" value={tone} maxLength={200} onChange={(e) => setTone(e.target.value)} placeholder="Es. amichevole e concreto" />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="pc-energy">Ritmo e stile della conversazione</Label>
+            <Select id="pc-energy" value={energy} onChange={(e) => setEnergy(e.target.value as 'relaxed' | 'lively' | 'wild')}>
+              {PODCAST_ENERGY.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+            <p className="text-xs text-muted-foreground">{PODCAST_ENERGY.find((o) => o.value === energy)?.hint} Conta con almeno due partecipanti.</p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="pc-min">Durata di una puntata (minuti)</Label>

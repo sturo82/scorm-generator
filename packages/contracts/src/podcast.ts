@@ -66,6 +66,8 @@ export const PodcastHost = z.object({
   name: z.string().trim().min(1).max(40),
   voice: PodcastVoiceRef,
   persona: PodcastPersona.optional(),
+  /** Velocità di parlata (1 = naturale): sopra 1 parla più veloce. */
+  speed: z.number().min(0.8).max(1.3).optional(),
 });
 export type PodcastHost = z.infer<typeof PodcastHost>;
 /** Da uno a quattro partecipanti con chiavi diverse. Con uno solo è un monologo; da due in su, una discussione. */
@@ -76,7 +78,18 @@ export const PodcastHosts = z
   .refine((h) => new Set(h.map((x) => x.key)).size === h.length, 'Ogni partecipante ha una chiave diversa');
 
 /** Linea editoriale della serie: vale per tutte le puntate. Ogni campo è facoltativo. */
+/**
+ * Energia della conversazione:
+ *  - relaxed: pacata, da approfondimento (poche sovrapposizioni, pause più lunghe);
+ *  - lively: da chiacchierata tra amici (default);
+ *  - wild: da talk show scatenato: ritmo velocissimo, battute cortissime, sfottò, risate, ci si parla sopra di continuo.
+ */
+export const PodcastEnergy = z.enum(['relaxed', 'lively', 'wild']);
+export type PodcastEnergy = z.infer<typeof PodcastEnergy>;
+
 export const PodcastBrief = z.object({
+  /** Ritmo e registro della conversazione (vale per i copioni e per il montaggio dell'audio). */
+  energy: PodcastEnergy.default('lively'),
   topic: z.string().trim().max(500).default(''),
   audience: z.string().trim().max(300).optional(),
   tone: z.string().trim().max(200).optional(),
@@ -225,7 +238,7 @@ export interface PodcastIdea {
 export const PodcastOverlap = z.enum(['cut_in', 'reaction', 'over']);
 export type PodcastOverlap = z.infer<typeof PodcastOverlap>;
 /** Tono della battuta (usato dalle voci che lo sanno rendere). */
-export const PodcastMood = z.enum(['excited', 'amused', 'surprised', 'sarcastic', 'warm', 'serious', 'calm', 'frustrated', 'thoughtful']);
+export const PodcastMood = z.enum(['excited', 'amused', 'surprised', 'sarcastic', 'warm', 'serious', 'calm', 'frustrated', 'thoughtful', 'laughing', 'shouting', 'scoffing']);
 export type PodcastMood = z.infer<typeof PodcastMood>;
 
 export const PodcastTurn = z.object({

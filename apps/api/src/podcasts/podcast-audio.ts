@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { MIX_RATE, decodeToPcm, encodeMp3, ffmpegAvailable, mixPcm, planTimeline } from './podcast-mix.js';
 import { mp3DurationMs, splitTextForTts } from '@scorm/adapters/polly';
-import { PODCAST_LIMITS, PodcastMood, type PodcastOverlap, type PodcastScript, type PodcastTurnTiming } from '@scorm/contracts';
+import { PODCAST_LIMITS, PodcastMood, type PodcastEnergy, type PodcastOverlap, type PodcastScript, type PodcastTurnTiming } from '@scorm/contracts';
 
 /**
  * Frame MP3 di silenzio: MPEG-2 Layer III, 24 kHz, mono, 32 kbit/s (96 byte, 24 ms). 24 kHz è la
@@ -41,14 +41,18 @@ const wordCount = (text: string): number => text.split(/\s+/).filter(Boolean).le
  */
 export function gapBetween(prevText: string, nextText: string, index: number): number {
   const prev = prevText.trim();
-  if (/[\u2014\u2013-]$/.test(prev)) return 20;
-  if (wordCount(nextText) <= 4) return 90;
-  if (wordCount(prev) <= 4) return 110;
-  const jitter = ((index * 7919) % 11) * 12;
-  if (/\?$/.test(prev)) return 150 + jitter;
-  if (/(\.\.\.|\u2026)$/.test(prev)) return 180 + jitter;
-  return 200 + jitter;
+  // Il silenzio tra un turno e l'altro è minimo: è ciò che fa incalzare la conversazione.
+  if (/[\u2014\u2013-]$/.test(prev)) return 0;
+  if (wordCount(nextText) <= 4) return 40;
+  if (wordCount(prev) <= 4) return 60;
+  const jitter = ((index * 7919) % 11) * 8;
+  if (/\?$/.test(prev)) return 70 + jitter;
+  if (/(\.\.\.|\u2026)$/.test(prev)) return 110 + jitter;
+  return 90 + jitter;
 }
+
+/** Velocità di lettura di partenza secondo l'energia (1 = naturale): un dialogo vero è un po' più rapido della lettura. */
+export const ENERGY_SPEED: Record<PodcastEnergy, number> = { relaxed: 1, lively: 1.08, wild: 1.12 };
 
 /**
  * Unisce gli MP3 delle battute in un solo file, con le pause di `gapBetween`, e calcola inizio e fine
@@ -119,7 +123,10 @@ export function tidyScript(
     if (!prev || prev.host === host) overlap = undefined;
     if (overlap === 'reaction' && text.split(/\s+/).length > REACTION_MAX_WORDS) overlap = undefined;
     // Un'interruzione richiede che l'altro sia rimasto a metà frase: altrimenti ci si parla sopra.
-    if (overlap === 'cut_in' && prev && !/[\u2014\u2013-]\s*$/.test(prev.text)) overlap = 'over';
+    const prevCutOff = prev ? /[\u2014\u2013-]\s*$/.test(prev.text) : false;
+    if (overlap === 'cut_in' && !prevCutOff) overlap = 'over';
+    // Se l'altro è rimasto a metà frase, chi risponde lo sta interrompendo: parte prima che finisca.
+    if (!overlap && prev && prev.host !== host && prevCutOff) overlap = 'cut_in';
     const pieces = text.length > PODCAST_LIMITS.maxTurnChars ? splitTextForTts(text, Math.floor(PODCAST_LIMITS.maxTurnChars * 0.8)) : [text];
     pieces.forEach((piece, k) => {
       const clean = piece.trim();
@@ -138,19 +145,23 @@ export function scriptChars(script: { turns: Array<{ text: string }> }): number 
   return script.turns.reduce((n, t) => n + t.text.length, 0);
 }
 
+/** Quanto si stringono o si allungano le pause secondo l'energia della conversazione. */
+const PACE: Record<PodcastEnergy, number> = { relaxed: 1.6, lively: 1, wild: 0.5 };
+
 /**
  * Unisce le battute in un solo MP3 come in una conversazione: dove il copione prevede interruzioni,
  * reazioni o sovrapposizioni le battute si sovrappongono davvero (serve ffmpeg). Senza ffmpeg, o
  * senza sovrapposizioni, si uniscono una dopo l'altra con pause brevi (come `assembleAudio`).
  */
 export async function assembleDialogue(
-  parts: Array<{ bytes: Uint8Array; text: string; overlap?: PodcastOverlap; host?: string }>,
+  parts: Array<{ bytes: Uint8Array; text: string; overlap?: PodcastOverlap; host?: string; tempo?: number }>,
+  energy: PodcastEnergy = 'lively',
 ): Promise<{ audio: Buffer; timings: PodcastTurnTiming[]; durationMs: number; mixed: boolean }> {
-  const wantsMix = parts.some((p) => p.overlap) && (await ffmpegAvailable());
+  const wantsMix = parts.some((p) => p.overlap || (p.tempo !== undefined && Math.abs(p.tempo - 1) > 0.01)) && (await ffmpegAvailable());
   if (!wantsMix) return { ...assembleAudio(parts), mixed: false };
-  const pcms = await Promise.all(parts.map((p) => decodeToPcm(stripId3(Buffer.from(p.bytes)))));
+  const pcms = await Promise.all(parts.map((p) => decodeToPcm(stripId3(Buffer.from(p.bytes)), p.tempo ?? 1)));
   const turns = pcms.map((pcm, i) => ({ durationMs: Math.round((pcm.length / MIX_RATE) * 1000), overlap: parts[i]!.overlap, host: parts[i]!.host }));
-  const { slots, totalMs } = planTimeline(turns, (i) => gapBetween(parts[i - 1]!.text, parts[i]!.text, i - 1));
+  const { slots, totalMs } = planTimeline(turns, (i) => Math.round(gapBetween(parts[i - 1]!.text, parts[i]!.text, i - 1) * PACE[energy]));
   const mixed = mixPcm(
     pcms.map((pcm, i) => ({ pcm, startMs: slots[i]!.startMs, gain: slots[i]!.gain })),
     totalMs + 200,
@@ -171,8 +182,69 @@ const HEYGEN_MOOD_TAGS: Record<PodcastMood, string> = {
   calm: '[calm]',
   frustrated: '[frustrated]',
   thoughtful: '[hmm]',
+  laughing: '[laughs]',
+  shouting: '[shouts]',
+  scoffing: '[scoffs]',
 };
 /** Testo da sintetizzare: con le voci HeyGen il tono della battuta diventa un\u2019etichetta; con Polly resta solo la punteggiatura. */
-export function textForVoice(turn: { text: string; mood?: PodcastMood }, provider: 'polly' | 'heygen'): string {
-  return provider === 'heygen' && turn.mood ? `${HEYGEN_MOOD_TAGS[turn.mood]} ${turn.text}` : turn.text;
+export function textForVoice(turn: { text: string; mood?: PodcastMood }, provider: 'polly' | 'heygen', language = 'it'): string {
+  const base = spokenText(turn.text, language);
+  if (provider !== 'heygen') return base;
+  // Le risate scritte ("ah ah ah", "ahahah") diventano risate vere con le voci che le sanno fare.
+  const text = base.replace(/\b(?:ah[ ,]+){1,}ah\b|\bah(?:ah)+h?\b/gi, '[laughs]');
+  // Ogni etichetta di tono allunga la battuta di circa un secondo: sulle battute cortissime farebbe perdere ritmo, quindi lì resta solo la risata.
+  const short = text.split(/\s+/).length < 4;
+  return turn.mood && (!short || turn.mood === 'laughing') ? `${HEYGEN_MOOD_TAGS[turn.mood]} ${text}` : text;
+}
+
+const UNITS = ['zero', 'uno', 'due', 'tre', 'quattro', 'cinque', 'sei', 'sette', 'otto', 'nove', 'dieci', 'undici', 'dodici', 'tredici', 'quattordici', 'quindici', 'sedici', 'diciassette', 'diciotto', 'diciannove'];
+const TENS = ['', '', 'venti', 'trenta', 'quaranta', 'cinquanta', 'sessanta', 'settanta', 'ottanta', 'novanta'];
+
+/** Un intero in lettere, in italiano (da 0 a 999.999.999). */
+export function numberToItalian(n: number): string {
+  if (n < 20) return UNITS[n]!;
+  if (n < 100) {
+    const t = Math.floor(n / 10);
+    const u = n % 10;
+    const base = TENS[t]!;
+    if (u === 0) return base;
+    // Elisione della vocale: ventuno, ventotto, trentuno…
+    return (u === 1 || u === 8 ? base.slice(0, -1) : base) + (u === 3 ? 'tré' : UNITS[u]!);
+  }
+  if (n < 1000) {
+    const h = Math.floor(n / 100);
+    const r = n % 100;
+    const head = h === 1 ? 'cento' : `${UNITS[h]}cento`;
+    if (r === 0) return head;
+    // "centottanta", "centotto": cade la "o" di cento davanti a ottanta e a otto.
+    const rest = numberToItalian(r);
+    return (rest.startsWith('ott') ? head.slice(0, -1) : head) + rest;
+  }
+  if (n < 1_000_000) {
+    const k = Math.floor(n / 1000);
+    const r = n % 1000;
+    const head = k === 1 ? 'mille' : `${numberToItalian(k)}mila`;
+    return r === 0 ? head : head + numberToItalian(r);
+  }
+  const m = Math.floor(n / 1_000_000);
+  const r = n % 1_000_000;
+  const head = m === 1 ? 'un milione' : `${numberToItalian(m)} milioni`;
+  return r === 0 ? head : `${head} ${numberToItalian(r)}`;
+}
+
+/**
+ * Testo come va pronunciato: in italiano i numeri diventano parole ("2026" → "duemilaventisei", "30%" →
+ * "trenta per cento"), così la voce non sbaglia la lettura. Le altre lingue restano invariate.
+ */
+export function spokenText(text: string, language: string): string {
+  if (!language.toLowerCase().startsWith('it')) return text;
+  return text
+    .replace(/(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d+))?\s?%/g, (_m, i: string, d?: string) => `${spellInt(i)}${d ? ` virgola ${[...d].map((c) => UNITS[Number(c)]).join(' ')}` : ''} per cento`)
+    .replace(/€\s?(\d{1,3}(?:\.\d{3})+|\d+)/g, (_m, i: string) => `${spellInt(i)} euro`)
+    .replace(/(\d{1,3}(?:\.\d{3})+|\d+)\s?€/g, (_m, i: string) => `${spellInt(i)} euro`)
+    .replace(/(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d+))?/g, (_m, i: string, d?: string) => `${spellInt(i)}${d ? ` virgola ${[...d].map((c) => UNITS[Number(c)]).join(' ')}` : ''}`);
+}
+function spellInt(raw: string): string {
+  const n = Number(raw.replace(/\./g, ''));
+  return Number.isFinite(n) && n < 1_000_000_000 ? numberToItalian(n) : raw;
 }

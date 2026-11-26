@@ -25,7 +25,7 @@ import { formatContext } from '../generation/prompts.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LLM_PROVIDER, OBJECT_STORAGE } from '../providers/provider.constants.js';
-import { assembleDialogue, scriptChars, textForVoice, tidyScript } from './podcast-audio.js';
+import { ENERGY_SPEED, assembleDialogue, scriptChars, textForVoice, tidyScript } from './podcast-audio.js';
 import { IDEAS_SCHEMA, SCRIPT_SCHEMA, ideasPrompt, scriptPrompt } from './podcast-prompts.js';
 import { PODCAST_FEED } from './podcast.constants.js';
 import { HEYGEN_VOICE_MODEL, PodcastVoicesService, podcastLocale } from './podcast-voices.service.js';
@@ -458,16 +458,21 @@ export class PodcastGenerationService implements OnModuleInit {
     const hosts = PodcastHosts.parse(podcast.hosts);
     const voiceOf = new Map(hosts.map((h) => [h.key, h.voice]));
     const locale = podcastLocale(podcast.language);
-    const parts: Array<{ bytes: Uint8Array; text: string; overlap?: PodcastOverlap; host?: string }> = [];
+    const parts: Array<{ bytes: Uint8Array; text: string; overlap?: PodcastOverlap; host?: string; tempo?: number }> = [];
+    const energy = PodcastBrief.parse(podcast.brief).energy;
+    // Velocità: quella scelta per il partecipante o, in mancanza, quella dell'energia della serie.
+    const hostSpeed = new Map(hosts.map((h) => [h.key, h.speed ?? ENERGY_SPEED[energy]]));
     const charsBy: Record<'polly' | 'heygen', number> = { polly: 0, heygen: 0 };
     for (const turn of script.turns) {
       const voice = voiceOf.get(turn.host)!;
-      const spoken = textForVoice(turn, voice.provider);
-      const res = await this.synthWithRetry(this.voices.speechFor(voice.provider), spoken, locale, voice.id, cfg.speechEngine);
-      parts.push({ bytes: res.bytes, text: turn.text, overlap: turn.overlap, host: turn.host });
+      const spoken = textForVoice(turn, voice.provider, podcast.language);
+      const speed = hostSpeed.get(turn.host);
+      // HeyGen accelera la voce da sé (resa migliore); con Polly si accelera nel montaggio, se c'è ffmpeg.
+      const res = await this.synthWithRetry(this.voices.speechFor(voice.provider), spoken, locale, voice.id, cfg.speechEngine, voice.provider === 'heygen' ? speed : undefined);
+      parts.push({ bytes: res.bytes, text: turn.text, overlap: turn.overlap, host: turn.host, tempo: voice.provider === 'heygen' ? undefined : hostSpeed.get(turn.host) });
       charsBy[voice.provider] += spoken.length;
     }
-    const { audio, timings, durationMs } = await assembleDialogue(parts);
+    const { audio, timings, durationMs } = await assembleDialogue(parts, energy);
     const key = `podcasts/${tenantId}/${podcast.id}/${e.id}.mp3`;
     await this.storage.putObject(key, audio, { contentType: 'audio/mpeg' });
     await this.meter.record({
@@ -508,11 +513,11 @@ export class PodcastGenerationService implements OnModuleInit {
   }
 
   /** Una battuta: fino a 3 tentativi con attesa crescente (limiti di frequenza o errori passeggeri). */
-  private async synthWithRetry(speech: SpeechProvider, text: string, language: string, voice: string, engine: 'standard' | 'neural' | 'generative') {
+  private async synthWithRetry(speech: SpeechProvider, text: string, language: string, voice: string, engine: 'standard' | 'neural' | 'generative', speed?: number) {
     let last: unknown;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        return await speech.synthesize({ text, language, voice, engine });
+        return await speech.synthesize({ text, language, voice, engine, speed });
       } catch (err) {
         last = err;
         await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));

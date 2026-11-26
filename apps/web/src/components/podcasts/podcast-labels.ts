@@ -44,3 +44,9 @@ export function downloadText(filename: string, contentType: string, body: string
   a.click();
   URL.revokeObjectURL(url);
 }
+
+export const PODCAST_ENERGY: Array<{ value: 'relaxed' | 'lively' | 'wild'; label: string; hint: string }> = [
+  { value: 'relaxed', label: 'Pacato', hint: 'Approfondimento tranquillo: pause distese, poche interruzioni.' },
+  { value: 'lively', label: 'Vivace', hint: 'Chiacchierata tra amici: battute corte, interruzioni, reazioni.' },
+  { value: 'wild', label: 'Scatenato', hint: 'Talk show veloce: botta e risposta serrato, sfottò, risate, ci si parla sopra di continuo.' },
+];

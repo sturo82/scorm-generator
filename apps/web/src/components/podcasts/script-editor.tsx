@@ -21,6 +21,9 @@ const MOOD_LABELS: Record<PodcastMood, string> = {
   calm: 'Calmo',
   frustrated: 'Frustrato',
   thoughtful: 'Pensieroso',
+  laughing: 'Ride',
+  shouting: 'Urla',
+  scoffing: 'Sbuffa',
 };
 
 /** Editor del copione: una riga per battuta, con chi parla, come entra nel discorso e il tono. */

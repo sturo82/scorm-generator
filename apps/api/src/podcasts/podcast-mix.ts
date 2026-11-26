@@ -36,8 +36,10 @@ export function ffmpegAvailable(): Promise<boolean> {
 }
 
 /** Decodifica un MP3 in campioni a 16 bit, mono, a 24 kHz. */
-export async function decodeToPcm(mp3: Uint8Array): Promise<Int16Array> {
-  const raw = await ffmpeg(['-i', 'pipe:0', '-f', 's16le', '-ac', '1', '-ar', String(MIX_RATE), 'pipe:1'], Buffer.from(mp3));
+export async function decodeToPcm(mp3: Uint8Array, tempo = 1): Promise<Int16Array> {
+  // `tempo` accelera o rallenta senza cambiare l'intonazione della voce.
+  const filter = Math.abs(tempo - 1) > 0.01 ? ['-af', `atempo=${Math.min(2, Math.max(0.5, tempo)).toFixed(3)}`] : [];
+  const raw = await ffmpeg(['-i', 'pipe:0', ...filter, '-f', 's16le', '-ac', '1', '-ar', String(MIX_RATE), 'pipe:1'], Buffer.from(mp3));
   // Si copia in un buffer allineato: il pool di Node non garantisce l'allineamento a 2 byte.
   const aligned = new Uint8Array(raw.length - (raw.length % 2));
   aligned.set(raw.subarray(0, aligned.length));

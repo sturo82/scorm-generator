@@ -132,6 +132,12 @@ export function HostsEditor({
                     </Button>
                   ))}
                 </div>
+                <div className="space-y-1">
+                  <Label htmlFor={`speed-${h.key}`} className="text-xs">
+                    Velocità di parlata: {(h.speed ?? 1).toFixed(2).replace(/0$/, '')}× {(h.speed ?? 1) > 1.04 ? '(più veloce)' : (h.speed ?? 1) < 0.96 ? '(più lenta)' : '(naturale)'}
+                  </Label>
+                  <input id={`speed-${h.key}`} type="range" min={0.85} max={1.3} step={0.05} value={h.speed ?? 1} className="w-full accent-[hsl(var(--primary))]" onChange={(e) => patch(h.key, { speed: Number(e.target.value) === 1 ? undefined : Number(e.target.value) })} />
+                </div>
                 <Field label="Ruolo nella discussione" value={persona.role} placeholder="Es. conduce, porta i dati, fa l\u2019avvocato del diavolo" onChange={(v) => patch(h.key, { persona: { ...persona, role: v } })} />
                 <Field label="Chi è (studi, lavoro, esperienze)" value={persona.background} area placeholder="Es. ingegnere informatico, 15 anni in banca, poi consulente di innovazione" onChange={(v) => patch(h.key, { persona: { ...persona, background: v } })} />
                 <Field label="Carattere" value={persona.personality} area placeholder="Es. ironico, impaziente, ama le provocazioni" onChange={(v) => patch(h.key, { persona: { ...persona, personality: v } })} />

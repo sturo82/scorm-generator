@@ -156,6 +156,7 @@ export class HeygenSpeechProvider implements SpeechProvider {
       text: input.text,
       language: baseLang(input.language) || undefined,
       model: this.model,
+      ...(input.speed && Math.abs(input.speed - 1) > 0.01 ? { speed: Math.min(1.5, Math.max(0.5, input.speed)) } : {}),
       output_format: { encoding: 'mp3', sample_rate_hertz: 24000 },
     });
     let lastStatus = 0;

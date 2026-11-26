@@ -31,7 +31,7 @@ export const SCRIPT_SCHEMA = {
           host: { type: 'string', enum: ['A', 'B', 'C', 'D'] },
           text: { type: 'string' },
           overlap: { type: 'string', enum: ['cut_in', 'reaction', 'over'] },
-          mood: { type: 'string', enum: ['excited', 'amused', 'surprised', 'sarcastic', 'warm', 'serious', 'calm', 'frustrated', 'thoughtful'] },
+          mood: { type: 'string', enum: ['excited', 'amused', 'surprised', 'sarcastic', 'warm', 'serious', 'calm', 'frustrated', 'thoughtful', 'laughing', 'shouting', 'scoffing'] },
         },
         required: ['host', 'text'],
       },
@@ -70,6 +70,23 @@ function briefLines(brief: PodcastBrief): string[] {
   ].filter(Boolean);
 }
 
+/**
+ * Linee guida di scrittura per testi letti da una voce sintetica: valgono per ogni puntata, da solisti o in gruppo.
+ */
+const TTS_STYLE_RULES = [
+  'REGISTRO E FORMA (il testo sarà letto da una voce sintetica):',
+  '- Scrivi per l\u2019ascolto, non per la lettura: deve suonare come una conversazione reale, spontanea, brillante, dal ritmo serrato.',
+  '- Linguaggio colloquiale, diretto e moderno, SENZA parolacce, volgarità o espressioni offensive: l\u2019incisività viene dal ritmo e dalla scelta delle parole, non dal turpiloquio.',
+  '- Zero tono didattico o giornalistico: niente costruzioni formali o da comunicato ("In conclusione", "Da un lato… dall\u2019altro", "È importante sottolineare che", "Inoltre", "Pertanto").',
+  '- Attacchi conversazionali reali all\u2019inizio delle battute: "Cioè", "Aspetta", "Guarda che", "Ma in che senso?", "Sì, però", "Vabbè", "Alla fine", "Tipo", "Il punto è che".',
+  '- Forme quotidiane e contratte: "sta cosa" invece di "questa cosa", "un po\u2019", "perché poi", "fatto sta che".',
+  '- Riformulazione in corsa: il pensiero si forma mentre si parla e una costruzione si interrompe per chiarirsi subito dopo ("Il vero problema oggi - ma proprio a livello strutturale dico - è che…").',
+  '- La punteggiatura è regia della voce, non grammatica. Pochi punti fermi (il punto abbassa il tono e rende la lettura robotica e cadenzata): concatena i concetti con virgole e congiunzioni ("e quindi", "ma poi", "cioè"). Il trattino " - " serve per incisi rapidi, cambi di direzione o frasi troncate. I puntini "..." con parsimonia, solo per una breve esitazione mentre si cerca la parola o prima di una battuta a effetto.',
+  '- Numeri, sigle e parole straniere complesse si scrivono per esteso come si pronunciano in italiano (es. "duemilaventisei", "il trenta per cento", "intelligenza artificiale" invece di "AI", "gi-pi-ti" per "GPT"), per evitare errori di lettura.',
+  '- Mai elenchi puntati né strutture simmetriche dentro le battute; mai la stessa struttura sintattica per più di due frasi di seguito.',
+  '- Mai didascalie teatrali o indicazioni di scena tra parentesi ([ride], [pausa], (sospira)): le risate e le pause si fanno con le parole e la punteggiatura.',
+];
+
 /** Idee per le prossime puntate di una serie già avviata (non crea nulla: l'utente sceglie). */
 export function ideasPrompt(input: {
   language: string;
@@ -104,6 +121,27 @@ export function ideasPrompt(input: {
     .filter(Boolean)
     .join('\n\n');
   return { system, user };
+}
+
+/** Regole di ritmo e registro secondo l'energia scelta per il podcast. */
+function energyRules(energy: PodcastBrief['energy']): string[] {
+  if (energy === 'relaxed') {
+    return [
+      'ENERGIA: pacata, da approfondimento tra persone che si ascoltano. Battute un po\u2019 più distese (6-25 parole), meno interruzioni (una battuta su otto con overlap), pause naturali, qualche battuta ma senza gridare.',
+    ];
+  }
+  if (energy === 'wild') {
+    return [
+      'ENERGIA: SCATENATA, ritmo da talk show tra amici che si sfottono (stile podcast comico italiano). Si va VELOCISSIMI. Queste regole prevalgono su quelle di ritmo scritte sopra:',
+      '- Battute brevissime: media 4-8 parole, spesso una sola parola o un\u2019esclamazione ("No!", "Vabbè.", "Ma dai!", "Assurdo!", "Eh, certo."). Rarissime le battute oltre 20 parole.',
+      '- Botta e risposta serrato: ci si interrompe di continuo, si finiscono le frasi a vicenda, si risponde prima che l\u2019altro finisca. Almeno UNA battuta su due ha un overlap (molte "reaction" e "cut_in", diverse "over").',
+      '- Si sfottono con affetto (roast): prese in giro sui difetti, sulle manie, sulle figuracce di ciascuno; esagerazioni, iperboli, paragoni assurdi, tormentoni che tornano, aneddoti improbabili, finti litigi. Chi viene preso in giro si difende e rilancia.',
+      '- Risate, urla di entusiasmo, scandalo finto, usa "laughing", "shouting", "sarcastic", "scoffing", "excited" su circa una battuta su tre, dove il tono cambia davvero (non sulle reazioni di una parola). Risate scritte "ah ah ah", "ahahah".',
+      '- Cambi di argomento continui e divagazioni, poi si torna al tema ("vabbè, dicevamo").',
+      '- Registro popolare e irriverente ma SENZA parolacce né volgarità: sfottò, ironia, slang, esclamazioni. L\u2019incisività viene dal ritmo e dalla scelta delle parole.',
+    ];
+  }
+  return [];
 }
 
 /** Copione di una puntata: un monologo (un solo partecipante) o una discussione vera (da due in su). */
@@ -151,12 +189,13 @@ export function scriptPrompt(input: {
         '- È un monologo parlato: ritmo vario, frasi brevi e frasi più lunghe, domande retoriche rivolte a chi ascolta, esempi concreti, un po\u2019 di ironia dove ci sta. Niente tono da lezione o da articolo.',
         '- Tutte le battute hanno host uguale al partecipante; spezza il discorso in paragrafi parlati (battute di 2-5 frasi). Non usare "overlap".',
         '- "beats": i passaggi della puntata (apertura, tesi, esempi, obiezione e risposta, conclusione).',
+        ...TTS_STYLE_RULES,
         ...personaLines(hosts),
       ].join('\n')
     : [
         SYSTEM_BASE,
         `Scrivi la TRASCRIZIONE di UNA puntata di un podcast in cui chiacchierano ${hosts.length} persone: ${names}, in ${languageName(input.language)}.`,
-        'NON è un copione pulito e NON è una spiegazione a turni. È la trascrizione di una conversazione registrata dal vivo tra persone che si conoscono, che parlano a ruota libera di un argomento: si sovrappongono, si perdono, ridono, tornano indietro. Deve sembrare DAVVERO parlato, sporco e imperfetto, non scritto da un autore.',
+        'NON è un copione pulito e NON è una spiegazione a turni. È la trascrizione di una conversazione registrata dal vivo tra persone che si conoscono, che parlano a ruota libera di un argomento: si sovrappongono, si perdono, ridono, tornano indietro. Deve sembrare DAVVERO parlato, con le imperfezioni naturali del discorso improvvisato (ma il linguaggio resta pulito, senza parolacce), non scritto da un autore.',
         'Partecipanti (rispetta ruolo, storia, carattere e modo di parlare di ciascuno; si deve sentire chi è chi anche senza leggere il nome):',
         ...personaLines(hosts),
         'Regole:',
@@ -164,8 +203,10 @@ export function scriptPrompt(input: {
         '- "beats": scaletta di 5-8 punti, ma la conversazione NON la segue in modo ordinato: ci sono deviazioni, ritorni ("dicevo…"), un punto che resta in sospeso, una battuta che porta fuori strada, un disaccordo non risolto. Chi sa di più su un punto ne parla, ma gli altri lo interrompono, lo mettono in dubbio o lo trascinano su un esempio loro.',
         '- I fatti e i dati delle fonti restano CORRETTI e non inventati: ciò che è sporco è la forma, non il contenuto. Emergono a pezzi dentro la conversazione (uno cita, un altro obietta, un terzo lo applica a un caso), mai come lezione.',
         '',
-        'FORMA DEL PARLATO (la parte più importante):',
-        '- Battute CORTE. La maggior parte ha 2-14 parole. Qualcuna 15-30. Raramente di più. Una frase lunga si spezza in più battute con interventi in mezzo.',
+        ...TTS_STYLE_RULES,
+        '',
+        'FORMA DEL DIALOGO (la parte più importante):',
+        '- Turni brevi (micro-dialogo): al massimo 1-3 frasi per battuta. La maggior parte ha 2-14 parole, qualcuna 15-30, raramente di più. Un\u2019esposizione si spezza in più battute con interventi in mezzo.',
         '- Frasi lasciate a metà o finite da un altro: "Cioè il punto è che se tu—" / "—lo deleghi, sì, e poi non sai più chi ha deciso." Chi viene interrotto si ferma con un trattino lungo "—" senza punto.',
         '- Falsi inizi, ripetizioni e ripensamenti: "è… è un po\u2019 come, no, aspetta, non è come, è che…", "Cioè, cioè, io dico", "No ma, no, nel senso—".',
         '- Intercalari e riempitivi veri, diversi per persona: "cioè", "tipo", "praticamente", "boh", "eh", "mah", "ehm", "mmh", "insomma", "diciamo", "dai", "figurati", "no?", "capito?", "senti", "guarda", "allora", "ecco". Non tutti nella stessa battuta, non sempre.',
@@ -175,6 +216,8 @@ export function scriptPrompt(input: {
         '- Registro colloquiale e a volte scorretto come nel parlato: "c\u2019è un sacco di gente che…", "che poi", "e niente", "sta cosa", "ma no dai", "figurati", frasi senza verbo, soggetti ripetuti. Niente subordinate lunghe e perfette, niente "Inoltre", "Pertanto", "In conclusione", niente elenchi ordinati.',
         '- Niente apertura da presentatore ("Benvenuti alla puntata di oggi in cui parleremo di…"): si entra già dentro, con un saluto veloce e una battuta, e il tema emerge. Niente chiusura riassuntiva: si chiude con una battuta, un saluto affrettato, magari tagliato.',
         '- Il tono cambia: chi si scalda accelera e accorcia le frasi, chi è scettico sbuffa, chi ride perde il filo. Usa il campo "mood" (excited, amused, surprised, sarcastic, warm, serious, calm, frustrated, thoughtful) su circa una battuta su tre, dove il tono cambia in modo evidente, coerente con il carattere.',
+        '',
+        ...energyRules(input.brief.energy),
         '',
         'SOVRAPPOSIZIONI (campo "overlap" di una battuta, rispetto alla precedente di un\u2019altra persona):',
         '- "cut_in": interrompe (la battuta PRECEDENTE deve finire a metà frase con "—", senza punto).',
