@@ -1,13 +1,14 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { FeedProvider, SpeechProvider } from '@scorm/domain';
+import type { FeedProvider, LLMProvider, SpeechProvider } from '@scorm/domain';
+import { BedrockLLMProvider } from '@scorm/adapters/bedrock';
 import { PollySpeechProvider } from '@scorm/adapters/polly';
 import { HeygenSpeechProvider } from '@scorm/adapters/heygen';
 import { RssFeedProvider } from '@scorm/adapters/rss';
 import type { AppConfig } from '../config/configuration.js';
 import { KnowledgeModule } from '../knowledge/knowledge.module.js';
-import { SPEECH_PROVIDER } from '../providers/provider.constants.js';
-import { PODCAST_FEED, PODCAST_HEYGEN_SPEECH, PODCAST_SPEECH } from './podcast.constants.js';
+import { LLM_PROVIDER, SPEECH_PROVIDER } from '../providers/provider.constants.js';
+import { PODCAST_FEED, PODCAST_HEYGEN_SPEECH, PODCAST_LLM, PODCAST_SPEECH } from './podcast.constants.js';
 import { PodcastGenerationService } from './podcast-generation.service.js';
 import { PodcastPublishService } from './podcast-publish.service.js';
 import { PodcastVoicesService } from './podcast-voices.service.js';
@@ -50,6 +51,28 @@ const podcastHeygenSpeech = {
   },
 };
 
+/**
+ * Modello dei copioni: con Bedrock è un modello più capace di quello generale (scrive dialoghi molto più credibili),
+ * con lo stesso client e le stesse credenziali. Senza Bedrock (sviluppo e test) si usa il modello comune.
+ */
+const podcastLlm = {
+  provide: PODCAST_LLM,
+  inject: [ConfigService, LLM_PROVIDER],
+  useFactory: (config: ConfigService<AppConfig, true>, shared: LLMProvider): LLMProvider => {
+    if (config.get('providers', { infer: true }).llm !== 'bedrock') return shared;
+    const aws = config.get('bedrock', { infer: true });
+    const modelId = config.get('podcast', { infer: true }).llmModelId;
+    if (!modelId || modelId === aws.llmModelId) return shared;
+    return new BedrockLLMProvider({
+      modelId,
+      region: aws.region,
+      accessKeyId: aws.accessKeyId,
+      secretAccessKey: aws.secretAccessKey,
+      sessionToken: aws.sessionToken,
+    });
+  },
+};
+
 const podcastFeed = {
   provide: PODCAST_FEED,
   useFactory: (): FeedProvider => new RssFeedProvider(),
@@ -66,6 +89,7 @@ const podcastFeed = {
     PodcastPublishService,
     podcastSpeech,
     podcastHeygenSpeech,
+    podcastLlm,
     podcastFeed,
   ],
   exports: [PodcastsService],

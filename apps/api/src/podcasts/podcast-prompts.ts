@@ -32,6 +32,7 @@ export const SCRIPT_SCHEMA = {
           text: { type: 'string' },
           overlap: { type: 'string', enum: ['cut_in', 'reaction', 'over'] },
           mood: { type: 'string', enum: ['excited', 'amused', 'surprised', 'sarcastic', 'warm', 'serious', 'calm', 'frustrated', 'thoughtful', 'laughing', 'shouting', 'scoffing'] },
+          energy: { type: 'integer', minimum: 1, maximum: 5 },
         },
         required: ['host', 'text'],
       },
@@ -101,6 +102,18 @@ const REALISM_RULES = [
   '- Il tono segue ciò che si dice e ciò che è successo prima: nessun cambio di umore senza motivo; le emozioni si mostrano nel modo di parlare, non si dichiarano ("sono entusiasta").',
   '- Le persone vere non spiegano tutto, lasciano cose sottintese, non si fanno complimenti di rito, non ripetono i nomi.',
   '- Prima di consegnare, rileggi ogni risata, esitazione e reazione e chiediti: "una persona vera, con QUEL carattere, qui lo farebbe?". Se no, toglila o cambiala.',
+];
+
+/**
+ * Ritmo e umore della conversazione: l'energia sale e scende con ciò che succede, e si trasmette da una persona all'altra.
+ */
+const RHYTHM_RULES = [
+  'RITMO E UMORE (campo "energy" da 1 a 5 su OGNI battuta: 1 = disteso, riflessivo, lento; 3 = normale; 5 = concitato, veloce, acceso):',
+  '- L\u2019energia NON è costante: segue lo stato d\u2019animo della conversazione. Sale quando si discute, ci si scalda o si ride; scende dopo una risata che si spegne, un momento serio, una riflessione, una domanda difficile.',
+  '- È contagiosa: chi risponde a una battuta ad alta energia tende a salire anche lui (di 1 o 2 punti), a meno che il suo carattere non lo porti a frenare per contrasto (lo scettico pacato che resta freddo davanti all\u2019entusiasmo degli altri). Dopo un picco l\u2019energia scende gradualmente, non di colpo.',
+  '- Non cambiare di più di 2 punti tra una battuta e la successiva, salvo un evento vero (una notizia sorprendente, uno scherzo che scatena tutti).',
+  '- La puntata ha un arco: apertura media, picchi nei punti di disaccordo o di divertimento, momenti calmi di riflessione, chiusura che scende o si chiude con una battuta alta. Usa tutta la scala da 1 a 5: la serie dei valori deve salire e scendere a ondate di 5-10 battute (per esempio 3 3 3 4 4 5 5 4 3 3 2 2 3 3 4 …), NON restare fissa attorno al 3 e NON dipendere da chi parla: è l\u2019umore della conversazione, non il carattere della persona.',
+  '- Con energia alta le battute sono più corte e spezzate e le interruzioni più frequenti; con energia bassa le battute sono più distese, con pause e frasi più lunghe.',
 ];
 
 /** Idee per le prossime puntate di una serie già avviata (non crea nulla: l'utente sceglie). */
@@ -224,6 +237,8 @@ export function scriptPrompt(input: {
         '',
         ...REALISM_RULES,
         '',
+        ...RHYTHM_RULES,
+        '',
         'FORMA DEL DIALOGO (la parte più importante):',
         '- Turni brevi (micro-dialogo): al massimo 1-3 frasi per battuta. La maggior parte ha 2-14 parole, qualcuna 15-30, raramente di più. Un\u2019esposizione si spezza in più battute con interventi in mezzo.',
         '- Frasi lasciate a metà o finite da un altro: "Cioè il punto è che se tu—" / "—lo deleghi, sì, e poi non sai più chi ha deciso." Chi viene interrotto si ferma con un trattino lungo "—" senza punto.',
@@ -290,6 +305,7 @@ export const REVIEW_SCHEMA = {
           text: { type: 'string' },
           overlap: { type: 'string', enum: ['cut_in', 'reaction', 'over'] },
           mood: { type: 'string', enum: ['excited', 'amused', 'surprised', 'sarcastic', 'warm', 'serious', 'calm', 'frustrated', 'thoughtful', 'laughing', 'shouting', 'scoffing'] },
+          energy: { type: 'integer', minimum: 1, maximum: 5 },
         },
         required: ['host', 'text'],
       },
@@ -314,7 +330,7 @@ export function reviewPrompt(input: {
     ...REALISM_RULES,
     'Cosa puoi fare: togliere o spostare una risata ("ah ah") non motivata; togliere o cambiare riempitivi ed esitazioni a caso; cancellare reazioni che non rispondono a ciò che è stato detto; dare a ciascuno intercalari propri e coerenti; correggere un overlap illogico; togliere o cambiare un "mood" incoerente con la battuta o con il carattere; sistemare una battuta che suona scritta invece che parlata.',
     'Cosa NON devi fare: cambiare i contenuti, i fatti, i numeri o le fonti; aggiungere parolacce; allungare o accorciare il copione di più del 8%; cambiare chi parla in modo da perdere il carattere di ciascuno; aggiungere indicazioni di scena tra parentesi.',
-    'Se una battuta va bene, lasciala IDENTICA. Mantieni i campi "overlap" e "mood" quando sono coerenti. Una battuta interrotta resta a metà con il trattino e chi risponde ha overlap "cut_in".',
+    'Se una battuta va bene, lasciala IDENTICA. Mantieni i campi "overlap", "mood" e "energy" quando sono coerenti; se l\u2019energia di una battuta non segue lo stato d\u2019animo della conversazione (salti bruschi, contagio mancante), correggila. Una battuta interrotta resta a metà con il trattino e chi risponde ha overlap "cut_in".',
     'Rispondi SOLO con JSON conforme allo schema: l\u2019elenco COMPLETO delle battute riviste, nello stesso ordine.',
   ].join('\n');
   const user = [

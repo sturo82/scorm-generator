@@ -2,6 +2,7 @@ import {
   BedrockRuntimeClient,
   ConverseCommand,
   type ContentBlock,
+  type ConverseCommandInput,
   type Message,
   type Tool,
 } from '@aws-sdk/client-bedrock-runtime';
@@ -38,6 +39,11 @@ export class BedrockLLMProvider implements LLMProvider {
   private readonly client: BedrockRuntimeClient;
   private readonly modelId: string;
 
+  /** Il modello ha rifiutato la temperatura. */
+  private noTemperature = false;
+  /** Il modello ha rifiutato la scelta obbligatoria dello strumento. */
+  private autoToolChoice = false;
+
   constructor(opts: BedrockLLMProviderOptions) {
     this.modelId = opts.modelId;
     this.client = new BedrockRuntimeClient({
@@ -57,29 +63,33 @@ export class BedrockLLMProvider implements LLMProvider {
     const messages = this.toConverseMessages(input);
     const system = input.system ? [{ text: input.system }] : undefined;
 
-    const inferenceConfig = {
-      temperature: input.temperature,
-      maxTokens: input.maxTokens,
-    };
-
-    const toolConfig = input.schema
-      ? {
-          tools: [this.schemaTool(input.schema)] satisfies Tool[],
-          toolChoice: { tool: { name: STRUCTURED_TOOL_NAME } },
-        }
-      : undefined;
-
+    const buildInput = (): ConverseCommandInput => ({
+      modelId: this.modelId,
+      messages,
+      system,
+      // I modelli più recenti non accettano più la temperatura: se lo dicono, si riprova senza (e si ricorda).
+      inferenceConfig: { ...(this.noTemperature ? {} : { temperature: input.temperature }), maxTokens: input.maxTokens },
+      toolConfig: input.schema
+        ? {
+            tools: [this.schemaTool(input.schema)] satisfies Tool[],
+            // Alcuni modelli rifiutano la scelta obbligatoria dello strumento: con "auto" lo usano comunque, perché è l'unico.
+            toolChoice: this.autoToolChoice ? { auto: {} } : { tool: { name: STRUCTURED_TOOL_NAME } },
+          }
+        : undefined,
+    });
     let response;
     try {
-      response = await this.client.send(
-        new ConverseCommand({
-          modelId: this.modelId,
-          messages,
-          system,
-          inferenceConfig,
-          toolConfig,
-        }),
-      );
+      for (let attempt = 0; ; attempt++) {
+        try {
+          response = await this.client.send(new ConverseCommand(buildInput()));
+          break;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : '';
+          if (attempt < 2 && /temperature.*(deprecated|not supported)/i.test(msg) && !this.noTemperature) this.noTemperature = true;
+          else if (attempt < 2 && /tool_choice/i.test(msg) && !this.autoToolChoice) this.autoToolChoice = true;
+          else throw err;
+        }
+      }
     } catch (err) {
       throw new ProviderUnavailableError('bedrock', err);
     }

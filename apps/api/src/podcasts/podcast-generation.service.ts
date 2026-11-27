@@ -24,10 +24,10 @@ import { RetrievalService } from '../knowledge/retrieval.service.js';
 import { formatContext } from '../generation/prompts.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { LLM_PROVIDER, OBJECT_STORAGE } from '../providers/provider.constants.js';
-import { ENERGY_SPEED, assembleDialogue, scriptChars, textForVoice, tidyScript } from './podcast-audio.js';
+import { OBJECT_STORAGE } from '../providers/provider.constants.js';
+import { ENERGY_SPEED, assembleDialogue, energyFactors, scriptChars, smoothEnergies, textForVoice, tidyScript } from './podcast-audio.js';
 import { IDEAS_SCHEMA, REVIEW_SCHEMA, SCRIPT_SCHEMA, ideasPrompt, reviewPrompt, scriptPrompt } from './podcast-prompts.js';
-import { PODCAST_FEED } from './podcast.constants.js';
+import { PODCAST_FEED, PODCAST_LLM } from './podcast.constants.js';
 import { HEYGEN_VOICE_MODEL, PodcastVoicesService, podcastLocale } from './podcast-voices.service.js';
 
 const LEASE_MS = 5 * 60_000;
@@ -39,7 +39,7 @@ const CHARS_PER_WORD = 6.5;
 const INTERRUPTED = 'Il lavoro è stato interrotto da un riavvio del servizio: riprova.';
 
 const IdeasOut = z.object({ episodes: z.array(z.object({ title: z.string().trim().min(1), summary: z.string().trim() })) });
-const ScriptOut = z.object({ turns: z.array(z.object({ host: z.string(), text: z.string(), overlap: z.string().optional(), mood: z.string().optional() })) });
+const ScriptOut = z.object({ turns: z.array(z.object({ host: z.string(), text: z.string(), overlap: z.string().optional(), mood: z.string().optional(), energy: z.number().optional() })) });
 
 type Episode = Prisma.PodcastEpisodeGetPayload<Record<string, never>>;
 type PodcastRow = Prisma.PodcastGetPayload<Record<string, never>>;
@@ -66,7 +66,7 @@ export class PodcastGenerationService implements OnModuleInit {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(LLM_PROVIDER) private readonly llm: LLMProvider,
+    @Inject(PODCAST_LLM) private readonly llm: LLMProvider,
     @Inject(PODCAST_FEED) private readonly feeds: FeedProvider,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     private readonly retrieval: RetrievalService,
@@ -368,7 +368,7 @@ export class PodcastGenerationService implements OnModuleInit {
         context,
         retry,
       });
-      const raw = await this.callLlm(tenantId, 'podcast_script', system, user, SCRIPT_SCHEMA, Math.min(16_000, Math.ceil(budget.max * 3.6) + 1500), 0.9);
+      const raw = await this.callLlm(tenantId, 'podcast_script', system, user, SCRIPT_SCHEMA, Math.min(30_000, Math.ceil(budget.max * 7) + 4000), 0.9);
       const tidy = tidyScript(ScriptOut.parse(JSON.parse(raw)), hosts.map((h) => h.key));
       if (tidy.problems.length > 0) {
         if (attempt === 1 && !best) throw new Error(`Copione non valido: ${tidy.problems.join('; ')}`);
@@ -398,7 +398,7 @@ export class PodcastGenerationService implements OnModuleInit {
     if (hosts.length < 2) return script;
     try {
       const { system, user } = reviewPrompt({ language: podcast.language, hosts, brief, script: script.turns });
-      const raw = await this.callLlm(tenantId, 'podcast_script_review', system, user, REVIEW_SCHEMA, Math.min(16_000, Math.ceil(podcastScriptWords(script) * 3.6) + 1500), 0.4);
+      const raw = await this.callLlm(tenantId, 'podcast_script_review', system, user, REVIEW_SCHEMA, Math.min(30_000, Math.ceil(podcastScriptWords(script) * 7) + 4000), 0.4);
       const tidy = tidyScript(ScriptOut.parse(JSON.parse(raw)), hosts.map((h) => h.key));
       const before = podcastScriptWords(script);
       const after = podcastScriptWords(tidy.script);
@@ -489,18 +489,20 @@ export class PodcastGenerationService implements OnModuleInit {
     const hosts = PodcastHosts.parse(podcast.hosts);
     const voiceOf = new Map(hosts.map((h) => [h.key, h.voice]));
     const locale = podcastLocale(podcast.language);
-    const parts: Array<{ bytes: Uint8Array; text: string; overlap?: PodcastOverlap; host?: string; tempo?: number }> = [];
+    const parts: Array<{ bytes: Uint8Array; text: string; overlap?: PodcastOverlap; host?: string; tempo?: number; energy?: number }> = [];
     const energy = PodcastBrief.parse(podcast.brief).energy;
     // Velocità: quella scelta per il partecipante o, in mancanza, quella dell'energia della serie.
     const hostSpeed = new Map(hosts.map((h) => [h.key, h.speed ?? ENERGY_SPEED[energy]]));
     const charsBy: Record<'polly' | 'heygen', number> = { polly: 0, heygen: 0 };
-    for (const turn of script.turns) {
+    const energies = smoothEnergies(script.turns);
+    for (const [ti, turn] of script.turns.entries()) {
       const voice = voiceOf.get(turn.host)!;
+      // Velocità della battuta: quella del partecipante (o della serie) modulata dall'energia del momento.
+      const speed = (hostSpeed.get(turn.host) ?? 1) * energyFactors(energies[ti]!).speed;
       const spoken = textForVoice(turn, voice.provider, podcast.language);
-      const speed = hostSpeed.get(turn.host);
       // HeyGen accelera la voce da sé (resa migliore); con Polly si accelera nel montaggio, se c'è ffmpeg.
       const res = await this.synthWithRetry(this.voices.speechFor(voice.provider), spoken, locale, voice.id, cfg.speechEngine, voice.provider === 'heygen' ? speed : undefined);
-      parts.push({ bytes: res.bytes, text: turn.text, overlap: turn.overlap, host: turn.host, tempo: voice.provider === 'heygen' ? undefined : hostSpeed.get(turn.host) });
+      parts.push({ bytes: res.bytes, text: turn.text, overlap: turn.overlap, host: turn.host, tempo: voice.provider === 'heygen' ? undefined : speed, energy: energies[ti] });
       charsBy[voice.provider] += spoken.length;
     }
     const { audio, timings, durationMs } = await assembleDialogue(parts, energy);

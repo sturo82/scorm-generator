@@ -246,6 +246,8 @@ export const PodcastTurn = z.object({
   text: z.string().trim().min(1).max(PODCAST_LIMITS.maxTurnChars),
   overlap: PodcastOverlap.optional(),
   mood: PodcastMood.optional(),
+  /** Energia della conversazione in questa battuta, da 1 (distesa, lenta) a 5 (concitata, veloce). Dà il ritmo all'audio. */
+  energy: z.number().int().min(1).max(5).optional(),
 });
 export type PodcastTurn = z.infer<typeof PodcastTurn>;
 

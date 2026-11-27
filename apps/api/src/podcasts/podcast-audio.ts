@@ -125,7 +125,7 @@ const REACTION_MAX_WORDS = 6;
  * un solo partecipante in una discussione, troppe battute).
  */
 export function tidyScript(
-  raw: { turns?: Array<{ host?: string; text?: string; overlap?: string; mood?: string }> },
+  raw: { turns?: Array<{ host?: string; text?: string; overlap?: string; mood?: string; energy?: number }> },
   hostKeys: string[] = ['A', 'B'],
 ): {
   script: PodcastScript;
@@ -138,6 +138,7 @@ export function tidyScript(
     const text = cleanTurnText(String(t.text ?? ''));
     if (!host || !text) continue;
     const mood = t.mood && MOODS.has(t.mood) ? (t.mood as PodcastMood) : undefined;
+    const energy = typeof t.energy === 'number' && Number.isFinite(t.energy) ? Math.min(5, Math.max(1, Math.round(t.energy))) : undefined;
     let overlap = t.overlap && OVERLAPS.has(t.overlap) ? (t.overlap as PodcastOverlap) : undefined;
     const prev = turns[turns.length - 1];
     // Sovrapposizioni possibili solo su un'altra persona già in scena.
@@ -152,7 +153,7 @@ export function tidyScript(
     pieces.forEach((piece, k) => {
       const clean = piece.trim();
       if (!clean) return;
-      turns.push({ host, text: clean.slice(0, PODCAST_LIMITS.maxTurnChars), ...(k === 0 && overlap ? { overlap } : {}), ...(mood ? { mood } : {}) });
+      turns.push({ host, text: clean.slice(0, PODCAST_LIMITS.maxTurnChars), ...(k === 0 && overlap ? { overlap } : {}), ...(mood ? { mood } : {}), ...(energy ? { energy } : {}) });
     });
   }
   limitLaughs(turns);
@@ -176,14 +177,17 @@ const PACE: Record<PodcastEnergy, number> = { relaxed: 1.6, lively: 1, wild: 0.5
  * senza sovrapposizioni, si uniscono una dopo l'altra con pause brevi (come `assembleAudio`).
  */
 export async function assembleDialogue(
-  parts: Array<{ bytes: Uint8Array; text: string; overlap?: PodcastOverlap; host?: string; tempo?: number }>,
+  parts: Array<{ bytes: Uint8Array; text: string; overlap?: PodcastOverlap; host?: string; tempo?: number; energy?: number }>,
   energy: PodcastEnergy = 'lively',
 ): Promise<{ audio: Buffer; timings: PodcastTurnTiming[]; durationMs: number; mixed: boolean }> {
   const wantsMix = parts.some((p) => p.overlap || (p.tempo !== undefined && Math.abs(p.tempo - 1) > 0.01)) && (await ffmpegAvailable());
   if (!wantsMix) return { ...assembleAudio(parts), mixed: false };
   const pcms = await Promise.all(parts.map((p) => decodeToPcm(stripId3(Buffer.from(p.bytes)), p.tempo ?? 1)));
-  const turns = pcms.map((pcm, i) => ({ durationMs: Math.round((pcm.length / MIX_RATE) * 1000), overlap: parts[i]!.overlap, host: parts[i]!.host }));
-  const { slots, totalMs } = planTimeline(turns, (i) => Math.round(gapBetween(parts[i - 1]!.text, parts[i]!.text, i - 1) * PACE[energy]));
+  const turns = pcms.map((pcm, i) => {
+    const f = energyFactors(parts[i]!.energy ?? 3);
+    return { durationMs: Math.round((pcm.length / MIX_RATE) * 1000), overlap: parts[i]!.overlap, host: parts[i]!.host, gapScale: f.gap, gain: f.gain };
+  });
+  const { slots, totalMs } = planTimeline(turns, (i) => Math.round(gapBetween(parts[i - 1]!.text, parts[i]!.text, i - 1) * PACE[energy] * turns[i]!.gapScale));
   const mixed = mixPcm(
     pcms.map((pcm, i) => ({ pcm, startMs: slots[i]!.startMs, gain: slots[i]!.gain })),
     totalMs + 200,
@@ -260,7 +264,9 @@ export function numberToItalian(n: number): string {
  */
 export function spokenText(text: string, language: string): string {
   if (!language.toLowerCase().startsWith('it')) return text;
+  // "Mmh" viene letto come un mugugno di tre secondi: la forma breve "Mh" rende il verso giusto.
   return text
+    .replace(/\bm{2,}h+m*\b/gi, (m) => (m[0] === 'M' ? 'Mh' : 'mh'))
     .replace(/(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d+))?\s?%/g, (_m, i: string, d?: string) => `${spellInt(i)}${d ? ` virgola ${[...d].map((c) => UNITS[Number(c)]).join(' ')}` : ''} per cento`)
     .replace(/€\s?(\d{1,3}(?:\.\d{3})+|\d+)/g, (_m, i: string) => `${spellInt(i)} euro`)
     .replace(/(\d{1,3}(?:\.\d{3})+|\d+)\s?€/g, (_m, i: string) => `${spellInt(i)} euro`)
@@ -269,4 +275,37 @@ export function spokenText(text: string, language: string): string {
 function spellInt(raw: string): string {
   const n = Number(raw.replace(/\./g, ''));
   return Number.isFinite(n) && n < 1_000_000_000 ? numberToItalian(n) : raw;
+}
+
+/**
+ * Energia "sentita" di ogni battuta: la propria si mescola con quella di chi ha appena parlato, perché in una
+ * conversazione l'umore si trasmette da una persona all'altra e cambia in modo graduale.
+ */
+export function smoothEnergies(
+  turns: Array<{ energy?: number; overlap?: string; mood?: string; text?: string }>,
+): number[] {
+  const out: number[] = [];
+  turns.forEach((t) => {
+    // Ciò che è scritto nella battuta conta quanto il numero dato dal modello: interruzioni, risate e esclamazioni scaldano, riflessione e calma raffreddano.
+    let own = t.energy ?? 3;
+    if (t.overlap === 'cut_in' || t.overlap === 'over') own += 0.5;
+    if (t.mood === 'excited' || t.mood === 'laughing' || t.mood === 'shouting' || t.mood === 'frustrated') own += 0.5;
+    if (t.mood === 'calm' || t.mood === 'thoughtful') own -= 0.5;
+    if (t.text && /!\s*$/.test(t.text)) own += 0.3;
+    own = Math.min(5, Math.max(1, own));
+    // L'umore si trasmette: la battuta è influenzata dalle ultime tre, quindi l'energia sale e scende a ondate, non a scatti.
+    const prev = out.slice(-3);
+    out.push(prev.length === 0 ? own : 0.45 * own + 0.55 * (prev.reduce((n, v) => n + v, 0) / prev.length));
+  });
+  return out;
+}
+
+/** Come l'energia (1-5) cambia velocità, pausa e volume di una battuta. */
+export function energyFactors(energy: number): { speed: number; gap: number; gain: number } {
+  const e = Math.min(5, Math.max(1, energy));
+  return {
+    speed: 0.93 + 0.035 * (e - 1), // da 0.93 a 1.07
+    gap: 1.35 - 0.175 * (e - 1), // pause più lunghe se la conversazione è distesa, strette se è accesa
+    gain: Math.pow(10, ((e - 3) * 0.8) / 20), // chi si scalda alza un po' la voce
+  };
 }

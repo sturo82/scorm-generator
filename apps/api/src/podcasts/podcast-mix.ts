@@ -92,6 +92,10 @@ export interface TimelineTurn {
   overlap?: PodcastOverlap;
   /** Chi parla: serve a capire se dopo una reazione riprende la stessa persona. */
   host?: string;
+  /** Volume della battuta rispetto al normale (1 = invariato). */
+  gain?: number;
+  /** Moltiplicatore della pausa prima della battuta (usato dal chiamante in `gap`). */
+  gapScale?: number;
 }
 export interface TimelineSlot {
   startMs: number;
@@ -114,19 +118,20 @@ export function planTimeline(turns: TimelineTurn[], gap: (i: number) => number):
   let afterReaction = false;
   turns.forEach((t, i) => {
     let start: number;
-    let gain = 1;
+    let gain = t.gain ?? 1;
     const kind = i === 0 ? undefined : t.overlap;
     switch (kind) {
       case 'cut_in':
         start = Math.max(0, cursor - (150 + ((i * 37) % 110)));
         break;
       case 'reaction':
-        start = Math.max(0, cursor - Math.min(Math.max(t.durationMs * 0.6, 220), 700));
-        gain = 0.6;
+        // La reazione sta in parte sopra le ultime parole e in parte dopo: deve restare ben udibile, non "mangiata" dall'altra voce.
+        start = Math.max(0, cursor - Math.min(Math.max(t.durationMs * 0.4, 150), 450));
+        gain *= 0.85;
         break;
       case 'over':
         start = Math.max(0, cursor - Math.min(t.durationMs * 0.5, 900));
-        gain = 0.9;
+        gain *= 0.9;
         break;
       default:
         if (i === 0) start = 0;

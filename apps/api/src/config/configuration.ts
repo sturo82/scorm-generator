@@ -172,6 +172,8 @@ export interface AppConfig {
   podcast: {
     speechRegion: string;
     speechEngine: 'standard' | 'neural' | 'generative';
+    /** Modello che scrive i copioni e li rivede (più capace del modello generale). */
+    llmModelId: string;
     /** Indirizzo pubblico di base (es. https://podcast.knowkube.com). Vuoto = pubblicazione non configurata. */
     publicBaseUrl: string;
     /** Prefisso del bucket degli asset da cui la distribuzione serve i file pubblici. */
@@ -283,6 +285,12 @@ function env(name: string, fallback?: string): string {
     throw new Error(`Variabile d'ambiente mancante: ${name}`);
   }
   return value;
+}
+
+/** Modello dei copioni dei podcast: Claude Opus 5.5 nella stessa area (eu., us., global.) del modello generale. */
+function podcastModelFor(general: string): string {
+  const prefix = /^(eu|us|global|apac)\./.exec(general)?.[1];
+  return prefix ? `${prefix}.anthropic.claude-opus-5-5` : general;
 }
 
 export function loadConfiguration(): AppConfig {
@@ -405,6 +413,8 @@ export function loadConfiguration(): AppConfig {
       // Le voci del podcast stanno a Francoforte (motore generativo disponibile, dati in UE).
       speechRegion: env('SPEECH_REGION', 'eu-central-1'),
       speechEngine: env('PODCAST_SPEECH_ENGINE', 'generative') as AppConfig['podcast']['speechEngine'],
+      // Stessa area del modello generale (eu./us.): i dati restano dove sono già.
+      llmModelId: env('PODCAST_LLM_MODEL_ID', podcastModelFor(env('BEDROCK_LLM_MODEL_ID', ''))),
       publicBaseUrl: env('PODCAST_PUBLIC_BASE_URL', '').replace(/\/+$/, ''),
       publicPrefix: env('PODCAST_PUBLIC_PREFIX', 'public-podcasts/'),
     },
