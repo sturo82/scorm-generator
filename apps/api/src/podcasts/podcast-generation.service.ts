@@ -26,7 +26,7 @@ import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LLM_PROVIDER, OBJECT_STORAGE } from '../providers/provider.constants.js';
 import { ENERGY_SPEED, assembleDialogue, scriptChars, textForVoice, tidyScript } from './podcast-audio.js';
-import { IDEAS_SCHEMA, SCRIPT_SCHEMA, ideasPrompt, scriptPrompt } from './podcast-prompts.js';
+import { IDEAS_SCHEMA, REVIEW_SCHEMA, SCRIPT_SCHEMA, ideasPrompt, reviewPrompt, scriptPrompt } from './podcast-prompts.js';
 import { PODCAST_FEED } from './podcast.constants.js';
 import { HEYGEN_VOICE_MODEL, PodcastVoicesService, podcastLocale } from './podcast-voices.service.js';
 
@@ -376,11 +376,42 @@ export class PodcastGenerationService implements OnModuleInit {
       }
       best = tidy.script;
       const words = podcastScriptWords(tidy.script);
-      if (podcastScriptFit(words, e.targetMinutes).status === 'ok') return tidy.script;
+      if (podcastScriptFit(words, e.targetMinutes).status === 'ok') return this.reviewScript(tenantId, podcast, brief, hosts, e, tidy.script);
       retry = { words, text: tidy.script.turns.map((t) => `${t.host}: ${t.text}`).join('\n') };
     }
     if (!best) throw new Error('Copione non generato');
     return PodcastScript.parse(best);
+  }
+
+  /**
+   * Controllo di realismo: un secondo passaggio toglie o sposta ciò che una persona vera non farebbe (risate senza motivo,
+   * esitazioni a caso, reazioni fuori posto). Con una sola voce non serve. Se il passaggio fallisce o stravolge il copione, resta l'originale.
+   */
+  private async reviewScript(
+    tenantId: string,
+    podcast: PodcastRow,
+    brief: PodcastBrief,
+    hosts: ReturnType<typeof PodcastHosts.parse>,
+    e: Episode,
+    script: PodcastScript,
+  ): Promise<PodcastScript> {
+    if (hosts.length < 2) return script;
+    try {
+      const { system, user } = reviewPrompt({ language: podcast.language, hosts, brief, script: script.turns });
+      const raw = await this.callLlm(tenantId, 'podcast_script_review', system, user, REVIEW_SCHEMA, Math.min(16_000, Math.ceil(podcastScriptWords(script) * 3.6) + 1500), 0.4);
+      const tidy = tidyScript(ScriptOut.parse(JSON.parse(raw)), hosts.map((h) => h.key));
+      const before = podcastScriptWords(script);
+      const after = podcastScriptWords(tidy.script);
+      const sane = tidy.problems.length === 0 && Math.abs(after - before) <= before * 0.12 && podcastScriptFit(after, e.targetMinutes).status === 'ok';
+      if (!sane) {
+        this.logger.warn(`Controllo di realismo scartato (puntata ${e.id}): ${tidy.problems.join('; ') || `parole ${before} → ${after}`}`);
+        return script;
+      }
+      return PodcastScript.parse(tidy.script);
+    } catch (err) {
+      this.logger.warn(`Controllo di realismo non riuscito (puntata ${e.id}): ${userMessage(err)}`);
+      return script;
+    }
   }
 
   // --- Audio ----------------------------------------------------------------

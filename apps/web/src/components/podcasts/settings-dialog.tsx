@@ -67,6 +67,7 @@ export function SettingsDialog({ podcast, open, onClose }: { podcast: PodcastVie
         <div className="space-y-1.5">
           <Label htmlFor="st-desc">Descrizione</Label>
           <Textarea id="st-desc" rows={3} maxLength={1000} value={description} onChange={(e) => setDescription(e.target.value)} />
+          <p className="text-xs text-muted-foreground">Nel feed (Spotify, Apple) la descrizione chiude in automatico con la dicitura che le voci sono generate con intelligenza artificiale, se non l&apos;hai già scritta tu.</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">

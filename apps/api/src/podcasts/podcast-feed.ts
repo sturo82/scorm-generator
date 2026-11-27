@@ -38,6 +38,25 @@ export interface FeedEpisode {
   audioUrl: string;
 }
 
+/** Dicitura che dice a chi ascolta che le voci sono sintetiche. */
+const AI_DISCLOSURE: Record<string, string> = {
+  it: 'Le voci di questo podcast sono generate con intelligenza artificiale.',
+  en: 'The voices in this podcast are generated with artificial intelligence.',
+  es: 'Las voces de este pódcast están generadas con inteligencia artificial.',
+  fr: 'Les voix de ce podcast sont générées par intelligence artificielle.',
+  de: 'Die Stimmen in diesem Podcast werden mit künstlicher Intelligenz erzeugt.',
+  pt: 'As vozes deste podcast são geradas com inteligência artificial.',
+};
+/** Già dichiarato nella descrizione scritta dall'autore? */
+const MENTIONS_AI = /intelligenza artificiale|artificial intelligence|inteligencia artificial|intelligence artificielle|künstliche intelligenz|inteligência artificial|\b(?:AI|IA|KI)\b|voci sintetiche|synthetic voices?/i;
+
+/** Aggiunge in fondo alla descrizione la dicitura sulle voci generate, se l'autore non l'ha già scritta. */
+export function withAiDisclosure(description: string, language: string): string {
+  if (MENTIONS_AI.test(description)) return description;
+  const line = AI_DISCLOSURE[(language || 'it').slice(0, 2).toLowerCase()] ?? AI_DISCLOSURE['en']!;
+  return `${description}\n\n${line}`;
+}
+
 /** Lingua del feed: codice breve (it) o con regione (it-IT), come lo vogliono le piattaforme. */
 function feedLanguage(language: string): string {
   return (language || 'it').trim().toLowerCase().replace('_', '-');
@@ -51,7 +70,7 @@ function feedLanguage(language: string): string {
 export function buildFeedXml(input: { podcast: FeedPodcast; feedUrl: string; siteUrl: string; coverUrl?: string; episodes: FeedEpisode[] }): string {
   const p = input.podcast;
   const e = xmlEscape;
-  const description = p.description.trim() || p.title;
+  const description = withAiDisclosure(p.description.trim() || p.title, p.language);
   const author = p.author?.trim() || p.title;
   const episodes = [...input.episodes].sort((a, b) => b.position - a.position || b.publishedAt.getTime() - a.publishedAt.getTime());
   // Data di ultima modifica del feed: cambia a ogni riscrittura (anche se cambia solo l'audio di una puntata), così chi lo legge se ne accorge.

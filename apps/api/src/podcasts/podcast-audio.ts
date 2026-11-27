@@ -91,6 +91,27 @@ export function cleanTurnText(text: string): string {
     .trim();
 }
 
+/** Una risata scritta ("ah ah", "ahah") o un tono "laughing". */
+const LAUGH_TEXT = /\b(?:ah[ ,]+){1,}ah\b|\bah(?:ah)+h?\b/gi;
+/** Distanza minima (in battute) tra due risate: più vicine non sono credibili. */
+const MIN_LAUGH_GAP = 5;
+
+/** Toglie le risate troppo ravvicinate: la seconda è quasi sempre una ripetizione di tic, non una reazione vera. */
+function limitLaughs(turns: PodcastScript['turns']): void {
+  let last = -MIN_LAUGH_GAP;
+  turns.forEach((t, i) => {
+    const laughs = t.mood === 'laughing' || new RegExp(LAUGH_TEXT.source, 'i').test(t.text);
+    if (!laughs) return;
+    if (i - last >= MIN_LAUGH_GAP) {
+      last = i;
+      return;
+    }
+    if (t.mood === 'laughing') delete t.mood;
+    const stripped = t.text.replace(LAUGH_TEXT, '').replace(/\s{2,}/g, ' ').replace(/^[,;:\s]+/, '').replace(/\s+([,.!?…])/g, '$1').trim();
+    t.text = stripped || t.text;
+  });
+}
+
 const OVERLAPS = new Set<string>(['cut_in', 'reaction', 'over']);
 const MOODS = new Set<string>(PodcastMood.options);
 /** Una reazione è una battuta di poche parole. */
@@ -134,6 +155,7 @@ export function tidyScript(
       turns.push({ host, text: clean.slice(0, PODCAST_LIMITS.maxTurnChars), ...(k === 0 && overlap ? { overlap } : {}), ...(mood ? { mood } : {}) });
     });
   }
+  limitLaughs(turns);
   const problems: string[] = [];
   if (turns.length < PODCAST_LIMITS.minTurns) problems.push(`copione troppo corto (${turns.length} battute)`);
   if (turns.length > PODCAST_LIMITS.maxTurns) problems.push(`troppe battute (${turns.length})`);

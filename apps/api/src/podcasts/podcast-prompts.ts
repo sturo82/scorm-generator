@@ -87,6 +87,22 @@ const TTS_STYLE_RULES = [
   '- Mai didascalie teatrali o indicazioni di scena tra parentesi ([ride], [pausa], (sospira)): le risate e le pause si fanno con le parole e la punteggiatura.',
 ];
 
+/**
+ * Coerenza con il comportamento di una persona vera: ogni risata, esitazione, reazione o interruzione deve avere un motivo,
+ * nel contesto e nel carattere di chi la fa.
+ */
+const REALISM_RULES = [
+  'COERENZA CON LA REALTÀ (ogni tic, risata o reazione ha un motivo, come farebbe una persona vera con quel carattere):',
+  '- Una risata nasce da qualcosa di davvero divertente appena detto (una battuta, un\u2019assurdità, una figuraccia, un paragone azzeccato) e la fa chi lo trova divertente, secondo il suo carattere: chi è serio ride poco, chi ride facilmente ride di più. Mai una risata "di punteggiatura", mai dopo frasi che non fanno ridere, mai due risate vicine. Al massimo una risata ogni 10-12 battute (una ogni 6 nello stile scatenato).',
+  '- Esitazioni e riempitivi ("ehm", "cioè", "boh", "mah", "allora") compaiono dove una persona vera esita davvero: quando cerca una parola, quando una domanda la coglie impreparata, quando cambia idea, quando parla di qualcosa che conosce poco, quando è messa alle strette. Chi è esperto di un punto lo spiega con scioltezza, senza balbettare; chi non lo conosce esita. Mai sparsi a caso né in ogni battuta.',
+  '- Ogni persona ha uno o due intercalari suoi (uno dice "praticamente", un\u2019altra "cioè", un altro "guarda") e li usa con coerenza; gli altri non li copiano.',
+  '- Le reazioni rispondono a ciò che è stato appena detto: "Davvero?" solo davanti a una cosa sorprendente, "Esatto" solo se si è d\u2019accordo, "Mh" per prendere atto, "Boh" per un dubbio. Non si reagisce a ogni frase: chi ascolta spesso tace. Le reazioni di uno scettico sono scettiche, quelle di un entusiasta entusiaste.',
+  '- Le interruzioni hanno una ragione: disaccordo, impazienza, la risposta già in mente, una correzione. Una persona pacata o educata interrompe di rado, una impulsiva spesso. Chi viene interrotto reagisce secondo il suo carattere (cede, protesta, riprende il filo).',
+  '- Il tono segue ciò che si dice e ciò che è successo prima: nessun cambio di umore senza motivo; le emozioni si mostrano nel modo di parlare, non si dichiarano ("sono entusiasta").',
+  '- Le persone vere non spiegano tutto, lasciano cose sottintese, non si fanno complimenti di rito, non ripetono i nomi.',
+  '- Prima di consegnare, rileggi ogni risata, esitazione e reazione e chiediti: "una persona vera, con QUEL carattere, qui lo farebbe?". Se no, toglila o cambiala.',
+];
+
 /** Idee per le prossime puntate di una serie già avviata (non crea nulla: l'utente sceglie). */
 export function ideasPrompt(input: {
   language: string;
@@ -190,6 +206,7 @@ export function scriptPrompt(input: {
         '- Tutte le battute hanno host uguale al partecipante; spezza il discorso in paragrafi parlati (battute di 2-5 frasi). Non usare "overlap".',
         '- "beats": i passaggi della puntata (apertura, tesi, esempi, obiezione e risposta, conclusione).',
         ...TTS_STYLE_RULES,
+        ...REALISM_RULES,
         ...personaLines(hosts),
       ].join('\n')
     : [
@@ -204,6 +221,8 @@ export function scriptPrompt(input: {
         '- I fatti e i dati delle fonti restano CORRETTI e non inventati: ciò che è sporco è la forma, non il contenuto. Emergono a pezzi dentro la conversazione (uno cita, un altro obietta, un terzo lo applica a un caso), mai come lezione.',
         '',
         ...TTS_STYLE_RULES,
+        '',
+        ...REALISM_RULES,
         '',
         'FORMA DEL DIALOGO (la parte più importante):',
         '- Turni brevi (micro-dialogo): al massimo 1-3 frasi per battuta. La maggior parte ha 2-14 parole, qualcuna 15-30, raramente di più. Un\u2019esposizione si spezza in più battute con interventi in mezzo.',
@@ -256,4 +275,56 @@ export function scriptPrompt(input: {
     .filter(Boolean)
     .join('\n\n');
   return { system, user, budget };
+}
+
+/** Risposta del controllo di realismo: le battute riviste. */
+export const REVIEW_SCHEMA = {
+  type: 'object',
+  properties: {
+    turns: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          host: { type: 'string', enum: ['A', 'B', 'C', 'D'] },
+          text: { type: 'string' },
+          overlap: { type: 'string', enum: ['cut_in', 'reaction', 'over'] },
+          mood: { type: 'string', enum: ['excited', 'amused', 'surprised', 'sarcastic', 'warm', 'serious', 'calm', 'frustrated', 'thoughtful', 'laughing', 'shouting', 'scoffing'] },
+        },
+        required: ['host', 'text'],
+      },
+    },
+  },
+  required: ['turns'],
+} as const;
+
+/**
+ * Secondo passaggio: un "regista" rilegge il copione e toglie o sposta ciò che una persona vera non farebbe
+ * (risate senza motivo, esitazioni a caso, reazioni fuori posto, intercalari identici per tutti).
+ */
+export function reviewPrompt(input: {
+  language: string;
+  hosts: PodcastHost[];
+  brief: PodcastBrief;
+  script: Array<{ host: string; text: string; overlap?: string; mood?: string }>;
+}): { system: string; user: string } {
+  const system = [
+    'Sei il regista di un podcast parlato: il tuo lavoro è rendere il dialogo indistinguibile da una conversazione registrata tra persone vere.',
+    'Ricevi il copione di una puntata. Rileggilo battuta per battuta e correggi SOLO ciò che una persona vera, con quel carattere, in quel punto, non direbbe o non farebbe.',
+    ...REALISM_RULES,
+    'Cosa puoi fare: togliere o spostare una risata ("ah ah") non motivata; togliere o cambiare riempitivi ed esitazioni a caso; cancellare reazioni che non rispondono a ciò che è stato detto; dare a ciascuno intercalari propri e coerenti; correggere un overlap illogico; togliere o cambiare un "mood" incoerente con la battuta o con il carattere; sistemare una battuta che suona scritta invece che parlata.',
+    'Cosa NON devi fare: cambiare i contenuti, i fatti, i numeri o le fonti; aggiungere parolacce; allungare o accorciare il copione di più del 8%; cambiare chi parla in modo da perdere il carattere di ciascuno; aggiungere indicazioni di scena tra parentesi.',
+    'Se una battuta va bene, lasciala IDENTICA. Mantieni i campi "overlap" e "mood" quando sono coerenti. Una battuta interrotta resta a metà con il trattino e chi risponde ha overlap "cut_in".',
+    'Rispondi SOLO con JSON conforme allo schema: l\u2019elenco COMPLETO delle battute riviste, nello stesso ordine.',
+  ].join('\n');
+  const user = [
+    languageDirective(input.language),
+    ...briefLines(input.brief),
+    `Partecipanti: ${hostLine(input.hosts)}`,
+    'Carattere di ciascuno:',
+    ...personaLines(input.hosts),
+    'Copione da rivedere (JSON):',
+    JSON.stringify({ turns: input.script }),
+  ].join('\n\n');
+  return { system, user };
 }

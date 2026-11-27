@@ -184,6 +184,7 @@ export default function NewPodcastPage() {
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="pc-desc">Descrizione</Label>
             <Textarea id="pc-desc" rows={3} maxLength={1000} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Di cosa parla il podcast e a chi si rivolge" />
+            <p className="text-xs text-muted-foreground">Nel feed (Spotify, Apple) la descrizione chiude in automatico con la dicitura che le voci sono generate con intelligenza artificiale, se non l&apos;hai già scritta tu.</p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="pc-lang">Lingua</Label>
