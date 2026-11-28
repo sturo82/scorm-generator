@@ -274,11 +274,17 @@ const HEYGEN_MOOD_TAGS: Record<PodcastMood, string> = {
 export function textForVoice(turn: { text: string; mood?: PodcastMood }, provider: 'polly' | 'heygen', language = 'it'): string {
   const base = spokenText(turn.text, language);
   if (provider !== 'heygen') return base;
+  // Le interiezioni isolate ("Mh.", "Eh.", "Uff.") con HeyGen diventano suoni veri (etichette di evento) invece di parole lette in studio.
+  const bare = base.trim().replace(/^[\s"«»]+|[\s.,!?…\u2014-]+$/g, '').toLowerCase();
+  if (/^(?:m+h+m*|e+h+|uh+m*)$/.test(bare) && !/^e+h+m+$/.test(bare)) return '[hmm]';
+  if (/^uff+$/.test(bare)) return '[sighs]';
   // Le risate scritte ("ah ah ah", "ahahah") diventano risate vere con le voci che le sanno fare.
   const text = base.replace(/\b(?:ah[ ,]+){1,}ah\b|\bah(?:ah)+h?\b/gi, '[laughs]');
+  // Una risata da sola non si porta dietro la punteggiatura.
+  const cleaned = text.replace(/^(\[laughs\])[\s!.?…]+$/, '$1');
   // Ogni etichetta di tono allunga la battuta di circa un secondo: sulle battute cortissime farebbe perdere ritmo, quindi lì resta solo la risata.
-  const short = text.split(/\s+/).length < 4;
-  return turn.mood && (!short || turn.mood === 'laughing') ? `${HEYGEN_MOOD_TAGS[turn.mood]} ${text}` : text;
+  const short = cleaned.split(/\s+/).length < 4;
+  return turn.mood && (!short || turn.mood === 'laughing') ? `${HEYGEN_MOOD_TAGS[turn.mood]} ${cleaned}` : cleaned;
 }
 
 const UNITS = ['zero', 'uno', 'due', 'tre', 'quattro', 'cinque', 'sei', 'sette', 'otto', 'nove', 'dieci', 'undici', 'dodici', 'tredici', 'quattordici', 'quindici', 'sedici', 'diciassette', 'diciotto', 'diciannove'];
