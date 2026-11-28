@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { MIX_RATE, decodeToPcm, encodeMp3, ffmpegAvailable, mixPcm, planTimeline, shapeBackchannel, trimSilence } from './podcast-mix.js';
+import { MIX_RATE, decodeToPcm, ffmpegAvailable, masterToMp3, mixPcm, planTimeline, shapeBackchannel, trimSilence } from './podcast-mix.js';
 import { mp3DurationMs, splitTextForTts } from '@scorm/adapters/polly';
 import { PODCAST_LIMITS, PodcastMood, type PodcastEnergy, type PodcastOverlap, type PodcastScript, type PodcastTurnTiming } from '@scorm/contracts';
 
@@ -250,7 +250,7 @@ export async function assembleDialogue(
     pcms.map((pcm, i) => ({ pcm, startMs: slots[i]!.startMs, gain: slots[i]!.gain })),
     totalMs + 200,
   );
-  const audio = await encodeMp3(mixed);
+  const audio = await masterToMp3(mixed);
   const timings: PodcastTurnTiming[] = slots.map((x, i) => ({ i, startMs: x.startMs, endMs: x.endMs }));
   return { audio, timings, durationMs: Math.round((mixed.length / MIX_RATE) * 1000), mixed: true };
 }

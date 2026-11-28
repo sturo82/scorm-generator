@@ -24,6 +24,62 @@ function ffmpeg(args: string[], input: Buffer): Promise<Buffer> {
   });
 }
 
+/** Come `ffmpeg`, ma restituisce anche stderr (dove i filtri di misura scrivono i risultati). */
+function ffmpegWithLog(args: string[], input: Buffer): Promise<{ out: Buffer; log: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('ffmpeg', ['-hide_banner', '-nostdin', ...args], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    child.stdout.on('data', (d: Buffer) => out.push(d));
+    child.stderr.on('data', (d: Buffer) => err.push(d));
+    child.on('error', reject);
+    child.on('close', (code) => {
+      const log = Buffer.concat(err).toString('utf8');
+      if (code === 0) resolve({ out: Buffer.concat(out), log });
+      else reject(new Error(`ffmpeg ha fallito (${code}): ${log.slice(-300)}`));
+    });
+    child.stdin.on('error', () => undefined);
+    child.stdin.end(input);
+  });
+}
+
+/** Volume di riferimento dei podcast sulle piattaforme (LUFS integrati) e picco massimo. */
+export const TARGET_LUFS = -16;
+export const TARGET_PEAK_DB = -1.5;
+
+/** Catena di rifinitura della voce: taglia i rumori bassi, livella un po' le differenze di volume. */
+const VOICE_CHAIN = 'highpass=f=70,acompressor=threshold=0.125:ratio=2.2:attack=20:release=250:makeup=1.4';
+
+/**
+ * Master finale: filtro passa-alto e compressione leggera, poi normalizzazione del volume a -16 LUFS (come chiedono Apple e
+ * Spotify) con picco sotto -1,5 dB, misurata e applicata in due passaggi, e codifica MP3. Senza questo le puntate escono
+ * troppo piano o troppo forte rispetto agli altri podcast.
+ */
+export async function masterToMp3(pcm: Int16Array): Promise<Buffer> {
+  const input = Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+  const raw = ['-f', 's16le', '-ar', String(MIX_RATE), '-ac', '1', '-i', 'pipe:0'];
+  const target = `I=${TARGET_LUFS}:TP=${TARGET_PEAK_DB}:LRA=11`;
+  // 1) misura
+  const pass1 = await ffmpegWithLog([...raw, '-af', `${VOICE_CHAIN},loudnorm=${target}:print_format=json`, '-f', 'null', '-'], input);
+  const m = /\{[^{}]*"input_i"[^{}]*\}/.exec(pass1.log);
+  let loudnorm = `loudnorm=${target}`;
+  if (m) {
+    try {
+      const j = JSON.parse(m[0]) as Record<string, string>;
+      const ok = [j['input_i'], j['input_tp'], j['input_lra'], j['input_thresh'], j['target_offset']].every((v) => Number.isFinite(Number(v)));
+      if (ok) loudnorm = `loudnorm=${target}:measured_I=${j['input_i']}:measured_TP=${j['input_tp']}:measured_LRA=${j['input_lra']}:measured_thresh=${j['input_thresh']}:offset=${j['target_offset']}:linear=true`;
+    } catch {
+      /* misura illeggibile: si usa la normalizzazione a un solo passaggio */
+    }
+  }
+  // 2) applica e codifica (loudnorm lavora a 192 kHz: si torna a 24 kHz in uscita)
+  const { out } = await ffmpegWithLog(
+    [...raw, '-af', `${VOICE_CHAIN},${loudnorm}`, '-ar', String(MIX_RATE), '-ac', '1', '-c:a', 'libmp3lame', '-b:a', '80k', '-f', 'mp3', 'pipe:1'],
+    input,
+  );
+  return out;
+}
+
 let available: Promise<boolean> | null = null;
 /** True se ffmpeg è installato (si controlla una volta sola). */
 export function ffmpegAvailable(): Promise<boolean> {
