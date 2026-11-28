@@ -40,6 +40,8 @@ const podcastSpeech = {
   },
 };
 
+/** Motore delle voci HeyGen: ElevenLabs v3 (scelto all'ascolto); HEYGEN_TTS_ENGINE="" torna a heygen-voice-1. */
+const heygenTtsEngine = (): string => process.env['HEYGEN_TTS_ENGINE'] ?? 'elevenlabs_v3';
 /** Voci HeyGen (anche quelle proprie, clonate con gli avatar): solo se c'è la chiave API. */
 const podcastHeygenSpeech = {
   provide: PODCAST_HEYGEN_SPEECH,
@@ -47,7 +49,7 @@ const podcastHeygenSpeech = {
   useFactory: (config: ConfigService<AppConfig, true>): SpeechProvider | null => {
     const h = config.get('heygen', { infer: true });
     if (!h.apiKey) return null;
-    return new HeygenSpeechProvider({ apiKey: h.apiKey, baseUrl: h.baseUrl, model: process.env['HEYGEN_VOICE_MODEL'] || undefined });
+    return new HeygenSpeechProvider({ apiKey: h.apiKey, baseUrl: h.baseUrl, model: process.env['HEYGEN_VOICE_MODEL'] || undefined, engine: heygenTtsEngine() });
   },
 };
 

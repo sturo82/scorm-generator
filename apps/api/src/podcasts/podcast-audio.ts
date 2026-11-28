@@ -17,6 +17,16 @@ export function silence(ms: number): Buffer {
   return Buffer.concat(Array.from({ length: frames }, () => SILENCE_FRAME));
 }
 
+/** True se il primo frame MP3 (dopo un eventuale tag ID3) è MPEG-2, 24 kHz, mono: si può accodare senza ricodifica. */
+export function isMp3At24kMono(bytes: Uint8Array): boolean {
+  const b = stripId3(Buffer.from(bytes));
+  for (let o = 0; o + 3 < b.length && o < 64 * 1024; o++) {
+    if (b[o] !== 0xff || (b[o + 1]! & 0xe0) !== 0xe0) continue;
+    return ((b[o + 1]! >> 3) & 3) === 2 && ((b[o + 2]! >> 2) & 3) === 1 && b[o + 3]! >> 6 === 3;
+  }
+  return false;
+}
+
 /** Toglie un eventuale tag ID3v2 iniziale (in mezzo a un file concatenato darebbe disturbi). */
 export function stripId3(buf: Buffer): Buffer {
   if (buf.length > 10 && buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) {
@@ -232,7 +242,9 @@ export async function assembleDialogue(
   parts: Array<{ bytes: Uint8Array; text: string; overlap?: PodcastOverlap; host?: string; tempo?: number; energy?: number }>,
   energy: PodcastEnergy = 'lively',
 ): Promise<{ audio: Buffer; timings: PodcastTurnTiming[]; durationMs: number; mixed: boolean }> {
-  const wantsMix = parts.some((p) => p.overlap || (p.tempo !== undefined && Math.abs(p.tempo - 1) > 0.01)) && (await ffmpegAvailable());
+  // Le clip non a 24 kHz mono (es. ElevenLabs via HeyGen, 44,1 kHz) non si accodano ai frame di silenzio: si mixano sempre.
+  const needsResample = parts.some((p) => !isMp3At24kMono(p.bytes));
+  const wantsMix = (needsResample || parts.some((p) => p.overlap || (p.tempo !== undefined && Math.abs(p.tempo - 1) > 0.01))) && (await ffmpegAvailable());
   if (!wantsMix) return { ...assembleAudio(parts), mixed: false };
   const pcms = await Promise.all(
     parts.map(async (p) => {

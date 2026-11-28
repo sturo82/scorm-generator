@@ -12,6 +12,12 @@ export interface HeygenSpeechProviderOptions {
   baseUrl?: string;
   /** Modello di voce HeyGen (default heygen-voice-1). */
   model?: string;
+  /**
+   * Motore di sintesi. Vuoto = endpoint /v3/models/audio/tts (heygen-voice-1). Con un motore
+   * ('elevenlabs_v3', 'elevenlabs', 'orca', 'starfish', 'heygen_voice') si usa /v3/voices/speech.
+   * Quell'audio è MP3 a 44,1 kHz: il podcast lo ricampiona nel mix (serve ffmpeg).
+   */
+  engine?: string;
   fetchImpl?: typeof fetch;
   /** Pausa minima tra due richieste (ms): HeyGen ammette 30 richieste al minuto per utente. */
   minIntervalMs?: number;
@@ -151,18 +157,24 @@ export class HeygenSpeechProvider implements SpeechProvider {
 
   async synthesize(input: SpeechSynthesizeInput): Promise<SpeechSynthesizeResult> {
     if (!input.voice) throw new ProviderUnavailableError('HeyGen: manca la voce');
-    const body = JSON.stringify({
-      voice_id: input.voice,
-      text: input.text,
-      language: baseLang(input.language) || undefined,
-      model: this.model,
-      ...(input.speed && Math.abs(input.speed - 1) > 0.01 ? { speed: Math.min(1.5, Math.max(0.5, input.speed)) } : {}),
-      output_format: { encoding: 'mp3', sample_rate_hertz: 24000 },
-    });
+    const engine = this.opts.engine?.trim();
+    const speed = input.speed && Math.abs(input.speed - 1) > 0.01 ? { speed: Math.min(1.5, Math.max(0.5, input.speed)) } : {};
+    const language = baseLang(input.language) || undefined;
+    const path = engine ? '/v3/voices/speech' : '/v3/models/audio/tts';
+    const body = engine
+      ? JSON.stringify({ voice_id: input.voice, text: input.text, language, engine, ...speed })
+      : JSON.stringify({
+          voice_id: input.voice,
+          text: input.text,
+          language,
+          model: this.model,
+          ...speed,
+          output_format: { encoding: 'mp3', sample_rate_hertz: 24000 },
+        });
     let lastStatus = 0;
     for (let attempt = 0; attempt < 5; attempt++) {
       await this.pace();
-      const res = await this.fetchImpl(`${this.baseUrl}/v3/models/audio/tts`, { method: 'POST', headers: this.headers(), body });
+      const res = await this.fetchImpl(`${this.baseUrl}${path}`, { method: 'POST', headers: this.headers(), body });
       lastStatus = res.status;
       if (res.status === 429 || res.status === 503 || res.status === 500) {
         const retryAfter = Number(res.headers.get('retry-after'));
