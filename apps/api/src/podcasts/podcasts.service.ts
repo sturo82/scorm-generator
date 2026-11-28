@@ -27,7 +27,7 @@ import {
 import { BillingService } from '../billing/billing.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OBJECT_STORAGE } from '../providers/provider.constants.js';
-import { scriptChars, tidyScript } from './podcast-audio.js';
+import { hostsAudioWeight, podcastProviderOf, scriptAudioUnits, tidyScript } from './podcast-audio.js';
 import { PodcastGenerationService } from './podcast-generation.service.js';
 import { newFeedToken, newPublicId, PodcastPublishService } from './podcast-publish.service.js';
 import { PodcastVoicesService } from './podcast-voices.service.js';
@@ -414,13 +414,18 @@ export class PodcastsService {
   // --- Preventivo e fonti ----------------------------------------------------------
 
   /** Preventivo di UNA nuova puntata: copione e audio. */
-  async estimateNew(tenantId: string, minutes: number): Promise<PodcastEstimateView> {
-    return this.generation.estimate(await this.billing.isBilled(tenantId), { plan: false, scripts: 1, audio: [{ minutes }] });
+  async estimateNew(tenantId: string, minutes: number, podcastId?: string): Promise<PodcastEstimateView> {
+    // Con la serie si conoscono le voci (HeyGen costa più di Polly); senza, si stima con Polly.
+    const weight = podcastId ? hostsAudioWeight(PodcastHosts.parse((await this.require(tenantId, podcastId)).hosts)) : 1;
+    return this.generation.estimate(await this.billing.isBilled(tenantId), { plan: false, scripts: 1, audio: [{ minutes, weight }] });
   }
 
   /** Preventivo del lavoro ancora da fare su una serie: copioni mancanti e audio da generare. */
   async estimateExisting(tenantId: string, id: string): Promise<PodcastEstimateView> {
-    await this.require(tenantId, id);
+    const podcast = await this.require(tenantId, id);
+    const hosts = PodcastHosts.parse(podcast.hosts);
+    const providerOf = podcastProviderOf(hosts);
+    const weight = hostsAudioWeight(hosts);
     const eps = await this.prisma.podcastEpisode.findMany({ where: { podcastId: id, tenantId }, orderBy: { position: 'asc' } });
     const withoutScript = eps.filter((e) => !PodcastScript.safeParse(e.script).success);
     const needAudio = eps.filter((e) => !e.audioKey || e.audioStale);
@@ -429,7 +434,7 @@ export class PodcastsService {
       scripts: withoutScript.length,
       audio: needAudio.map((e) => {
         const s = PodcastScript.safeParse(e.script);
-        return s.success ? { minutes: e.targetMinutes, chars: scriptChars(s.data) } : { minutes: e.targetMinutes };
+        return s.success ? { minutes: e.targetMinutes, units: scriptAudioUnits(s.data, providerOf) } : { minutes: e.targetMinutes, weight };
       }),
     });
   }

@@ -25,7 +25,7 @@ import { formatContext } from '../generation/prompts.js';
 import { UsageMeterService } from '../metering/usage-meter.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OBJECT_STORAGE } from '../providers/provider.constants.js';
-import { ENERGY_SPEED, assembleDialogue, energyFactors, scriptChars, smoothEnergies, textForVoice, tidyScript } from './podcast-audio.js';
+import { AUDIO_WEIGHT, ENERGY_SPEED, assembleDialogue, energyFactors, podcastProviderOf, scriptAudioUnits, smoothEnergies, textForVoice, tidyScript } from './podcast-audio.js';
 import { IDEAS_SCHEMA, REVIEW_SCHEMA, SCRIPT_SCHEMA, ideasPrompt, reviewPrompt, scriptPrompt } from './podcast-prompts.js';
 import { PODCAST_FEED, PODCAST_LLM } from './podcast.constants.js';
 import { HEYGEN_VOICE_MODEL, PodcastVoicesService, podcastLocale } from './podcast-voices.service.js';
@@ -207,7 +207,8 @@ export class PodcastGenerationService implements OnModuleInit {
   /** Preventivo in crediti. Per l'audio si stima dalla durata (o dal copione, se c'è già). */
   estimate(
     billed: boolean,
-    work: { plan: boolean; scripts: number; audio: Array<{ minutes: number; chars?: number }> },
+    /** Audio: unità già pesate dal copione (`units`), oppure stima dalla durata × peso medio delle voci. */
+    work: { plan: boolean; scripts: number; audio: Array<{ minutes: number; units?: number; weight?: number }> },
   ): PodcastEstimateView {
     const lines: PodcastEstimateView['lines'] = [];
     const add = (kind: 'plan' | 'scripts' | 'audio', quantity: number, items: BillItem[]): void => {
@@ -217,7 +218,7 @@ export class PodcastGenerationService implements OnModuleInit {
     };
     if (work.plan) add('plan', 1, [{ feature: 'text_light', units: 1 }]);
     if (work.scripts > 0) add('scripts', work.scripts, [{ feature: 'text_standard', units: work.scripts }]);
-    const units = work.audio.reduce((n, a) => n + (a.chars ?? a.minutes * PODCAST_LIMITS.wordsPerMinute * CHARS_PER_WORD) / 1000, 0);
+    const units = work.audio.reduce((n, a) => n + (a.units ?? (a.minutes * PODCAST_LIMITS.wordsPerMinute * CHARS_PER_WORD * (a.weight ?? 1)) / 1000), 0);
     if (units > 0) add('audio', units, [{ feature: 'audio_narration', units: this.margin(units) }]);
     return {
       billed,
@@ -434,9 +435,10 @@ export class PodcastGenerationService implements OnModuleInit {
         throw new BadRequestException(`La voce di ${h.name} non è disponibile per questa lingua: sceglierne un'altra`);
       }
     }
-    const chars = todo.reduce((n, e) => n + scriptChars(PodcastScript.parse(e.script)), 0);
+    const providerOf = podcastProviderOf(hosts);
+    const units = todo.reduce((n, e) => n + scriptAudioUnits(PodcastScript.parse(e.script), providerOf), 0);
     const reservation = await this.billing.reserve(tenantId, `kscorm:podcast-audio:${podcastId}:${randomUUID()}`, [
-      { feature: 'audio_narration', units: this.margin(chars / 1000) },
+      { feature: 'audio_narration', units: this.margin(units) },
     ]);
     await this.prisma.podcastEpisode.updateMany({
       where: { id: { in: todo.map((e) => e.id) }, tenantId },
@@ -457,7 +459,7 @@ export class PodcastGenerationService implements OnModuleInit {
 
   private async runAudio(tenantId: string, podcast: PodcastRow, todo: Episode[], reservation: Reservation | null): Promise<void> {
     const hb = this.heartbeat(todo.map((e) => e.id));
-    let chars = 0;
+    let units = 0;
     try {
       for (const e of todo) {
         if (this.cancelled.has(podcast.id)) {
@@ -465,7 +467,7 @@ export class PodcastGenerationService implements OnModuleInit {
           continue;
         }
         try {
-          chars += await this.voiceEpisode(tenantId, podcast, e);
+          units += await this.voiceEpisode(tenantId, podcast, e);
         } catch (err) {
           this.logger.error(`Audio podcast ${e.id} fallito: ${userMessage(err)}`);
           await this.prisma.podcastEpisode.update({
@@ -477,12 +479,12 @@ export class PodcastGenerationService implements OnModuleInit {
     } finally {
       clearInterval(hb);
       await this.billing
-        .settle(tenantId, reservation, { audio_narration: Math.round((chars / 1000) * 100) / 100 })
+        .settle(tenantId, reservation, { audio_narration: Math.round(units * 100) / 100 })
         .catch((err) => this.logger.warn(`Addebito audio: ${userMessage(err)}`));
     }
   }
 
-  /** Sintetizza una puntata battuta per battuta, unisce l'audio e lo salva. Restituisce i caratteri sintetizzati. */
+  /** Sintetizza una puntata battuta per battuta, unisce l'audio e lo salva. Restituisce le unità `audio_narration` (caratteri pesati / 1000). */
   private async voiceEpisode(tenantId: string, podcast: PodcastRow, e: Episode): Promise<number> {
     const cfg = this.config.get('podcast', { infer: true });
     const script = PodcastScript.parse(e.script);
@@ -529,7 +531,7 @@ export class PodcastGenerationService implements OnModuleInit {
       quantity: charsBy.heygen,
       source: 'podcast_audio',
     });
-    const chars = charsBy.polly + charsBy.heygen;
+    const units = (charsBy.polly * AUDIO_WEIGHT.polly + charsBy.heygen * AUDIO_WEIGHT.heygen) / 1000;
     await this.prisma.podcastEpisode.update({
       where: { id: e.id },
       data: {
@@ -544,7 +546,7 @@ export class PodcastGenerationService implements OnModuleInit {
         turnTimings: timings as unknown as Prisma.InputJsonValue,
       },
     });
-    return chars;
+    return units;
   }
 
   /** Una battuta: fino a 3 tentativi con attesa crescente (limiti di frequenza o errori passeggeri). */

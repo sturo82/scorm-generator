@@ -825,7 +825,7 @@ export interface ApiClient {
   createPodcast(input: CreatePodcast): Promise<PodcastView>;
   updatePodcast(id: string, input: UpdatePodcast): Promise<PodcastView>;
   deletePodcast(id: string): Promise<void>;
-  estimateNewPodcast(minutes: number): Promise<PodcastEstimateView>;
+  estimateNewPodcast(minutes: number, podcastId?: string): Promise<PodcastEstimateView>;
   estimatePodcast(id: string): Promise<PodcastEstimateView>;
   listPodcastVoices(language: string): Promise<PodcastVoiceOption[]>;
   previewPodcastVoice(voiceId: string, provider: PodcastVoiceProvider, language: string): Promise<{ url: string }>;

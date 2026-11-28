@@ -42,7 +42,7 @@ export function NewEpisodeDialog({
   const [feedItems, setFeedItems] = React.useState<Array<{ title: string; link?: string; summary: string }>>([]);
   const [articles, setArticles] = React.useState<PodcastArticleRef[]>([]);
   const [busy, setBusy] = React.useState(false);
-  const estimate = usePodcastEstimateNew(minutes);
+  const estimate = usePodcastEstimateNew(minutes, podcast.id);
   const readyDocs = React.useMemo(() => (knowledge.data ?? []).filter((d) => d.status === 'READY'), [knowledge.data]);
 
   // Ogni volta che si apre: campi puliti, o precompilati dall'idea scelta.

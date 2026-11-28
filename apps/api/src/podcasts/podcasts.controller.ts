@@ -55,9 +55,9 @@ export class PodcastsController {
 
   /** Preventivo di una nuova puntata: copione e audio. */
   @Get('estimate')
-  estimateNew(@CurrentContext() ctx: AuthContext, @Query('minutes') minutes?: string) {
+  estimateNew(@CurrentContext() ctx: AuthContext, @Query('minutes') minutes?: string, @Query('podcastId') podcastId?: string) {
     const m = Math.min(PODCAST_LIMITS.maxMinutes, Math.max(PODCAST_LIMITS.minMinutes, Math.round(Number(minutes) || 8)));
-    return this.podcasts.estimateNew(ctx.tenant.tenantId, m);
+    return this.podcasts.estimateNew(ctx.tenant.tenantId, m, podcastId || undefined);
   }
 
   /** Voci disponibili per la lingua della serie. */

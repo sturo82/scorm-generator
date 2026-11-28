@@ -230,6 +230,29 @@ export function scriptChars(script: { turns: Array<{ text: string }> }): number 
   return script.turns.reduce((n, t) => n + t.text.length, 0);
 }
 
+/**
+ * Peso di un carattere nel credito `audio_narration`, per fornitore. `audio_narration` è prezzato su
+ * Polly generativa ($30 per milione); le voci HeyGen (anche col motore ElevenLabs v3) costano circa
+ * $140 per milione (misurato): contano 140/30 volte, così il margine resta quello di Polly.
+ */
+export const AUDIO_WEIGHT: Record<'polly' | 'heygen', number> = { polly: 1, heygen: 140 / 30 };
+
+/** Unità `audio_narration` (migliaia di caratteri pesati per fornitore) di un copione. */
+export function scriptAudioUnits(script: { turns: Array<{ host: string; text: string }> }, providerOf: (host: string) => 'polly' | 'heygen'): number {
+  return script.turns.reduce((n, t) => n + t.text.length * AUDIO_WEIGHT[providerOf(t.host)], 0) / 1000;
+}
+
+/** Fornitore della voce di ogni partecipante (Polly se il partecipante non c'è più). */
+export function podcastProviderOf(hosts: Array<{ key: string; voice: { provider: 'polly' | 'heygen' } }>): (host: string) => 'polly' | 'heygen' {
+  const map = new Map(hosts.map((h) => [h.key, h.voice.provider]));
+  return (host) => map.get(host) ?? 'polly';
+}
+
+/** Peso medio dei partecipanti, per stimare l'audio prima che esista il copione. */
+export function hostsAudioWeight(hosts: Array<{ voice: { provider: 'polly' | 'heygen' } }>): number {
+  return hosts.length === 0 ? 1 : hosts.reduce((n, h) => n + AUDIO_WEIGHT[h.voice.provider], 0) / hosts.length;
+}
+
 /** Quanto si stringono o si allungano le pause secondo l'energia della conversazione. */
 const PACE: Record<PodcastEnergy, number> = { relaxed: 1.6, lively: 1, wild: 0.5 };
 

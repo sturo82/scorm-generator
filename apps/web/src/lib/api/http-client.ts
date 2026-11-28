@@ -899,8 +899,9 @@ export class HttpApiClient implements ApiClient {
   async deletePodcast(id: string) {
     await this.request<unknown>(`/podcasts/${id}`, { method: 'DELETE' });
   }
-  estimateNewPodcast(minutes: number) {
-    return this.request<PodcastEstimateView>(`/podcasts/estimate?minutes=${minutes}`);
+  estimateNewPodcast(minutes: number, podcastId?: string) {
+    const q = new URLSearchParams({ minutes: String(minutes), ...(podcastId ? { podcastId } : {}) });
+    return this.request<PodcastEstimateView>(`/podcasts/estimate?${q}`);
   }
   estimatePodcast(id: string) {
     return this.request<PodcastEstimateView>(`/podcasts/${id}/estimate`);

@@ -1458,10 +1458,10 @@ export function usePodcastVoiceCapabilities() {
 }
 
 /** Costo di una nuova puntata (copione e audio). */
-export function usePodcastEstimateNew(minutes: number) {
+export function usePodcastEstimateNew(minutes: number, podcastId?: string) {
   return useQuery({
-    queryKey: ['podcasts', 'estimate-new', minutes],
-    queryFn: () => api.estimateNewPodcast(minutes),
+    queryKey: ['podcasts', 'estimate-new', minutes, podcastId ?? null],
+    queryFn: () => api.estimateNewPodcast(minutes, podcastId),
     staleTime: 30_000,
   });
 }
