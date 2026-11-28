@@ -52,6 +52,90 @@ export async function encodeMp3(pcm: Int16Array): Promise<Buffer> {
   return ffmpeg(['-f', 's16le', '-ar', String(MIX_RATE), '-ac', '1', '-i', 'pipe:0', '-c:a', 'libmp3lame', '-b:a', '64k', '-f', 'mp3', 'pipe:1'], input);
 }
 
+/**
+ * Toglie il silenzio digitale a inizio e fine di una clip (le voci sintetiche ne hanno 100-300 ms per lato): senza questo le
+ * pause tra le battute risultano molto più lunghe di quelle volute e il ritmo suona a metronomo.
+ */
+export function trimSilence(pcm: Int16Array, leadMs = 12, tailMs = 70, threshold = 0.004): Int16Array {
+  const limit = threshold * 32768;
+  let a = 0;
+  let b = pcm.length - 1;
+  while (a < b && Math.abs(pcm[a]!) < limit) a++;
+  while (b > a && Math.abs(pcm[b]!) < limit) b--;
+  const start = Math.max(0, a - Math.round((leadMs / 1000) * MIX_RATE));
+  const end = Math.min(pcm.length, b + 1 + Math.round((tailMs / 1000) * MIX_RATE));
+  return pcm.subarray(start, Math.max(start + 1, end));
+}
+
+/** Passa-basso a un polo: toglie le alte frequenze, come una voce sentita da più lontano o "di sponda" da un altro microfono. */
+export function lowPass(pcm: Int16Array, cutoffHz: number): Int16Array {
+  const out = new Int16Array(pcm.length);
+  const alpha = 1 - Math.exp((-2 * Math.PI * cutoffHz) / MIX_RATE);
+  let y = 0;
+  for (let i = 0; i < pcm.length; i++) {
+    y += alpha * (pcm[i]! - y);
+    out[i] = Math.round(y);
+  }
+  return out;
+}
+
+/**
+ * Un'interiezione ("mh", "eh", "ah") in una conversazione vera è breve, fiacca e non scandita: si accorcia con una
+ * dissolvenza lunga e si scurisce un po', così non suona come una parola letta in studio.
+ */
+export function shapeBackchannel(pcm: Int16Array, maxMs = 480): Int16Array {
+  const max = Math.round((maxMs / 1000) * MIX_RATE);
+  const cut = pcm.length > max ? pcm.slice(0, max) : pcm.slice();
+  const fade = Math.min(cut.length, Math.round(0.09 * MIX_RATE));
+  for (let i = 0; i < fade; i++) cut[cut.length - 1 - i] = Math.round(cut[cut.length - 1 - i]! * (i / fade));
+  return lowPass(cut, 3400);
+}
+
+/** Generatore pseudo-casuale con seme: stesso copione, stesso audio. */
+function rng(seed: number): () => number {
+  let s = seed >>> 0 || 1;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+/**
+ * Mette tutte le voci nella stessa stanza: un velo di riverbero corto e un fruscio di fondo molto basso. Il silenzio digitale
+ * tra una clip e l'altra è uno dei segni più netti di un parlato assemblato; con il "rumore di stanza" costante le pause suonano vere.
+ */
+export function addRoom(acc: Float32Array, wet = 0.07, noiseDb = -58): void {
+  const ms = (m: number) => Math.round((m / 1000) * MIX_RATE);
+  const combs = [ms(29.7), ms(37.1), ms(41.1), ms(43.7)].map((d) => ({ d, buf: new Float32Array(d), i: 0 }));
+  const feedback = 0.74;
+  const allpass = [ms(5), ms(1.7)].map((d) => ({ d, buf: new Float32Array(d), i: 0 }));
+  const rand = rng(12345);
+  const noiseAmp = Math.pow(10, noiseDb / 20);
+  let n1 = 0;
+  const dry = acc.slice();
+  for (let t = 0; t < acc.length; t++) {
+    const x = dry[t]!;
+    let r = 0;
+    for (const c of combs) {
+      const y = c.buf[c.i]!;
+      c.buf[c.i] = x + y * feedback;
+      c.i = (c.i + 1) % c.d;
+      r += y;
+    }
+    r /= combs.length;
+    for (const a of allpass) {
+      const y = a.buf[a.i]!;
+      const out = -r + y;
+      a.buf[a.i] = r + y * 0.5;
+      a.i = (a.i + 1) % a.d;
+      r = out;
+    }
+    // Fruscio di fondo: rumore bianco passa-basso, leggermente irregolare.
+    n1 += 0.35 * ((rand() * 2 - 1) - n1);
+    acc[t] = x + r * wet + n1 * noiseAmp;
+  }
+}
+
 export interface MixTrack {
   pcm: Int16Array;
   startMs: number;
@@ -64,7 +148,7 @@ export interface MixTrack {
  * (niente scatti dove si taglia) e il risultato passa da un limitatore morbido, così le
  * sovrapposizioni non distorcono.
  */
-export function mixPcm(tracks: MixTrack[], totalMs: number): Int16Array {
+export function mixPcm(tracks: MixTrack[], totalMs: number, room = true): Int16Array {
   const total = Math.max(1, Math.ceil((totalMs / 1000) * MIX_RATE));
   const acc = new Float32Array(total);
   const fade = Math.round((FADE_MS / 1000) * MIX_RATE);
@@ -76,6 +160,7 @@ export function mixPcm(tracks: MixTrack[], totalMs: number): Int16Array {
       acc[offset + i]! += (t.pcm[i]! / 32768) * t.gain * (edge < 1 ? Math.max(0, edge) : 1);
     }
   }
+  if (room) addRoom(acc);
   const out = new Int16Array(total);
   for (let i = 0; i < total; i++) {
     const v = acc[i]!;
@@ -126,8 +211,8 @@ export function planTimeline(turns: TimelineTurn[], gap: (i: number) => number):
         break;
       case 'reaction':
         // La reazione sta in parte sopra le ultime parole e in parte dopo: deve restare ben udibile, non "mangiata" dall'altra voce.
-        start = Math.max(0, cursor - Math.min(Math.max(t.durationMs * 0.4, 150), 450));
-        gain *= 0.85;
+        start = Math.max(0, cursor - Math.min(Math.max(t.durationMs * 0.55, 180), 420));
+        gain *= 0.55;
         break;
       case 'over':
         start = Math.max(0, cursor - Math.min(t.durationMs * 0.5, 900));

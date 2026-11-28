@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { MIX_RATE, decodeToPcm, encodeMp3, ffmpegAvailable, mixPcm, planTimeline } from './podcast-mix.js';
+import { MIX_RATE, decodeToPcm, encodeMp3, ffmpegAvailable, mixPcm, planTimeline, shapeBackchannel, trimSilence } from './podcast-mix.js';
 import { mp3DurationMs, splitTextForTts } from '@scorm/adapters/polly';
 import { PODCAST_LIMITS, PodcastMood, type PodcastEnergy, type PodcastOverlap, type PodcastScript, type PodcastTurnTiming } from '@scorm/contracts';
 
@@ -51,6 +51,38 @@ export function gapBetween(prevText: string, nextText: string, index: number): n
   return 90 + jitter;
 }
 
+/** Interiezione non lessicale: "mh", "eh", "ehm", "ah", "oh", "uh", "boh"… */
+export const INTERJECTION = /^[\s"«»]*(?:m+h+m*|e+h+m*|u+h+m*|a+h+|o+h+|boh|mah|uff|eh|ah ah|ahah+)[\s.,!?…\u2014-]*$/i;
+
+/** Numero pseudo-casuale in [0,1) per l'indice (stesso copione, stesso audio). */
+function unit(i: number): number {
+  const x = Math.sin((i + 1) * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/**
+ * Pausa naturale tra due battute (ms). In una conversazione vera le pause non hanno una durata fissa: spesso quasi nulle,
+ * a volte un respiro, di rado un silenzio vero (si pensa, si ride, si cambia discorso).
+ */
+export function naturalGap(prevText: string, nextText: string, index: number): number {
+  const prev = prevText.trim();
+  const next = nextText.trim();
+  if (/[\u2014\u2013-]$/.test(prev)) return 0; // interrotto: chi arriva parte subito
+  const u = unit(index);
+  let gap: number;
+  if (u < 0.3) gap = 10 + u * 150; // quasi attaccato
+  else if (u < 0.65) gap = 60 + (u - 0.3) * 340; // respiro
+  else if (u < 0.88) gap = 180 + (u - 0.65) * 950; // pausa breve
+  else if (u < 0.97) gap = 400 + (u - 0.88) * 4400; // pausa lunga
+  else gap = 900 + (u - 0.97) * 30000; // silenzio vero, raro
+  if (/\?$/.test(prev)) gap = Math.min(gap, 260); // alle domande si risponde in fretta…
+  if (/^(ehm|boh|mah|allora|cioè|vabbè|beh|ecco|uhm)\b/i.test(next)) gap += 140; // …a meno che si esiti
+  if (/(\.\.\.|\u2026)$/.test(prev)) gap = Math.max(gap, 220);
+  if (/\bah(\s?ah)+|ahah|\[laughs\]/i.test(prev)) gap += 280; // dopo una risata si riprende fiato
+  if (INTERJECTION.test(next) || wordCount(next) <= 2) gap = Math.min(gap, 140);
+  return Math.round(gap);
+}
+
 /** Velocità di lettura di partenza secondo l'energia (1 = naturale): un dialogo vero è un po' più rapido della lettura. */
 export const ENERGY_SPEED: Record<PodcastEnergy, number> = { relaxed: 1, lively: 1.08, wild: 1.12 };
 
@@ -89,6 +121,25 @@ export function cleanTurnText(text: string): string {
     .replace(/[*_#`~>|]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/** Distanza minima (in battute) tra due interiezioni isolate ("Mh.", "Eh.") o reazioni: più fitte suonano a ripetizione, non reali. */
+const MIN_INTERJECTION_GAP = 7;
+
+/** Toglie le interiezioni e le reazioni brevissime troppo ravvicinate: in una conversazione vera chi ascolta fa un verso ogni tanto, non a ogni frase. */
+function limitInterjections(turns: PodcastScript['turns']): void {
+  let last = -MIN_INTERJECTION_GAP;
+  for (let i = 0; i < turns.length; i++) {
+    const t = turns[i]!;
+    const tiny = (t.overlap === 'reaction' && t.text.split(/\s+/).length <= 3) || INTERJECTION.test(t.text);
+    if (!tiny || i === 0) continue;
+    if (i - last >= MIN_INTERJECTION_GAP) {
+      last = i;
+      continue;
+    }
+    turns.splice(i, 1);
+    i--;
+  }
 }
 
 /** Una risata scritta ("ah ah", "ahah") o un tono "laughing". */
@@ -157,6 +208,7 @@ export function tidyScript(
     });
   }
   limitLaughs(turns);
+  limitInterjections(turns);
   const problems: string[] = [];
   if (turns.length < PODCAST_LIMITS.minTurns) problems.push(`copione troppo corto (${turns.length} battute)`);
   if (turns.length > PODCAST_LIMITS.maxTurns) problems.push(`troppe battute (${turns.length})`);
@@ -182,12 +234,18 @@ export async function assembleDialogue(
 ): Promise<{ audio: Buffer; timings: PodcastTurnTiming[]; durationMs: number; mixed: boolean }> {
   const wantsMix = parts.some((p) => p.overlap || (p.tempo !== undefined && Math.abs(p.tempo - 1) > 0.01)) && (await ffmpegAvailable());
   if (!wantsMix) return { ...assembleAudio(parts), mixed: false };
-  const pcms = await Promise.all(parts.map((p) => decodeToPcm(stripId3(Buffer.from(p.bytes)), p.tempo ?? 1)));
+  const pcms = await Promise.all(
+    parts.map(async (p) => {
+      // Via il silenzio a inizio e fine; le interiezioni brevi si accorciano e si scuriscono.
+      const raw = trimSilence(await decodeToPcm(stripId3(Buffer.from(p.bytes)), p.tempo ?? 1));
+      return INTERJECTION.test(p.text) ? shapeBackchannel(raw) : raw;
+    }),
+  );
   const turns = pcms.map((pcm, i) => {
     const f = energyFactors(parts[i]!.energy ?? 3);
     return { durationMs: Math.round((pcm.length / MIX_RATE) * 1000), overlap: parts[i]!.overlap, host: parts[i]!.host, gapScale: f.gap, gain: f.gain };
   });
-  const { slots, totalMs } = planTimeline(turns, (i) => Math.round(gapBetween(parts[i - 1]!.text, parts[i]!.text, i - 1) * PACE[energy] * turns[i]!.gapScale));
+  const { slots, totalMs } = planTimeline(turns, (i) => Math.round(naturalGap(parts[i - 1]!.text, parts[i]!.text, i) * PACE[energy] * turns[i]!.gapScale));
   const mixed = mixPcm(
     pcms.map((pcm, i) => ({ pcm, startMs: slots[i]!.startMs, gain: slots[i]!.gain })),
     totalMs + 200,
@@ -304,8 +362,8 @@ export function smoothEnergies(
 export function energyFactors(energy: number): { speed: number; gap: number; gain: number } {
   const e = Math.min(5, Math.max(1, energy));
   return {
-    speed: 0.93 + 0.035 * (e - 1), // da 0.93 a 1.07
-    gap: 1.35 - 0.175 * (e - 1), // pause più lunghe se la conversazione è distesa, strette se è accesa
-    gain: Math.pow(10, ((e - 3) * 0.8) / 20), // chi si scalda alza un po' la voce
+    speed: 0.9 + 0.05 * (e - 1), // da 0.90 a 1.10
+    gap: 1.6 - 0.275 * (e - 1), // pause più lunghe se la conversazione è distesa, strette se è accesa
+    gain: Math.pow(10, ((e - 3) * 1.0) / 20), // chi si scalda alza un po' la voce
   };
 }

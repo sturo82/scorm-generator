@@ -498,7 +498,9 @@ export class PodcastGenerationService implements OnModuleInit {
     for (const [ti, turn] of script.turns.entries()) {
       const voice = voiceOf.get(turn.host)!;
       // Velocità della battuta: quella del partecipante (o della serie) modulata dall'energia del momento.
-      const speed = (hostSpeed.get(turn.host) ?? 1) * energyFactors(energies[ti]!).speed;
+      // Un po' di variazione casuale (±3%, sempre uguale per lo stesso copione): nessuno parla alla stessa velocità due volte.
+      const jitter = 1 + 0.03 * (2 * (Math.abs(Math.sin((ti + 1) * 78.233) * 43758.5453) % 1) - 1);
+      const speed = (hostSpeed.get(turn.host) ?? 1) * energyFactors(energies[ti]!).speed * jitter;
       const spoken = textForVoice(turn, voice.provider, podcast.language);
       // HeyGen accelera la voce da sé (resa migliore); con Polly si accelera nel montaggio, se c'è ffmpeg.
       const res = await this.synthWithRetry(this.voices.speechFor(voice.provider), spoken, locale, voice.id, cfg.speechEngine, voice.provider === 'heygen' ? speed : undefined);
